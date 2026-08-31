@@ -1,64 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
 import Campaigns from './Campaigns'
-import { supabase } from '../lib/supabase'
-import { parseManualUserIds } from '../lib/campaignEnrollment'
-import { CAMPAIGN_COUNTRIES, buildFilteredCampaignAudience } from '../lib/campaignAudience'
+import CampaignsUnifiedCreator from './CampaignsUnifiedCreator'
 
-const TIERS=['BLACK','DIAMOND','PLATINUM','GOLD','SILVER','BRONZE']
-const TIER_COLOR={DIAMOND:'#b9f2ff',PLATINUM:'#C0C0C0',GOLD:'#ffd700',SILVER:'#a8a8a8',BRONZE:'#cd7f32'}
-const TIER_BG={DIAMOND:'rgba(185,242,255,.12)',PLATINUM:'rgba(192,192,192,.12)',GOLD:'rgba(255,215,0,.12)',SILVER:'rgba(168,168,168,.1)',BRONZE:'rgba(205,127,50,.1)'}
-const COUNTRY_LABEL={MY:'🇲🇾 Malaysia',SG:'🇸🇬 Singapore',KH:'🇰🇭 Cambodia'}
-const panel={margin:'0 0 18px',padding:'16px 18px',background:'var(--surface)',border:'1px solid var(--border)',borderRadius:12}
-const input={width:'100%',background:'var(--surface2)',border:'1px solid var(--border)',color:'var(--text)',padding:'8px 10px',borderRadius:7,boxSizing:'border-box',fontSize:13}
-const btn={background:'var(--accent)',color:'#fff',border:'none',padding:'8px 14px',borderRadius:7,fontWeight:700,cursor:'pointer'}
-const secondary={background:'var(--surface2)',color:'var(--text)',border:'1px solid var(--border)',padding:'8px 14px',borderRadius:7,fontWeight:700,cursor:'pointer'}
-const defaultLevels=()=>[{level_order:1,level_code:'L1',level_name:'Level 1',deposit_threshold:'10000',reward_amount:'150',max_reward_pct:0.05,description:''},{level_order:2,level_code:'L2',level_name:'Level 2',deposit_threshold:'30000',reward_amount:'900',max_reward_pct:0.05,description:''},{level_order:3,level_code:'L3',level_name:'Level 3',deposit_threshold:'50000',reward_amount:'3000',max_reward_pct:0.05,description:''}]
-function platformFor(countries){const v=[...new Set(countries||[])];return v.length===1?v[0]:'BOTH'}
-
-function CampaignCreator(){
- const [open,setOpen]=useState(false),[players,setPlayers]=useState([]),[loading,setLoading]=useState(false),[message,setMessage]=useState('')
- const [form,setForm]=useState({name:'',code:'',start:'',end:'',budget:'',countries:['MY'],tiers:[],manual:'',levels:defaultLevels()})
- const manualIds=parseManualUserIds(form.manual)
- const audience=useMemo(()=>buildFilteredCampaignAudience(players,form.countries,form.tiers,manualIds),[players,form.countries,form.tiers,form.manual])
- const tierCount=audience.filter(p=>p.enrollment_source==='tier'||p.enrollment_source==='both').length
- const manualCount=audience.filter(p=>p.enrollment_source==='manual'||p.enrollment_source==='both').length
- const bothCount=audience.filter(p=>p.enrollment_source==='both').length
- const missingCount=manualIds.filter(id=>!players.some(p=>String(p.username||'').trim().toLowerCase()===id.toLowerCase()&&p.is_excluded!==true)).length
- useEffect(()=>{if(open)supabase.from('vip_members').select('id,username,full_name,tier,currency,phone,whatsapp,is_excluded').then(({data,error})=>{if(error)setMessage(error.message);else setPlayers(data||[])})},[open])
- function toggle(key,value){setForm(f=>({...f,[key]:f[key].includes(value)?f[key].filter(x=>x!==value):[...f[key],value]}))}
- function updateLevel(i,key,value){setForm(f=>{const levels=[...f.levels];levels[i]={...levels[i],[key]:value};return {...f,levels}})}
- function reset(){setForm({name:'',code:'',start:'',end:'',budget:'',countries:['MY'],tiers:[],manual:'',levels:defaultLevels()})}
- async function create(){
-  if(!form.name.trim())return setMessage('Campaign name required.')
-  if(!form.countries.length)return setMessage('Select at least one country.')
-  if(!form.tiers.length)return setMessage('Select at least one VIP tier.')
-  if(!form.start||!form.end)return setMessage('Start date and end date are required.')
-  if(!form.levels.length)return setMessage('Add at least one reward level.')
-  if(form.levels.some(l=>Number(l.deposit_threshold)<=0||Number(l.reward_amount)<=0))return setMessage('Every level needs a valid deposit and fixed Credit reward.')
-  setLoading(true);setMessage('')
-  try{
-   const code=form.code.trim()||form.name.trim().toUpperCase().replace(/\s+/g,'-').slice(0,20),manual=parseManualUserIds(form.manual)
-   const {data:campaign,error}=await supabase.from('campaigns').insert({campaign_type:'fixed_reward',campaign_code:code,campaign_name:form.name.trim(),platform:platformFor(form.countries),start_date:form.start,end_date:form.end,target_tier:form.tiers,auto_enroll_tiers:form.tiers,target_countries:form.countries,enrollment_mode:manual.length?'mixed':'auto_tier',campaign_category:'deposit_milestone',is_multi_level:true,max_levels:form.levels.length,deposit_target:Number(form.levels[0].deposit_threshold),reward_delivery:'credit',budget_rm:form.budget?Number(form.budget):null,status:'draft',requires_period_deposit:true,created_at:new Date().toISOString()}).select().single()
-   if(error)throw error
-   const levelRows=form.levels.map((l,i)=>({campaign_id:campaign.id,level_order:i+1,level_code:String(l.level_code||`L${i+1}`).trim().toUpperCase(),level_name:String(l.level_name||`Level ${i+1}`).trim(),deposit_threshold:Number(l.deposit_threshold),reward_amount:Number(l.reward_amount),max_reward_pct:Number(l.max_reward_pct||0.05),reward_type:'credit',description:String(l.description||'').trim()||null}))
-   const lr=await supabase.from('campaign_levels').insert(levelRows);if(lr.error)throw lr.error
-   if(audience.length){const rows=audience.map(v=>({campaign_id:campaign.id,vip_id:v.id,username:v.username,tier:v.tier,player_name:v.full_name||null,whatsapp:v.whatsapp||v.phone||null,total_deposit:0,campaign_period_deposit:0,converted:false,payout_status:'pending',status:'enrolled',enrollment_source:v.enrollment_source,added_at:new Date().toISOString(),enrolled_at:new Date().toISOString()}));const pr=await supabase.from('campaign_players').upsert(rows,{onConflict:'campaign_id,username'});if(pr.error)throw pr.error}
-   setOpen(false);reset();setMessage(`Created ${form.name}. ${audience.length} players enrolled.`)
-  }catch(e){setMessage('Campaign creation failed: '+e.message)}finally{setLoading(false)}
- }
- return <>
-  <div style={panel}><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:12,flexWrap:'wrap'}}><div><div style={{fontSize:15,fontWeight:800}}>🎯 Campaign Targeting</div><div style={{fontSize:11,color:'var(--muted)',marginTop:3}}>Automatic = Country + VIP Tier. Manual User IDs are explicit exceptions.</div></div><button style={btn} onClick={()=>{setMessage('');setOpen(true)}}>＋ New Tiered Deposit Reward</button></div></div>
-  {open&&<div style={{position:'fixed',inset:0,zIndex:1200,background:'rgba(0,0,0,.68)',display:'flex',alignItems:'center',justifyContent:'center',padding:16}}><div style={{...panel,margin:0,width:'100%',maxWidth:920,maxHeight:'92vh',overflowY:'auto'}}><div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',borderBottom:'1px solid var(--border)',paddingBottom:14,marginBottom:14}}><div><div style={{fontSize:18,fontWeight:800}}>🎁 New Tiered Deposit Reward</div><div style={{fontSize:11,color:'var(--muted)',marginTop:4}}>Fixed Credit at each deposit milestone.</div></div><button style={secondary} onClick={()=>setOpen(false)}>×</button></div>
-   <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px 14px'}}><div><div style={{fontSize:10,color:'var(--muted)',fontWeight:700}}>CAMPAIGN NAME *</div><input style={input} value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} placeholder="e.g. Merdeka Tiered Deposit Reward"/></div><div><div style={{fontSize:10,color:'var(--muted)',fontWeight:700}}>CAMPAIGN CODE</div><input style={input} value={form.code} onChange={e=>setForm(f=>({...f,code:e.target.value.toUpperCase()}))} placeholder="e.g. MERDEKA-TIERED-26"/></div><div><div style={{fontSize:10,color:'var(--muted)',fontWeight:700}}>START DATE *</div><input type="date" style={input} value={form.start} onChange={e=>setForm(f=>({...f,start:e.target.value}))}/></div><div><div style={{fontSize:10,color:'var(--muted)',fontWeight:700}}>END DATE *</div><input type="date" style={input} value={form.end} onChange={e=>setForm(f=>({...f,end:e.target.value}))}/></div><div><div style={{fontSize:10,color:'var(--muted)',fontWeight:700}}>BUDGET (RM)</div><input type="number" style={input} value={form.budget} onChange={e=>setForm(f=>({...f,budget:e.target.value}))} placeholder="Optional"/></div></div>
-   <div style={{marginTop:14,paddingTop:14,borderTop:'1px solid var(--border)'}}><div style={{fontSize:11,fontWeight:800,color:'var(--muted)',marginBottom:8}}>COUNTRY / PLATFORM — MULTI SELECT</div><div style={{display:'flex',gap:7,flexWrap:'wrap'}}>{CAMPAIGN_COUNTRIES.map(c=>{const active=form.countries.includes(c);return <button type="button" key={c} onClick={()=>toggle('countries',c)} style={{padding:'7px 14px',borderRadius:14,border:`1px solid ${active?'var(--accent)':'var(--border)'}`,background:active?'rgba(255,106,0,.12)':'var(--surface2)',color:active?'var(--text)':'var(--muted)',cursor:'pointer',fontSize:12,fontWeight:700}}>{COUNTRY_LABEL[c]}</button>})}</div><div style={{fontSize:10,color:'var(--muted)',marginTop:6}}>MY only · SG only · KH only · MY + SG · MY + KH · SG + KH · MY + SG + KH</div></div>
-   <div style={{marginTop:14,paddingTop:14,borderTop:'1px solid var(--border)'}}><div style={{fontSize:11,fontWeight:800,color:'var(--muted)',marginBottom:8}}>VIP TIERS — MULTI SELECT</div><div style={{display:'flex',gap:7,flexWrap:'wrap'}}>{TIERS.map(t=>{const active=form.tiers.includes(t);return <button type="button" key={t} onClick={()=>toggle('tiers',t)} style={{padding:'7px 14px',borderRadius:14,border:`1px solid ${active?TIER_COLOR[t]||'var(--accent)':'var(--border)'}`,background:active?TIER_BG[t]||'rgba(99,102,241,.12)':'var(--surface2)',color:active?TIER_COLOR[t]||'var(--text)':'var(--muted)',cursor:'pointer',fontSize:12,fontWeight:700}}>{t}</button>})}</div></div>
-   <div style={{marginTop:14,paddingTop:14,borderTop:'1px solid var(--border)'}}><div style={{fontSize:11,fontWeight:800,color:'var(--muted)',marginBottom:8}}>REWARD LEVELS — FIXED CREDIT</div><div style={{overflowX:'auto',background:'var(--bg)',border:'1px solid var(--border)',borderRadius:8}}><div style={{minWidth:760,display:'grid',gridTemplateColumns:'44px 90px 1.2fr 130px 120px 1.2fr 30px',gap:6,padding:'7px 8px',background:'var(--surface2)',fontSize:9,color:'var(--muted)',fontWeight:800}}><span>#</span><span>CODE</span><span>LEVEL</span><span>DEPOSIT ≥</span><span>CREDIT</span><span>DESCRIPTION</span><span></span></div>{form.levels.map((l,i)=><div key={i} style={{minWidth:760,display:'grid',gridTemplateColumns:'44px 90px 1.2fr 130px 120px 1.2fr 30px',gap:6,padding:'7px 8px',borderTop:'1px solid var(--border)',alignItems:'center'}}><input type="number" style={input} value={l.level_order} onChange={e=>updateLevel(i,'level_order',e.target.value)}/><input style={input} value={l.level_code} onChange={e=>updateLevel(i,'level_code',e.target.value.toUpperCase())}/><input style={input} value={l.level_name} onChange={e=>updateLevel(i,'level_name',e.target.value)}/><input type="number" style={input} value={l.deposit_threshold} onChange={e=>updateLevel(i,'deposit_threshold',e.target.value)}/><input type="number" style={input} value={l.reward_amount} onChange={e=>updateLevel(i,'reward_amount',e.target.value)}/><input style={input} value={l.description} onChange={e=>updateLevel(i,'description',e.target.value)} placeholder="Optional"/><button type="button" onClick={()=>setForm(f=>({...f,levels:f.levels.filter((_,j)=>j!==i)}))} style={{background:'none',border:'1px solid rgba(248,81,73,.3)',color:'#f85149',padding:'5px',borderRadius:5,cursor:'pointer'}}>×</button></div>)}</div><div style={{display:'flex',justifyContent:'flex-end',marginTop:8}}><button style={secondary} type="button" onClick={()=>setForm(f=>({...f,levels:[...f.levels,{level_order:f.levels.length+1,level_code:`L${f.levels.length+1}`,level_name:`Level ${f.levels.length+1}`,deposit_threshold:'',reward_amount:'',max_reward_pct:0.05,description:''}]}))}>＋ Add Level</button></div></div>
-   <div style={{marginTop:14,paddingTop:14,borderTop:'1px solid var(--border)'}}><div style={{fontSize:11,fontWeight:800,color:'var(--muted)',marginBottom:6}}>MANUAL USER IDs — OPTIONAL EXCEPTIONS</div><textarea style={{...input,minHeight:72,resize:'vertical',fontFamily:'inherit'}} value={form.manual} onChange={e=>setForm(f=>({...f,manual:e.target.value}))} placeholder="One User ID per line, or comma-separated. Manual IDs bypass country/tier filters."/></div>
-   <div style={{marginTop:14,display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:8}}>{[['Tier',tierCount],['Manual',manualCount],['Both',bothCount],['Missing',missingCount],['Final Enroll',audience.length]].map(([l,v])=><div key={l} style={{background:'var(--surface2)',border:'1px solid var(--border)',borderRadius:7,padding:'8px 10px'}}><div style={{fontSize:15,fontWeight:800}}>{v}</div><div style={{fontSize:9,color:'var(--muted)'}}>{l}</div></div>)}</div>
-   {message&&<div style={{marginTop:10,fontSize:11,color:message.includes('failed')||message.includes('required')||message.includes('Select')||message.includes('valid')?'#f85149':'#3fb950'}}>{message}</div>}
-   <div style={{display:'flex',justifyContent:'flex-end',gap:8,marginTop:16}}><button style={secondary} onClick={()=>setOpen(false)}>Cancel</button><button style={btn} onClick={create} disabled={loading}>{loading?'Creating…':'🎁 Create Tiered Deposit Reward'}</button></div>
-  </div></div>}
- </>
+export default function CampaignsCountryTiered(){
+  return <>
+    <CampaignsUnifiedCreator />
+    <Campaigns />
+  </>
 }
-
-export default function CampaignsCountryTiered(){ return <><CampaignCreator/><Campaigns/></> }
