@@ -1,0 +1,186 @@
+name: Implement Campaign Enrollment
+
+on:
+  push:
+    branches: [feat/campaign-mixed-enrollment]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: "!contains(github.event.head_commit.message, 'feat: implement campaign mixed enrollment')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Patch Campaigns.jsx
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/pages/Campaigns.jsx')
+          text = path.read_text(encoding='utf-8')
+
+          def replace_once(old, new, label):
+              global text
+              if old not in text:
+                  raise SystemExit(f'Missing expected pattern: {label}')
+              text = text.replace(old, new, 1)
+
+          replace_once(
+              "import { buildMultiLevelPlayerMetrics, buildPayoutRows, buildCampaignSummary, calculateCampaignROI } from '../lib/campaignMetrics'",
+              "import { buildMultiLevelPlayerMetrics, buildPayoutRows, buildCampaignSummary, calculateCampaignROI } from '../lib/campaignMetrics'\nimport { buildCampaignAudience, parseManualUserIds } from '../lib/campaignEnrollment'",
+              'imports',
+          )
+
+          replace_once(
+              "    settlement_frequency: 'total',\n  }",
+              "    settlement_frequency: 'total',\n    manual_user_ids: '',\n  }",
+              'blank form',
+          )
+
+          replace_once(
+              "  // ── Create campaign ─────────────────────────────────────────────────────────\n  async function createCampaign() {",
+              """  // ── Campaign enrollment helpers ─────────────────────────────────────────────
+  async function enrollManualPlayers(campaignId, rawIds, autoTiers = []) {
+    const ids = parseManualUserIds(rawIds)
+    if (!ids.length) return { found: 0, missing: [] }
+
+    const { data: vips, error } = await supabase
+      .from('vip_members')
+      .select('id,username,full_name,tier,phone,whatsapp,is_excluded')
+      .in('username', ids)
+      .eq('is_excluded', false)
+
+    if (error) throw error
+
+    const found = vips || []
+    const missing = ids.filter(id => !found.some(v => String(v.username).toLowerCase() === String(id).toLowerCase()))
+    if (!found.length) return { found: 0, missing }
+
+    const rows = found.map(v => ({
+      campaign_id: campaignId,
+      vip_id: v.id,
+      username: v.username,
+      tier: v.tier,
+      player_name: v.full_name || null,
+      whatsapp: v.whatsapp || v.phone || null,
+      total_deposit: 0,
+      campaign_period_deposit: 0,
+      converted: false,
+      payout_status: 'pending',
+      status: 'enrolled',
+      enrollment_source: 'manual',
+      added_at: new Date().toISOString(),
+      enrolled_at: new Date().toISOString(),
+    }))
+
+    const { error: upsertError } = await supabase
+      .from('campaign_players')
+      .upsert(rows, { onConflict: 'campaign_id,username' })
+    if (upsertError) throw upsertError
+
+    const tierSet = new Set((autoTiers || []).map(t => String(t).toUpperCase()))
+    const both = found.filter(v => tierSet.has(String(v.tier || '').toUpperCase())).map(v => v.username)
+    const manual = found.filter(v => !tierSet.has(String(v.tier || '').toUpperCase())).map(v => v.username)
+
+    if (both.length) {
+      const { error: bothError } = await supabase.from('campaign_players').update({ enrollment_source: 'both' }).eq('campaign_id', campaignId).in('username', both)
+      if (bothError) throw bothError
+    }
+    if (manual.length) {
+      const { error: manualError } = await supabase.from('campaign_players').update({ enrollment_source: 'manual' }).eq('campaign_id', campaignId).in('username', manual)
+      if (manualError) throw manualError
+    }
+
+    return { found: found.length, missing }
+  }
+
+  // ── Create campaign ─────────────────────────────────────────────────────────
+  async function createCampaign() {""",
+              'enrollment helper',
+          )
+
+          replace_once(
+              "      target_tier:    form.target_tier.length>0 ? form.target_tier : null,\n      offer_desc:",
+              "      target_tier:    form.target_tier.length>0 ? form.target_tier : null,\n      auto_enroll_tiers: form.target_tier.length>0 ? form.target_tier : null,\n      enrollment_mode: form.target_tier.length && parseManualUserIds(form.manual_user_ids).length ? 'mixed' : form.target_tier.length ? 'auto' : 'manual',\n      offer_desc:",
+              'campaign enrollment fields',
+          )
+
+          replace_once(
+              "    if (error) { setMsg({ text:'Error: '+error.message, ok:false }); return }\n    setMsg({ text:'', ok:true })",
+              "    if (error) { setMsg({ text:'Error: '+error.message, ok:false }); return }\n    let enrollmentNotice = ''\n    try {\n      const manualResult = await enrollManualPlayers(data.id, form.manual_user_ids, form.target_tier)\n      if (manualResult.missing.length) enrollmentNotice = ` ${manualResult.missing.length} manual User ID(s) were not found and were skipped.`\n    } catch (enrollError) {\n      setMsg({ text:'Campaign created, but manual enrollment failed: '+enrollError.message, ok:false })\n    }\n    setMsg({ text: enrollmentNotice, ok:!enrollmentNotice })",
+              'manual enrollment after create',
+          )
+
+          replace_once(
+              "      campaign_id: selected.id,\n      vip_id:        v.source==='vip' ? v.id : null,\n      username:      v.username,",
+              "      campaign_id: selected.id,\n      vip_id:        v.source==='vip' ? v.id : null,\n      username:      v.username,",
+              'addVIP anchor',
+          )
+
+          replace_once(
+              "      payout_status: 'pending',\n      added_at:      new Date().toISOString(),",
+              "      payout_status: 'pending',\n      status:        'enrolled',\n      enrollment_source: 'manual',\n      added_at:      new Date().toISOString(),",
+              'manual add source',
+          )
+
+          replace_once(
+              "              <div style={s.frow}>\n                <div style={s.flbl}>Target Tiers</div>\n                <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginTop:6 }}>\n                  {TIERS.map(tier => { const active=form.target_tier.includes(tier); return (\n                    <div key={tier} onClick={()=>toggleTier(tier)} style={{ ...s.badge, cursor:'pointer', background:active?TIER_BG[tier]:'var(--surface2)', color:active?TIER_COLOR[tier]:'var(--muted)', border:`1px solid ${active?TIER_COLOR[tier]:'var(--border)'}`, padding:'5px 14px' }}>{tier}</div>\n                  )})}\n                </div>\n              </div>",
+              """              <div style={s.frow}>
+                <div style={s.flbl}>Target Tiers — Auto Enroll</div>
+                <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginTop:6 }}>
+                  {TIERS.map(tier => { const active=form.target_tier.includes(tier); return (
+                    <div key={tier} onClick={()=>toggleTier(tier)} style={{ ...s.badge, cursor:'pointer', background:active?TIER_BG[tier]:'var(--surface2)', color:active?TIER_COLOR[tier]:'var(--muted)', border:`1px solid ${active?TIER_COLOR[tier]:'var(--border)'}`, padding:'5px 14px' }}>{tier}</div>
+                  )})}
+                </div>
+                <div style={{ fontSize:10, color:'var(--muted)', marginTop:5 }}>All non-excluded VIP members in the selected tiers are automatically enrolled when the campaign is created.</div>
+              </div>
+              <div style={{ ...s.frow, gridColumn:'1/-1' }}>
+                <div style={s.flbl}>Manual User IDs — Optional</div>
+                <textarea style={s.fta} rows={4} value={form.manual_user_ids||''} onChange={e=>setForm(f=>({...f,manual_user_ids:e.target.value}))} placeholder="Paste User IDs, one per line or separated by commas\nExample: ABC123, VIP888, USER001" />
+                <div style={{ display:'flex', justifyContent:'space-between', gap:8, marginTop:5, fontSize:10, color:'var(--muted)' }}>
+                  <span>Manual IDs are combined with tier enrollment. Duplicates are enrolled only once.</span>
+                  <strong>{parseManualUserIds(form.manual_user_ids).length} manual ID(s)</strong>
+                </div>
+              </div>""",
+              'create targeting UI',
+          )
+
+          replace_once(
+              "                <div style={{ borderTop:'1px solid var(--border)', paddingTop:14, marginBottom:14 }}>\n                  <div style={{ fontSize:11, fontWeight:800, color:'var(--muted)', marginBottom:10, letterSpacing:'.5px' }}>TARGET VIP TIERS</div>",
+              "                <div style={{ borderTop:'1px solid var(--border)', paddingTop:14, marginBottom:14 }}>\n                  <div style={{ fontSize:11, fontWeight:800, color:'var(--muted)', marginBottom:10, letterSpacing:'.5px' }}>TARGET VIP TIERS — AUTO ENROLL</div>",
+              'edit target heading',
+          )
+
+          replace_once(
+              "                  <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>\n                    {TIERS.map(tier=>{ const active=(editCampForm.target_tier||[]).includes(tier); return <button type=\"button\" key={tier} onClick={()=>setEditCampForm(f=>({...f,target_tier:active?(f.target_tier||[]).filter(x=>x!==tier):[...(f.target_tier||[]),tier]}))} style={{ ...s.badge, padding:'6px 14px', cursor:'pointer', background:active?TIER_BG[tier]:'var(--surface2)', color:active?TIER_COLOR[tier]:'var(--muted)', border:`1px solid ${active?TIER_COLOR[tier]:'var(--border)'}` }}>{tier}</button> })}\n                  </div>",
+              "                  <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>\n                    {TIERS.map(tier=>{ const active=(editCampForm.target_tier||[]).includes(tier); return <button type=\"button\" key={tier} onClick={()=>setEditCampForm(f=>({...f,target_tier:active?(f.target_tier||[]).filter(x=>x!==tier):[...(f.target_tier||[]),tier]}))} style={{ ...s.badge, padding:'6px 14px', cursor:'pointer', background:active?TIER_BG[tier]:'var(--surface2)', color:active?TIER_COLOR[tier]:'var(--muted)', border:`1px solid ${active?TIER_COLOR[tier]:'var(--border)'}` }}>{tier}</button> })}\n                  </div>\n                  <div style={{ fontSize:10, color:'var(--muted)', marginTop:6 }}>Saving tier changes also syncs newly eligible players into this campaign automatically.</div>",
+              'edit target helper',
+          )
+
+          replace_once(
+              "              <div style={{ display:'flex', gap:8, alignItems:'center' }}>\n                  <button style={s.btnG} onClick={editCampaign} disabled={saving}>{saving?'Saving…':'💾 Save Campaign'}</button>",
+              "              <div style={{ display:'flex', gap:8, alignItems:'center' }}>\n                  <button style={s.btnG} onClick={editCampaign} disabled={saving}>{saving?'Saving…':'💾 Save Campaign'}</button>",
+              'save anchor',
+          )
+
+          path.write_text(text, encoding='utf-8')
+          PY
+
+      - name: Build
+        run: |
+          npm ci
+          npm run build
+
+      - name: Commit implementation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/pages/Campaigns.jsx
+          git rm .github/workflows/implement-campaign-enrollment.yml
+          git commit -m "feat: implement campaign mixed enrollment"
+          git push
