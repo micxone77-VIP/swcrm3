@@ -4,11 +4,10 @@ export default function CampaignsCountryTieredFixed() {
   return (
     <>
       <style>{`
-        /* The legacy Campaigns component is retained for cards/detail tracking,
-           but its old generic create flow must not compete with the dedicated
-           Tiered Deposit Reward creator above it. */
-        .campaigns-legacy-list > div > div:first-child > div:last-child > button:last-child,
-        .campaigns-legacy-list > div > div:nth-child(2) span[style*="cursor: pointer"] {
+        /* Keep the legacy campaign cards/detail tracking, but expose only the
+           dedicated Tiered Deposit Reward creator for new campaigns. */
+        .campaigns-legacy-list > div:nth-child(2) > div:first-child > div:last-child > button,
+        .campaigns-legacy-list > div:nth-child(2) > div:nth-child(2) span[style*="cursor: pointer"] {
           display: none !important;
         }
       `}</style>
