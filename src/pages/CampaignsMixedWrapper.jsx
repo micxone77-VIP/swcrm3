@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import LegacyCampaigns from './CampaignsLegacy'
+import LegacyCampaigns from './Campaigns'
 import { supabase } from '../lib/supabase'
 import { parseManualUserIds } from '../lib/campaignEnrollment'
 
