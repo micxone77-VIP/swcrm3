@@ -53,7 +53,9 @@ export default function AllVIPs() {
   const [page, setPage]         = useState(1)
   const [sortCol, setSortCol]   = useState('tier')
   const [sortAsc, setSortAsc]   = useState(true)
-  const [view, setView]         = useState('all')  // saved views
+  const [view, setView]         = useState('all')
+  const [activationBusy, setActivationBusy] = useState(null)
+  const [activationNotice, setActivationNotice] = useState(null)
   const searchRef = useRef(null)
 
   const TIER_ORDER = { BLACK:0, DIAMOND:1, PLATINUM:2, GOLD:3, SILVER:4, BRONZE:5 }
@@ -63,7 +65,7 @@ export default function AllVIPs() {
     try {
       const [vipRes, hostRes] = await Promise.all([
         supabase.from('vip_members')
-          .select('id,username,full_name,tier,region,currency,days_inactive,churn_risk,host_assigned,last_deposit_date,total_deposit,win_loss,activity_status,last_contacted,last_contact_date,vip_score,is_excluded,birthday')
+          .select('id,username,full_name,tier,region,currency,days_inactive,churn_risk,host_assigned,last_deposit_date,total_deposit,win_loss,activity_status,last_contacted,last_contact_date,vip_score,is_excluded,birthday,phone')
           .neq('is_excluded', true),
         supabase.from('profiles').select('full_name').in('role',['admin','host']).order('full_name'),
       ])
@@ -76,6 +78,40 @@ export default function AllVIPs() {
   }, [])
 
   useEffect(() => { load() }, [load])
+
+  const generateActivation = async (vip) => {
+    if (!vip?.username || activationBusy) return
+    setActivationBusy(vip.id)
+    setActivationNotice(null)
+    try {
+      const { data, error: fnError } = await supabase.functions.invoke('generate-player-activation', {
+        body: { username: vip.username },
+      })
+      if (fnError) throw fnError
+      if (!data?.success || !data?.setup_link) throw new Error(data?.error || 'Failed to generate activation link.')
+
+      let copied = false
+      try {
+        await navigator.clipboard.writeText(data.setup_link)
+        copied = true
+      } catch (_) {}
+
+      setActivationNotice({
+        ok: true,
+        username: vip.username,
+        link: data.setup_link,
+        text: copied ? `Activation link copied for ${vip.username}.` : `Activation link generated for ${vip.username}.`,
+      })
+    } catch (e) {
+      setActivationNotice({
+        ok: false,
+        username: vip.username,
+        text: e?.message || 'Unable to generate activation link.',
+      })
+    } finally {
+      setActivationBusy(null)
+    }
+  }
 
   // Saved views shortcuts
   const applyView = v => {
@@ -157,6 +193,33 @@ export default function AllVIPs() {
         }
       />
 
+      {activationNotice && (
+        <div style={{
+          marginBottom: 14,
+          padding: '10px 14px',
+          borderRadius: 8,
+          border: `1px solid ${activationNotice.ok ? 'rgba(63,185,80,.35)' : 'rgba(248,81,73,.35)'}`,
+          background: activationNotice.ok ? 'rgba(63,185,80,.10)' : 'rgba(248,81,73,.10)',
+          color: activationNotice.ok ? 'var(--success)' : 'var(--danger)',
+          fontSize: 12,
+        }}>
+          <div style={{ fontWeight: 700 }}>{activationNotice.text}</div>
+          {activationNotice.link && (
+            <div style={{ marginTop: 6, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <input
+                readOnly
+                value={activationNotice.link}
+                onFocus={e => e.currentTarget.select()}
+                style={{ flex: '1 1 520px', minWidth: 260, background:'var(--surface)', border:'1px solid var(--border)', color:'var(--text)', padding:'7px 9px', borderRadius:6, fontSize:11 }}
+              />
+              <Btn size="sm" variant="ghost" onClick={async () => { try { await navigator.clipboard.writeText(activationNotice.link); setActivationNotice(n => ({ ...n, text:`Activation link copied for ${n.username}.` })) } catch (_) {} }}>
+                Copy Link
+              </Btn>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Saved Views */}
       <div style={{ marginBottom: 16 }}>
         <FilterPills options={SAVED_VIEWS} active={view} onChange={applyView} />
@@ -234,7 +297,7 @@ export default function AllVIPs() {
                       onClick={() => navigate(`/vips/${v.id}`)}
                       onMouseEnter={e => e.currentTarget.style.background = 'var(--surface2)'}
                       onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                      style={{ cursor: 'pointer', transition: 'background .1s' }}
+                      style={{ cursor:'pointer', transition:'background .1s' }}
                     >
                       <td style={{ padding:'9px 12px', borderBottom:'1px solid var(--border)' }}>
                         <div style={{ fontWeight:600, color:'var(--text)' }}>{v.full_name || v.username}</div>
@@ -269,9 +332,22 @@ export default function AllVIPs() {
                         <RiskBadge risk={v.churn_risk} />
                       </td>
                       <td style={{ padding:'9px 12px', borderBottom:'1px solid var(--border)' }}>
-                        <Btn size="sm" variant="ghost" onClick={e => { e.stopPropagation(); navigate(`/vips/${v.id}`) }}>
-                          Open VIP →
-                        </Btn>
+                        <div style={{ display:'flex', gap:6, alignItems:'center', flexWrap:'wrap' }}>
+                          <Btn size="sm" variant="ghost" onClick={e => { e.stopPropagation(); navigate(`/vips/${v.id}`) }}>
+                            Open VIP →
+                          </Btn>
+                          {profile?.role === 'admin' && (
+                            <Btn
+                              size="sm"
+                              variant="ghost"
+                              disabled={activationBusy === v.id}
+                              onClick={e => { e.stopPropagation(); generateActivation(v) }}
+                              title="Generate a one-time Player Portal activation link"
+                            >
+                              {activationBusy === v.id ? 'Generating…' : '🔐 Activate Portal'}
+                            </Btn>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   )
