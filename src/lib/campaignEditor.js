@@ -53,7 +53,7 @@ export function normalizeCampaignForEdit(campaign) {
   form.max_levels = Number(c.max_levels) || 1
   form.is_multi_level = Boolean(c.is_multi_level)
   form.requires_period_deposit = c.requires_period_deposit == null ? true : Boolean(c.requires_period_deposit)
-  form.enrollment_mode = c.enrollment_mode || (form.target_tier.length ? 'auto' : 'manual')
+  form.enrollment_mode = c.enrollment_mode || (form.target_tier.length ? 'auto_tier' : 'manual')
   form.auto_enroll_tiers = Array.isArray(c.auto_enroll_tiers) ? [...c.auto_enroll_tiers] : [...form.target_tier]
   form.start_date = normalizeDate(c.start_date)
   form.end_date = normalizeDate(c.end_date)
@@ -101,7 +101,7 @@ export function buildCampaignUpdate(form) {
   const numeric = (value) => value === '' || value == null ? null : Number(value)
   const type = form.campaign_type || 'gold_bar'
   const targetTiers = Array.isArray(form.target_tier) ? form.target_tier : []
-  const enrollmentMode = targetTiers.length && parseManualUserIds(form.manual_user_ids).length ? 'mixed' : targetTiers.length ? 'auto' : 'manual'
+  const enrollmentMode = targetTiers.length && parseManualUserIds(form.manual_user_ids).length ? 'mixed' : targetTiers.length ? 'auto_tier' : 'manual'
   return {
     campaign_name: String(form.campaign_name || '').trim(),
     campaign_code: String(form.campaign_code || '').trim().toUpperCase(),
