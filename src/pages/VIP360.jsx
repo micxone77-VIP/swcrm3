@@ -110,7 +110,7 @@ export default function VIP360() {
       ])
       if (vipRes.error) throw vipRes.error
       setVip(vipRes.data)
-      setEditForm({ host_assigned: vipRes.data.host_assigned||'', tier: vipRes.data.tier||'', activity_status: vipRes.data.activity_status||'', phone: vipRes.data.phone||'', whatsapp: vipRes.data.whatsapp||'', churn_risk: vipRes.data.churn_risk||'', notes: vipRes.data.notes||'' })
+      setEditForm({ host_assigned: vipRes.data.host_assigned||'', tier: vipRes.data.tier||'', activity_status: vipRes.data.activity_status||'', phone: vipRes.data.phone||'', whatsapp: vipRes.data.whatsapp||'', email: vipRes.data.email||'', churn_risk: vipRes.data.churn_risk||'', notes: vipRes.data.notes||'' })
       setMonthly(montRes.data || [])
       setDaily(dailyRes.data || [])
       setContacts(contRes.data || [])
@@ -302,6 +302,7 @@ export default function VIP360() {
                 <Field label="Host">{vip.host_assigned}</Field>
                 <Field label="Phone">{vip.phone}</Field>
                 <Field label="WhatsApp">{vip.whatsapp}</Field>
+                <Field label="Email">{vip.email}</Field>
                 <Field label="Birthday">{vip.birthday ? fmtDate(vip.birthday) : '—'}</Field>
                 <Field label="Registered">{fmtDate(vip.registration_date || vip.created_at)}</Field>
               </div>
@@ -455,6 +456,7 @@ export default function VIP360() {
               <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, marginBottom:20 }}>
                 <Field label="Phone">{vip.phone || '—'}</Field>
                 <Field label="WhatsApp">{vip.whatsapp || '—'}</Field>
+                <Field label="Email">{vip.email || '—'}</Field>
               </div>
               {contacts.length === 0 ? (
                 <EmptyState icon="📞" title="No contact records" message="No contact logs found for this VIP." />
