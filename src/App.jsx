@@ -20,6 +20,7 @@ import BirthdayReminder      from './pages/BirthdayReminder'
 
 // ── Campaigns ───────────────────────────────────────────────────────────────
 import Campaigns             from './pages/Campaigns'
+import CampaignsMixedWrapper from './pages/CampaignsMixedWrapper'
 import Upgrades              from './pages/Upgrades'
 import TransferTracker       from './pages/TransferTracker'
 import BudgetStrategy        from './pages/BudgetStrategy'
@@ -58,72 +59,44 @@ export default function App() {
               <Route path="dashboard" element={<Navigate to="/today" replace />} />
 
               {/* ── Command Center ─────────────────────────────────────── */}
-              <Route path="today"
-                element={<RequireRole roles={['admin','host','readonly']}><Today /></RequireRole>} />
-              <Route path="tasks"
-                element={<RequireRole roles={['admin','host']}><MyTasks /></RequireRole>} />
-              <Route path="alerts"
-                element={<RequireRole roles={['admin','host','readonly']}><Alerts /></RequireRole>} />
+              <Route path="today" element={<RequireRole roles={['admin','host','readonly']}><Today /></RequireRole>} />
+              <Route path="tasks" element={<RequireRole roles={['admin','host']}><MyTasks /></RequireRole>} />
+              <Route path="alerts" element={<RequireRole roles={['admin','host','readonly']}><Alerts /></RequireRole>} />
 
               {/* ── VIP Operations ─────────────────────────────────────── */}
-              <Route path="vips"
-                element={<RequireRole roles={['admin','host']}><AllVIPs /></RequireRole>} />
-              {/* vips/:id is readable by readonly too (boss view click-through) */}
-              <Route path="vips/:id"
-                element={<RequireRole roles={['admin','host','readonly']}><VIP360 /></RequireRole>} />
-              <Route path="at-risk"
-                element={<RequireRole roles={['admin','host']}><AtRisk /></RequireRole>} />
-              <Route path="follow-up"
-                element={<RequireRole roles={['admin','host']}><FollowUp /></RequireRole>} />
-              <Route path="birthdays"
-                element={<RequireRole roles={['admin','host','readonly']}><BirthdayReminder /></RequireRole>} />
+              <Route path="vips" element={<RequireRole roles={['admin','host']}><AllVIPs /></RequireRole>} />
+              <Route path="vips/:id" element={<RequireRole roles={['admin','host','readonly']}><VIP360 /></RequireRole>} />
+              <Route path="at-risk" element={<RequireRole roles={['admin','host']}><AtRisk /></RequireRole>} />
+              <Route path="follow-up" element={<RequireRole roles={['admin','host']}><FollowUp /></RequireRole>} />
+              <Route path="birthdays" element={<RequireRole roles={['admin','host','readonly']}><BirthdayReminder /></RequireRole>} />
 
               {/* ── Campaigns ──────────────────────────────────────────── */}
-              <Route path="campaigns"
-                element={<RequireRole roles={['admin','host']}><Campaigns /></RequireRole>} />
-              <Route path="upgrades"
-                element={<RequireRole roles={['admin','host']}><Upgrades /></RequireRole>} />
-              <Route path="transfer"
-                element={<RequireRole roles={['admin']}><TransferTracker /></RequireRole>} />
-              <Route path="budget"
-                element={<RequireRole roles={['admin']}><BudgetStrategy /></RequireRole>} />
+              <Route path="campaigns" element={<RequireRole roles={['admin','host']}><CampaignsMixedWrapper /></RequireRole>} />
+              <Route path="upgrades" element={<RequireRole roles={['admin','host']}><Upgrades /></RequireRole>} />
+              <Route path="transfer" element={<RequireRole roles={['admin']}><TransferTracker /></RequireRole>} />
+              <Route path="budget" element={<RequireRole roles={['admin']}><BudgetStrategy /></RequireRole>} />
 
               {/* ── Intelligence ───────────────────────────────────────── */}
-              <Route path="analytics"
-                element={<RequireRole roles={['admin','readonly']}><Analytics /></RequireRole>} />
-              <Route path="kpi"
-                element={<RequireRole roles={['admin','host','readonly']}><KPIProgress /></RequireRole>} />
-              <Route path="period-report"
-                element={<RequireRole roles={['admin','readonly']}><PeriodReport /></RequireRole>} />
-              <Route path="tier-analytics"
-                element={<RequireRole roles={['admin','readonly']}><TierAnalytics /></RequireRole>} />
-              <Route path="profiling"
-                element={<RequireRole roles={['admin','readonly']}><PlayerProfiling /></RequireRole>} />
-              <Route path="ask"
-                element={<RequireRole roles={['admin','host']}><AskData /></RequireRole>} />
+              <Route path="analytics" element={<RequireRole roles={['admin','readonly']}><Analytics /></RequireRole>} />
+              <Route path="kpi" element={<RequireRole roles={['admin','host','readonly']}><KPIProgress /></RequireRole>} />
+              <Route path="period-report" element={<RequireRole roles={['admin','readonly']}><PeriodReport /></RequireRole>} />
+              <Route path="tier-analytics" element={<RequireRole roles={['admin','readonly']}><TierAnalytics /></RequireRole>} />
+              <Route path="profiling" element={<RequireRole roles={['admin','readonly']}><PlayerProfiling /></RequireRole>} />
+              <Route path="ask" element={<RequireRole roles={['admin','host']}><AskData /></RequireRole>} />
 
               {/* ── System ─────────────────────────────────────────────── */}
-              <Route path="users"
-                element={<RequireRole roles={['admin']}><ManageUsers /></RequireRole>} />
-              <Route path="import"
-                element={<RequireRole roles={['admin']}><CSVImport /></RequireRole>} />
-              <Route path="export"
-                element={<RequireRole roles={['admin']}><ExportPage /></RequireRole>} />
-              <Route path="expenses"
-                element={<RequireRole roles={['admin']}><ExpenseTracker /></RequireRole>} />
-              <Route path="boss"
-                element={<RequireRole roles={['admin','readonly']}><BossView /></RequireRole>} />
+              <Route path="users" element={<RequireRole roles={['admin']}><ManageUsers /></RequireRole>} />
+              <Route path="import" element={<RequireRole roles={['admin']}><CSVImport /></RequireRole>} />
+              <Route path="export" element={<RequireRole roles={['admin']}><ExportPage /></RequireRole>} />
+              <Route path="expenses" element={<RequireRole roles={['admin']}><ExpenseTracker /></RequireRole>} />
+              <Route path="boss" element={<RequireRole roles={['admin','readonly']}><BossView /></RequireRole>} />
 
               {/* ── Legacy deep-links ───────────────────────────────────── */}
-              <Route path="contacts"
-                element={<RequireRole roles={['admin','host']}><ContactLog /></RequireRole>} />
-              <Route path="targets"
-                element={<RequireRole roles={['admin','host']}><DailyTargets /></RequireRole>} />
-              <Route path="churn"
-                element={<RequireRole roles={['admin','host']}><ChurnAlerts /></RequireRole>} />
+              <Route path="contacts" element={<RequireRole roles={['admin','host']}><ContactLog /></RequireRole>} />
+              <Route path="targets" element={<RequireRole roles={['admin','host']}><DailyTargets /></RequireRole>} />
+              <Route path="churn" element={<RequireRole roles={['admin','host']}><ChurnAlerts /></RequireRole>} />
             </Route>
 
-            {/* Catch-all */}
             <Route path="*" element={<Navigate to="/today" replace />} />
           </Routes>
         </BrowserRouter>

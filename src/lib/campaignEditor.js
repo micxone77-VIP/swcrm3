@@ -4,6 +4,7 @@ export const EDITABLE_CAMPAIGN_FIELDS = [
   'campaign_type','platform','reward_pct','reward_fixed','reward_cap','reward_delivery',
   'reward_tiers','min_valid_bet','top_n','rank_rewards','min_deposit_lb',
   'settlement_frequency','campaign_category','is_multi_level','max_levels','requires_period_deposit',
+  'enrollment_mode','auto_enroll_tiers',
 ]
 
 export const EMPTY_LEVEL = () => ({
@@ -52,6 +53,8 @@ export function normalizeCampaignForEdit(campaign) {
   form.max_levels = Number(c.max_levels) || 1
   form.is_multi_level = Boolean(c.is_multi_level)
   form.requires_period_deposit = c.requires_period_deposit == null ? true : Boolean(c.requires_period_deposit)
+  form.enrollment_mode = c.enrollment_mode || (form.target_tier.length ? 'auto_tier' : 'manual')
+  form.auto_enroll_tiers = Array.isArray(c.auto_enroll_tiers) ? [...c.auto_enroll_tiers] : [...form.target_tier]
   form.start_date = normalizeDate(c.start_date)
   form.end_date = normalizeDate(c.end_date)
   return form
@@ -86,19 +89,28 @@ export function validateCampaignEditor(form, levels = []) {
     if (form.reward_cap !== '' && form.reward_cap != null && Number(form.reward_cap) < 0) errors.push('Reward cap cannot be negative.')
   }
 
+  const tiers = Array.isArray(form?.target_tier) ? form.target_tier : []
+  if (tiers.some(t => !['BLACK','DIAMOND','PLATINUM','GOLD','SILVER','BRONZE'].includes(String(t).toUpperCase()))) {
+    errors.push('Target tiers contain an invalid tier.')
+  }
+
   return errors
 }
 
 export function buildCampaignUpdate(form) {
   const numeric = (value) => value === '' || value == null ? null : Number(value)
   const type = form.campaign_type || 'gold_bar'
+  const targetTiers = Array.isArray(form.target_tier) ? form.target_tier : []
+  const enrollmentMode = targetTiers.length && parseManualUserIds(form.manual_user_ids).length ? 'mixed' : targetTiers.length ? 'auto_tier' : 'manual'
   return {
     campaign_name: String(form.campaign_name || '').trim(),
     campaign_code: String(form.campaign_code || '').trim().toUpperCase(),
     festival: form.festival || null,
     start_date: normalizeDate(form.start_date) || null,
     end_date: normalizeDate(form.end_date) || null,
-    target_tier: Array.isArray(form.target_tier) && form.target_tier.length ? form.target_tier : null,
+    target_tier: targetTiers.length ? targetTiers : null,
+    auto_enroll_tiers: targetTiers.length ? targetTiers : null,
+    enrollment_mode: enrollmentMode,
     offer_desc: form.offer_desc || null,
     budget_rm: numeric(form.budget_rm),
     status: form.status || 'draft',
@@ -138,4 +150,9 @@ export function buildLevelUpsert(level, index, defaultRewardType = 'credit') {
   }
   if (level.id) row.id = level.id
   return row
+}
+
+function parseManualUserIds(value) {
+  if (Array.isArray(value)) return [...new Set(value.map(v => String(v || '').trim()).filter(Boolean))]
+  return [...new Set(String(value || '').split(/[\s,;]+/).map(v => v.trim()).filter(Boolean))]
 }
