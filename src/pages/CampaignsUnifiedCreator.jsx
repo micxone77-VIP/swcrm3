@@ -1,0 +1,109 @@
+import { useEffect, useMemo, useState } from 'react'
+import { supabase } from '../lib/supabase'
+import { parseManualUserIds } from '../lib/campaignEnrollment'
+import { CAMPAIGN_COUNTRIES, buildFilteredCampaignAudience } from '../lib/campaignAudience'
+import { CAMPAIGN_CREATOR_TYPES, buildCampaignInsert, buildTieredLevels } from '../lib/campaignCreatorModel'
+
+const TIERS=['BLACK','DIAMOND','PLATINUM','GOLD','SILVER','BRONZE']
+const COUNTRY_LABEL={MY:'🇲🇾 Malaysia',SG:'🇸🇬 Singapore',KH:'🇰🇭 Cambodia'}
+const TYPE_INFO={
+ gold_bar:'Deposit threshold → physical gold bar / gift',
+ pct_reward:'Deposit amount × percentage cashback',
+ fixed_reward:'Deposit threshold → fixed reward',
+ tiered_reward:'Different percentage reward by deposit tier',
+ dual_tier:'Deposit + turnover → Credit + WCash',
+ leaderboard:'Top players by valid bet → rank rewards',
+ tiered_deposit_reward:'Multiple deposit milestones → fixed Credit at each level',
+}
+const input={width:'100%',background:'var(--surface2)',border:'1px solid var(--border)',color:'var(--text)',padding:'8px 10px',borderRadius:7,boxSizing:'border-box',fontSize:13}
+const btn={background:'var(--accent)',color:'#fff',border:'none',padding:'8px 16px',borderRadius:8,fontWeight:700,cursor:'pointer'}
+const secondary={background:'var(--surface2)',color:'var(--text)',border:'1px solid var(--border)',padding:'8px 14px',borderRadius:7,fontWeight:700,cursor:'pointer'}
+const panel={background:'var(--surface)',border:'1px solid var(--border)',borderRadius:12}
+const defaultLevels=()=>[
+ {level_code:'L1',level_name:'Level 1',deposit_threshold:'10000',reward_amount:'150',description:''},
+ {level_code:'L2',level_name:'Level 2',deposit_threshold:'30000',reward_amount:'900',description:''},
+ {level_code:'L3',level_name:'Level 3',deposit_threshold:'50000',reward_amount:'3000',description:''},
+]
+const defaultTierPct=()=>[{min:'10000',max:'29999',pct:'1.5'},{min:'30000',max:'49999',pct:'3'},{min:'50000',max:'',pct:'6'}]
+const defaultDual=()=>[{depositThreshold:'10000',turnoverThreshold:'50000',creditAmount:'200',wcashAmount:'200'}]
+
+export default function CampaignsUnifiedCreator(){
+ const [open,setOpen]=useState(false)
+ const [players,setPlayers]=useState([])
+ const [loading,setLoading]=useState(false)
+ const [message,setMessage]=useState('')
+ const [form,setForm]=useState({campaign_type:'pct_reward',campaign_name:'',campaign_code:'',platform:'MY',countries:['MY'],tiers:[],manual:'',start_date:'',end_date:'',budget_rm:'',status:'draft',deposit_target:'50000',reward_pct:'6',reward_cap:'',reward_fixed:'3000',gold_bar_value:'3400',reward_delivery:'credit',reward_tiers:defaultTierPct(),dual_tiers:defaultDual(),min_valid_bet:'3000000',min_deposit_lb:'50000',top_n:'3',rank_rewards:[{rank:1,amount:'12000'},{rank:2,amount:'12000'},{rank:3,amount:'12000'}],levels:defaultLevels(),settlement_frequency:'total'})
+ const ids=parseManualUserIds(form.manual)
+ const audience=useMemo(()=>buildFilteredCampaignAudience(players,form.countries,form.tiers,ids),[players,form.countries,form.tiers,form.manual])
+ const tierCount=audience.filter(p=>p.enrollment_source==='tier'||p.enrollment_source==='both').length
+ const manualCount=audience.filter(p=>p.enrollment_source==='manual'||p.enrollment_source==='both').length
+ const bothCount=audience.filter(p=>p.enrollment_source==='both').length
+ const missingCount=ids.filter(id=>!players.some(p=>String(p.username||'').trim().toLowerCase()===id.toLowerCase()&&p.is_excluded!==true)).length
+ useEffect(()=>{
+   const hideLegacyCreate=()=>document.querySelectorAll('button').forEach(b=>{const text=(b.textContent||'').trim();if(text==='＋ New Campaign'||text==='+ New Campaign')b.style.display='none'})
+   hideLegacyCreate(); const obs=new MutationObserver(hideLegacyCreate); obs.observe(document.body,{childList:true,subtree:true}); return()=>obs.disconnect()
+ },[])
+ useEffect(()=>{if(open){setMessage('');supabase.from('vip_members').select('id,username,full_name,tier,currency,phone,whatsapp,is_excluded').then(({data,error})=>{if(error)setMessage(error.message);else setPlayers(data||[])})}},[open])
+ function toggleList(key,value){setForm(f=>({...f,[key]:f[key].includes(value)?f[key].filter(x=>x!==value):[...f[key],value]}))}
+ function setType(type){setForm(f=>({...f,campaign_type:type,reward_tiers:type==='tiered_reward'?defaultTierPct():f.reward_tiers,dual_tiers:type==='dual_tier'?defaultDual():f.dual_tiers}))}
+ function updateLevel(i,key,value){setForm(f=>{const levels=[...f.levels];levels[i]={...levels[i],[key]:value};return {...f,levels}})}
+ function addLevel(){setForm(f=>({...f,levels:[...f.levels,{level_code:`L${f.levels.length+1}`,level_name:`Level ${f.levels.length+1}`,deposit_threshold:'',reward_amount:'',description:''}]}))}
+ async function create(){
+  if(!form.campaign_name.trim())return setMessage('Campaign name is required.')
+  if(!form.countries.length)return setMessage('Select at least one country/platform.')
+  if(!form.tiers.length)return setMessage('Select at least one VIP tier.')
+  if(!form.start_date||!form.end_date)return setMessage('Start date and end date are required.')
+  if(form.campaign_type==='tiered_deposit_reward'&&(!form.levels.length||form.levels.some(l=>Number(l.deposit_threshold)<=0||Number(l.reward_amount)<=0)))return setMessage('Every Tiered Deposit Reward level needs a valid deposit and Credit.')
+  setLoading(true);setMessage('')
+  try{
+   const manual=ids
+   const code=form.campaign_code.trim()||form.campaign_name.trim().toUpperCase().replace(/\s+/g,'-').slice(0,20)
+   const base=buildCampaignInsert({campaign_type:form.campaign_type,campaign_name:form.campaign_name,campaign_code:code,countries:form.countries,tiers:form.tiers,manualUserIds:manual})
+   const row={...base,platform:form.countries.length===1?form.countries[0]:'BOTH',start_date:form.start_date,end_date:form.end_date,budget_rm:form.budget_rm?Number(form.budget_rm):null,status:form.status,created_at:new Date().toISOString(),deposit_target:form.campaign_type==='leaderboard'||form.campaign_type==='dual_tier'?null:Number(form.deposit_target)||50000,reward_pct:form.campaign_type==='pct_reward'?Number(form.reward_pct)||0:null,reward_cap:form.reward_cap?Number(form.reward_cap):null,reward_fixed:['fixed_reward','tiered_deposit_reward'].includes(form.campaign_type)?Number(form.reward_fixed)||0:null,gold_bar_value:form.campaign_type==='gold_bar'?Number(form.gold_bar_value)||0:null,reward_delivery:form.reward_delivery||'credit',reward_tiers:form.campaign_type==='tiered_reward'?form.reward_tiers:form.campaign_type==='dual_tier'?form.dual_tiers:null,min_valid_bet:form.campaign_type==='leaderboard'?Number(form.min_valid_bet)||0:null,min_deposit_lb:form.campaign_type==='leaderboard'?Number(form.min_deposit_lb)||0:null,top_n:form.campaign_type==='leaderboard'?Number(form.top_n)||3:null,rank_rewards:form.campaign_type==='leaderboard'?form.rank_rewards:null,settlement_frequency:form.campaign_type==='dual_tier'?form.settlement_frequency:null,requires_period_deposit:true,max_levels:form.campaign_type==='tiered_deposit_reward'?form.levels.length:null}
+   const {data:campaign,error}=await supabase.from('campaigns').insert(row).select().single();if(error)throw error
+   if(form.campaign_type==='tiered_deposit_reward'){
+     const levels=buildTieredLevels(form.levels).map(l=>({...l,campaign_id:campaign.id}))
+     const {error:levelError}=await supabase.from('campaign_levels').insert(levels);if(levelError)throw levelError
+   }
+   if(audience.length){const rows=audience.map(v=>({campaign_id:campaign.id,vip_id:v.id,username:v.username,tier:v.tier,player_name:v.full_name||null,whatsapp:v.whatsapp||v.phone||null,total_deposit:0,campaign_period_deposit:0,converted:false,payout_status:'pending',status:'enrolled',enrollment_source:v.enrollment_source,added_at:new Date().toISOString(),enrolled_at:new Date().toISOString()}));const {error:playerError}=await supabase.from('campaign_players').upsert(rows,{onConflict:'campaign_id,username'});if(playerError)throw playerError}
+   setOpen(false);setMessage(`Created ${form.campaign_name}. ${audience.length} players enrolled.`)
+   window.dispatchEvent(new CustomEvent('campaign-created'))
+  }catch(e){setMessage('Campaign creation failed: '+e.message)}finally{setLoading(false)}
+ }
+ function updateTierPct(i,key,value){setForm(f=>{const a=[...f.reward_tiers];a[i]={...a[i],[key]:value};return {...f,reward_tiers:a}})}
+ function updateDual(i,key,value){setForm(f=>{const a=[...f.dual_tiers];a[i]={...a[i],[key]:value};return {...f,dual_tiers:a}})}
+ return <>
+  <div style={{...panel,padding:'14px 18px',marginBottom:18,display:'flex',justifyContent:'space-between',alignItems:'center',gap:16,flexWrap:'wrap'}}><div><div style={{fontSize:15,fontWeight:800}}>🎯 Campaign Targeting</div><div style={{fontSize:11,color:'var(--muted)',marginTop:3}}>One campaign creator · Country + VIP Tier + Manual User ID targeting.</div></div><button style={btn} onClick={()=>setOpen(true)}>＋ New Campaign</button></div>
+  {open&&<div style={{position:'fixed',inset:0,zIndex:1300,background:'rgba(0,0,0,.72)',display:'flex',alignItems:'center',justifyContent:'center',padding:16}}><div style={{...panel,width:'100%',maxWidth:980,maxHeight:'94vh',overflowY:'auto'}}>
+   <div style={{padding:'18px 22px',borderBottom:'1px solid var(--border)',display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}><div><div style={{fontSize:18,fontWeight:800}}>📣 New Campaign</div><div style={{fontSize:11,color:'var(--muted)',marginTop:3}}>Choose the campaign type, then configure its reward and audience in the same place.</div></div><button style={secondary} onClick={()=>setOpen(false)}>×</button></div>
+   <div style={{padding:'18px 22px'}}>
+    <div style={{fontSize:11,color:'var(--muted)',fontWeight:800,marginBottom:8}}>CAMPAIGN TYPE *</div>
+    <div style={{display:'grid',gridTemplateColumns:'repeat(3,minmax(0,1fr))',gap:8,marginBottom:16}}>{Object.entries(CAMPAIGN_CREATOR_TYPES).map(([type,info])=><button type="button" key={type} onClick={()=>setType(type)} style={{textAlign:'left',padding:'11px 12px',borderRadius:9,border:`2px solid ${form.campaign_type===type?'var(--accent)':'var(--border)'}`,background:form.campaign_type===type?'rgba(255,106,0,.1)':'var(--surface2)',color:'var(--text)',cursor:'pointer'}}><div style={{fontWeight:800,fontSize:12}}>{info.label}</div><div style={{fontSize:10,color:'var(--muted)',marginTop:3}}>{TYPE_INFO[type]}</div></button>)}</div>
+    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px 14px'}}>
+      <div><div style={{fontSize:10,color:'var(--muted)',fontWeight:700}}>CAMPAIGN NAME *</div><input style={input} value={form.campaign_name} onChange={e=>setForm(f=>({...f,campaign_name:e.target.value}))} /></div>
+      <div><div style={{fontSize:10,color:'var(--muted)',fontWeight:700}}>CAMPAIGN CODE</div><input style={input} value={form.campaign_code} onChange={e=>setForm(f=>({...f,campaign_code:e.target.value.toUpperCase()}))} /></div>
+      <div><div style={{fontSize:10,color:'var(--muted)',fontWeight:700}}>START DATE *</div><input type="date" style={input} value={form.start_date} onChange={e=>setForm(f=>({...f,start_date:e.target.value}))}/></div>
+      <div><div style={{fontSize:10,color:'var(--muted)',fontWeight:700}}>END DATE *</div><input type="date" style={input} value={form.end_date} onChange={e=>setForm(f=>({...f,end_date:e.target.value}))}/></div>
+      <div><div style={{fontSize:10,color:'var(--muted)',fontWeight:700}}>STATUS</div><select style={input} value={form.status} onChange={e=>setForm(f=>({...f,status:e.target.value}))}>{['draft','active','paused','ended'].map(x=><option key={x}>{x}</option>)}</select></div>
+      <div><div style={{fontSize:10,color:'var(--muted)',fontWeight:700}}>BUDGET (RM)</div><input type="number" style={input} value={form.budget_rm} onChange={e=>setForm(f=>({...f,budget_rm:e.target.value}))}/></div>
+    </div>
+    <div style={{marginTop:14,paddingTop:14,borderTop:'1px solid var(--border)'}}><div style={{fontSize:10,color:'var(--muted)',fontWeight:800,marginBottom:7}}>COUNTRY / PLATFORM — MULTI SELECT *</div><div style={{display:'flex',gap:7,flexWrap:'wrap'}}>{CAMPAIGN_COUNTRIES.map(c=><button type="button" key={c} onClick={()=>toggleList('countries',c)} style={{...secondary,padding:'6px 12px',borderColor:form.countries.includes(c)?'var(--accent)':'var(--border)',background:form.countries.includes(c)?'rgba(255,106,0,.12)':'var(--surface2)'}}>{COUNTRY_LABEL[c]}</button>)}</div></div>
+    <div style={{marginTop:14}}><div style={{fontSize:10,color:'var(--muted)',fontWeight:800,marginBottom:7}}>VIP TIERS — MULTI SELECT *</div><div style={{display:'flex',gap:7,flexWrap:'wrap'}}>{TIERS.map(t=><button type="button" key={t} onClick={()=>toggleList('tiers',t)} style={{...secondary,padding:'6px 12px',borderColor:form.tiers.includes(t)?'var(--accent)':'var(--border)',background:form.tiers.includes(t)?'rgba(255,106,0,.12)':'var(--surface2)'}}>{t}</button>)}</div></div>
+    {form.campaign_type!=='leaderboard'&&<div style={{marginTop:14}}><div style={{fontSize:10,color:'var(--muted)',fontWeight:800}}>DEPOSIT TARGET</div><input type="number" style={{...input,marginTop:5}} value={form.deposit_target} onChange={e=>setForm(f=>({...f,deposit_target:e.target.value}))}/></div>}
+    <div style={{marginTop:14,paddingTop:14,borderTop:'1px solid var(--border)'}}><div style={{fontSize:10,color:'var(--muted)',fontWeight:800,marginBottom:8}}>TYPE-SPECIFIC SETTINGS</div>
+      {form.campaign_type==='pct_reward'&&<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}><div><div style={{fontSize:10,color:'var(--muted)'}}>REWARD %</div><input type="number" style={input} value={form.reward_pct} onChange={e=>setForm(f=>({...f,reward_pct:e.target.value}))}/></div><div><div style={{fontSize:10,color:'var(--muted)'}}>MAX REWARD CAP</div><input type="number" style={input} value={form.reward_cap} onChange={e=>setForm(f=>({...f,reward_cap:e.target.value}))}/></div></div>}
+      {form.campaign_type==='fixed_reward'&&<div><div style={{fontSize:10,color:'var(--muted)'}}>FIXED REWARD</div><input type="number" style={input} value={form.reward_fixed} onChange={e=>setForm(f=>({...f,reward_fixed:e.target.value}))}/></div>}
+      {form.campaign_type==='gold_bar'&&<div><div style={{fontSize:10,color:'var(--muted)'}}>GOLD BAR / GIFT VALUE</div><input type="number" style={input} value={form.gold_bar_value} onChange={e=>setForm(f=>({...f,gold_bar_value:e.target.value}))}/></div>}
+      {form.campaign_type==='tiered_reward'&&<div style={{display:'grid',gap:7}}>{form.reward_tiers.map((x,i)=><div key={i} style={{display:'grid',gridTemplateColumns:'1fr 1fr 90px 30px',gap:7}}><input type="number" style={input} value={x.min} placeholder="Min" onChange={e=>updateTierPct(i,'min',e.target.value)}/><input type="number" style={input} value={x.max} placeholder="Max" onChange={e=>updateTierPct(i,'max',e.target.value)}/><input type="number" style={input} value={x.pct} placeholder="%" onChange={e=>updateTierPct(i,'pct',e.target.value)}/><button style={secondary} onClick={()=>setForm(f=>({...f,reward_tiers:f.reward_tiers.filter((_,j)=>j!==i)}))}>×</button></div>)}<button style={secondary} onClick={()=>setForm(f=>({...f,reward_tiers:[...f.reward_tiers,{min:'',max:'',pct:''}]}))}>＋ Add Tier</button></div>}
+      {form.campaign_type==='dual_tier'&&<div style={{display:'grid',gap:7}}>{form.dual_tiers.map((x,i)=><div key={i} style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr 30px',gap:7}}><input type="number" style={input} value={x.depositThreshold} placeholder="Deposit" onChange={e=>updateDual(i,'depositThreshold',e.target.value)}/><input type="number" style={input} value={x.turnoverThreshold} placeholder="Turnover" onChange={e=>updateDual(i,'turnoverThreshold',e.target.value)}/><input type="number" style={input} value={x.creditAmount} placeholder="Credit" onChange={e=>updateDual(i,'creditAmount',e.target.value)}/><input type="number" style={input} value={x.wcashAmount} placeholder="WCash" onChange={e=>updateDual(i,'wcashAmount',e.target.value)}/><button style={secondary} onClick={()=>setForm(f=>({...f,dual_tiers:f.dual_tiers.filter((_,j)=>j!==i)}))}>×</button></div>)}<button style={secondary} onClick={()=>setForm(f=>({...f,dual_tiers:[...f.dual_tiers,{depositThreshold:'',turnoverThreshold:'',creditAmount:'',wcashAmount:''}]}))}>＋ Add Tier</button></div>}
+      {form.campaign_type==='leaderboard'&&<div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10}}><div><div style={{fontSize:10,color:'var(--muted)'}}>MIN VALID BET</div><input type="number" style={input} value={form.min_valid_bet} onChange={e=>setForm(f=>({...f,min_valid_bet:e.target.value}))}/></div><div><div style={{fontSize:10,color:'var(--muted)'}}>MIN DEPOSIT</div><input type="number" style={input} value={form.min_deposit_lb} onChange={e=>setForm(f=>({...f,min_deposit_lb:e.target.value}))}/></div><div><div style={{fontSize:10,color:'var(--muted)'}}>TOP N</div><input type="number" style={input} value={form.top_n} onChange={e=>setForm(f=>({...f,top_n:e.target.value}))}/></div></div>}
+      {form.campaign_type==='tiered_deposit_reward'&&<div style={{display:'grid',gap:7}}>{form.levels.map((x,i)=><div key={i} style={{display:'grid',gridTemplateColumns:'80px 1.2fr 1fr 1fr 30px',gap:7}}><input style={input} value={x.level_code} onChange={e=>updateLevel(i,'level_code',e.target.value.toUpperCase())}/><input style={input} value={x.level_name} onChange={e=>updateLevel(i,'level_name',e.target.value)}/><input type="number" style={input} value={x.deposit_threshold} placeholder="Deposit ≥" onChange={e=>updateLevel(i,'deposit_threshold',e.target.value)}/><input type="number" style={input} value={x.reward_amount} placeholder="Credit" onChange={e=>updateLevel(i,'reward_amount',e.target.value)}/><button style={secondary} onClick={()=>setForm(f=>({...f,levels:f.levels.filter((_,j)=>j!==i)}))}>×</button></div>)}<button style={secondary} onClick={addLevel}>＋ Add Level</button></div>}
+    </div>
+    <div style={{marginTop:14,paddingTop:14,borderTop:'1px solid var(--border)'}}><div style={{fontSize:10,color:'var(--muted)',fontWeight:800}}>MANUAL USER IDs — OPTIONAL EXCEPTIONS</div><textarea style={{...input,minHeight:64,marginTop:6,resize:'vertical',fontFamily:'inherit'}} value={form.manual} onChange={e=>setForm(f=>({...f,manual:e.target.value}))} placeholder="One User ID per line or comma-separated. Manual IDs bypass Country + Tier filters."/></div>
+    <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:7,marginTop:12}}>{[['Tier',tierCount],['Manual',manualCount],['Both',bothCount],['Missing',missingCount],['Final',audience.length]].map(([label,value])=><div key={label} style={{background:'var(--surface2)',border:'1px solid var(--border)',borderRadius:7,padding:'7px 9px'}}><div style={{fontSize:15,fontWeight:800}}>{value}</div><div style={{fontSize:9,color:'var(--muted)'}}>{label}</div></div>)}</div>
+    {message&&<div style={{marginTop:10,color:message.includes('required')||message.includes('Select')||message.includes('failed')?'#f85149':'#3fb950',fontSize:11}}>{message}</div>}
+    <div style={{display:'flex',justifyContent:'flex-end',gap:8,marginTop:16}}><button style={secondary} onClick={()=>setOpen(false)}>Cancel</button><button style={btn} disabled={loading} onClick={create}>{loading?'Creating…':'Create Campaign'}</button></div>
+   </div>
+  </div></div>}
+ </>
+}
