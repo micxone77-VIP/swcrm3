@@ -13,7 +13,7 @@ import VIP360                from './pages/VIP360'
 import AtRisk                from './pages/AtRisk'
 import FollowUp              from './pages/FollowUp'
 import BirthdayReminder      from './pages/BirthdayReminder'
-import CampaignsCountryTiered from './pages/CampaignsCountryTiered'
+import CampaignsCountryTieredFixed from './pages/CampaignsCountryTieredFixed'
 import Upgrades              from './pages/Upgrades'
 import TransferTracker       from './pages/TransferTracker'
 import BudgetStrategy        from './pages/BudgetStrategy'
@@ -46,7 +46,7 @@ export default function App() {
       <Route path="at-risk" element={<RequireRole roles={['admin','host']}><AtRisk /></RequireRole>} />
       <Route path="follow-up" element={<RequireRole roles={['admin','host']}><FollowUp /></RequireRole>} />
       <Route path="birthdays" element={<RequireRole roles={['admin','host','readonly']}><BirthdayReminder /></RequireRole>} />
-      <Route path="campaigns" element={<RequireRole roles={['admin','host']}><CampaignsCountryTiered /></RequireRole>} />
+      <Route path="campaigns" element={<RequireRole roles={['admin','host']}><CampaignsCountryTieredFixed /></RequireRole>} />
       <Route path="upgrades" element={<RequireRole roles={['admin','host']}><Upgrades /></RequireRole>} />
       <Route path="transfer" element={<RequireRole roles={['admin']}><TransferTracker /></RequireRole>} />
       <Route path="budget" element={<RequireRole roles={['admin']}><BudgetStrategy /></RequireRole>} />
