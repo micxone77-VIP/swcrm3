@@ -36,10 +36,6 @@ jobs:
                   '                <Field label="Phone">{vip.phone || \'—\'}</Field>\n                <Field label="WhatsApp">{vip.whatsapp || \'—\'}</Field>',
                   '                <Field label="Phone">{vip.phone || \'—\'}</Field>\n                <Field label="WhatsApp">{vip.whatsapp || \'—\'}</Field>\n                <Field label="Email">{vip.email || \'—\'}</Field>',
               ),
-              (
-                  '            <div>\n              <label style={{ fontSize:12, color:\'var(--muted)\', display:\'block\', marginBottom:4 }}>Internal Notes</label>',
-                  '            <div>\n              <label style={{ fontSize:12, color:\'var(--muted)\', display:\'block\', marginBottom:4 }}>Email</label>\n              <Input value={editForm.email||\'\'} onChange={e => setEditForm(f=>({...f,email:e.target.value}))} />\n            </div>\n          <div>\n              <label style={{ fontSize:12, color:\'var(--muted)\', display:\'block\', marginBottom:4 }}>Internal Notes</label>',
-              ),
           ]
 
           for old, new in replacements:
@@ -52,7 +48,6 @@ jobs:
         run: |
           grep -n 'Field label="Email"' src/pages/VIP360.jsx
           grep -n 'email: vipRes.data.email' src/pages/VIP360.jsx
-          grep -n 'editForm.email' src/pages/VIP360.jsx
 
       - name: Commit fix and remove temporary workflow
         run: |
