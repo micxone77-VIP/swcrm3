@@ -1422,7 +1422,17 @@ export default function Campaigns() {
                   </>}
                 </div>
 
-                {editCampForm.campaign_type==='leaderboard' && <div style={{ borderTop:'1px solid var(--border)', paddingTop:14, marginBottom:14 }}>
+                {editCampForm.campaign_type==='leaderboard' && <div style={{ borderTop:'1px solid var(--border)', paddingTop:14, marginBottom:14 }}><div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:10 }}>
+  <div>
+    <div style={s.flbl}>Leaderboard Metric</div>
+    <select style={s.fsel} value={editCampForm.leaderboard_metric||'turnover'} onChange={e=>setEditCampForm(f=>({...f,leaderboard_metric:e.target.value}))}>
+      <option value="turnover">Turnover Race</option>
+      <option value="deposit">Deposit Race</option>
+      <option value="turnover_deposit">Turnover + Deposit Race</option>
+    </select>
+  </div>
+</div>
+
                   <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 }}><div style={s.flbl}>LEADERBOARD REWARDS</div><div><span style={{ fontSize:11, color:'var(--muted)', marginRight:8 }}>Top N</span><input type="number" min="1" max="50" style={{ ...s.smInput, width:65 }} value={editCampForm.top_n||3} onChange={e=>{const n=Math.max(1,Math.min(50,parseInt(e.target.value)||1));const rw=Array.from({length:n},(_,i)=>(editCampForm.rank_rewards||[])[i]||{rank:i+1,amount:0,desc:''});setEditCampForm(f=>({...f,top_n:n,rank_rewards:rw}))}} /></div></div>
                   {(editCampForm.rank_rewards||[]).map((r,i)=><div key={i} style={{ display:'grid', gridTemplateColumns:'70px 160px 1fr', gap:8, marginBottom:6 }}><div style={{ padding:'8px 10px', color:'#a78bfa', fontWeight:700, fontSize:12 }}>#{i+1}</div><input type="number" min="0" style={s.finput} value={r.amount??''} placeholder="Amount" onChange={e=>{const rw=[...(editCampForm.rank_rewards||[])];rw[i]={...rw[i],amount:e.target.value};setEditCampForm(f=>({...f,rank_rewards:rw}))}} /><input style={s.finput} value={r.desc||''} placeholder="Reward description" onChange={e=>{const rw=[...(editCampForm.rank_rewards||[])];rw[i]={...rw[i],desc:e.target.value};setEditCampForm(f=>({...f,rank_rewards:rw}))}} /></div>)}
                 </div>}
