@@ -694,6 +694,14 @@ export default function Campaigns() {
   const myName = profile?.full_name || 'the VIP team'
   const isDailyMode = campType === 'dual_tier' && selected?.settlement_frequency === 'daily'
 
+  // Leaderboard settings used by the detail modal, WhatsApp helper, and ranking
+  // calculations. Keep these derived from the selected campaign so every view
+  // uses the same source of truth.
+  const rankRewards = Array.isArray(selected?.rank_rewards) ? selected.rank_rewards : []
+  const minBetTarget = parseFloat(selected?.min_valid_bet) || 0
+  const minDepLb = parseFloat(selected?.min_deposit_lb) || 0
+  const topN = Math.max(0, parseInt(selected?.top_n) || rankRewards.length || 0)
+
   // Campaign-period deposit is the authoritative qualification value whenever
   // the campaign explicitly requires a period deposit. Fall back to total_deposit
   // for legacy/non-period campaigns.
