@@ -82,7 +82,7 @@ const s = {
   th:       { padding:'9px 14px', background:'var(--surface)', color:'var(--muted)', fontWeight:600, fontSize:11, textAlign:'left', borderBottom:'1px solid var(--border)', whiteSpace:'nowrap' },
   td:       { padding:'10px 14px', borderBottom:'1px solid var(--border)', verticalAlign:'middle' },
   overlay:  { position:'fixed', inset:0, background:'rgba(0,0,0,.6)', zIndex:1000, display:'flex', alignItems:'center', justifyContent:'center', padding:16 },
-  modal:    { background:'var(--surface)', border:'1px solid var(--border)', borderRadius:14, width:'100%', maxWidth:720, maxHeight:'90vh', overflowY:'auto' },
+  modal:    { background:'var(--surface)', border:'1px solid var(--border)', borderRadius:14, width:'100%', maxWidth:1200, maxHeight:'92vh', overflowY:'auto' },
   mhdr:     { padding:'18px 24px', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:12 },
   g2:       { display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px 16px', marginBottom:12 },
   frow:     { marginBottom:10 },
@@ -644,7 +644,7 @@ export default function Campaigns() {
           reward = r.creditAmount + r.wcashAmount
           qualified = r.tierIndex >= 0
         } else if (campType === 'leaderboard') {
-          qualified = (parseFloat(p.valid_bet)||0) >= minBetTarget || (minDepLb>0 && playerDeposit(p)>=minDepLb)
+          qualified = leaderboardQualified(p)
         } else {
           qualified = playerDeposit(p) >= depTarget
           reward = qualified ? calcReward(campType, playerDeposit(p), rewardPct, rewardFixed, goldVal, rewardCap, rewardTiers, campaignLevels, selected?.is_multi_level) : 0
@@ -894,69 +894,58 @@ export default function Campaigns() {
   const multiPayoutRows = buildPayoutRows(players, campaignLevels, campaignPlayerLevels, campaignRewards)
   const multiSummary = buildCampaignSummary(players, campaignLevels, campaignPlayerLevels, campaignRewards)
 
-  // ── Leaderboard-specific: rank by valid_bet, not deposit ─────────────────
-  const minBetTarget = parseFloat(selected?.min_valid_bet)||0
-  const topN          = parseInt(selected?.top_n)||3
-  const rankRewards    = selected?.rank_rewards||[]
-  const minDepLb        = parseFloat(selected?.min_deposit_lb)||0
+  // ── Leaderboard-specific ranking/qualification
+  const leaderboardMetric = ['turnover','deposit','turnover_deposit'].includes(selected?.leaderboard_metric)
+    ? selected.leaderboard_metric : 'turnover'
+  const leaderboardRankingValue = (p) => leaderboardMetric === 'deposit'
+    ? playerDeposit(p) : (parseFloat(p.valid_bet) || 0)
+  const leaderboardQualified = (p) => {
+    const vb = parseFloat(p.valid_bet) || 0
+    const dep = playerDeposit(p)
+    if (leaderboardMetric === 'deposit') return dep >= minDepLb
+    if (leaderboardMetric === 'turnover_deposit') return vb >= minBetTarget && dep >= minDepLb
+    return vb >= minBetTarget
+  }
   const lbRanked = campType === 'leaderboard'
-    ? [...players].sort((a,b)=>(parseFloat(b.valid_bet)||0)-(parseFloat(a.valid_bet)||0)).map((p,i)=>{
-        const vb = parseFloat(p.valid_bet)||0
-        const dep = playerDeposit(p)
-        const qualified = vb>=minBetTarget || (minDepLb>0 && dep>=minDepLb)
-        const posRank = i+1
-        const rank = qualified ? posRank : null
-        const inTop = rank && rank<=topN
-        const reward = inTop ? (parseFloat(rankRewards[rank-1]?.amount)||0) : 0
-        return { ...p, _vb:vb, _posRank:posRank, _rank:rank, _inTop:inTop, _reward:reward, _qualified:qualified }
+    ? [...players].sort((a,b) => leaderboardRankingValue(b) - leaderboardRankingValue(a) || String(a.username||'').localeCompare(String(b.username||''))).map((p,i) => {
+        const qualified = leaderboardQualified(p)
+        const rank = i + 1
+        const inTop = rank <= topN
+        const reward = inTop && qualified ? (parseFloat(rankRewards[rank-1]?.amount)||0) : 0
+        return { ...p, _vb:parseFloat(p.valid_bet)||0, _deposit:playerDeposit(p), _rankingValue:leaderboardRankingValue(p), _posRank:rank, _rank:rank, _inTop:inTop && qualified, _reward:reward, _qualified:qualified }
       }) : []
-  const cutoffVB = (campType==='leaderboard' && lbRanked[topN-1]) ? lbRanked[topN-1]._vb : null
+  const cutoffValue = campType==='leaderboard' && lbRanked[topN-1] ? lbRanked[topN-1]._rankingValue : null
 
-  const achieved = campType === 'leaderboard'
-    ? lbRanked.filter(p=>p._qualified)
-    : campType === 'dual_tier' && isDailyMode
-    ? players.filter(p=>summaryData?.playerRows?.some(r=>r.username===p.username && (r.credit>0 || r.wcash>0)))
-    : campType === 'dual_tier'
-    ? players.filter(p=>calcDualTierReward(playerDeposit(p),p.valid_bet,rewardTiers).tierIndex>=0)
-    : selected?.is_multi_level
-    ? players.filter(p=>multiMetricsByPlayer[p.id]?.completedCount>0)
+  const achieved = campType === 'leaderboard' ? lbRanked.filter(p=>p._qualified)
+    : campType === 'dual_tier' && isDailyMode ? players.filter(p=>summaryData?.playerRows?.some(r=>r.username===p.username && (r.credit>0 || r.wcash>0)))
+    : campType === 'dual_tier' ? players.filter(p=>calcDualTierReward(playerDeposit(p),p.valid_bet,rewardTiers).tierIndex>=0)
+    : selected?.is_multi_level ? players.filter(p=>multiMetricsByPlayer[p.id]?.completedCount>0)
     : players.filter(p=>playerDeposit(p)>=depTarget)
 
   const dailyAchieved = isDailyMode ? players.filter(p=>dailyEntries[p.id]?.tier_achieved!==null && dailyEntries[p.id]?.tier_achieved!==undefined) : []
-
-  const nearTarget = campType === 'leaderboard'
-    ? lbRanked.filter(p=>{const pct=minBetTarget?p._vb/minBetTarget:0;return pct>=0.7&&pct<1})
+  const nearTarget = campType === 'leaderboard' ? lbRanked.filter(p=>{
+      if (p._qualified) return false
+      if (leaderboardMetric === 'turnover_deposit') return Math.min(minBetTarget?p._vb/minBetTarget:0, minDepLb?p._deposit/minDepLb:0) >= 0.7
+      const target = leaderboardMetric === 'deposit' ? minDepLb : minBetTarget
+      return target > 0 && p._rankingValue/target >= 0.7
+    })
     : campType === 'dual_tier' ? []
-    : selected?.is_multi_level
-    ? players.filter(p=>{const m=multiMetricsByPlayer[p.id],n=m?.nextLevel,dep=playerDeposit(p);return n&&Number(n.deposit_threshold)>0&&dep/Number(n.deposit_threshold)>=0.7&&dep<Number(n.deposit_threshold)})
+    : selected?.is_multi_level ? players.filter(p=>{const m=multiMetricsByPlayer[p.id],n=m?.nextLevel,dep=playerDeposit(p);return n&&Number(n.deposit_threshold)>0&&dep/Number(n.deposit_threshold)>=0.7&&dep<Number(n.deposit_threshold)})
     : players.filter(p=>{const pct=depTarget?playerDeposit(p)/depTarget:0;return pct>=0.7&&pct<1})
-
-  const inProgress = campType === 'leaderboard'
-    ? lbRanked.filter(p=>{const pct=minBetTarget?p._vb/minBetTarget:0;return pct<0.7})
-    : campType === 'dual_tier'
-    ? players.filter(p=>calcDualTierReward(playerDeposit(p),p.valid_bet,rewardTiers).tierIndex<0)
-    : selected?.is_multi_level
-    ? players.filter(p=>{const m=multiMetricsByPlayer[p.id];const n=m?.nextLevel;return !m?.allCompleted&&(!n||playerDeposit(p)<Number(n.deposit_threshold)*0.7)})
+  const inProgress = campType === 'leaderboard' ? lbRanked.filter(p=>!p._qualified && !nearTarget.includes(p))
+    : campType === 'dual_tier' ? players.filter(p=>calcDualTierReward(playerDeposit(p),p.valid_bet,rewardTiers).tierIndex<0)
+    : selected?.is_multi_level ? players.filter(p=>{const m=multiMetricsByPlayer[p.id],n=m?.nextLevel;return !m?.allCompleted&&(!n||playerDeposit(p)<Number(n.deposit_threshold)*0.7)})
     : players.filter(p=>{const pct=depTarget?playerDeposit(p)/depTarget:0;return pct<0.7})
 
-  const totalReward = campType === 'leaderboard'
-    ? rankRewards.reduce((s,r)=>s+(parseFloat(r.amount)||0),0)
-    : campType === 'dual_tier' && isDailyMode
-    ? (summaryData ? summaryData.totalCredit + summaryData.totalWcash : 0)
-    : campType === 'dual_tier'
-    ? achieved.reduce((s,p)=>{const r=calcDualTierReward(playerDeposit(p),p.valid_bet,rewardTiers);return s+r.creditAmount+r.wcashAmount},0)
-    : selected?.is_multi_level
-    ? multiPayoutRows.reduce((s,r)=>s+r.rewardAmount,0)
+  const totalReward = campType === 'leaderboard' ? rankRewards.reduce((s,r)=>s+(parseFloat(r.amount)||0),0)
+    : campType === 'dual_tier' && isDailyMode ? (summaryData ? summaryData.totalCredit + summaryData.totalWcash : 0)
+    : campType === 'dual_tier' ? achieved.reduce((s,p)=>{const r=calcDualTierReward(playerDeposit(p),p.valid_bet,rewardTiers);return s+r.creditAmount+r.wcashAmount},0)
+    : selected?.is_multi_level ? multiPayoutRows.reduce((s,r)=>s+r.rewardAmount,0)
     : achieved.reduce((s,p)=>s+calcReward(campType,playerDeposit(p),rewardPct,rewardFixed,goldVal,rewardCap,rewardTiers,campaignLevels,selected?.is_multi_level),0)
-
-  const paidOut = campType === 'leaderboard'
-    ? lbRanked.filter(p=>p._inTop&&p.payout_status==='paid').reduce((s,p)=>s+p._reward,0)
-    : campType === 'dual_tier' && isDailyMode
-    ? (summaryData ? summaryData.paidCredit + summaryData.paidWcash : 0)
-    : campType === 'dual_tier'
-    ? players.filter(p=>p.payout_status==='paid').reduce((s,p)=>{const r=calcDualTierReward(playerDeposit(p),p.valid_bet,rewardTiers);return s+r.creditAmount+r.wcashAmount},0)
-    : selected?.is_multi_level
-    ? multiPayoutRows.filter(r=>r.status==='paid').reduce((s,r)=>s+r.rewardAmount,0)
+  const paidOut = campType === 'leaderboard' ? lbRanked.filter(p=>p._inTop&&p.payout_status==='paid').reduce((s,p)=>s+p._reward,0)
+    : campType === 'dual_tier' && isDailyMode ? (summaryData ? summaryData.paidCredit + summaryData.paidWcash : 0)
+    : campType === 'dual_tier' ? players.filter(p=>p.payout_status==='paid').reduce((s,p)=>{const r=calcDualTierReward(playerDeposit(p),p.valid_bet,rewardTiers);return s+r.creditAmount+r.wcashAmount},0)
+    : selected?.is_multi_level ? multiPayoutRows.filter(r=>r.status==='paid').reduce((s,r)=>s+r.rewardAmount,0)
     : players.filter(p=>p.payout_status==='paid').reduce((s,p)=>s+calcReward(campType,playerDeposit(p),rewardPct,rewardFixed,goldVal,rewardCap,rewardTiers,campaignLevels,selected?.is_multi_level),0)
   const pendingPay = Math.max(0,totalReward-paidOut)
   const chaseList = campType==='leaderboard' ? lbRanked : [...players].sort((a,b)=>playerDeposit(b)-playerDeposit(a))
@@ -1909,15 +1898,15 @@ export default function Campaigns() {
                       <tbody>
                         {players.length===0 ? (
                           <tr><td colSpan={9} style={{ ...s.td, textAlign:'center', color:'var(--muted)', padding:32 }}>No players yet</td></tr>
-                        ) : [...players].sort((a,b)=>(parseFloat(b.valid_bet)||0)-(parseFloat(a.valid_bet)||0)).map((p,i)=>{
+                        ) : [...players].sort((a,b)=>leaderboardRankingValue(b)-leaderboardRankingValue(a) || String(a.username||'').localeCompare(String(b.username||''))).map((p,i)=>{
                           const vb=parseFloat(p.valid_bet)||0
                           const dep=playerDeposit(p)
                           const wit=parseFloat(p.total_withdrawal)||0
                           const minDep = parseFloat(selected.min_deposit_lb)||0
-              const qualified=vb>=minBet||(minDep>0&&dep>=minDep)
-                          const rank=qualified?i+1:null
+              const qualified=leaderboardQualified(p)
+                          const rank=i+1
                           const inTop=rank&&rank<=topN
-                          const reward=inTop?(rankRwds[rank-1]?.amount||0):0
+                          const reward=inTop&&qualified?(rankRwds[rank-1]?.amount||0):0
                           return (
                             <tr key={p.id} style={{ background:inTop?'rgba(167,139,250,.06)':'transparent' }}>
                               <td style={{ ...s.td, fontWeight:800 }}>{qualified?(rank<=3?['#1','#2','#3'][rank-1]:'#'+rank):'--'}</td>
