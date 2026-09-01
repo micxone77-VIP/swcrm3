@@ -38,13 +38,15 @@ export function aggregateHostPerformance(rows = []) {
     if (Array.isArray(row?.amounts)) entry.recoveredDeposits.push(...row.amounts)
     else if (row?.amount !== undefined) entry.recoveredDeposits.push({ amount: row.amount, currency: row.currency })
 
-    const tier = String(row?.tier || '').trim().toUpperCase()
-    if (tierNames.includes(tier)) {
+    const tierRows = Array.isArray(row?.tierRows) ? row.tierRows : [{ tier: row?.tier, reactivated: row?.reactivated, amount: row?.amount, currency: row?.currency, amounts: row?.amounts }]
+    tierRows.forEach(tierRow => {
+      const tier = String(tierRow?.tier || '').trim().toUpperCase()
+      if (!tierNames.includes(tier)) return
       const tierEntry = entry.byTier[tier]
-      tierEntry.reactivated += Number(row?.reactivated || 0)
-      if (Array.isArray(row?.amounts)) tierEntry.recoveredDeposits.push(...row.amounts)
-      else if (row?.amount !== undefined) tierEntry.recoveredDeposits.push({ amount: row.amount, currency: row.currency })
-    }
+      tierEntry.reactivated += Number(tierRow?.reactivated || 0)
+      if (Array.isArray(tierRow?.amounts)) tierEntry.recoveredDeposits.push(...tierRow.amounts)
+      else if (tierRow?.amount !== undefined && Number(tierRow.amount) > 0) tierEntry.recoveredDeposits.push({ amount: tierRow.amount, currency: tierRow.currency })
+    })
     hosts.set(host, entry)
   })
   return [...hosts.values()].map(entry => ({
