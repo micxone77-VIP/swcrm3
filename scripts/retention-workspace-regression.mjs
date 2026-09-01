@@ -14,3 +14,4 @@ if (!source.includes(effectiveMonthFix)) throw new Error('RetentionWorkspace mus
 if (!source.includes(fallbackGuard)) throw new Error('RetentionWorkspace must guard fallback snapshot saves')
 
 console.log('Retention workspace regression checks passed')
+// trigger workflow
