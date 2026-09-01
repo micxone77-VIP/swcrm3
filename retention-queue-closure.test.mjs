@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { classifyRetentionQueue, buildContactLogUrl } from './src/lib/retention.js'
+import { classifyRetentionQueue, buildContactLogUrl, buildRetentionContactPayload } from './src/lib/retention.js'
 
 test('Diamond and Platinum follow-up due stay action-first', () => {
   assert.equal(classifyRetentionQueue({ tier:'DIAMOND', followUpDue:true, contactedToday:false, declinePct:-10, daysInactive:1 }), 'FOLLOW_UP')
@@ -26,4 +26,19 @@ test('risk classification applies to Diamond and Platinum when follow-up is not 
 
 test('contact log deep link preserves exact VIP identity and opens new-log form', () => {
   assert.equal(buildContactLogUrl('vip 888+'), '/contacts?view=log&search=vip%20888%2B&vip=vip%20888%2B')
+})
+
+test('queue contact payload matches the shared contact_logs schema', () => {
+  const payload=buildRetentionContactPayload({
+    vip:{id:'vip-id',username:'player88',tier:'DIAMOND'},
+    profile:{id:'host-id',full_name:'Marcus'},
+    channel:'WhatsApp',outcome:'Contacted',notes:'Checked in with VIP',
+    now:'2026-09-02T01:15:00.000Z',
+  })
+  assert.deepEqual(payload,{
+    vip_id:'vip-id',username:'player88',tier:'DIAMOND',host_name:'Marcus',host_id:'host-id',
+    channel:'WhatsApp',outcome:'Contacted',bonus_offered:0,bonus_type:null,
+    notes:'Checked in with VIP',message_summary:'Checked in with VIP',direction:'outbound',
+    logged_at:'2026-09-02T01:15:00.000Z',log_month:'2026-09',log_week:'1',
+  })
 })
