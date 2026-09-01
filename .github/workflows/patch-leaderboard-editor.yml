@@ -9,15 +9,15 @@ permissions:
 
 jobs:
   patch:
-    if: github.event.head_commit.message != 'feat: expose leaderboard metric in campaign editor'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Patch campaign editor
-        shell: python
+        shell: bash
         run: |
+          python3 - <<'PY'
           from pathlib import Path
 
           path = Path('src/pages/Campaigns.jsx')
@@ -45,6 +45,7 @@ jobs:
 
           path.write_text(text.replace(marker, marker + insert, 1), encoding='utf-8')
           print('Leaderboard Metric inserted into Campaigns.jsx')
+          PY
 
       - name: Commit patch and remove one-time workflow
         shell: bash
