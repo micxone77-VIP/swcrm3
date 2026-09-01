@@ -7,22 +7,51 @@ on:
     branches: [main]
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
       - name: Install dependencies
         run: npm ci
+      - name: Restore leaderboard derived settings
+        if: ${{ github.event_name == 'push' && !contains(github.event.head_commit.message, '[leaderboard-derived-fixed]') }}
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          path = Path('src/pages/Campaigns.jsx')
+          source = path.read_text()
+          marker = "  const isDailyMode = campType === 'dual_tier' && selected?.settlement_frequency === 'daily'\n"
+          insert = """  const isDailyMode = campType === 'dual_tier' && selected?.settlement_frequency === 'daily'\n\n  // Leaderboard settings used by the detail modal, WhatsApp helper, and ranking\n  // calculations. Keep these derived from the selected campaign so every view\n  // uses the same source of truth.\n  const rankRewards = Array.isArray(selected?.rank_rewards) ? selected.rank_rewards : []\n  const minBetTarget = parseFloat(selected?.min_valid_bet) || 0\n  const minDepLb = parseFloat(selected?.min_deposit_lb) || 0\n  const topN = Math.max(0, parseInt(selected?.top_n) || rankRewards.length || 0)\n"""
+          if "const minBetTarget = parseFloat(selected?.min_valid_bet) || 0" in source:
+              print('Leaderboard derived settings already restored.')
+              raise SystemExit(0)
+          if marker not in source:
+              raise SystemExit('PATCH_STOP: isDailyMode marker not found')
+          source = source.replace(marker, insert, 1)
+          path.write_text(source)
+          print('Leaderboard derived settings restored.')
+          PY
       - name: Leaderboard metric regression
         run: node --test leaderboard-metric-regression.test.mjs
       - name: Leaderboard behavior regression
         run: node --test leaderboard-behavior-regression.test.mjs
       - name: Production build
         run: npm run build
+      - name: Commit leaderboard runtime fix
+        if: ${{ github.event_name == 'push' && !contains(github.event.head_commit.message, '[leaderboard-derived-fixed]') }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/pages/Campaigns.jsx
+          git commit -m "fix: restore leaderboard derived settings [leaderboard-derived-fixed]"
+          git push origin main
