@@ -30,5 +30,7 @@ jobs:
         run: node --test retention-host-tier.test.mjs
       - name: Retention churn urgency regression
         run: node --test retention-churn-urgency.test.mjs
+      - name: Retention queue closure regression
+        run: node --test retention-queue-closure.test.mjs
       - name: Production build
         run: npm run build
