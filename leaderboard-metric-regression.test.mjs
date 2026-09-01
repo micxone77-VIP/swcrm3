@@ -42,3 +42,5 @@ test('campaign player payout updates also synchronize campaign reward rows', () 
   assert.match(campaignSource, /campaign_player_id.*pid|pid.*campaign_player_id/)
   assert.match(campaignSource, /paid_at/)
 })
+
+// Regression coverage: CRM payout state and Player Portal reward state share one lifecycle.
