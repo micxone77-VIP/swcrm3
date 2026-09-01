@@ -14,10 +14,12 @@ test('CRM leaderboard no longer uses OR qualification for deposit races', () => 
 })
 
 test('CRM leaderboard has metric-aware ranking and qualification branches', () => {
-  assert.match(crmSource, /leaderboardMetric/)
-  assert.match(crmSource, /rankingValue/)
-  assert.match(crmSource, /leaderboard_metric.*deposit/)
-  assert.match(crmSource, /leaderboard_metric.*turnover_deposit/)
+  assert.match(crmSource, /const leaderboardMetric/)
+  assert.match(crmSource, /leaderboardRankingValue/)
+  assert.match(crmSource, /leaderboard_metric[\s\S]*deposit/)
+  assert.match(crmSource, /leaderboard_metric[\s\S]*turnover_deposit/)
+  assert.match(crmSource, /leaderboardMetric === 'turnover_deposit'[\s\S]*&& dep >= minDepLb/)
+  assert.match(crmSource, /const rank = i \+ 1/)
 })
 
 test('CRM campaign detail modal uses a wide desktop layout', () => {
