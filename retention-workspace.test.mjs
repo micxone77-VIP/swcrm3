@@ -5,6 +5,7 @@ import {
   getRetentionPriority,
   calculateRate,
   sumByCurrency,
+  latestSnapshotMonth,
 } from './src/lib/retention.js'
 import { calculateRetentionMetrics, aggregateHostPerformance } from './src/lib/retentionAnalytics.js'
 
@@ -19,6 +20,11 @@ assert.deepEqual(sumByCurrency([
   { amount: 50, currency: 'MYR' },
   { amount: 20, currency: 'SGD' },
 ]), { MYR: 150, SGD: 20 })
+
+// Retention defaults to the latest completed snapshot, not the current month when its snapshot is absent.
+assert.equal(latestSnapshotMonth(['2026-06', '2026-07', '2026-08'], '2026-09'), '2026-08')
+assert.equal(latestSnapshotMonth(['2026-08', '2026-09'], '2026-09'), '2026-09')
+assert.equal(latestSnapshotMonth([], '2026-09'), '2026-09')
 
 const metrics = calculateRetentionMetrics({
   openingVipCount: 100,
