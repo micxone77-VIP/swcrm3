@@ -31,6 +31,7 @@ import BossView              from './pages/BossView'
 import ContactLog            from './pages/ContactLog'
 import DailyTargets          from './pages/DailyTargets'
 import ChurnAlerts           from './pages/ChurnAlerts'
+import RetentionWorkspace    from './pages/RetentionWorkspace'
 
 export default function App() {
   return <AuthProvider><LanguageProvider><BrowserRouter><Routes>
@@ -64,6 +65,7 @@ export default function App() {
       <Route path="contacts" element={<RequireRole roles={['admin','host']}><ContactLog /></RequireRole>} />
       <Route path="targets" element={<RequireRole roles={['admin','host']}><DailyTargets /></RequireRole>} />
       <Route path="churn" element={<RequireRole roles={['admin','host']}><ChurnAlerts /></RequireRole>} />
+      <Route path="retention" element={<RequireRole roles={['admin','host','readonly']}><RetentionWorkspace /></RequireRole>} />
     </Route>
     <Route path="*" element={<Navigate to="/today" replace />} />
   </Routes></BrowserRouter></LanguageProvider></AuthProvider>
