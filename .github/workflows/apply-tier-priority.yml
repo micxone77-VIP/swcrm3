@@ -1,0 +1,78 @@
+name: Apply Tier Priority
+on:
+  push:
+    branches: [feat/tier-priority-retention-v2]
+permissions:
+  contents: write
+jobs:
+  verify-and-apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Run tier priority tests
+        run: node --test retention-tier-priority.test.mjs
+      - name: Apply UI and analytics changes
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          p = Path('src/pages/RetentionWorkspace.jsx')
+          s = p.read_text()
+          s = s.replace("import { resolveSnapshotWindow } from '../lib/retention'", "import { resolveSnapshotWindow, sortRetentionPlayers, isPriorityRetentionTier } from '../lib/retention'")
+          s = s.replace("return[...map.values()].map(player=>({...player,retained", "return sortRetentionPlayers([...map.values()].map(player=>({...player,retained")
+          s = s.replace("reactivated:reactKeys.has(String(player.id))||reactKeys.has(player.username)}))},[rows", "reactivated:reactKeys.has(String(player.id))||reactKeys.has(player.username)})))},[rows")
+          s = s.replace("const previousActive=players.filter(p=>p.previousDeposit>0),retained=previousActive.filter(p=>p.currentDeposit>0),churned=previousActive.filter(p=>p.currentDeposit<=0),visibleChurn=hideReactivated?churned.filter(p=>!p.reactivated):churned,recovery={},byTier={};", "const previousActive=players.filter(p=>p.previousDeposit>0),retained=previousActive.filter(p=>p.currentDeposit>0),churned=previousActive.filter(p=>p.currentDeposit<=0),visibleChurn=hideReactivated?churned.filter(p=>!p.reactivated):churned,recovery={},byTier={};")
+          s = s.replace("return{previousActive,retained,churned,visibleChurn,recovery,byTier,retentionRate", "const focusPreviousActive=previousActive.filter(p=>isPriorityRetentionTier(p.tier)),focusRetained=retained.filter(p=>isPriorityRetentionTier(p.tier)),focusChurn=churned.filter(p=>isPriorityRetentionTier(p.tier));return{previousActive,retained,churned,visibleChurn,recovery,byTier,focusPreviousActive,focusRetained,focusChurn,focusRetentionRate:focusPreviousActive.length?Math.round(focusRetained.length/focusPreviousActive.length*100):0,retentionRate")
+          s = s.replace("const tierMatch=tier==='ALL'||String(p.tier).toUpperCase()===tier;", "const tierMatch=tier==='ALL'||(tier==='FOCUS'&&isPriorityRetentionTier(p.tier))||String(p.tier).toUpperCase()===tier;")
+          s = s.replace("const[\'ALL\']", "const['ALL']")
+          s = s.replace("<option value=\"ALL\">All tiers</option>{['GOLD','SILVER','BRONZE','PLATINUM','DIAMOND','BLACK']", "<option value=\"FOCUS\">💎 Priority: Diamond + Platinum</option><option value=\"ALL\">All tiers</option>{['DIAMOND','PLATINUM','GOLD','SILVER','BRONZE','BLACK']")
+          s = s.replace("<section style={styles.cards}><Metric label=\"Previous active players\" value={stats.previousActive.length} sub={previous}/><Metric label=\"Current churn\"", "<section style={styles.cards}><Metric label=\"Previous active players\" value={stats.previousActive.length} sub={previous}/><Metric label=\"Priority churn\" value={stats.focusChurn.length} sub={`Diamond + Platinum · ${100-stats.focusRetentionRate}% churn`} danger/><Metric label=\"Diamond churn\" value={stats.byTier.Diamond||stats.byTier.DIAMOND||0} sub={`Previous ${stats.previousActive.filter(p=>String(p.tier).toUpperCase()==='DIAMOND').length}`}/><Metric label=\"Platinum churn\" value={stats.byTier.Platinum||stats.byTier.PLATINUM||0} sub={`Previous ${stats.previousActive.filter(p=>String(p.tier).toUpperCase()==='PLATINUM').length}`}/><Metric label=\"Gold churn\" value={stats.byTier.Gold||stats.byTier.GOLD||0} sub={`Previous ${stats.previousActive.filter(p=>String(p.tier).toUpperCase()==='GOLD').length}`}/><Metric label=\"Current retained\"")
+          p.write_text(s)
+
+          p = Path('src/pages/ChurnAlerts.jsx')
+          s = p.read_text()
+          s = s.replace("import { useUrlParam, useUrlParamNumber, useUrlParamBool, useUrlParamsRaw } from '../hooks/useUrlParam'", "import { useUrlParam, useUrlParamNumber, useUrlParamBool, useUrlParamsRaw } from '../hooks/useUrlParam'\nimport { getRetentionTierRank } from '../lib/retention'")
+          s = s.replace("t('churnAlerts.title')", "t('sidebar.nav.churnAlerts')")
+          s = s.replace("t('churnAlerts.highRisk')", "t('churnAlerts.statHighRisk')")
+          s = s.replace("t('churnAlerts.mediumRisk')", "t('churnAlerts.statMediumRisk')")
+          s = s.replace("t('churnAlerts.dormant')", "t('common.dormant')")
+          s = s.replace("t('churnAlerts.atRisk')", "t('common.atRisk')")
+          s = s.replace("results.sort((a,b)=>b.urgency_score-a.urgency_score);", "results.sort((a,b)=>getRetentionTierRank(a.tier)-getRetentionTierRank(b.tier)||b.urgency_score-a.urgency_score||String(a.username).localeCompare(String(b.username)));" )
+          p.write_text(s)
+
+          p = Path('src/pages/RetentionAnalytics.jsx')
+          s = p.read_text()
+          marker = "  const metrics=calculateRetentionMetrics({openingVipCount:previousActive.length,retainedVipCount:retained.length,churnedVipCount:churned.length,reactivatedVipCount:reactivatedCount,recoveredDeposits:reactivatedRows.filter(r=>r.recoveryAmount>0).map(r=>({amount:r.recoveryAmount,currency:r.currency}))})"
+          replacement = marker + "\n  const tierKpis=useMemo(()=>['DIAMOND','PLATINUM','GOLD'].map(tier=>{const opening=previousActive.filter(v=>String(v.tier).toUpperCase()===tier).length;const kept=retained.filter(v=>String(v.tier).toUpperCase()===tier).length;const lost=churned.filter(v=>String(v.tier).toUpperCase()===tier).length;const back=reactivatedRows.filter(v=>String(v.tier).toUpperCase()===tier).length;return{tier,opening,kept,lost,back,rate:calculateRetentionMetrics({openingVipCount:opening,retainedVipCount:kept,churnedVipCount:lost}).retentionRate}}),[previousActive,retained,churned,reactivatedRows])"
+          s = s.replace(marker, replacement)
+          anchor = "    <section className=\"rounded-xl border\"><div className=\"border-b px-5 py-4 font-medium\">{t('retention.reactivatedDeposit')}</div>"
+          section = "    <section className=\"rounded-xl border overflow-hidden\"><div className=\"border-b px-5 py-4 font-medium\">{t('retention.priorityTierPerformance')}</div><div className=\"grid gap-3 p-5 md:grid-cols-3\">{tierKpis.map(k=><div key={k.tier} className=\"rounded-lg border p-4\"><div className=\"text-sm font-semibold\">{k.tier==='DIAMOND'?'💎':k.tier==='PLATINUM'?'🔷':'🟡'} {k.tier}</div><div className=\"mt-3 grid grid-cols-2 gap-2 text-sm\"><div><div className=\"text-xs opacity-60\">{t('retention.previousActive')}</div><strong>{k.opening}</strong></div><div><div className=\"text-xs opacity-60\">{t('retention.retained')}</div><strong>{k.kept}</strong></div><div><div className=\"text-xs opacity-60\">{t('retention.churned')}</div><strong>{k.lost}</strong></div><div><div className=\"text-xs opacity-60\">{t('retention.reactivatedCount')}</div><strong>{k.back}</strong></div></div><div className=\"mt-3 text-lg font-semibold\">{k.rate}% {t('retention.retention')}</div></div>)}</div></section>\n" + anchor
+          s = s.replace(anchor, section)
+          p.write_text(s)
+
+          p = Path('src/lib/retentionTranslations.js')
+          s = p.read_text()
+          s = s.replace("snapshotFallback: 'No snapshot for the selected month. Using {month} as the latest available snapshot.',", "snapshotFallback: 'No snapshot for the selected month. Using {month} as the latest available snapshot.', priorityTierPerformance: 'Priority Tier Performance',")
+          s = s.replace("snapshotFallback: '所选月份没有快照数据，系统已自动使用最新的 {month} 快照。',", "snapshotFallback: '所选月份没有快照数据，系统已自动使用最新的 {month} 快照。', priorityTierPerformance: '重点等级表现',")
+          p.write_text(s)
+          PY
+      - name: Verify tier tests after implementation
+        run: node --test retention-tier-priority.test.mjs
+      - name: Production build
+        run: npm run build
+      - name: Commit implementation and remove temporary workflow
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/lib/retention.js src/lib/retentionTranslations.js src/pages/RetentionWorkspace.jsx src/pages/ChurnAlerts.jsx src/pages/RetentionAnalytics.jsx
+          git commit -m "feat: prioritize diamond and platinum retention [skip ci]"
+          git push
+          git rm .github/workflows/apply-tier-priority.yml
+          git commit -m "chore: remove temporary tier priority workflow [skip ci]"
+          git push
