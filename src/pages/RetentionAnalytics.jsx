@@ -70,7 +70,7 @@ export default function RetentionAnalytics() {
     setEffectiveMonth(current||month);setPreviousSnapshotMonth(previous);setUsedFallback(Boolean(window.usedFallback));setLoading(false)
   }load();return()=>{cancelled=true}},[month,t])
 
-  const stats=useMemo(()=>{const prev=previousSnapshotMonth,map=new Map();rows.forEach(r=>{const k=r.vip_id||r.username;const x=map.get(k)||{id:k,username:r.username,tier:r.tier,currency:r.currency,host:r.host_assigned,prev:0,current:0};if(r.snapshot_month===prev)x.prev=Number(r.total_deposit)||0;if(r.snapshot_month===effectiveMonth)x.current=Number(r.total_deposit)||0;if(r.host_assigned)x.host=r.host_assigned;map.set(k,x)});return [...map.values()]},[rows,effectiveMonth,previousSnapshotMonth])
+  const stats=useMemo(()=>{const prev=previousSnapshotMonth,map=new Map();rows.forEach(r=>{const k=r.vip_id||r.username;const x=map.get(k)||{id:k,username:r.username,tier:r.tier,currency:r.currency,host:null,prev:0,current:0};if(r.snapshot_month===prev){x.prev=Number(r.total_deposit)||0;if(r.host_assigned)x.host=r.host_assigned};if(r.snapshot_month===effectiveMonth)x.current=Number(r.total_deposit)||0;if(!x.tier&&r.tier)x.tier=r.tier;if(!x.currency&&r.currency)x.currency=r.currency;map.set(k,x)});return [...map.values()]},[rows,effectiveMonth,previousSnapshotMonth])
   const previousActive=stats.filter(x=>x.prev>0), retained=previousActive.filter(x=>x.current>0), churned=previousActive.filter(x=>x.current<=0)
   const reactivatedRows=useMemo(()=>aggregateReactivationLogs(reactivated,stats),[reactivated,stats])
   const reactivatedCount=reactivatedRows.length
