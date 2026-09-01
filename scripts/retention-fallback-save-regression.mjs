@@ -14,3 +14,4 @@ if (!source.includes(fallbackNotice)) {
 }
 
 console.log('Retention fallback save regression checks passed')
+// workflow trigger
