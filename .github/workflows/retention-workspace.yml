@@ -3,6 +3,16 @@ name: Retention Workspace CI
 on:
   push:
     branches: [plan/retention-workspace]
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/pages/Retention*.jsx'
+      - 'src/pages/FollowUp.jsx'
+      - 'src/lib/retention*.js'
+      - 'retention-workspace.test.mjs'
+      - '.github/workflows/retention-workspace.yml'
+      - 'package.json'
+      - 'package-lock.json'
   workflow_dispatch:
 
 permissions:
