@@ -47,3 +47,20 @@ export function latestSnapshotMonth(snapshotMonths = [], currentMonth) {
     .sort()
   return candidates.at(-1) || current || null
 }
+
+export function resolveSnapshotWindow(snapshotMonths = [], selectedMonth) {
+  const selected = String(selectedMonth || '').slice(0, 7)
+  const available = [...new Set(snapshotMonths.map(value => String(value || '').slice(0, 7)).filter(Boolean))]
+    .filter(month => !selected || month <= selected)
+    .sort()
+  const currentMonth = available.at(-1) || selected || null
+  const previousMonth = currentMonth
+    ? [...available].reverse().find(month => month < currentMonth) || null
+    : null
+  return {
+    selectedMonth: selected || null,
+    currentMonth,
+    previousMonth,
+    usedFallback: Boolean(selected && currentMonth && selected !== currentMonth),
+  }
+}
