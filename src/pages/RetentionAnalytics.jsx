@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { calculateRetentionMetrics, aggregateHostPerformance } from '../lib/retentionAnalytics'
-import { resolveSnapshotWindow } from '../lib/retentionSnapshot.mjs'
+import { resolveSnapshotWindow } from '../lib/retention.js'
 import { useLanguage } from '../contexts/LanguageContext'
 
 const monthKey = (date) => { const d = new Date(date); return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}` }
