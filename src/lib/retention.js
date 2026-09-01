@@ -39,3 +39,11 @@ export function sumByCurrency(rows = []) {
     return totals
   }, {})
 }
+
+export function latestSnapshotMonth(snapshotMonths = [], currentMonth) {
+  const current = String(currentMonth || '').slice(0, 7)
+  const candidates = [...new Set(snapshotMonths.map(value => String(value || '').slice(0, 7)).filter(Boolean))]
+    .filter(value => !current || value <= current)
+    .sort()
+  return candidates.at(-1) || current || null
+}
