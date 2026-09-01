@@ -42,7 +42,7 @@ export default function RetentionAnalytics() {
   const [effectiveMonth,setEffectiveMonth]=useState(monthKey(new Date()))
   const [previousSnapshotMonth,setPreviousSnapshotMonth]=useState(null)
   const [usedFallback,setUsedFallback]=useState(false)
-  const [rows,setRows]=useState([]), [reactivated,setReactivated]=useState([]), [members,setMembers]=useState([]), [loading,setLoading]=useState(true), [error,setError]=useState('')
+  const [rows,setRows]=useState([]), [reactivated,setReactivated]=useState([]), [loading,setLoading]=useState(true), [error,setError]=useState('')
 
   useEffect(()=>{let cancelled=false;async function load(){
     setLoading(true);setError('')
@@ -60,14 +60,13 @@ export default function RetentionAnalytics() {
     const window = resolveSnapshotWindow([previousResult.data?.[0]?.snapshot_month,latestMonth].filter(Boolean),month)
     const current = window.currentMonth
     const previous = window.previousMonth
-    const [m,r,v]=await Promise.all([
+    const [m,r]=await Promise.all([
       current ? supabase.from('vip_monthly_totals').select('vip_id,username,snapshot_month,total_deposit,currency,tier,host_assigned').in('snapshot_month',[previous,current].filter(Boolean)) : { data: [], error: null },
       current ? supabase.from('reactivation_logs').select('*').eq('reactivated_month',current).order('created_at',{ascending:false}) : { data: [], error: null },
-      supabase.from('vip_members').select('id,username,host_assigned,is_excluded').neq('is_excluded',true)
     ])
     if(cancelled)return
-    if(m.error||r.error||v.error){setError(m.error?.message||r.error?.message||v.error?.message||t('retention.analyticsLoadError'));setLoading(false);return}
-    setRows(m.data||[]);setReactivated(r.data||[]);setMembers(v.data||[])
+    if(m.error||r.error){setError(m.error?.message||r.error?.message||t('retention.analyticsLoadError'));setLoading(false);return}
+    setRows(m.data||[]);setReactivated(r.data||[])
     setEffectiveMonth(current||month);setPreviousSnapshotMonth(previous);setUsedFallback(Boolean(window.usedFallback));setLoading(false)
   }load();return()=>{cancelled=true}},[month,t])
 
@@ -76,7 +75,7 @@ export default function RetentionAnalytics() {
   const reactivatedRows=useMemo(()=>aggregateReactivationLogs(reactivated,stats),[reactivated,stats])
   const reactivatedCount=reactivatedRows.length
   const metrics=calculateRetentionMetrics({openingVipCount:previousActive.length,retainedVipCount:retained.length,churnedVipCount:churned.length,reactivatedVipCount:reactivatedCount,recoveredDeposits:reactivatedRows.filter(r=>r.recoveryAmount>0).map(r=>({amount:r.recoveryAmount,currency:r.currency}))})
-  const hosts=useMemo(()=>{const assignedByHost=new Map();members.forEach(v=>{const host=v.host_assigned||'Unassigned';assignedByHost.set(host,(assignedByHost.get(host)||0)+1)});const reactivatedByHost=new Map();reactivatedRows.forEach(x=>{const host=x.host||'Unassigned';const e=reactivatedByHost.get(host)||{host,reactivated:0,amounts:[]};e.reactivated++;if(x.recoveryAmount>0)e.amounts.push({amount:x.recoveryAmount,currency:x.currency});reactivatedByHost.set(host,e)});const summaries=[];assignedByHost.forEach((assignedVips,host)=>{const r=reactivatedByHost.get(host);summaries.push({host,assignedVips,reactivated:r?.reactivated||0,amounts:r?.amounts||[]})});reactivatedByHost.forEach((r,host)=>{if(!assignedByHost.has(host))summaries.push(r)});return aggregateHostPerformance(summaries)},[members,reactivatedRows])
+  const hosts=useMemo(()=>{const assignedByHost=new Map();previousActive.forEach(v=>{const host=v.host||'Unassigned';assignedByHost.set(host,(assignedByHost.get(host)||0)+1)});const reactivatedByHost=new Map();reactivatedRows.forEach(x=>{const host=x.host||'Unassigned';const e=reactivatedByHost.get(host)||{host,reactivated:0,amounts:[]};e.reactivated++;if(x.recoveryAmount>0)e.amounts.push({amount:x.recoveryAmount,currency:x.currency});reactivatedByHost.set(host,e)});const summaries=[];assignedByHost.forEach((assignedVips,host)=>{const r=reactivatedByHost.get(host);summaries.push({host,assignedVips,reactivated:r?.reactivated||0,amounts:r?.amounts||[]})});reactivatedByHost.forEach((r,host)=>{if(!assignedByHost.has(host))summaries.push(r)});return aggregateHostPerformance(summaries)},[previousActive,reactivatedRows])
   if(loading)return <div className="p-8 text-sm opacity-60">{t('retention.loadingAnalytics')}</div>
   if(error)return <div className="rounded-xl border p-6 text-sm">{t('retention.analyticsLoadError')}: {error}</div>
   return <div className="space-y-6"><div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between"><div><h1 className="text-2xl font-semibold">📊 {t('retention.analytics')}</h1><p className="mt-1 text-sm opacity-70">{t('retention.analyticsSubtitle')}</p></div><div><label className="mr-2 text-sm opacity-70">{t('retention.reportingMonth')}</label><input aria-label={t('retention.reportingMonth')} type="month" value={month} onChange={e=>setMonth(e.target.value)} className="rounded-lg border bg-transparent px-3 py-2"/></div></div>
