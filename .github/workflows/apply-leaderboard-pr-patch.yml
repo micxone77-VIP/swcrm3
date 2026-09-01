@@ -1,4 +1,4 @@
-name: Apply Leaderboard PR Patch
+name: Finalize Leaderboard Source Patch
 
 on:
   push:
@@ -9,13 +9,17 @@ permissions:
 
 jobs:
   patch:
-    if: ${{ !contains(github.event.head_commit.message, '[leaderboard-patch-applied]') }}
+    if: ${{ !contains(github.event.head_commit.message, '[leaderboard-source-patched]') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Apply exact source patch
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Apply leaderboard source fix
         shell: bash
         run: |
           python3 <<'PY'
@@ -25,7 +29,7 @@ jobs:
           path = Path('src/pages/Campaigns.jsx')
           source = path.read_text()
 
-          # 1) Widen campaign detail/create modal.
+          # Widen campaign detail/create modal.
           source, n = re.subn(
               r"(modal:\s*\{[^\n]*maxWidth:)720(, maxHeight:)'90vh'",
               r"\g<1>1200\2'92vh'",
@@ -35,7 +39,7 @@ jobs:
           if n != 1:
               raise SystemExit('PATCH_STOP: modal target not found')
 
-          # 2) Replace the leaderboard derived-state block with metric-aware ranking.
+          # Replace leaderboard derived state with metric-aware ranking.
           start_marker = "  // ── Leaderboard-specific: rank by valid_bet, not deposit"
           end_marker = "  const chaseList = campType==='leaderboard' ? lbRanked : [...players].sort((a,b)=>playerDeposit(b)-playerDeposit(a))"
           start = source.find(start_marker)
@@ -102,7 +106,7 @@ jobs:
 '''
           source = source[:start] + replacement + end_marker + source[end+len(end_marker):]
 
-          # 3) The leaderboard tab itself must use the same metric/qualification logic.
+          # Make the leaderboard table use the exact same ranking and qualification logic.
           old_sort = "[...players].sort((a,b)=>(parseFloat(b.valid_bet)||0)-(parseFloat(a.valid_bet)||0))"
           if old_sort not in source:
               raise SystemExit('PATCH_STOP: leaderboard tab sort target not found')
@@ -115,6 +119,12 @@ jobs:
           source = source.replace("const rank=qualified?i+1:null", "const rank=i+1", 1)
           source = source.replace("const reward=inTop?(rankRwds[rank-1]?.amount||0):0", "const reward=inTop&&qualified?(rankRwds[rank-1]?.amount||0):0", 1)
 
+          # Keep campaign-analysis qualification consistent with the UI.
+          old_analysis = "qualified = (parseFloat(p.valid_bet)||0) >= minBetTarget || (minDepLb>0 && playerDeposit(p)>=minDepLb)"
+          if old_analysis not in source:
+              raise SystemExit('PATCH_STOP: campaign-analysis leaderboard qualification target not found')
+          source = source.replace(old_analysis, "qualified = leaderboardQualified(p)", 1)
+
           path.write_text(source)
           PY
 
@@ -122,10 +132,11 @@ jobs:
         run: node --test leaderboard-behavior-regression.test.mjs
       - name: Production build
         run: npm ci && npm run build
-      - name: Commit patched source
+      - name: Remove one-time workflow and commit source
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/pages/Campaigns.jsx
-          git commit -m "fix: align leaderboard metric and widen campaign modal [leaderboard-patch-applied]"
+          rm -f .github/workflows/apply-leaderboard-pr-patch.yml
+          git add src/pages/Campaigns.jsx .github/workflows/apply-leaderboard-pr-patch.yml
+          git commit -m "fix: finalize leaderboard metric ranking and qualification [leaderboard-source-patched]"
           git push origin main
