@@ -24,5 +24,7 @@ jobs:
         run: node --test leaderboard-metric-regression.test.mjs
       - name: Leaderboard behavior regression
         run: node --test leaderboard-behavior-regression.test.mjs
+      - name: Retention tier priority regression
+        run: node --test retention-tier-priority.test.mjs
       - name: Production build
         run: npm run build
