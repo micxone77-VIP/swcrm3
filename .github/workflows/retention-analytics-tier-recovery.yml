@@ -67,3 +67,4 @@ jobs:
           git add src/pages/RetentionAnalytics.jsx .github/workflows/retention-analytics-tier-recovery.yml
           git commit -m "feat: show tier recovery in retention analytics" || exit 0
           git push origin main
+          echo "Temporary workflow completed; it is removed by the resulting commit."
