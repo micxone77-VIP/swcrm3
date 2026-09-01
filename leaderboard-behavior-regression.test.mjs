@@ -4,9 +4,7 @@ import fs from 'node:fs'
 
 const crmSource = fs.readFileSync(new URL('./src/pages/Campaigns.jsx', import.meta.url), 'utf8')
 
-// RED test: a leaderboard must rank by the selected metric, while qualification
-// remains a separate rule. Deposit races must never qualify everyone merely
-// because min_valid_bet defaults to 0.
+// Regression coverage for metric-aware ranking and the wide campaign modal.
 test('CRM leaderboard no longer hard-codes valid-bet ranking', () => {
   assert.doesNotMatch(crmSource, /\[\.\.\.players\]\.sort\(\(a,b\)=>\(parseFloat\(b\.valid_bet\)/)
 })
