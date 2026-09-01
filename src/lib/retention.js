@@ -19,6 +19,29 @@ export function classifyRetentionQueue({ tier, followUpDue, contactedToday, decl
   return 'MONITOR'
 }
 export function buildContactLogUrl(username) { const value=encodeURIComponent(String(username||'').trim()); return `/contacts?view=log&search=${value}&vip=${value}` }
+export function buildRetentionContactPayload({ vip, profile, channel='WhatsApp', outcome='Contacted', notes='', now=new Date() }) {
+  const when=now instanceof Date?now:new Date(now)
+  const iso=when.toISOString()
+  const hostName=profile?.full_name||profile?.username||(profile?.email?String(profile.email).split('@')[0]:'Host')
+  const cleanNotes=String(notes||'').trim()
+  return {
+    vip_id:vip?.id||null,
+    username:vip?.username||'',
+    tier:vip?.tier||null,
+    host_name:hostName,
+    host_id:profile?.id||null,
+    channel,
+    outcome,
+    bonus_offered:0,
+    bonus_type:null,
+    notes:cleanNotes,
+    message_summary:cleanNotes,
+    direction:'outbound',
+    logged_at:iso,
+    log_month:iso.slice(0,7),
+    log_week:String(Math.ceil(when.getUTCDate()/7)),
+  }
+}
 export function calculateChurnUrgency({ declinePct, daysSinceDeposit, depletionDays, netWinLoss3d, memberInactiveDays }) {
   const reasons=[]
   let urgencyScore=0
