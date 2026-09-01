@@ -35,3 +35,9 @@ test('campaign editor exposes leaderboard metric for existing campaigns', () => 
 test('campaign editor wires leaderboard metric changes into the edit form', () => {
   assert.match(campaignSource, /leaderboard_metric:e\.target\.value/)
 })
+
+test('campaign editor keeps the existing leaderboard rewards section intact', () => {
+  assert.match(campaignSource, /LEADERBOARD REWARDS/)
+  assert.match(campaignSource, /editCampForm\.rank_rewards/)
+  assert.match(campaignSource, /editCampForm\.top_n/)
+})
