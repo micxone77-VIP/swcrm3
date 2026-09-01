@@ -4,7 +4,7 @@ import fs from 'node:fs'
 
 const crmSource = fs.readFileSync(new URL('./src/pages/Campaigns.jsx', import.meta.url), 'utf8')
 
-// Regression coverage for metric-aware ranking and the wide campaign modal.
+// Regression coverage for metric-aware ranking, qualification separation, and the wide campaign modal.
 test('CRM leaderboard no longer hard-codes valid-bet ranking', () => {
   assert.doesNotMatch(crmSource, /\[\.\.\.players\]\.sort\(\(a,b\)=>\(parseFloat\(b\.valid_bet\)/)
 })
