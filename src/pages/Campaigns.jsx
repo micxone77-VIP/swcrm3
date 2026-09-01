@@ -451,6 +451,24 @@ export default function Campaigns() {
       }
     }
 
+    // Keep the Player Portal reward row synchronized with the CRM payout status.
+    // The CRM leaderboard table updates campaign_players.payout_status, while
+    // the Player Portal reads campaign_rewards.status. Both must represent the
+    // same payout state or the two screens can disagree.
+    if (Object.prototype.hasOwnProperty.call(updates, 'payout_status') && ['paid','pending'].includes(updates.payout_status)) {
+      const rewardPatch = updates.payout_status === 'paid'
+        ? { status:'paid', paid_at: updates.payout_date || new Date().toISOString() }
+        : { status:'pending', paid_at:null }
+      const { error: rewardSyncError } = await supabase
+        .from('campaign_rewards')
+        .update(rewardPatch)
+        .eq('campaign_player_id', pid)
+      if (rewardSyncError) {
+        alert('CRM payout saved, but Player Portal reward sync failed: ' + rewardSyncError.message)
+        console.error('campaign_rewards payout sync failed:', rewardSyncError)
+      }
+    }
+
     await loadPlayers(selected.id)
   }
 
