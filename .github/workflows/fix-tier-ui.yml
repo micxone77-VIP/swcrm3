@@ -1,0 +1,53 @@
+name: Fix Tier UI
+on:
+  push:
+    branches: [feat/tier-priority-retention-v2]
+permissions:
+  contents: write
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Run retention priority regression
+        run: node --test retention-tier-priority.test.mjs
+      - name: Fix workspace cards and CI coverage
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          p=Path('src/pages/RetentionWorkspace.jsx')
+          s=p.read_text()
+          s=s.replace("useState('ALL');const [search", "useState('FOCUS');const [search")
+          cards=''' <section style={styles.cards}><Metric label="Previous active players" value={stats.previousActive.length} sub={previous}/><Metric label="Priority churn" value={stats.focusChurn.length} sub={`Diamond + Platinum · ${100-stats.focusRetentionRate}% churn`} danger/><Metric label="Diamond churn" value={stats.byTier.Diamond||stats.byTier.DIAMOND||0} sub={`Previous ${stats.previousActive.filter(p=>String(p.tier).toUpperCase()==='DIAMOND').length}`}/><Metric label="Platinum churn" value={stats.byTier.Platinum||stats.byTier.PLATINUM||0} sub={`Previous ${stats.previousActive.filter(p=>String(p.tier).toUpperCase()==='PLATINUM').length}`}/><Metric label="Gold churn" value={stats.byTier.Gold||stats.byTier.GOLD||0} sub={`Previous ${stats.previousActive.filter(p=>String(p.tier).toUpperCase()==='GOLD').length}`}/><Metric label="Current retained" value={stats.retained.length} sub={`${stats.retentionRate}% retention`} success/></section>'''
+          s,n=re.subn(r' <section style=\{styles\.cards\}>.*?</section>', cards, s, count=1, flags=re.S)
+          if n!=1: raise SystemExit('workspace metric section not found')
+          p.write_text(s)
+
+          p=Path('.github/workflows/crm-ci.yml')
+          s=p.read_text()
+          needle='      - name: Production build\n'
+          if 'Retention tier priority regression' not in s:
+              s=s.replace(needle,'      - name: Retention tier priority regression\n        run: node --test retention-tier-priority.test.mjs\n'+needle)
+          p.write_text(s)
+          PY
+      - name: Verify regression after fix
+        run: node --test retention-tier-priority.test.mjs
+      - name: Production build
+        run: npm run build
+      - name: Commit and remove temporary workflow
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/pages/RetentionWorkspace.jsx .github/workflows/crm-ci.yml
+          git commit -m "fix: align retention overview with tier focus [skip ci]"
+          git push
+          git rm .github/workflows/fix-tier-ui.yml
+          git commit -m "chore: remove temporary tier UI workflow [skip ci]"
+          git push
