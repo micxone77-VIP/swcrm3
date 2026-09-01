@@ -18,3 +18,5 @@ assert.deepEqual(sumByCurrency([
   { amount: 50, currency: 'MYR' },
   { amount: 20, currency: 'SGD' },
 ]), { MYR: 150, SGD: 20 })
+
+console.log('retention-workspace tests: PASS')
