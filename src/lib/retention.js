@@ -10,15 +10,16 @@ export function calculateChurnUrgency({ declinePct, daysSinceDeposit, depletionD
   const reasons=[]
   let urgencyScore=0
   const decline=Number(declinePct)
-  const inactive=Number(daysSinceDeposit)
+  const hasDepositDate=daysSinceDeposit !== null && daysSinceDeposit !== undefined && daysSinceDeposit !== ''
+  const inactive=hasDepositDate ? Number(daysSinceDeposit) : null
   const depletion=Number(depletionDays)||0
   const loss=Number(netWinLoss3d)||0
   const memberDays=Number(memberInactiveDays)||0
   if(Number.isFinite(decline)&&decline<=-50){reasons.push('deposit_decline');urgencyScore+=3}
-  if(Number.isFinite(inactive)&&inactive>=3){reasons.push('no_recent_deposit');urgencyScore+=2}
+  if(hasDepositDate&&Number.isFinite(inactive)&&inactive>=3){reasons.push('no_recent_deposit');urgencyScore+=2}
   if(depletion>=1){reasons.push('balance_depletion');urgencyScore+=2}
   if(loss<=-2000){reasons.push('recent_net_loss');urgencyScore+=1}
-  if(!Number.isFinite(inactive)&&memberDays>=3){reasons.push('member_inactive');urgencyScore=Math.max(urgencyScore,2)}
+  if(!hasDepositDate&&memberDays>=3){reasons.push('member_inactive');urgencyScore=Math.max(urgencyScore,2)}
   return { urgencyScore, reasons }
 }
 export function getRetentionPriority({ tier, churn_risk, days_inactive }) { const risk=String(churn_risk||'').toUpperCase(); if(risk==='CRITICAL')return'CRITICAL'; if(risk==='HIGH')return'HIGH'; if(risk==='MEDIUM')return'MEDIUM'; const normalizedTier=String(tier||'').toUpperCase(); const days=Number(days_inactive)||0; if(['DIAMOND','BLACK','PLATINUM'].includes(normalizedTier)&&days>=14)return'HIGH'; if(['DIAMOND','BLACK','PLATINUM'].includes(normalizedTier)&&days>=7)return'MEDIUM'; return'NORMAL' }
