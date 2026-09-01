@@ -12,3 +12,32 @@
 .retention-analytics .ra-loading,.retention-analytics .ra-error{padding:28px;color:var(--muted);font-size:13px}.retention-analytics .ra-error{border:1px solid var(--border);border-radius:10px;background:var(--surface);color:var(--text)}
 @media(min-width:700px){.retention-analytics .ra-header{flex-direction:row;align-items:flex-end}.retention-analytics .ra-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}.retention-analytics .ra-currency-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(min-width:1100px){.retention-analytics .ra-kpis{grid-template-columns:repeat(6,minmax(0,1fr))}}
+
+/* The analytics component was written with Tailwind-like class names, but this repo does not ship Tailwind. Style that existing markup directly. */
+main > .space-y-6{padding:24px 28px;min-height:100%;color:var(--text)}
+main > .space-y-6 > div:first-child{display:flex;flex-direction:column;gap:12px;align-items:flex-start;justify-content:space-between;margin-bottom:20px}
+main > .space-y-6 h1{font-size:24px;font-weight:700;margin:0;color:var(--text)}
+main > .space-y-6 h1 + p{margin-top:5px;font-size:13px;color:var(--muted)}
+main > .space-y-6 label{font-size:13px;color:var(--muted);margin-right:8px}
+main > .space-y-6 input{background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:13px;outline:none}
+main > .space-y-6 > div:nth-child(2){border:1px solid var(--border);background:var(--surface);border-radius:10px;padding:12px 16px;font-size:13px}
+main > .space-y-6 > div[class~="grid"]{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+main > .space-y-6 > div[class~="grid"] > div{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:15px 16px}
+main > .space-y-6 > div[class~="grid"] .text-xs{font-size:11px;color:var(--muted)}
+main > .space-y-6 > div[class~="grid"] .text-2xl{font-size:25px;font-weight:800;margin-top:5px}
+main > .space-y-6 section{background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden}
+main > .space-y-6 section > div:first-child{padding:14px 18px;border-bottom:1px solid var(--border);font-weight:700;font-size:14px}
+main > .space-y-6 section > div[class~="grid"]{display:grid;grid-template-columns:1fr;gap:10px;padding:16px}
+main > .space-y-6 section > div[class~="grid"] > div{border:1px solid var(--border);border-radius:9px;padding:14px}
+main > .space-y-6 section > div[class~="grid"] .text-xs{font-size:11px;color:var(--muted)}
+main > .space-y-6 section > div[class~="grid"] .text-xl{font-size:19px;font-weight:700;margin-top:4px}
+main > .space-y-6 section[class~="overflow-hidden"] > div[class~="overflow-x-auto"]{overflow-x:auto}
+main > .space-y-6 table{width:100%;border-collapse:collapse;font-size:13px}
+main > .space-y-6 th{text-align:left;color:var(--muted);font-size:11px;font-weight:700;padding:11px 16px;border-bottom:1px solid var(--border);white-space:nowrap}
+main > .space-y-6 td{padding:12px 16px;border-bottom:1px solid var(--border);vertical-align:top}
+main > .space-y-6 tbody tr:last-child td{border-bottom:0}
+main > .space-y-6 > div:last-child{border:1px solid var(--border);background:var(--surface);border-radius:10px;padding:15px 18px;font-size:12px;color:var(--muted)}
+@media(min-width:700px){main > .space-y-6 > div:first-child{flex-direction:row;align-items:flex-end}main > .space-y-6 > div[class~="grid"]{grid-template-columns:repeat(3,minmax(0,1fr))}main > .space-y-6 section > div[class~="grid"]{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(min-width:1100px){main > .space-y-6 > div[class~="grid"]{grid-template-columns:repeat(6,minmax(0,1fr))}}
+main > .p-8{padding:32px;color:var(--muted);font-size:13px}
+main > .rounded-xl.border.p-6{margin:24px 28px;padding:20px;border-radius:12px;border:1px solid var(--border);background:var(--surface);font-size:13px;color:var(--text)}
