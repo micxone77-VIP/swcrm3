@@ -17,7 +17,7 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           s=Path('src/pages/RetentionAnalytics.jsx').read_text()
-          if 'recoveryAmountByTier' in s:
+          if 'recoveryByCurrency=' in s:
             raise SystemExit('Expected RED state, tier recovery already present')
           if 'const tierKpis=' not in s:
             raise SystemExit('tier KPI anchor missing')
@@ -27,16 +27,19 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
+          import re
           p=Path('src/pages/RetentionAnalytics.jsx')
           s=p.read_text()
-          old="const tierKpis=useMemo(()=>['DIAMOND','PLATINUM','GOLD'].map(tier=>{const opening=previousActive.filter(v=>String(v.tier).toUpperCase()===tier).length;const kept=retained.filter(v=>String(v.tier).toUpperCase()===tier).length;const lost=churned.filter(v=>String(v.tier).toUpperCase()===tier).length;const back=reactivatedRows.filter(v=>String(v.tier).toUpperCase()===tier).length;return{tier,opening,kept,lost,back,rate:calculateRetentionMetrics({openingVipCount:opening,retainedVipCount:kept,churnedVipCount:lost}).retentionRate}}),[previousActive,retained,churned,reactivatedRows])"
-          new="const tierKpis=useMemo(()=>['DIAMOND','PLATINUM','GOLD'].map(tier=>{const opening=previousActive.filter(v=>String(v.tier).toUpperCase()===tier).length;const kept=retained.filter(v=>String(v.tier).toUpperCase()===tier).length;const lost=churned.filter(v=>String(v.tier).toUpperCase()===tier).length;const tierReact=reactivatedRows.filter(v=>String(v.tier).toUpperCase()===tier);const back=tierReact.length;const recoveryByCurrency=tierReact.filter(v=>v.recoveryAmount>0).reduce((acc,v)=>{const c=String(v.currency||'').toUpperCase();if(c)acc[c]=(acc[c]||0)+v.recoveryAmount;return acc},{});const recoveryText=Object.entries(recoveryByCurrency).map(([c,a])=>money(a,c)).join(' · ');return{tier,opening,kept,lost,back,recoveryByCurrency,recoveryText,rate:calculateRetentionMetrics({openingVipCount:opening,retainedVipCount:kept,churnedVipCount:lost}).retentionRate}}),[previousActive,retained,churned,reactivatedRows])"
-          if old not in s: raise SystemExit('tier KPI anchor not found')
-          s=s.replace(old,new,1)
-          old_section="<div className=\"mt-3 grid grid-cols-2 gap-2 text-sm\"><div><div className=\"text-xs opacity-60\">{t('retention.previousActive')}</div><strong>{k.opening}</strong></div><div><div className=\"text-xs opacity-60\">{t('retention.retained')}</div><strong>{k.kept}</strong></div><div><div className=\"text-xs opacity-60\">{t('retention.churned')}</div><strong>{k.lost}</strong></div><div><div className=\"text-xs opacity-60\">{t('retention.reactivatedCount')}</div><strong>{k.back}</strong></div></div><div className=\"mt-3 text-lg font-semibold\">{k.rate}% {t('retention.retention')}</div>"
-          new_section="<div className=\"mt-3 grid grid-cols-2 gap-2 text-sm\"><div><div className=\"text-xs opacity-60\">{t('retention.previousActive')}</div><strong>{k.opening}</strong></div><div><div className=\"text-xs opacity-60\">{t('retention.retained')}</div><strong>{k.kept}</strong></div><div><div className=\"text-xs opacity-60\">{t('retention.churned')}</div><strong>{k.lost}</strong></div><div><div className=\"text-xs opacity-60\">{t('retention.reactivatedCount')}</div><strong>{k.back}</strong></div></div><div className=\"mt-3 text-lg font-semibold\">{k.rate}% {t('retention.retention')}</div>{k.recoveryText&&<div className=\"mt-3 rounded-md border px-3 py-2 text-sm\"><div className=\"text-xs opacity-60\">{t('retention.reactivatedDeposit')}</div><strong>{k.recoveryText}</strong></div>}"
-          if old_section not in s: raise SystemExit('tier card section not found')
-          s=s.replace(old_section,new_section,1)
+          pattern=r"const tierKpis=useMemo\(.*?\n  const hosts="
+          m=re.search(pattern,s,re.S)
+          if not m: raise SystemExit('tier KPI block not found')
+          new_block="""const tierKpis=useMemo(()=>['DIAMOND','PLATINUM','GOLD'].map(tier=>{const opening=previousActive.filter(v=>String(v.tier).toUpperCase()===tier).length;const kept=retained.filter(v=>String(v.tier).toUpperCase()===tier).length;const lost=churned.filter(v=>String(v.tier).toUpperCase()===tier).length;const tierReact=reactivatedRows.filter(v=>String(v.tier).toUpperCase()===tier);const back=tierReact.length;const recoveryByCurrency=tierReact.filter(v=>v.recoveryAmount>0).reduce((acc,v)=>{const c=String(v.currency||'').toUpperCase();if(c)acc[c]=(acc[c]||0)+v.recoveryAmount;return acc},{});const recoveryText=Object.entries(recoveryByCurrency).map(([c,a])=>money(a,c)).join(' · ');return{tier,opening,kept,lost,back,recoveryByCurrency,recoveryText,rate:calculateRetentionMetrics({openingVipCount:opening,retainedVipCount:kept,churnedVipCount:lost}).retentionRate}}),[previousActive,retained,churned,reactivatedRows])
+  const hosts="""
+          s=s[:m.start()]+new_block+s[m.end():]
+          card_old="""<div className=\"mt-3 grid grid-cols-2 gap-2 text-sm\"><div><div className=\"text-xs opacity-60\">{t('retention.previousActive')}</div><strong>{k.opening}</strong></div><div><div className=\"text-xs opacity-60\">{t('retention.retained')}</div><strong>{k.kept}</strong></div><div><div className=\"text-xs opacity-60\">{t('retention.churned')}</div><strong>{k.lost}</strong></div><div><div className=\"text-xs opacity-60\">{t('retention.reactivatedCount')}</div><strong>{k.back}</strong></div></div><div className=\"mt-3 text-lg font-semibold\">{k.rate}% {t('retention.retention')}</div>"""
+          card_new="""<div className=\"mt-3 grid grid-cols-2 gap-2 text-sm\"><div><div className=\"text-xs opacity-60\">{t('retention.previousActive')}</div><strong>{k.opening}</strong></div><div><div className=\"text-xs opacity-60\">{t('retention.retained')}</div><strong>{k.kept}</strong></div><div><div className=\"text-xs opacity-60\">{t('retention.churned')}</div><strong>{k.lost}</strong></div><div><div className=\"text-xs opacity-60\">{t('retention.reactivatedCount')}</div><strong>{k.back}</strong></div></div><div className=\"mt-3 text-lg font-semibold\">{k.rate}% {t('retention.retention')}</div>{k.recoveryText&&<div className=\"mt-3 rounded-md border px-3 py-2 text-sm\"><div className=\"text-xs opacity-60\">{t('retention.reactivatedDeposit')}</div><strong>{k.recoveryText}</strong></div>}"""
+          if card_old not in s: raise SystemExit('tier card markup not found')
+          s=s.replace(card_old,card_new,1)
           p.write_text(s)
           PY
       - name: GREEN regression
@@ -67,4 +70,3 @@ jobs:
           git add src/pages/RetentionAnalytics.jsx .github/workflows/retention-analytics-tier-recovery.yml
           git commit -m "feat: show tier recovery in retention analytics" || exit 0
           git push origin main
-          echo "Temporary workflow completed; it is removed by the resulting commit."
