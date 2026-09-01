@@ -1,0 +1,50 @@
+name: Integrate Follow-up Due
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Integrate follow-up status
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('src/pages/ChurnAlerts.jsx')
+          text = p.read_text()
+          old = "import { getRetentionTierRank } from '../lib/retention'"
+          new = "import { getRetentionTierRank, isFollowUpDue } from '../lib/retention'"
+          if old not in text:
+              raise SystemExit('retention import anchor not found')
+          text = text.replace(old, new, 1)
+          old = "const vipMap={};(pdVips||[]).forEach(v=>{vipMap[v.username]=v});const byUser={}"
+          new = "const contactLogs=[];if((pdVips||[]).length){const{data:logs,error:contactError}=await supabase.from('contact_logs').select('username,logged_at,follow_up_needed,follow_up_date').in('username',(pdVips||[]).map(v=>v.username));if(contactError){console.error('loadPriorityContacts contact log error',contactError)}else contactLogs.push(...(logs||[]))}const latestContact={};contactLogs.forEach(log=>{if(!log?.username||!log?.logged_at)return;const previous=latestContact[log.username];if(!previous||new Date(log.logged_at)>new Date(previous.logged_at))latestContact[log.username]=log});const vipMap={};(pdVips||[]).forEach(v=>{vipMap[v.username]=v});const byUser={}"
+          if old not in text:
+              raise SystemExit('contact log insertion anchor not found')
+          text = text.replace(old, new, 1)
+          old = "reasons,urgency_score:urgencyScore})"
+          new = "reasons,urgency_score:urgencyScore,last_contact:latestContact[username]?.logged_at||null,contacted_today:Boolean(latestContact[username]?.logged_at&&new Date(latestContact[username].logged_at).toISOString().slice(0,10)===todayStr),follow_up_due:isFollowUpDue({lastContact:latestContact[username]?.logged_at||null,contactedToday:Boolean(latestContact[username]?.logged_at&&new Date(latestContact[username].logged_at).toISOString().slice(0,10)===todayStr)},today)})"
+          if old not in text:
+              raise SystemExit('priority result anchor not found')
+          text = text.replace(old, new, 1)
+          old = "results.sort((a,b)=>getRetentionTierRank(a.tier)-getRetentionTierRank(b.tier)||b.urgency_score-a.urgency_score||String(a.username).localeCompare(String(b.username)))"
+          new = "results.sort((a,b)=>getRetentionTierRank(a.tier)-getRetentionTierRank(b.tier)||Number(b.follow_up_due)-Number(a.follow_up_due)||b.urgency_score-a.urgency_score||String(a.username).localeCompare(String(b.username)))"
+          if old not in text:
+              raise SystemExit('priority sort anchor not found')
+          text = text.replace(old, new, 1)
+          p.write_text(text)
+          PY
+      - name: Commit integration
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/pages/ChurnAlerts.jsx
+          git commit -m 'feat: show churn alert follow-up due status'
+          git push
