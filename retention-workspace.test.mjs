@@ -6,6 +6,7 @@ import {
   calculateRate,
   sumByCurrency,
   latestSnapshotMonth,
+  resolveSnapshotWindow,
 } from './src/lib/retention.js'
 import { calculateRetentionMetrics, aggregateHostPerformance } from './src/lib/retentionAnalytics.js'
 
@@ -25,6 +26,14 @@ assert.deepEqual(sumByCurrency([
 assert.equal(latestSnapshotMonth(['2026-06', '2026-07', '2026-08'], '2026-09'), '2026-08')
 assert.equal(latestSnapshotMonth(['2026-08', '2026-09'], '2026-09'), '2026-09')
 assert.equal(latestSnapshotMonth([], '2026-09'), '2026-09')
+assert.deepEqual(
+  resolveSnapshotWindow(['2026-06', '2026-07', '2026-08'], '2026-09'),
+  { selectedMonth: '2026-09', currentMonth: '2026-08', previousMonth: '2026-07', usedFallback: true }
+)
+assert.deepEqual(
+  resolveSnapshotWindow(['2026-06', '2026-07', '2026-08'], '2026-08'),
+  { selectedMonth: '2026-08', currentMonth: '2026-08', previousMonth: '2026-07', usedFallback: false }
+)
 
 const metrics = calculateRetentionMetrics({
   openingVipCount: 100,
