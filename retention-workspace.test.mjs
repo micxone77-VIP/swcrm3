@@ -6,6 +6,7 @@ import {
   calculateRate,
   sumByCurrency,
 } from './src/lib/retention.js'
+import { calculateRetentionMetrics, aggregateHostPerformance } from './src/lib/retentionAnalytics.js'
 
 assert.equal(daysSince('2026-09-01T00:00:00Z', new Date('2026-09-04T00:00:00Z')), 3)
 assert.equal(isFollowUpDue({ lastContact: null, contactedToday: false }), true)
@@ -18,5 +19,29 @@ assert.deepEqual(sumByCurrency([
   { amount: 50, currency: 'MYR' },
   { amount: 20, currency: 'SGD' },
 ]), { MYR: 150, SGD: 20 })
+
+const metrics = calculateRetentionMetrics({
+  openingVipCount: 100,
+  retainedVipCount: 60,
+  churnedVipCount: 40,
+  reactivatedVipCount: 10,
+  recoveredDeposits: [
+    { amount: 1000, currency: 'MYR' },
+    { amount: 500, currency: 'SGD' },
+  ],
+})
+assert.equal(metrics.retentionRate, 60)
+assert.equal(metrics.churnRate, 40)
+assert.equal(metrics.reactivationRate, 10)
+assert.deepEqual(metrics.recoveredDepositsByCurrency, { MYR: 1000, SGD: 500 })
+
+const hosts = aggregateHostPerformance([
+  { host_assigned: 'Host A', assignedVips: 10, reactivated: 2, amount: 1000, currency: 'MYR' },
+  { host_assigned: 'Host A', assignedVips: 10, reactivated: 1, amount: 500, currency: 'MYR' },
+  { host_assigned: 'Host B', assignedVips: 5, reactivated: 1, amount: 300, currency: 'SGD' },
+])
+assert.equal(hosts[0].host, 'Host A')
+assert.equal(hosts[0].reactivated, 3)
+assert.deepEqual(hosts[0].recoveredDepositByCurrency, { MYR: 1500 })
 
 console.log('retention-workspace tests: PASS')
