@@ -24,8 +24,9 @@ test('campaign creator persists selected leaderboard metric', () => {
 })
 
 test('campaign editor exposes leaderboard metric for existing campaigns', () => {
-  assert.match(campaignSource, /LEADERBOARD METRIC/)
-  assert.match(campaignSource, /value=\{editCampForm\.leaderboard_metric\}/)
+  assert.match(campaignSource, /LEADERBOARD REWARDS/)
+  assert.match(campaignSource, /Leaderboard Metric/)
+  assert.match(campaignSource, /value=\{editCampForm\.leaderboard_metric\|\|'turnover'\}/)
   assert.match(campaignSource, /Turnover Race/)
   assert.match(campaignSource, /Deposit Race/)
   assert.match(campaignSource, /Turnover \+ Deposit Race/)
