@@ -28,5 +28,7 @@ jobs:
         run: node --test retention-tier-priority.test.mjs
       - name: Retention host tier recovery regression
         run: node --test retention-host-tier.test.mjs
+      - name: Retention churn urgency regression
+        run: node --test retention-churn-urgency.test.mjs
       - name: Production build
         run: npm run build
