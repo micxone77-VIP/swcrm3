@@ -31,7 +31,7 @@ export default function CampaignsUnifiedCreator(){
  function updateLevel(i,key,value){setForm(f=>{const levels=[...f.levels];levels[i]={...levels[i],[key]:value};return {...f,levels}})}
  function addLevel(){setForm(f=>({...f,levels:[...f.levels,{level_code:`L${f.levels.length+1}`,level_name:`Level ${f.levels.length+1}`,deposit_threshold:'',reward_amount:'',description:''}]}))}
  function updateTierPct(i,key,value){setForm(f=>{const a=[...f.reward_tiers];a[i]={...a[i],[key]:value};return {...f,reward_tiers:a}})}
- function updateDual(i,key,value){setForm(f=>{const a=[...f.dual_tiers];a[i]={...a[i],[key:value]};return {...f,dual_tiers:a}})}
+ function updateDual(i,key,value){setForm(f=>{const a=[...f.dual_tiers];a[i]={...a[i],[key]:value};return {...f,dual_tiers:a}})}
  async function create(){
   if(!form.campaign_name.trim())return setMessage('Campaign name is required.')
   if(!form.countries.length)return setMessage('Select at least one country/platform.')
