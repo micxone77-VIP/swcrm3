@@ -7,17 +7,24 @@ test('host performance separates Diamond, Platinum and Gold recovery', () => {
     {
       host: 'Marcus',
       assignedVips: 10,
-      reactivated: 3,
-      amounts: [
-        { amount: 100, currency: 'MYR' },
-        { amount: 50, currency: 'MYR' },
-        { amount: 10, currency: 'MYR' },
-      ],
-      tierRows: [
-        { tier: 'DIAMOND', reactivated: 1, amount: 100, currency: 'MYR' },
-        { tier: 'PLATINUM', reactivated: 1, amount: 50, currency: 'MYR' },
-        { tier: 'GOLD', reactivated: 1, amount: 10, currency: 'MYR' },
-      ],
+      reactivated: 1,
+      amount: 100,
+      currency: 'MYR',
+      tier: 'DIAMOND',
+    },
+    {
+      host: 'Marcus',
+      reactivated: 1,
+      amount: 50,
+      currency: 'MYR',
+      tier: 'PLATINUM',
+    },
+    {
+      host: 'Marcus',
+      reactivated: 1,
+      amount: 10,
+      currency: 'MYR',
+      tier: 'GOLD',
     },
   ])
 
@@ -37,10 +44,10 @@ test('unassigned reactivation remains visible and retains tier recovery', () => 
   const [host] = aggregateHostPerformance([
     {
       host: 'Unassigned',
-      assignedVips: 0,
       reactivated: 1,
-      amounts: [{ amount: 250, currency: 'SGD' }],
-      tierRows: [{ tier: 'DIAMOND', reactivated: 1, amount: 250, currency: 'SGD' }],
+      amount: 250,
+      currency: 'SGD',
+      tier: 'DIAMOND',
     },
   ])
 
