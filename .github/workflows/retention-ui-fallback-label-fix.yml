@@ -20,18 +20,17 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
-          p=Path('src/pages/RetentionWorkspace.jsx')
-          s=p.read_text()
+          s=Path('src/pages/RetentionWorkspace.jsx').read_text()
           checks={
-            'hero uses effective month': "{monthLabel(dataMonth)} retained",
-            'daily empty uses effective month': "No reactivation records for {monthLabel(dataMonth)}.",
-            'export uses effective month': "retention-churn-${dataMonth}.csv",
-            'fallback banner exists': 'styles.fallbackBanner',
+            'hero still uses requested month': "{monthLabel(month)} retained",
+            'daily empty still uses requested month': "No reactivation records for {monthLabel(month)}.",
+            'export still uses requested month': "retention-churn-${month}.csv",
+            'fallback banner absent': 'styles.fallbackBanner',
+            'selected month label still old': '<label>Selected month</label>',
           }
-          failed=[name for name,needle in checks.items() if needle not in s]
-          if len(failed) != len(checks):
-            raise SystemExit('Regression precondition invalid; expected the old UI to be missing all new safeguards')
-          print('RED: all expected regression assertions are currently missing')
+          if not all((needle in s) == (name != 'fallback banner absent') for name,needle in checks.items()):
+            raise SystemExit('Regression precondition invalid')
+          print('RED: old requested-month UI is confirmed')
           PY
       - name: Apply fallback UI label fix
         run: |
@@ -41,19 +40,17 @@ jobs:
           s=p.read_text()
           replacements={
             "{monthLabel(previous)} {stats.previousActive.length.toLocaleString()} players → {monthLabel(month)} retained {stats.retained.length.toLocaleString()}, churned {stats.churned.length.toLocaleString()}": "{monthLabel(previous)} {stats.previousActive.length.toLocaleString()} players → {monthLabel(dataMonth)} retained {stats.retained.length.toLocaleString()}, churned {stats.churned.length.toLocaleString()}",
-            "<div style={styles.heroText}>{monthLabel(previous)} {stats.previousActive.length.toLocaleString()} players → {monthLabel(dataMonth)} retained {stats.retained.length.toLocaleString()}, churned {stats.churned.length.toLocaleString()}</div></div><div style={styles.calendar}": "<div style={styles.heroText}>{monthLabel(previous)} {stats.previousActive.length.toLocaleString()} players → {monthLabel(dataMonth)} retained {stats.retained.length.toLocaleString()}, churned {stats.churned.length.toLocaleString()}</div>{window.usedFallback&&<div style={styles.fallbackBanner}>⚠️ Requested {monthLabel(month)}, but the latest available deposit snapshot is {monthLabel(dataMonth)}. This view is read-only until the requested month's snapshot is available.</div>}</div><div style={styles.calendar}",
             '<label>Selected month</label>': '<label>Requested month</label>',
             "a.download=`retention-churn-${month}.csv`": "a.download=`retention-churn-${dataMonth}.csv`",
             "Saved ${stats.churned.length} players to the retention snapshot for ${monthLabel(month)}.": "Saved ${stats.churned.length} players to the retention snapshot for ${monthLabel(dataMonth)}.",
             'No reactivation records for {monthLabel(month)}.': 'No reactivation records for {monthLabel(dataMonth)}.',
-            "dailyGrid:{display:'grid',": "fallbackBanner:{marginBottom:12,padding:'11px 14px',border:'1px solid #d6a63a',borderRadius:10,background:'rgba(214,166,58,.12)',color:'var(--text)',fontSize:13},dailyGrid:{display:'grid',",
+            "<section style={styles.hero}><div><div style={styles.eyebrow}>Monthly retention</div>": "<section style={styles.hero}><div><div style={styles.eyebrow}>Monthly retention</div>",
+            "<div style={styles.calendar}>📅</div></section>": "{window.usedFallback&&<div style={styles.fallbackBanner}>⚠️ Requested {monthLabel(month)}, but the latest available deposit snapshot is {monthLabel(dataMonth)}. This view is read-only until the requested month's snapshot is available.</div>}</div><div style={styles.calendar}>📅</div></section>",
+            "dailyGrid:{display:'grid',": "fallbackBanner:{marginTop:12,padding:'11px 14px',border:'1px solid #d6a63a',borderRadius:10,background:'rgba(214,166,58,.12)',color:'var(--text)',fontSize:13},dailyGrid:{display:'grid',",
           }
-          # Apply only valid exact replacements and fail loudly if any expected target is absent.
           for old,new in replacements.items():
             if old not in s:
-              if old.startswith("<div style={styles.heroText}"):
-                continue
-              raise SystemExit(f'Missing expected source fragment: {old[:120]}')
+              raise SystemExit(f'Missing expected source fragment: {old[:100]}')
             s=s.replace(old,new,1)
           p.write_text(s)
           PY
@@ -62,15 +59,14 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           s=Path('src/pages/RetentionWorkspace.jsx').read_text()
-          checks={
-            'hero uses effective month': "{monthLabel(dataMonth)} retained",
-            'daily empty uses effective month': "No reactivation records for {monthLabel(dataMonth)}.",
-            'export uses effective month': "retention-churn-${dataMonth}.csv",
-            'fallback banner exists': 'styles.fallbackBanner',
-            'requested month label': '<label>Requested month</label>',
-          }
-          missing=[name for name,needle in checks.items() if needle not in s]
-          if missing: raise SystemExit('GREEN failed: '+', '.join(missing))
+          for needle in [
+            "{monthLabel(dataMonth)} retained",
+            "No reactivation records for {monthLabel(dataMonth)}.",
+            "retention-churn-${dataMonth}.csv",
+            'styles.fallbackBanner',
+            '<label>Requested month</label>',
+          ]:
+            if needle not in s: raise SystemExit('GREEN failed: '+needle)
           print('GREEN: fallback UI labels and banner are present')
           PY
       - name: Install dependencies
