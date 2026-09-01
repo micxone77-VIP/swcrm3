@@ -1,0 +1,55 @@
+name: Retention Host Fix
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/retention-host-regression.mjs'
+
+permissions:
+  contents: write
+
+jobs:
+  fix-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Verify regression test fails before fix
+        run: |
+          if node scripts/retention-host-regression.mjs; then
+            echo 'Regression guard unexpectedly passed before host fix.'
+            exit 1
+          fi
+      - name: Apply historical host fix
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('src/pages/RetentionWorkspace.jsx')
+          s = p.read_text()
+          old = "if(row.snapshot_month===dataMonth&&row.host_assigned)current.host=row.host_assigned;map.set(key,current)"
+          new = "map.set(key,current)"
+          if old not in s:
+              raise SystemExit('current-month host override not found')
+          s = s.replace(old, new, 1)
+          p.write_text(s)
+          PY
+      - name: Verify regression test passes after fix
+        run: node scripts/retention-host-regression.mjs
+      - name: Install dependencies
+        run: npm ci
+      - name: Production build
+        run: npm run build
+      - name: Restore generated dist before commit
+        run: git restore dist || true
+      - name: Commit fix and remove temporary regression files
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          rm scripts/retention-host-regression.mjs .github/workflows/retention-host-fix.yml
+          git add src/pages/RetentionWorkspace.jsx
+          git add -u scripts/retention-host-regression.mjs .github/workflows/retention-host-fix.yml
+          git commit -m 'fix: preserve previous-month host in retention churn'
+          git push
