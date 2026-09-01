@@ -15,21 +15,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
       - name: Verify regression test fails before fix
         run: |
           python - <<'PY'
           from pathlib import Path
           s=Path('src/pages/RetentionWorkspace.jsx').read_text()
-          checks={
-            'hero still uses requested month': "{monthLabel(month)} retained",
-            'daily empty still uses requested month': "No reactivation records for {monthLabel(month)}.",
-            'export still uses requested month': "retention-churn-${month}.csv",
-            'fallback banner absent': 'styles.fallbackBanner',
-            'selected month label still old': '<label>Selected month</label>',
-          }
-          if not all((needle in s) == (name != 'fallback banner absent') for name,needle in checks.items()):
-            raise SystemExit('Regression precondition invalid')
+          for needle in ["{monthLabel(month)} retained", "No reactivation records for {monthLabel(month)}.", "retention-churn-${month}.csv", '<label>Selected month</label>']:
+            if needle not in s: raise SystemExit('Expected old UI fragment missing: '+needle)
+          if 'styles.fallbackBanner' in s: raise SystemExit('Fallback banner already exists')
           print('RED: old requested-month UI is confirmed')
           PY
       - name: Apply fallback UI label fix
@@ -44,14 +37,17 @@ jobs:
             "a.download=`retention-churn-${month}.csv`": "a.download=`retention-churn-${dataMonth}.csv`",
             "Saved ${stats.churned.length} players to the retention snapshot for ${monthLabel(month)}.": "Saved ${stats.churned.length} players to the retention snapshot for ${monthLabel(dataMonth)}.",
             'No reactivation records for {monthLabel(month)}.': 'No reactivation records for {monthLabel(dataMonth)}.',
-            "<section style={styles.hero}><div><div style={styles.eyebrow}>Monthly retention</div>": "<section style={styles.hero}><div><div style={styles.eyebrow}>Monthly retention</div>",
-            "<div style={styles.calendar}>📅</div></section>": "{window.usedFallback&&<div style={styles.fallbackBanner}>⚠️ Requested {monthLabel(month)}, but the latest available deposit snapshot is {monthLabel(dataMonth)}. This view is read-only until the requested month's snapshot is available.</div>}</div><div style={styles.calendar}>📅</div></section>",
+            "<div style={styles.calendar}>📅</div></section>": "<div style={styles.calendar}>📅</div></section>",
             "dailyGrid:{display:'grid',": "fallbackBanner:{marginTop:12,padding:'11px 14px',border:'1px solid #d6a63a',borderRadius:10,background:'rgba(214,166,58,.12)',color:'var(--text)',fontSize:13},dailyGrid:{display:'grid',",
           }
           for old,new in replacements.items():
-            if old not in s:
-              raise SystemExit(f'Missing expected source fragment: {old[:100]}')
+            if old not in s: raise SystemExit(f'Missing expected source fragment: {old[:100]}')
             s=s.replace(old,new,1)
+          # Insert the banner immediately before the hero's calendar without changing JSX nesting.
+          marker='<div style={styles.calendar}>📅</div></section>'
+          banner="{window.usedFallback&&<div style={styles.fallbackBanner}>⚠️ Requested {monthLabel(month)}, but the latest available deposit snapshot is {monthLabel(dataMonth)}. This view is read-only until the requested month's snapshot is available.</div>}"+marker
+          if marker not in s: raise SystemExit('Hero calendar marker missing')
+          s=s.replace(marker,banner,1)
           p.write_text(s)
           PY
       - name: Verify regression test passes after fix
@@ -59,13 +55,7 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           s=Path('src/pages/RetentionWorkspace.jsx').read_text()
-          for needle in [
-            "{monthLabel(dataMonth)} retained",
-            "No reactivation records for {monthLabel(dataMonth)}.",
-            "retention-churn-${dataMonth}.csv",
-            'styles.fallbackBanner',
-            '<label>Requested month</label>',
-          ]:
+          for needle in ["{monthLabel(dataMonth)} retained", "No reactivation records for {monthLabel(dataMonth)}.", "retention-churn-${dataMonth}.csv", 'styles.fallbackBanner', '<label>Requested month</label>']:
             if needle not in s: raise SystemExit('GREEN failed: '+needle)
           print('GREEN: fallback UI labels and banner are present')
           PY
