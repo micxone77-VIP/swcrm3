@@ -14,3 +14,4 @@ if (source.includes(currentHostOverride)) {
 }
 
 console.log('Retention historical host regression checks passed')
+// workflow trigger
