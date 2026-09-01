@@ -1,4 +1,4 @@
-import { calculateRate, sumByCurrency } from './retention'
+import { calculateRate, sumByCurrency } from './retention.js'
 
 export function calculateRetentionMetrics({
   openingVipCount = 0,
