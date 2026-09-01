@@ -17,9 +17,19 @@ export function calculateRetentionMetrics({
 
 export function aggregateHostPerformance(rows = []) {
   const hosts = new Map()
+  const tierNames = ['DIAMOND', 'PLATINUM', 'GOLD']
   rows.forEach(row => {
     const host = row?.host_name || row?.host_assigned || row?.host || 'Unassigned'
-    const entry = hosts.get(host) || { host, assignedVips: 0, contacts: 0, positiveReplies: 0, deposited: 0, reactivated: 0, recoveredDeposits: [] }
+    const entry = hosts.get(host) || {
+      host,
+      assignedVips: 0,
+      contacts: 0,
+      positiveReplies: 0,
+      deposited: 0,
+      reactivated: 0,
+      recoveredDeposits: [],
+      byTier: Object.fromEntries(tierNames.map(tier => [tier, { reactivated: 0, recoveredDeposits: [] }])),
+    }
     entry.assignedVips += Number(row?.assignedVips || 0)
     entry.contacts += Number(row?.contacts || 0)
     entry.positiveReplies += Number(row?.positiveReplies || 0)
@@ -27,11 +37,23 @@ export function aggregateHostPerformance(rows = []) {
     entry.reactivated += Number(row?.reactivated || 0)
     if (Array.isArray(row?.amounts)) entry.recoveredDeposits.push(...row.amounts)
     else if (row?.amount !== undefined) entry.recoveredDeposits.push({ amount: row.amount, currency: row.currency })
+
+    const tier = String(row?.tier || '').trim().toUpperCase()
+    if (tierNames.includes(tier)) {
+      const tierEntry = entry.byTier[tier]
+      tierEntry.reactivated += Number(row?.reactivated || 0)
+      if (Array.isArray(row?.amounts)) tierEntry.recoveredDeposits.push(...row.amounts)
+      else if (row?.amount !== undefined) tierEntry.recoveredDeposits.push({ amount: row.amount, currency: row.currency })
+    }
     hosts.set(host, entry)
   })
   return [...hosts.values()].map(entry => ({
     ...entry,
     reactivationRate: calculateRate(entry.reactivated, entry.assignedVips),
     recoveredDepositByCurrency: sumByCurrency(entry.recoveredDeposits),
+    byTier: Object.fromEntries(Object.entries(entry.byTier).map(([tier, value]) => [tier, {
+      ...value,
+      recoveredDepositByCurrency: sumByCurrency(value.recoveredDeposits),
+    }])),
   })).sort((a, b) => b.reactivated - a.reactivated || b.assignedVips - a.assignedVips)
 }
