@@ -37,7 +37,7 @@ export default function FollowUp() {
     const now = new Date(); const todayStr = now.toISOString().split('T')[0]
     const [vipRes, logRes] = await Promise.all([
       supabase.from('vip_members').select('id,username,full_name,tier,churn_risk,host_assigned,last_contacted,last_contact_date,total_deposit,currency,days_inactive,last_deposit_date,activity_status,is_excluded').neq('is_excluded', true),
-      supabase.from('contact_logs').select('username').gte('created_at', todayStr + 'T00:00:00').lte('created_at', todayStr + 'T23:59:59'),
+      supabase.from('contact_logs').select('username').gte('logged_at', todayStr + 'T00:00:00').lte('logged_at', todayStr + 'T23:59:59'),
     ])
     if (vipRes.error || logRes.error) {
       setLoadError(vipRes.error?.message || logRes.error?.message || 'Unable to load follow-up data'); setVips([]); setTodayLogs([]); setLoading(false); return
@@ -82,7 +82,7 @@ export default function FollowUp() {
     const nowIso = new Date().toISOString()
     const { error: contactError } = await supabase.from('contact_logs').insert({
       username: logTarget.username, vip_id: logTarget.id, outcome: logOutcome, notes: logNote || null,
-      host_name: profile?.full_name || null, logged_at: nowIso, created_at: nowIso,
+      host_name: profile?.full_name || null, logged_at: nowIso,
     })
     if (contactError) { setLogSaving(false); toast(`Save failed: ${contactError.message}`, 'error'); return }
 
