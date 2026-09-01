@@ -4,7 +4,7 @@ const file = 'src/pages/RetentionWorkspace.jsx'
 const source = fs.readFileSync(file, 'utf8')
 
 const expectedImport = "import { resolveSnapshotWindow } from '../lib/retention'"
-const historicalHostFix = "if(row.snapshot_month===previous)current.host=row.host_assigned"
+const historicalHostFix = "if(row.snapshot_month===previous){current.previousDeposit=Number(row.total_deposit)||0;if(row.host_assigned)current.host=row.host_assigned}"
 const effectiveMonthFix = "const window=resolveSnapshotWindow(months,month)"
 const fallbackGuard = "if(window.usedFallback)"
 
@@ -14,4 +14,3 @@ if (!source.includes(effectiveMonthFix)) throw new Error('RetentionWorkspace mus
 if (!source.includes(fallbackGuard)) throw new Error('RetentionWorkspace must guard fallback snapshot saves')
 
 console.log('Retention workspace regression checks passed')
-// trigger workflow
