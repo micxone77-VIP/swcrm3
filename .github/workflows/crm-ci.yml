@@ -7,51 +7,22 @@ on:
     branches: [main]
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
       - name: Install dependencies
         run: npm ci
-      - name: Fix leaderboard cutoff reference
-        if: ${{ github.event_name == 'push' && !contains(github.event.head_commit.message, '[leaderboard-cutoff-fixed]') }}
-        shell: bash
-        run: |
-          python3 <<'PY'
-          from pathlib import Path
-          path = Path('src/pages/Campaigns.jsx')
-          source = path.read_text()
-          old = """                            const pr = getProgress(p._vb||0, minBetTarget)\n                            const inTopByPosition = i < topN\n                            const gap = cutoffVB!=null ? Math.max(0, cutoffVB - (p._vb||0)) : null\n"""
-          new = """                            const rankingTarget = leaderboardMetric === 'deposit' ? minDepLb : minBetTarget\n                            const pr = getProgress(p._rankingValue||0, rankingTarget)\n                            const inTopByPosition = i < topN && p._qualified\n                            const gap = cutoffValue!=null ? Math.max(0, cutoffValue - (p._rankingValue||0)) : null\n"""
-          if old not in source:
-              if 'cutoffVB' not in source:
-                  print('Leaderboard cutoff reference already fixed.')
-                  raise SystemExit(0)
-              raise SystemExit('PATCH_STOP: expected leaderboard chase block not found')
-          source = source.replace(old, new, 1)
-          path.write_text(source)
-          print('Leaderboard cutoff reference fixed.')
-          PY
       - name: Leaderboard metric regression
         run: node --test leaderboard-metric-regression.test.mjs
       - name: Leaderboard behavior regression
         run: node --test leaderboard-behavior-regression.test.mjs
       - name: Production build
         run: npm run build
-      - name: Commit leaderboard cutoff fix
-        if: ${{ github.event_name == 'push' && !contains(github.event.head_commit.message, '[leaderboard-cutoff-fixed]') }}
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/pages/Campaigns.jsx
-          git commit -m "fix: leaderboard cutoff reference [leaderboard-cutoff-fixed]"
-          git push origin main
