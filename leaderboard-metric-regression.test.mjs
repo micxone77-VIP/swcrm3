@@ -36,8 +36,9 @@ test('campaign editor wires leaderboard metric changes into the edit form', () =
   assert.match(campaignSource, /leaderboard_metric:e\.target\.value/)
 })
 
-test('campaign editor keeps the existing leaderboard rewards section intact', () => {
-  assert.match(campaignSource, /LEADERBOARD REWARDS/)
-  assert.match(campaignSource, /editCampForm\.rank_rewards/)
-  assert.match(campaignSource, /editCampForm\.top_n/)
+test('campaign player payout updates also synchronize campaign reward rows', () => {
+  assert.match(campaignSource, /updates\.payout_status/)
+  assert.match(campaignSource, /campaign_rewards/)
+  assert.match(campaignSource, /campaign_player_id.*pid|pid.*campaign_player_id/)
+  assert.match(campaignSource, /paid_at/)
 })
