@@ -4,7 +4,7 @@ export const EDITABLE_CAMPAIGN_FIELDS = [
   'campaign_type','platform','reward_pct','reward_fixed','reward_cap','reward_delivery',
   'reward_tiers','min_valid_bet','top_n','rank_rewards','min_deposit_lb',
   'settlement_frequency','campaign_category','is_multi_level','max_levels','requires_period_deposit',
-  'enrollment_mode','auto_enroll_tiers',
+  'enrollment_mode','auto_enroll_tiers','leaderboard_metric',
 ]
 
 export const EMPTY_LEVEL = () => ({
@@ -55,6 +55,7 @@ export function normalizeCampaignForEdit(campaign) {
   form.requires_period_deposit = c.requires_period_deposit == null ? true : Boolean(c.requires_period_deposit)
   form.enrollment_mode = c.enrollment_mode || (form.target_tier.length ? 'auto_tier' : 'manual')
   form.auto_enroll_tiers = Array.isArray(c.auto_enroll_tiers) ? [...c.auto_enroll_tiers] : [...form.target_tier]
+  form.leaderboard_metric = ['turnover', 'deposit', 'turnover_deposit'].includes(c.leaderboard_metric) ? c.leaderboard_metric : 'turnover'
   form.start_date = normalizeDate(c.start_date)
   form.end_date = normalizeDate(c.end_date)
   return form
@@ -65,6 +66,10 @@ export function validateCampaignEditor(form, levels = []) {
   if (!String(form?.campaign_name || '').trim()) errors.push('Campaign name is required.')
   if (!String(form?.campaign_code || '').trim()) errors.push('Campaign code is required.')
   if (form?.start_date && form?.end_date && form.start_date > form.end_date) errors.push('End date cannot be before start date.')
+
+  if (form?.campaign_type === 'leaderboard' && !['turnover', 'deposit', 'turnover_deposit'].includes(form?.leaderboard_metric || 'turnover')) {
+    errors.push('Leaderboard metric is invalid.')
+  }
 
   if (form?.is_multi_level) {
     if (levels.length < 1) errors.push('A multi-level campaign needs at least one level.')
@@ -128,6 +133,7 @@ export function buildCampaignUpdate(form) {
     top_n: type === 'leaderboard' ? Number(form.top_n) || 3 : null,
     rank_rewards: type === 'leaderboard' && Array.isArray(form.rank_rewards) ? form.rank_rewards : null,
     min_deposit_lb: type === 'leaderboard' ? numeric(form.min_deposit_lb) : null,
+    leaderboard_metric: type === 'leaderboard' ? (['turnover', 'deposit', 'turnover_deposit'].includes(form.leaderboard_metric) ? form.leaderboard_metric : 'turnover') : 'turnover',
     settlement_frequency: type === 'dual_tier' ? (form.settlement_frequency || 'total') : null,
     campaign_category: form.campaign_category || null,
     is_multi_level: Boolean(form.is_multi_level),
