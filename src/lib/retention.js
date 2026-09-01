@@ -2,10 +2,23 @@ const RETENTION_TIER_RANK = { DIAMOND: 0, PLATINUM: 1, GOLD: 2, SILVER: 3, BRONZ
 const RETENTION_RISK_RANK = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, NORMAL: 3 }
 export function getRetentionTierRank(tier) { return RETENTION_TIER_RANK[String(tier || '').trim().toUpperCase()] ?? 99 }
 export function isPriorityRetentionTier(tier) { const normalizedTier = String(tier || '').trim().toUpperCase(); return normalizedTier === 'DIAMOND' || normalizedTier === 'PLATINUM' }
+export const isRetentionFocusTier = isPriorityRetentionTier
 export function sortRetentionPlayers(rows = []) { return [...rows].sort((a,b)=>{ const tierRank=getRetentionTierRank(a?.tier)-getRetentionTierRank(b?.tier); if(tierRank!==0)return tierRank; const riskA=RETENTION_RISK_RANK[String(a?.churn_risk||a?.risk_level||'').trim().toUpperCase()]??3; const riskB=RETENTION_RISK_RANK[String(b?.churn_risk||b?.risk_level||'').trim().toUpperCase()]??3; if(riskA!==riskB)return riskA-riskB; const inactiveA=Number(a?.days_inactive??a?.days_since_deposit??0)||0; const inactiveB=Number(b?.days_inactive??b?.days_since_deposit??0)||0; if(inactiveA!==inactiveB)return inactiveB-inactiveA; return String(a?.username||'').localeCompare(String(b?.username||'')) }) }
 
 export function daysSince(dateValue, now = new Date()) { if (!dateValue) return null; const then=new Date(dateValue); const current=now instanceof Date?now:new Date(now); if(Number.isNaN(then.getTime())||Number.isNaN(current.getTime()))return null; return Math.max(0,Math.floor((current.getTime()-then.getTime())/86400000)) }
 export function isFollowUpDue({ lastContact, contactedToday }, now = new Date()) { if(contactedToday)return false; if(!lastContact)return true; const days=daysSince(lastContact,now); return days!==null&&days>=3 }
+export function classifyRetentionQueue({ tier, followUpDue, contactedToday, declinePct, daysInactive, reactivated=false }) {
+  const normalizedTier=String(tier||'').trim().toUpperCase()
+  if(reactivated)return 'REACTIVATED'
+  if(contactedToday)return 'CONTACTED_TODAY'
+  if(!isPriorityRetentionTier(normalizedTier))return 'MONITOR'
+  if(followUpDue)return 'FOLLOW_UP'
+  const decline=declinePct===null||declinePct===undefined||declinePct===''?null:Number(declinePct)
+  const inactive=Number(daysInactive)||0
+  if((decline!==null&&Number.isFinite(decline)&&decline<=-50)||inactive>=3)return 'AT_RISK'
+  return 'MONITOR'
+}
+export function buildContactLogUrl(username) { const value=encodeURIComponent(String(username||'').trim()); return `/contacts?view=log&search=${value}&vip=${value}` }
 export function calculateChurnUrgency({ declinePct, daysSinceDeposit, depletionDays, netWinLoss3d, memberInactiveDays }) {
   const reasons=[]
   let urgencyScore=0
