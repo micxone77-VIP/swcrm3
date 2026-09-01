@@ -5,7 +5,7 @@ import { resolveSnapshotWindow, sortRetentionPlayers, isPriorityRetentionTier } 
 
 const monthKey=(date)=>{const d=new Date(date);return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}`}
 const previousMonth=(month)=>{const [year,m]=month.split('-').map(Number);return monthKey(new Date(Date.UTC(year,m-2,1)))}
-const monthLabel=(value)=>value?new Date(`${value}-01T00:00:00Z`).toLocaleDateString('en-MY',{month:'long',year:'numeric',timeZone:'UTC'}):'—'}
+const monthLabel=(value)=>value?new Date(`${value}-01T00:00:00Z`).toLocaleDateString('en-MY',{month:'long',year:'numeric',timeZone:'UTC'}):'—'
 const money=(amount,currency='')=>`${currency?`${currency} `:''}${Number(amount||0).toLocaleString(undefined,{maximumFractionDigits:2})}`
 const csvCell=(value)=>`"${String(value??'').replaceAll('"','""')}"`
 const digits=(value)=>String(value||'').replace(/\D/g,'')
