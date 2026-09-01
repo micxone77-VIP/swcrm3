@@ -7,6 +7,34 @@ import { useLanguage } from '../contexts/LanguageContext'
 const monthKey = (date) => { const d = new Date(date); return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}` }
 const money = (n,c) => `${c || ''} ${Number(n || 0).toLocaleString(undefined,{maximumFractionDigits:2})}`.trim()
 const recoveryAmount = row => Number(row?.reactivation_deposit ?? row?.deposit_amount ?? row?.amount ?? 0) || 0
+const playerKey = row => String(row?.vip_id || row?.username || row?.id || '').trim().toLowerCase()
+
+function aggregateReactivationLogs(logs = [], stats = []) {
+  const grouped = new Map()
+  logs.forEach(log => {
+    const key = playerKey(log)
+    if (!key) return
+    const stat = stats.find(s => (log.vip_id && String(s.id) === String(log.vip_id)) || (log.username && String(s.username).trim().toLowerCase() === String(log.username).trim().toLowerCase()))
+    const current = grouped.get(key)
+    const amount = recoveryAmount(log)
+    if (!current) {
+      grouped.set(key, {
+        ...log,
+        id: log.vip_id || stat?.id || log.id,
+        username: log.username || stat?.username,
+        tier: log.tier || stat?.tier,
+        currency: log.currency || stat?.currency,
+        host: log.host_name || stat?.host,
+        recoveryAmount: amount,
+      })
+      return
+    }
+    current.recoveryAmount += amount
+    if (!current.currency && log.currency) current.currency = log.currency
+    if (!current.host && log.host_name) current.host = log.host_name
+  })
+  return [...grouped.values()]
+}
 
 export default function RetentionAnalytics() {
   const { t } = useLanguage()
@@ -45,8 +73,8 @@ export default function RetentionAnalytics() {
 
   const stats=useMemo(()=>{const prev=previousSnapshotMonth,map=new Map();rows.forEach(r=>{const k=r.vip_id||r.username;const x=map.get(k)||{id:k,username:r.username,tier:r.tier,currency:r.currency,host:r.host_assigned,prev:0,current:0};if(r.snapshot_month===prev)x.prev=Number(r.total_deposit)||0;if(r.snapshot_month===effectiveMonth)x.current=Number(r.total_deposit)||0;if(r.host_assigned)x.host=r.host_assigned;map.set(k,x)});return [...map.values()]},[rows,effectiveMonth,previousSnapshotMonth])
   const previousActive=stats.filter(x=>x.prev>0), retained=previousActive.filter(x=>x.current>0), churned=previousActive.filter(x=>x.current<=0)
-  const reactivatedRows=reactivated.map(r=>{const x=stats.find(s=>String(s.id)===String(r.vip_id)||s.username===r.username);return {...r,id:r.vip_id||x?.id,username:r.username||x?.username,tier:r.tier||x?.tier,currency:r.currency||x?.currency,host:r.host_name||x?.host,recoveryAmount:recoveryAmount(r)}}).filter(r=>r.id||r.username)
-  const reactivatedCount=new Set(reactivatedRows.map(r=>r.vip_id||r.id||r.username)).size
+  const reactivatedRows=useMemo(()=>aggregateReactivationLogs(reactivated,stats),[reactivated,stats])
+  const reactivatedCount=reactivatedRows.length
   const metrics=calculateRetentionMetrics({openingVipCount:previousActive.length,retainedVipCount:retained.length,churnedVipCount:churned.length,reactivatedVipCount:reactivatedCount,recoveredDeposits:reactivatedRows.filter(r=>r.recoveryAmount>0).map(r=>({amount:r.recoveryAmount,currency:r.currency}))})
   const hosts=useMemo(()=>{const assignedByHost=new Map();members.forEach(v=>{const host=v.host_assigned||'Unassigned';assignedByHost.set(host,(assignedByHost.get(host)||0)+1)});const reactivatedByHost=new Map();reactivatedRows.forEach(x=>{const host=x.host||'Unassigned';const e=reactivatedByHost.get(host)||{host,reactivated:0,amounts:[]};e.reactivated++;if(x.recoveryAmount>0)e.amounts.push({amount:x.recoveryAmount,currency:x.currency});reactivatedByHost.set(host,e)});const summaries=[];assignedByHost.forEach((assignedVips,host)=>{const r=reactivatedByHost.get(host);summaries.push({host,assignedVips,reactivated:r?.reactivated||0,amounts:r?.amounts||[]})});reactivatedByHost.forEach((r,host)=>{if(!assignedByHost.has(host))summaries.push(r)});return aggregateHostPerformance(summaries)},[members,reactivatedRows])
   if(loading)return <div className="p-8 text-sm opacity-60">{t('retention.loadingAnalytics')}</div>
