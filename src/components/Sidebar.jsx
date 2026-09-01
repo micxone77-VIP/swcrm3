@@ -21,6 +21,7 @@ const NAV_GROUPS = [
     { to: '/retention', label: 'Monthly Churn', icon: '📉', roles: ['admin','host','readonly'] },
     { to: '/churn', label: 'Churn Alerts', icon: '🚨', roles: ['admin','host'] },
     { to: '/contacts', label: 'Contact Log', icon: '📝', roles: ['admin','host'] },
+    { to: '/retention-analytics', label: 'Retention Analytics', icon: '📊', roles: ['admin','readonly'] },
   ] },
   { key: 'campaigns', label: 'Campaigns', icon: '📢', items: [
     { to: '/campaigns', label: 'Campaigns', icon: '📢', roles: ['admin','host'] },
