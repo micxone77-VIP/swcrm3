@@ -1,0 +1,62 @@
+name: Retention Workspace Fix
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/retention-workspace-regression.mjs'
+
+permissions:
+  contents: write
+
+jobs:
+  fix-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Verify regression test fails before fix
+        run: |
+          if node scripts/retention-workspace-regression.mjs; then
+            echo 'Regression guard unexpectedly passed before production fix.'
+            exit 1
+          fi
+      - name: Apply retention workspace fixes
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('src/pages/RetentionWorkspace.jsx')
+          s = p.read_text()
+          s = s.replace("import { supabase } from '../lib/supabase'", "import { supabase } from '../lib/supabase'\nimport { resolveSnapshotWindow } from '../lib/retention'")
+          old = "const prev=previousMonth(month);const [monthlyResult,reactivationResult,membersResult]=await Promise.all([supabase.from('vip_monthly_totals').select('vip_id,username,snapshot_month,total_deposit,currency,tier,host_assigned').in('snapshot_month',[prev,month]),supabase.from('reactivation_logs').select('*').eq('reactivated_month',month).order('created_at',{ascending:true}),supabase.from('vip_members').select('id,username,phone,whatsapp,currency,tier,host_assigned').eq('is_excluded',false)])"
+          new = "const dataWindow=resolveSnapshotWindow(months,month);const dataMonth=dataWindow.currentMonth||month;const prev=dataWindow.previousMonth||previousMonth(dataMonth);const [monthlyResult,reactivationResult,membersResult]=await Promise.all([supabase.from('vip_monthly_totals').select('vip_id,username,snapshot_month,total_deposit,currency,tier,host_assigned').in('snapshot_month',[prev,dataMonth]),supabase.from('reactivation_logs').select('*').eq('reactivated_month',dataMonth).order('created_at',{ascending:true}),supabase.from('vip_members').select('id,username,phone,whatsapp,currency,tier,host_assigned').eq('is_excluded',false)])"
+          if old not in s: raise SystemExit('load block not found')
+          s = s.replace(old, new, 1)
+          s = s.replace("}},[month])\n const memberMap", "}},[month,months])\n const memberMap", 1)
+          s = s.replace("const memberMap=useMemo(()=>{const map=new Map();members.forEach(m=>{if(m.id!=null)map.set(String(m.id),m);if(m.username)map.set(`u:${m.username}`,m)});return map},[members]);const previous=previousMonth(month)", "const memberMap=useMemo(()=>{const map=new Map();members.forEach(m=>{if(m.id!=null)map.set(String(m.id),m);if(m.username)map.set(`u:${m.username}`,m)});return map},[members]);const window=resolveSnapshotWindow(months,month);const dataMonth=window.currentMonth||month;const previous=window.previousMonth||previousMonth(dataMonth)")
+          s = s.replace("if(row.snapshot_month===previous)current.previousDeposit=Number(row.total_deposit)||0;if(row.snapshot_month===month)current.currentDeposit=Number(row.total_deposit)||0;if(row.tier)", "if(row.snapshot_month===previous){current.previousDeposit=Number(row.total_deposit)||0;if(row.host_assigned)current.host=row.host_assigned}if(row.snapshot_month===dataMonth)current.currentDeposit=Number(row.total_deposit)||0;if(row.tier)")
+          s = s.replace("if(row.host_assigned)current.host=row.host_assigned;map.set(key,current)", "if(row.snapshot_month===dataMonth&&row.host_assigned)current.host=row.host_assigned;map.set(key,current)")
+          s = s.replace("[rows,month,previous,reactivated,memberMap]", "[rows,dataMonth,previous,reactivated,memberMap]")
+          old_save = "async function saveSnapshot(){setSaving(true);setNotice('');const payload=stats.churned.map(p=>({vip_id:p.id,username:p.username,tier:p.tier,currency:p.currency,host:p.host,previous_deposit:p.previousDeposit,current_deposit:p.currentDeposit,reactivated:p.reactivated}));const{error:e}=await supabase.from('retention_churn_snapshots').upsert({snapshot_month:month,previous_month:previous"
+          new_save = "async function saveSnapshot(){if(window.usedFallback){setError(`Cannot save a snapshot for ${monthLabel(month)} because the latest available deposit snapshot is ${monthLabel(dataMonth)}. Complete the current-month snapshot first.`);return}setSaving(true);setNotice('');const payload=stats.churned.map(p=>({vip_id:p.id,username:p.username,tier:p.tier,currency:p.currency,host:p.host,previous_deposit:p.previousDeposit,current_deposit:p.currentDeposit,reactivated:p.reactivated}));const{error:e}=await supabase.from('retention_churn_snapshots').upsert({snapshot_month:dataMonth,previous_month:previous"
+          if old_save not in s: raise SystemExit('save block not found')
+          s = s.replace(old_save, new_save, 1)
+          p.write_text(s)
+          PY
+      - name: Verify regression test passes after fix
+        run: node scripts/retention-workspace-regression.mjs
+      - name: Install dependencies
+        run: npm ci
+      - name: Production build
+        run: npm run build
+      - name: Commit fix and remove temporary regression files
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          rm scripts/retention-workspace-regression.mjs .github/workflows/retention-workspace-fix.yml
+          git add src/pages/RetentionWorkspace.jsx
+          git add -u
+          git commit -m 'fix: harden retention snapshot window and historical host'
+          git push
