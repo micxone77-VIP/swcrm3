@@ -1,44 +1,366 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import { calculateRate, getRetentionPriority, sumByCurrency } from '../lib/retention'
-import { useLanguage } from '../contexts/LanguageContext'
 
-const monthKey = (date) => { const d = new Date(date); return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}` }
-const previousMonth = (month) => { const [y,m] = month.split('-').map(Number); return monthKey(new Date(Date.UTC(y,m-2,1))) }
-const nextMonth = (month) => { const [y,m] = month.split('-').map(Number); return monthKey(new Date(Date.UTC(y,m,1))) }
-const formatAmount = (amount, currency) => `${currency || ''} ${Number(amount || 0).toLocaleString(undefined,{maximumFractionDigits:2})}`.trim()
-const validPhone = value => String(value || '').replace(/\D/g,'').length >= 10
-const whatsappLink = (v, hostName) => { const raw = validPhone(v.phone) ? v.phone : validPhone(v.whatsapp) ? v.whatsapp : ''; if (!raw) return null; const number = raw.replace(/\D/g,''); return `https://wa.me/${number}?text=${encodeURIComponent(`Hi ${v.username}, this is ${hostName || 'the VIP department'}.`)}` }
+const monthKey = (date) => {
+  const d = new Date(date)
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`
+}
+
+const previousMonth = (month) => {
+  const [year, m] = month.split('-').map(Number)
+  return monthKey(new Date(Date.UTC(year, m - 2, 1)))
+}
+
+const nextMonth = (month) => {
+  const [year, m] = month.split('-').map(Number)
+  return monthKey(new Date(Date.UTC(year, m, 1)))
+}
+
+const monthLabel = (value) => {
+  if (!value) return '—'
+  return new Date(`${value}-01T00:00:00Z`).toLocaleDateString('en-MY', { month: 'long', year: 'numeric', timeZone: 'UTC' })
+}
+
+const money = (amount, currency = '') => `${currency ? `${currency} ` : ''}${Number(amount || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`
+
+const csvCell = (value) => `"${String(value ?? '').replaceAll('"', '""')}"`
 
 export default function RetentionWorkspace() {
-  const navigate = useNavigate(); const { t } = useLanguage()
-  const [month,setMonth]=useState(''), [availableMonths,setAvailableMonths]=useState([]), [tier,setTier]=useState('ALL'), [view,setView]=useState('overview'), [hideReactivated,setHideReactivated]=useState(true)
-  const [members,setMembers]=useState([]), [monthly,setMonthly]=useState([]), [contacts,setContacts]=useState([]), [reactivated,setReactivated]=useState([]), [loading,setLoading]=useState(true), [error,setError]=useState('')
-  useEffect(()=>{ let cancelled=false; async function loadMonths(){ const {data,error}=await supabase.from('vip_monthly_totals').select('snapshot_month').order('snapshot_month',{ascending:false}); if(cancelled)return; if(error){setError(error.message);setLoading(false);return} const months=[...new Set((data||[]).map(r=>r.snapshot_month).filter(Boolean))]; setAvailableMonths(months); setMonth(m=>m&&months.includes(m)?m:(months[0]||monthKey(new Date())))} loadMonths(); return()=>{cancelled=true}},[])
-  useEffect(()=>{ if(!month)return; let cancelled=false; async function load(){ setLoading(true);setError(''); const prev=previousMonth(month); const [a,b,c,d]=await Promise.all([
-    supabase.from('vip_members').select('id,username,tier,currency,host_assigned,last_deposit_date,days_inactive,churn_risk,phone,whatsapp,is_excluded').eq('is_excluded',false),
-    supabase.from('vip_monthly_totals').select('vip_id,username,snapshot_month,total_deposit,total_withdrawal,monthly_valid_bet,currency,tier,host_assigned').in('snapshot_month',[prev,month]),
-    supabase.from('contact_logs').select('id,username,vip_id,outcome,notes,host_name,logged_at').gte('logged_at',`${month}-01T00:00:00`).lt('logged_at',`${nextMonth(month)}-01T00:00:00`),
-    supabase.from('reactivation_logs').select('*').eq('reactivated_month',month).order('created_at',{ascending:false})
-  ]); if(cancelled)return; const e=a.error||b.error||c.error||d.error; if(e){setError(e.message);setLoading(false);return} setMembers(a.data||[]);setMonthly(b.data||[]);setContacts(c.data||[]);setReactivated(d.data||[]);setLoading(false)} load();return()=>{cancelled=true}},[month])
-  const data=useMemo(()=>{ const prev=previousMonth(month), map=new Map(); monthly.forEach(r=>{const key=r.vip_id||r.username;const p=map.get(key)||{id:key,username:r.username,tier:r.tier,currency:r.currency,host_assigned:r.host_assigned,prevDeposit:0,currentDeposit:0};if(r.snapshot_month===prev)p.prevDeposit=Number(r.total_deposit)||0;if(r.snapshot_month===month)p.currentDeposit=Number(r.total_deposit)||0;if(r.host_assigned)p.host_assigned=r.host_assigned;map.set(key,p)});members.forEach(m=>{if(!map.has(m.id))map.set(m.id,{id:m.id,username:m.username,tier:m.tier,currency:m.currency,host_assigned:m.host_assigned,prevDeposit:0,currentDeposit:0})});return [...map.values()].map(p=>{const m=members.find(x=>x.id===p.id||x.username===p.username);return {...p,phone:m?.phone,whatsapp:m?.whatsapp,retained:p.prevDeposit>0&&p.currentDeposit>0,reactivated:reactivated.some(r=>r.vip_id===p.id||r.username===p.username),days_inactive:m?.days_inactive||0,churn_risk:m?.churn_risk||''}}).filter(p=>tier==='ALL'||String(p.tier||'').toUpperCase()===tier)},[members,monthly,reactivated,month,tier])
-  const previousActive=data.filter(p=>p.prevDeposit>0), retained=previousActive.filter(p=>p.currentDeposit>0), churned=previousActive.filter(p=>p.currentDeposit<=0&&(!hideReactivated||!p.reactivated)), atRisk=data.filter(p=>['HIGH','CRITICAL'].includes(String(p.churn_risk||'').toUpperCase())||p.days_inactive>=7), dormant=data.filter(p=>p.days_inactive>=30), contactedSet=new Set(contacts.map(c=>c.username||c.vip_id)), retentionRate=calculateRate(retained.length,previousActive.length), reactivationRate=calculateRate(reactivated.length,previousActive.length)
-  const recovery=useMemo(()=>sumByCurrency(reactivated.map(r=>({currency:r.currency,amount:r.reactivation_deposit||r.deposit_amount||r.amount||0}))),[reactivated])
-  const priorityRows=useMemo(()=>[...churned].sort((a,b)=>{const rank={CRITICAL:0,HIGH:1,MEDIUM:2,NORMAL:3};return (rank[getRetentionPriority(a)]??9)-(rank[getRetentionPriority(b)]??9)||b.days_inactive-a.days_inactive}),[churned])
-  const hostStats=useMemo(()=>{const map=new Map();members.forEach(v=>{const h=v.host_assigned||'Unassigned';const e=map.get(h)||{host:h,assignedVips:0,reactivated:0,amounts:[]};e.assignedVips++;map.set(h,e)});reactivated.forEach(r=>{const h=r.host_name||'Unassigned';const e=map.get(h)||{host:h,assignedVips:0,reactivated:0,amounts:[]};e.reactivated++;e.amounts.push({currency:r.currency,amount:r.reactivation_deposit||r.deposit_amount||r.amount||0});map.set(h,e)});return [...map.values()].map(e=>({...e,rate:calculateRate(e.reactivated,e.assignedVips),recovered:sumByCurrency(e.amounts)})).sort((a,b)=>b.reactivated-a.reactivated)},[members,reactivated])
-  if(loading)return <div className="p-8 text-sm opacity-60">{t('common.loading')}</div>
-  if(error)return <div className="rounded-xl border p-6 text-sm">Unable to load retention data: {error}</div>
-  const nav=[['overview',t('retention.overview')],['atRisk',t('retention.atRisk')],['followUp',t('retention.followUp')],['contacts',t('retention.contactLog')],['reactivated',t('retention.reactivated')]]
-  return <div className="space-y-6"><div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between"><div><h1 className="text-2xl font-semibold">📉 {t('retention.title')}</h1><p className="mt-1 text-sm opacity-70">Latest available snapshot: {month}</p></div><div className="flex flex-wrap gap-2">{nav.map(([k,l])=><button key={k} onClick={()=>setView(k)} className={`rounded-lg px-3 py-2 text-sm ${view===k?'bg-blue-600 text-white':'border'}`}>{l}</button>)}<button onClick={()=>navigate('/retention-analytics')} className="rounded-lg border px-3 py-2 text-sm">{t('retention.analytics')}</button></div></div>
-    <div className="flex flex-wrap items-center gap-3 rounded-xl border p-4"><label className="text-sm">{t('common.month')}</label><select value={month} onChange={e=>setMonth(e.target.value)} className="rounded-lg border bg-transparent px-3 py-2">{availableMonths.map(m=><option key={m} value={m}>{m}</option>)}</select><label className="text-sm">{t('common.tier')}</label><select value={tier} onChange={e=>setTier(e.target.value)} className="rounded-lg border bg-transparent px-3 py-2"><option value="ALL">{t('common.all')}</option><option value="GOLD">Gold</option><option value="PLATINUM">Platinum</option><option value="DIAMOND">Diamond</option><option value="BLACK">Black</option><option value="SILVER">Silver</option><option value="BRONZE">Bronze</option></select><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={hideReactivated} onChange={e=>setHideReactivated(e.target.checked)}/> Hide reactivated</label></div>
-    <div className="grid grid-cols-2 gap-4 md:grid-cols-5"><Kpi label={t('retention.atRiskVips')} value={atRisk.length}/><Kpi label={t('retention.highRisk')} value={data.filter(p=>['HIGH','CRITICAL'].includes(String(p.churn_risk||'').toUpperCase())).length}/><Kpi label={t('retention.dormant')} value={dormant.length}/><Kpi label={t('retention.contacted')} value={contactedSet.size}/><Kpi label={t('retention.reactivatedCount')} value={reactivated.length}/></div>
-    {view==='overview'&&<><div className="grid grid-cols-1 gap-4 md:grid-cols-4"><Kpi label={t('retention.previousActive')} value={previousActive.length}/><Kpi label={t('retention.retained')} value={retained.length}/><Kpi label={t('retention.retentionRate')} value={`${retentionRate}%`}/><Kpi label={t('retention.reactivationRate')} value={`${reactivationRate}%`}/></div><MoneyCard values={recovery} title={t('retention.recoveredDeposit')}/><HostTable rows={hostStats} title={t('retention.hostPerformance')}/></>}
-    {view==='atRisk'&&<ChurnTable rows={atRisk} title={t('retention.atRisk')} onOpen={id=>navigate(`/vips/${id}`)} onFollowUp={id=>navigate(`/follow-up?vip=${encodeURIComponent(id)}`)} hostName={''} t={t}/>} {view==='followUp'&&<ChurnTable rows={priorityRows} title={t('retention.followUp')} onOpen={id=>navigate(`/vips/${id}`)} onFollowUp={id=>navigate(`/follow-up?vip=${encodeURIComponent(id)}`)} hostName={''} t={t}/>} {view==='contacts'&&<ContactTable rows={contacts} t={t}/>} {view==='reactivated'&&<ReactivationTable rows={reactivated} t={t}/>} </div>
+  const navigate = useNavigate()
+  const [month, setMonth] = useState('')
+  const [months, setMonths] = useState([])
+  const [rows, setRows] = useState([])
+  const [reactivated, setReactivated] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [notice, setNotice] = useState('')
+  const [error, setError] = useState('')
+  const [tier, setTier] = useState('ALL')
+  const [search, setSearch] = useState('')
+  const [hideReactivated, setHideReactivated] = useState(true)
+
+  useEffect(() => {
+    let cancelled = false
+    async function loadMonths() {
+      const { data, error: queryError } = await supabase
+        .from('vip_monthly_totals')
+        .select('snapshot_month')
+        .order('snapshot_month', { ascending: false })
+      if (cancelled) return
+      if (queryError) {
+        setError(queryError.message)
+        setLoading(false)
+        return
+      }
+      const available = [...new Set((data || []).map((r) => r.snapshot_month).filter(Boolean))]
+      setMonths(available)
+      setMonth((current) => current && available.includes(current) ? current : (available[0] || monthKey(new Date())))
+    }
+    loadMonths()
+    return () => { cancelled = true }
+  }, [])
+
+  useEffect(() => {
+    if (!month) return
+    let cancelled = false
+    async function load() {
+      setLoading(true)
+      setError('')
+      const prev = previousMonth(month)
+      const [monthlyResult, reactivationResult] = await Promise.all([
+        supabase
+          .from('vip_monthly_totals')
+          .select('vip_id,username,snapshot_month,total_deposit,currency,tier,host_assigned')
+          .in('snapshot_month', [prev, month]),
+        supabase
+          .from('reactivation_logs')
+          .select('*')
+          .eq('reactivated_month', month)
+          .order('created_at', { ascending: true }),
+      ])
+      if (cancelled) return
+      if (monthlyResult.error || reactivationResult.error) {
+        setError(monthlyResult.error?.message || reactivationResult.error?.message || 'Unable to load retention data')
+        setLoading(false)
+        return
+      }
+      setRows(monthlyResult.data || [])
+      setReactivated(reactivationResult.data || [])
+      setLoading(false)
+    }
+    load()
+    return () => { cancelled = true }
+  }, [month])
+
+  const previous = previousMonth(month)
+
+  const players = useMemo(() => {
+    const map = new Map()
+    rows.forEach((row) => {
+      const key = row.vip_id || row.username
+      if (!key) return
+      const current = map.get(key) || {
+        id: row.vip_id || key,
+        username: row.username || '—',
+        tier: row.tier || '—',
+        currency: row.currency || '',
+        host: row.host_assigned || 'Unassigned',
+        previousDeposit: 0,
+        currentDeposit: 0,
+      }
+      if (row.snapshot_month === previous) current.previousDeposit = Number(row.total_deposit) || 0
+      if (row.snapshot_month === month) current.currentDeposit = Number(row.total_deposit) || 0
+      if (row.tier) current.tier = row.tier
+      if (row.currency) current.currency = row.currency
+      if (row.host_assigned) current.host = row.host_assigned
+      map.set(key, current)
+    })
+    return [...map.values()].map((player) => ({
+      ...player,
+      retained: player.previousDeposit > 0 && player.currentDeposit > 0,
+      churned: player.previousDeposit > 0 && player.currentDeposit <= 0,
+      reactivated: reactivated.some((r) => String(r.vip_id || '') === String(player.id) || r.username === player.username),
+    }))
+  }, [rows, month, previous, reactivated])
+
+  const stats = useMemo(() => {
+    const previousActive = players.filter((p) => p.previousDeposit > 0)
+    const retained = previousActive.filter((p) => p.currentDeposit > 0)
+    const churned = previousActive.filter((p) => p.currentDeposit <= 0)
+    const visibleChurn = hideReactivated ? churned.filter((p) => !p.reactivated) : churned
+    const recovery = {}
+    reactivated.forEach((row) => {
+      const currency = row.currency || 'UNKNOWN'
+      recovery[currency] = (recovery[currency] || 0) + Number(row.reactivation_deposit ?? row.deposit_amount ?? row.amount ?? 0)
+    })
+    const byTier = {}
+    churned.forEach((p) => { byTier[p.tier] = (byTier[p.tier] || 0) + 1 })
+    return {
+      previousActive,
+      retained,
+      churned,
+      visibleChurn,
+      recovery,
+      byTier,
+      retentionRate: previousActive.length ? Math.round((retained.length / previousActive.length) * 100) : 0,
+    }
+  }, [players, hideReactivated, reactivated])
+
+  const filteredChurn = useMemo(() => stats.visibleChurn.filter((p) => {
+    const tierMatch = tier === 'ALL' || String(p.tier).toUpperCase() === tier
+    const term = search.trim().toLowerCase()
+    const searchMatch = !term || String(p.username).toLowerCase().includes(term) || String(p.id).toLowerCase().includes(term) || String(p.host).toLowerCase().includes(term)
+    return tierMatch && searchMatch
+  }), [stats.visibleChurn, tier, search])
+
+  const daily = useMemo(() => {
+    const map = new Map()
+    reactivated.forEach((row) => {
+      const date = row.created_at ? new Date(row.created_at).toISOString().slice(0, 10) : 'Unknown'
+      const entry = map.get(date) || { date, count: 0, byTier: {}, recovery: {} }
+      entry.count += 1
+      const rowTier = row.tier || 'Unknown'
+      entry.byTier[rowTier] = (entry.byTier[rowTier] || 0) + 1
+      const currency = row.currency || 'UNKNOWN'
+      entry.recovery[currency] = (entry.recovery[currency] || 0) + Number(row.reactivation_deposit ?? row.deposit_amount ?? row.amount ?? 0)
+      map.set(date, entry)
+    })
+    return [...map.values()].sort((a, b) => b.date.localeCompare(a.date))
+  }, [reactivated])
+
+  async function generateList() {
+    setNotice(`Generated ${stats.churned.length} churn records for ${monthLabel(month)}.`)
+  }
+
+  async function saveSnapshot() {
+    setSaving(true)
+    setNotice('')
+    const payload = stats.churned.map((p) => ({
+      vip_id: p.id,
+      username: p.username,
+      tier: p.tier,
+      currency: p.currency,
+      host: p.host,
+      previous_deposit: p.previousDeposit,
+      current_deposit: p.currentDeposit,
+      reactivated: p.reactivated,
+    }))
+    const { error: saveError } = await supabase.from('retention_churn_snapshots').upsert({
+      snapshot_month: month,
+      previous_month: previous,
+      generated_at: new Date().toISOString(),
+      previous_active_count: stats.previousActive.length,
+      current_retained_count: stats.retained.length,
+      churned_count: stats.churned.length,
+      reactivated_count: reactivated.length,
+      recovery_by_currency: stats.recovery,
+      payload,
+    }, { onConflict: 'snapshot_month' })
+    setSaving(false)
+    if (saveError) setError(saveError.message)
+    else setNotice(`Saved ${stats.churned.length} players to the retention snapshot for ${monthLabel(month)}.`)
+  }
+
+  function exportCsv() {
+    const header = ['Username', 'VIP ID', 'Tier', 'Currency', 'Previous Deposit', 'Current Deposit', 'Host', 'Reactivated']
+    const body = filteredChurn.map((p) => [p.username, p.id, p.tier, p.currency, p.previousDeposit, p.currentDeposit, p.host, p.reactivated ? 'Yes' : 'No'])
+    const csv = [header, ...body].map((line) => line.map(csvCell).join(',')).join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = `retention-churn-${month}.csv`
+    anchor.click()
+    URL.revokeObjectURL(url)
+  }
+
+  if (loading) return <div style={styles.page}><div style={styles.muted}>Loading retention workspace…</div></div>
+  if (error) return <div style={styles.page}><div style={styles.error}>Unable to load retention data: {error}</div></div>
+
+  return (
+    <div style={styles.page}>
+      <div style={styles.headerRow}>
+        <div>
+          <h1 style={styles.title}>📋 Monthly Churn List</h1>
+          <div style={styles.subtitle}>Players with deposits in the previous month but no deposit in the selected month.</div>
+        </div>
+        <button style={styles.secondaryButton} onClick={() => navigate('/retention-analytics')}>📊 Retention Analytics</button>
+      </div>
+
+      <section style={styles.hero}>
+        <div>
+          <div style={styles.eyebrow}>Monthly retention</div>
+          <div style={styles.heroValue}>{stats.retentionRate}%</div>
+          <div style={styles.heroText}>{monthLabel(previous)} {stats.previousActive.length.toLocaleString()} players → {monthLabel(month)} retained {stats.retained.length.toLocaleString()}, churned {stats.churned.length.toLocaleString()}</div>
+        </div>
+        <div style={styles.calendar}>📅</div>
+      </section>
+
+      <section style={styles.toolbar}>
+        <div style={styles.field}><label>Previous month (deposited)</label><select value={previous} disabled style={styles.select}><option>{monthLabel(previous)}</option></select></div>
+        <div style={styles.field}><label>Selected month (not deposited)</label><select value={month} onChange={(e) => setMonth(e.target.value)} style={styles.select}>{months.map((m) => <option key={m} value={m}>{monthLabel(m)}</option>)}</select></div>
+        <button style={styles.primaryButton} onClick={generateList}>Generate List</button>
+        <button style={styles.secondaryButton} onClick={saveSnapshot} disabled={saving}>{saving ? 'Saving…' : '💾 Save to DB'}</button>
+        <button style={styles.secondaryButton} onClick={exportCsv}>Export CSV</button>
+      </section>
+
+      {notice && <div style={styles.notice}>{notice}</div>}
+
+      <section style={styles.cards}>
+        <Metric label="Previous active players" value={stats.previousActive.length} sub={previous} />
+        <Metric label="Current churn" value={stats.churned.length} sub={`${100 - stats.retentionRate}% churn rate`} danger />
+        <Metric label="Gold churn" value={stats.byTier.Gold || stats.byTier.GOLD || 0} sub={`Previous ${stats.previousActive.filter((p) => String(p.tier).toUpperCase() === 'GOLD').length}`} />
+        <Metric label="Silver churn" value={stats.byTier.Silver || stats.byTier.SILVER || 0} sub={`Previous ${stats.previousActive.filter((p) => String(p.tier).toUpperCase() === 'SILVER').length}`} />
+        <Metric label="Bronze churn" value={stats.byTier.Bronze || stats.byTier.BRONZE || 0} sub={`Previous ${stats.previousActive.filter((p) => String(p.tier).toUpperCase() === 'BRONZE').length}`} />
+        <Metric label="Current retained" value={stats.retained.length} sub={`${stats.retentionRate}% retention`} success />
+      </section>
+
+      <section style={styles.listCard}>
+        <div style={styles.sectionHeader}>
+          <div><strong>Player list</strong><span style={styles.count}>{filteredChurn.length} shown / {stats.churned.length} churned</span></div>
+          <div style={styles.controls}>
+            <select value={tier} onChange={(e) => setTier(e.target.value)} style={styles.smallSelect}><option value="ALL">All tiers</option><option value="GOLD">Gold</option><option value="SILVER">Silver</option><option value="BRONZE">Bronze</option><option value="PLATINUM">Platinum</option><option value="DIAMOND">Diamond</option><option value="BLACK">Black</option></select>
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search VIP / phone / host…" style={styles.input} />
+            <label style={styles.checkbox}><input type="checkbox" checked={hideReactivated} onChange={(e) => setHideReactivated(e.target.checked)} /> Hide reactivated</label>
+          </div>
+        </div>
+        <div style={styles.tableWrap}>
+          <table style={styles.table}>
+            <thead><tr><th>Player</th><th>Tier</th><th>Previous deposit</th><th>Current deposit</th><th>Host</th><th>Status</th><th>Action</th></tr></thead>
+            <tbody>
+              {filteredChurn.map((p) => <tr key={p.id}>
+                <td><strong>{p.username}</strong><div style={styles.mutedSmall}>{p.id}</div></td>
+                <td><Badge>{p.tier}</Badge></td>
+                <td>{money(p.previousDeposit, p.currency)}</td>
+                <td>{money(p.currentDeposit, p.currency)}</td>
+                <td>{p.host || '—'}</td>
+                <td><span style={styles.churnBadge}>{p.reactivated ? 'Reactivated' : 'Churn'}</span></td>
+                <td><div style={styles.actions}><button style={styles.actionButton} onClick={() => navigate(`/follow-up?vip=${encodeURIComponent(p.id)}`)}>Follow Up</button><button style={styles.actionButton} onClick={() => navigate(`/vips/${p.id}`)}>Open VIP</button><WhatsAppButton player={p} /></div></td>
+              </tr>)}
+              {!filteredChurn.length && <tr><td colSpan="7" style={styles.empty}>No churn records match the current filters.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section style={styles.listCard}>
+        <div style={styles.sectionHeader}><strong>Daily reactivation</strong><span style={styles.count}>{reactivated.length} reactivated players</span></div>
+        <div style={styles.dailyGrid}>{daily.map((entry) => <div key={entry.date} style={styles.dailyCard}>
+          <div style={styles.dailyDate}>{entry.date}</div>
+          <div style={styles.dailyCount}>{entry.count} players</div>
+          <div style={styles.tierLine}>{Object.entries(entry.byTier).map(([key, value]) => <span key={key}>{key} {value}</span>)}</div>
+          <div style={styles.recoveryLine}>Recovered {Object.entries(entry.recovery).map(([currency, amount]) => <span key={currency}>{money(amount, currency)}</span>)}</div>
+        </div>)}</div>
+        {!daily.length && <div style={styles.empty}>No reactivation records for {monthLabel(month)}.</div>}
+      </section>
+    </div>
+  )
 }
-function Kpi({label,value}){return <div className="rounded-xl border p-5"><div className="text-xs uppercase tracking-wide opacity-60">{label}</div><div className="mt-2 text-2xl font-semibold">{value}</div></div>}
-function MoneyCard({values,title}){return <section className="rounded-xl border"><div className="border-b px-5 py-4 font-medium">{title}</div><div className="grid gap-3 p-5 md:grid-cols-3">{Object.entries(values).map(([c,a])=><div key={c} className="rounded-lg border p-4"><div className="text-xs opacity-60">{c}</div><div className="mt-1 text-xl font-semibold">{formatAmount(a,c)}</div></div>)}{!Object.keys(values).length&&<div className="text-sm opacity-60">—</div>}</div></section>}
-function HostTable({rows,title}){return <section className="overflow-hidden rounded-xl border"><div className="border-b px-5 py-4 font-medium">{title}</div><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b text-left"><th className="px-5 py-3">Host</th><th className="px-5 py-3">Assigned VIPs</th><th className="px-5 py-3">Reactivated</th><th className="px-5 py-3">Rate</th><th className="px-5 py-3">Recovered</th></tr></thead><tbody>{rows.map(r=><tr key={r.host} className="border-b last:border-0"><td className="px-5 py-3">{r.host}</td><td className="px-5 py-3">{r.assignedVips}</td><td className="px-5 py-3">{r.reactivated}</td><td className="px-5 py-3">{r.rate}%</td><td className="px-5 py-3">{Object.entries(r.recovered).map(([c,a])=><div key={c}>{formatAmount(a,c)}</div>)}</td></tr>)}</tbody></table></div></section>}
-function ChurnTable({rows,title,onOpen,onFollowUp,hostName,t}){return <section className="overflow-hidden rounded-xl border"><div className="border-b px-5 py-4 font-medium">{title} <span className="ml-2 text-sm opacity-60">{rows.length}</span></div>{rows.length===0?<div className="p-8 text-center text-sm opacity-60">{t('retention.noRecords')}</div>:<div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b text-left"><th className="px-5 py-3">{t('retention.player')}</th><th className="px-5 py-3">{t('retention.tier')}</th><th className="px-5 py-3">{t('retention.previousDeposit')}</th><th className="px-5 py-3">{t('retention.currentDeposit')}</th><th className="px-5 py-3">{t('retention.host')}</th><th className="px-5 py-3">{t('retention.priority')}</th><th className="px-5 py-3">{t('retention.action')}</th></tr></thead><tbody>{rows.map(r=><tr key={r.id} className="border-b last:border-0"><td className="px-5 py-3">{r.username}</td><td className="px-5 py-3">{r.tier}</td><td className="px-5 py-3">{formatAmount(r.prevDeposit,r.currency)}</td><td className="px-5 py-3">{formatAmount(r.currentDeposit,r.currency)}</td><td className="px-5 py-3">{r.host_assigned||'—'}</td><td className="px-5 py-3">{getRetentionPriority(r)}</td><td className="px-5 py-3"><div className="flex gap-2"><button className="rounded-md border px-2 py-1 text-xs" onClick={()=>onFollowUp(r.id)}>{t('retention.followUp')}</button><button className="rounded-md border px-2 py-1 text-xs" onClick={()=>onOpen(r.id)}>{t('retention.openVip')}</button>{whatsappLink(r,hostName)&&<a className="rounded-md border px-2 py-1 text-xs" href={whatsappLink(r,hostName)} target="_blank" rel="noopener noreferrer">WhatsApp</a>}{!whatsappLink(r,hostName)&&<span className="px-2 py-1 text-xs opacity-50" title={t('retention.noValidContact')}>WA —</span>}</div></td></tr>)}</tbody></table></div>}</section>}
-function ContactTable({rows,t}){return <section className="overflow-hidden rounded-xl border"><div className="border-b px-5 py-4 font-medium">{t('retention.contactLog')} <span className="ml-2 text-sm opacity-60">{rows.length}</span></div>{rows.length===0?<div className="p-8 text-center text-sm opacity-60">{t('retention.noRecords')}</div>:<div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b text-left"><th className="px-5 py-3">{t('retention.player')}</th><th className="px-5 py-3">Outcome</th><th className="px-5 py-3">Host</th><th className="px-5 py-3">Date</th><th className="px-5 py-3">Notes</th></tr></thead><tbody>{rows.map(r=><tr key={r.id} className="border-b last:border-0"><td className="px-5 py-3">{r.username}</td><td className="px-5 py-3">{r.outcome||'—'}</td><td className="px-5 py-3">{r.host_name||'—'}</td><td className="px-5 py-3">{r.logged_at?new Date(r.logged_at).toLocaleString():'—'}</td><td className="px-5 py-3">{r.notes||'—'}</td></tr>)}</tbody></table></div>}</section>}
-function ReactivationTable({rows,t}){return <section className="overflow-hidden rounded-xl border"><div className="border-b px-5 py-4 font-medium">{t('retention.reactivated')} <span className="ml-2 text-sm opacity-60">{rows.length}</span></div>{rows.length===0?<div className="p-8 text-center text-sm opacity-60">{t('retention.noRecords')}</div>:<div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b text-left"><th className="px-5 py-3">{t('retention.player')}</th><th className="px-5 py-3">{t('retention.tier')}</th><th className="px-5 py-3">{t('retention.daysInactive')}</th><th className="px-5 py-3">Host</th><th className="px-5 py-3">Date</th></tr></thead><tbody>{rows.map(r=><tr key={r.id} className="border-b last:border-0"><td className="px-5 py-3">{r.username}</td><td className="px-5 py-3">{r.tier||'—'}</td><td className="px-5 py-3">{r.days_was_inactive??'—'}</td><td className="px-5 py-3">{r.host_name||'—'}</td><td className="px-5 py-3">{r.created_at?new Date(r.created_at).toLocaleDateString():'—'}</td></tr>)}</tbody></table></div>}</section>}
+
+function Metric({ label, value, sub, danger, success }) {
+  return <div style={{ ...styles.metric, borderTop: `3px solid ${danger ? '#d94b4b' : success ? '#20a36a' : '#d9e1ea'}` }}><div style={styles.metricLabel}>{label}</div><div style={styles.metricValue}>{value.toLocaleString()}</div><div style={styles.metricSub}>{sub}</div></div>
+}
+
+function Badge({ children }) { return <span style={styles.badge}>{children}</span> }
+
+function WhatsAppButton({ player }) {
+  const raw = String(player.phone || player.whatsapp || '').replace(/\D/g, '')
+  if (raw.length < 10) return <span style={styles.disabledAction}>WA —</span>
+  return <a href={`https://wa.me/${raw}`} target="_blank" rel="noreferrer" style={styles.actionButton}>WhatsApp</a>
+}
+
+const styles = {
+  page: { padding: '24px 28px', minHeight: '100vh', color: 'var(--text)' },
+  headerRow: { display: 'flex', justifyContent: 'space-between', gap: 20, alignItems: 'flex-start', marginBottom: 18 },
+  title: { margin: 0, fontSize: 26, fontWeight: 800 },
+  subtitle: { marginTop: 6, color: 'var(--muted)', fontSize: 13 },
+  hero: { background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, padding: 22, display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, borderLeft: '4px solid #20a36a' },
+  eyebrow: { fontSize: 12, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '.4px' },
+  heroValue: { fontSize: 38, lineHeight: 1, fontWeight: 900, color: '#20a36a', margin: '8px 0' },
+  heroText: { color: 'var(--muted)', fontSize: 13 },
+  calendar: { fontSize: 44, opacity: .6 },
+  toolbar: { display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'end', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: 14, marginBottom: 12 },
+  field: { display: 'flex', flexDirection: 'column', gap: 5 },
+  fieldLabel: { fontSize: 11, color: 'var(--muted)' },
+  select: { minWidth: 170, background: 'var(--surface2)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 8, padding: '9px 10px' },
+  smallSelect: { background: 'var(--surface2)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px' },
+  input: { background: 'var(--surface2)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px', minWidth: 220 },
+  primaryButton: { background: 'var(--accent)', color: '#fff', border: 0, borderRadius: 8, padding: '10px 15px', fontWeight: 800, cursor: 'pointer' },
+  secondaryButton: { background: 'var(--surface2)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 8, padding: '9px 13px', fontWeight: 700, cursor: 'pointer' },
+  notice: { padding: '10px 14px', background: 'rgba(32,163,106,.10)', border: '1px solid rgba(32,163,106,.3)', borderRadius: 8, marginBottom: 12, fontSize: 13 },
+  error: { padding: 16, background: 'rgba(217,75,75,.10)', border: '1px solid rgba(217,75,75,.35)', borderRadius: 10 },
+  cards: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 10, marginBottom: 16 },
+  metric: { background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: 15 },
+  metricLabel: { fontSize: 12, color: 'var(--muted)' },
+  metricValue: { fontSize: 26, fontWeight: 900, marginTop: 5 },
+  metricSub: { fontSize: 11, color: 'var(--muted)', marginTop: 2 },
+  listCard: { background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden', marginBottom: 16 },
+  sectionHeader: { padding: 14, borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' },
+  count: { marginLeft: 8, color: 'var(--muted)', fontSize: 12 },
+  controls: { display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' },
+  checkbox: { display: 'flex', gap: 6, alignItems: 'center', fontSize: 12, color: 'var(--muted)' },
+  tableWrap: { overflowX: 'auto' },
+  table: { width: '100%', borderCollapse: 'collapse', fontSize: 13 },
+  mutedSmall: { color: 'var(--muted)', fontSize: 11, marginTop: 2 },
+  badge: { display: 'inline-block', padding: '3px 8px', borderRadius: 6, background: 'var(--surface2)', border: '1px solid var(--border)', fontSize: 11, fontWeight: 700 },
+  churnBadge: { display: 'inline-block', padding: '3px 8px', borderRadius: 10, background: 'rgba(217,75,75,.12)', color: '#d94b4b', fontSize: 11, fontWeight: 700 },
+  actions: { display: 'flex', gap: 5, flexWrap: 'wrap' },
+  actionButton: { display: 'inline-block', padding: '6px 8px', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text)', background: 'var(--surface2)', textDecoration: 'none', fontSize: 11, cursor: 'pointer' },
+  disabledAction: { padding: '6px 8px', color: 'var(--muted)', fontSize: 11 },
+  empty: { padding: 30, textAlign: 'center', color: 'var(--muted)' },
+  dailyGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(260px,1fr))', gap: 10, padding: 14 },
+  dailyCard: { border: '1px solid var(--border)', borderRadius: 10, padding: 14, background: 'var(--surface2)' },
+  dailyDate: { fontWeight: 800, fontSize: 14 },
+  dailyCount: { fontSize: 20, fontWeight: 900, marginTop: 5 },
+  tierLine: { display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8, color: 'var(--muted)', fontSize: 12 },
+  recoveryLine: { display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10, fontSize: 12, fontWeight: 700 },
+  muted: { color: 'var(--muted)', padding: 24 },
+}
+
+const styleSheet = document.createElement('style')
+styleSheet.textContent = `.retention-workspace table th,.retention-workspace table td{padding:10px 12px;border-bottom:1px solid var(--border);text-align:left;white-space:nowrap}.retention-workspace table th{font-size:11px;color:var(--muted);font-weight:700}.retention-workspace table tr:hover{background:var(--surface2)}`
+if (typeof document !== 'undefined' && !document.head.querySelector('[data-retention-workspace]')) {
+  styleSheet.setAttribute('data-retention-workspace', 'true')
+  document.head.appendChild(styleSheet)
+}
