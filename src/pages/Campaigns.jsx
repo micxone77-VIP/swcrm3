@@ -1560,9 +1560,10 @@ export default function Campaigns() {
                       {chaseList.length === 0
                         ? <tr><td colSpan={11} style={{ ...s.td, textAlign:'center', padding:24, color:'var(--muted)' }}>Add players above to start tracking.</td></tr>
                         : chaseList.map((p,i) => {
-                            const pr = getProgress(p._vb||0, minBetTarget)
-                            const inTopByPosition = i < topN
-                            const gap = cutoffVB!=null ? Math.max(0, cutoffVB - (p._vb||0)) : null
+                            const rankingTarget = leaderboardMetric === 'deposit' ? minDepLb : minBetTarget
+                            const pr = getProgress(p._rankingValue||0, rankingTarget)
+                            const inTopByPosition = i < topN && p._qualified
+                            const gap = cutoffValue!=null ? Math.max(0, cutoffValue - (p._rankingValue||0)) : null
                             return (
                               <tr key={p.id} onMouseEnter={e=>e.currentTarget.style.background='var(--surface2)'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
                                 <td style={{ ...s.td, color:'var(--muted)', fontSize:11 }}>{i+1}</td>
