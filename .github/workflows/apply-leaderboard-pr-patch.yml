@@ -1,34 +1,22 @@
 name: Apply Leaderboard PR Patch
 
 on:
-  pull_request:
-    types: [opened, synchronize]
-  workflow_dispatch:
-    inputs:
-      branch:
-        description: 'Branch to patch'
-        required: true
-        type: string
+  push:
+    branches: [main]
 
 permissions:
   contents: write
-  pull-requests: read
 
 jobs:
   patch:
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository }}
+    if: ${{ !contains(github.event.head_commit.message, '[leaderboard-patch-applied]') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.branch || github.head_ref }}
           fetch-depth: 0
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-      - run: npm ci
-      - name: Apply source patch
+      - name: Apply exact source patch
+        shell: bash
         run: |
           python3 <<'PY'
           from pathlib import Path
@@ -37,20 +25,27 @@ jobs:
           path = Path('src/pages/Campaigns.jsx')
           source = path.read_text()
 
-          source, n = re.subn(r"(modal:\s*\{[^\n]*maxWidth:)720(, maxHeight:)'90vh'", r"\g<1>1200\2'92vh'", source, count=1)
+          # 1) Widen campaign detail/create modal.
+          source, n = re.subn(
+              r"(modal:\s*\{[^\n]*maxWidth:)720(, maxHeight:)'90vh'",
+              r"\g<1>1200\2'92vh'",
+              source,
+              count=1,
+          )
           if n != 1:
-              raise SystemExit('modal patch target not found')
+              raise SystemExit('PATCH_STOP: modal target not found')
 
+          # 2) Replace the leaderboard derived-state block with metric-aware ranking.
           start_marker = "  // ── Leaderboard-specific: rank by valid_bet, not deposit"
           end_marker = "  const chaseList = campType==='leaderboard' ? lbRanked : [...players].sort((a,b)=>playerDeposit(b)-playerDeposit(a))"
           start = source.find(start_marker)
           end = source.find(end_marker, start)
           if start < 0 or end < 0:
-              raise SystemExit('leaderboard derived-state markers not found')
+              raise SystemExit('PATCH_STOP: leaderboard derived-state markers not found')
 
           replacement = '''  // ── Leaderboard-specific ranking/qualification
-  // Rank every enrolled player by the selected metric. Thresholds qualify rewards;
-  // they do not remove a player from the visible ranking.
+  // Ranking is based on the campaign-selected metric. Thresholds only decide
+  // whether a ranked player is reward-qualified; they do not hide their rank.
   const leaderboardMetric = ['turnover','deposit','turnover_deposit'].includes(selected?.leaderboard_metric)
     ? selected.leaderboard_metric : 'turnover'
   const leaderboardRankingValue = (p) => leaderboardMetric === 'deposit'
@@ -107,31 +102,30 @@ jobs:
 '''
           source = source[:start] + replacement + end_marker + source[end+len(end_marker):]
 
+          # 3) The leaderboard tab itself must use the same metric/qualification logic.
           old_sort = "[...players].sort((a,b)=>(parseFloat(b.valid_bet)||0)-(parseFloat(a.valid_bet)||0))"
           if old_sort not in source:
-              raise SystemExit('leaderboard tab sort target not found')
+              raise SystemExit('PATCH_STOP: leaderboard tab sort target not found')
           source = source.replace(old_sort, "[...players].sort((a,b)=>leaderboardRankingValue(b)-leaderboardRankingValue(a) || String(a.username||'').localeCompare(String(b.username||'')))", 1)
 
           old_qualified = "const qualified=vb>=minBet||(minDep>0&&dep>=minDep)"
           if old_qualified not in source:
-              raise SystemExit('leaderboard tab qualification target not found')
+              raise SystemExit('PATCH_STOP: leaderboard tab qualification target not found')
           source = source.replace(old_qualified, "const qualified=leaderboardQualified(p)", 1)
           source = source.replace("const rank=qualified?i+1:null", "const rank=i+1", 1)
           source = source.replace("const reward=inTop?(rankRwds[rank-1]?.amount||0):0", "const reward=inTop&&qualified?(rankRwds[rank-1]?.amount||0):0", 1)
 
           path.write_text(source)
           PY
-      - name: Run regression and build
-        run: |
-          node --test leaderboard-behavior-regression.test.mjs
-          npm run build
-      - name: Commit patch and remove one-time workflow
-        env:
-          TARGET_BRANCH: ${{ github.event_name == 'workflow_dispatch' && inputs.branch || github.head_ref }}
+
+      - name: Regression test
+        run: node --test leaderboard-behavior-regression.test.mjs
+      - name: Production build
+        run: npm ci && npm run build
+      - name: Commit patched source
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          rm -f .github/workflows/apply-leaderboard-pr-patch.yml
-          git add src/pages/Campaigns.jsx .github/workflows/apply-leaderboard-pr-patch.yml
-          git commit -m "fix: align CRM leaderboard metric and widen campaign modal [leaderboard-patch-applied]"
-          git push origin HEAD:${TARGET_BRANCH}
+          git add src/pages/Campaigns.jsx
+          git commit -m "fix: align leaderboard metric and widen campaign modal [leaderboard-patch-applied]"
+          git push origin main
