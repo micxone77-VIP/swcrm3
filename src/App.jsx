@@ -33,6 +33,7 @@ import DailyTargets          from './pages/DailyTargets'
 import ChurnAlerts           from './pages/ChurnAlerts'
 import RetentionWorkspace    from './pages/RetentionWorkspace'
 import RetentionAnalytics    from './pages/RetentionAnalytics'
+import './pages/RetentionAnalytics.css'
 
 export default function App() {
   return <AuthProvider><LanguageProvider><BrowserRouter><Routes>
