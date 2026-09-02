@@ -8,6 +8,7 @@ import {
 } from '../components/ui'
 import { TierBadge, RiskBadge } from '../components/ui'
 import { formatMoney } from '../lib/format'
+import { useLanguage } from '../contexts/LanguageContext'
 
 function daysAgoLabel(d) {
   if (!d) return '—'
@@ -20,6 +21,7 @@ const RISK_LEVELS = ['All', 'Critical', 'High', 'Medium']
 
 export default function AtRisk() {
   const navigate = useNavigate()
+  const { t } = useLanguage()
   const [vips, setVips]       = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError]     = useState(null)
@@ -33,7 +35,7 @@ export default function AtRisk() {
         supabase.from('vip_members')
           .select('id,username,full_name,tier,churn_risk,activity_status,days_inactive,last_deposit_date,total_deposit,win_loss,currency,last_contacted,last_contact_date,host_assigned,region,is_excluded')
           .neq('is_excluded', true)
-          .in('churn_risk', ['HIGH','MEDIUM','CRITICAL','High','Medium','Critical']),
+          .in('churn_risk', ['HIGH','MEDIUM','CRITICAL']),
         supabase.from('profiles').select('full_name').in('role',['admin','host']).order('full_name'),
       ])
       if (vipRes.error) { setError(vipRes.error.message); setLoading(false); return }
@@ -74,13 +76,13 @@ export default function AtRisk() {
 
   return (
     <div style={{ padding: '24px 28px' }}>
-      <PageHeader title="At Risk VIPs" subtitle="VIPs with active churn risk signals" />
+      <PageHeader title={t('atRisk.title')} subtitle={t('atRisk.subtitle')} />
 
       {/* KPIs */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12, marginBottom: 24 }}>
-        <KpiCard label="Critical" value={critical.length} color="var(--danger)" onClick={() => setRiskFilter('Critical')} />
-        <KpiCard label="High Risk" value={high.length} color="var(--warning)" onClick={() => setRiskFilter('High')} />
-        <KpiCard label="Medium Risk" value={medium.length} color="var(--info)" onClick={() => setRiskFilter('Medium')} />
+        <KpiCard label={t('atRisk.criticalKpi')} value={critical.length} color="var(--danger)" onClick={() => setRiskFilter('Critical')} />
+        <KpiCard label={t('atRisk.highKpi')} value={high.length} color="var(--warning)" onClick={() => setRiskFilter('High')} />
+        <KpiCard label={t('atRisk.mediumKpi')} value={medium.length} color="var(--info)" onClick={() => setRiskFilter('Medium')} />
       </div>
 
       {/* Filters */}
@@ -88,20 +90,20 @@ export default function AtRisk() {
         <FilterPills options={RISK_LEVELS.map(r => ({ value: r, label: r }))} active={riskFilter} onChange={setRiskFilter} />
         <select value={host} onChange={e => setHost(e.target.value)}
           style={{ background:'var(--surface)', border:'1px solid var(--border)', color:'var(--text)', padding:'7px 12px', borderRadius:7, fontSize:13, outline:'none', marginLeft:'auto' }}>
-          {hosts.map(h => <option key={h} value={h}>{h === 'All' ? 'All Hosts' : h}</option>)}
+          {hosts.map(h => <option key={h} value={h}>{h === 'All' ? t('atRisk.allHosts') : h}</option>)}
         </select>
       </div>
 
       {/* Table */}
       <Card>
         {sorted.length === 0 ? (
-          <EmptyState icon="🟢" title="No at-risk VIPs" message="No VIPs match this risk level right now." />
+          <EmptyState icon="🟢" title={t('atRisk.noAtRisk')} message={t('atRisk.noAtRiskMsg')} />
         ) : (
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
                 <tr>
-                  {['VIP', 'Tier', 'Risk Level', 'Reason', 'Days Inactive', 'Last Contact', 'Deposit (Total)', 'Host', 'Action'].map(h => (
+                  {[t('atRisk.colVip'), t('common.tier'), t('atRisk.colRiskLevel'), t('atRisk.colReason'), t('atRisk.colDaysInactive'), t('atRisk.colLastContact'), t('atRisk.colDeposit'), t('common.host'), t('atRisk.colAction')].map(h => (
                     <th key={h} style={{ padding:'9px 14px', textAlign:'left', background:'var(--surface)', color:'var(--muted)', fontWeight:600, fontSize:11, borderBottom:'1px solid var(--border)', whiteSpace:'nowrap' }}>{h}</th>
                   ))}
                 </tr>
@@ -125,8 +127,8 @@ export default function AtRisk() {
                       style={{ cursor:'pointer', transition:'background .1s' }}
                     >
                       <td style={{ padding:'10px 14px', borderBottom:'1px solid var(--border)' }}>
-                        <div style={{ fontWeight:600 }}>{v.full_name || v.username}</div>
-                        <div style={{ fontSize:11, color:'var(--muted)' }}>{v.username}</div>
+                        <div style={{ fontWeight:600 }}>{v.username}</div>
+                        <div style={{ fontSize:11, color:'var(--muted)' }}>{v.full_name || ''}</div>
                       </td>
                       <td style={{ padding:'10px 14px', borderBottom:'1px solid var(--border)' }}><TierBadge tier={v.tier} /></td>
                       <td style={{ padding:'10px 14px', borderBottom:'1px solid var(--border)' }}><RiskBadge risk={v.churn_risk} /></td>
@@ -147,7 +149,7 @@ export default function AtRisk() {
                       </td>
                       <td style={{ padding:'10px 14px', borderBottom:'1px solid var(--border)' }}>
                         <div style={{ display:'flex', gap:6 }}>
-                          <Btn size="sm" variant="primary" onClick={e => { e.stopPropagation(); navigate(`/vips/${v.id}`) }}>Open VIP</Btn>
+                          <Btn size="sm" variant="primary" onClick={e => { e.stopPropagation(); navigate(`/vips/${v.id}`) }}>{t('atRisk.openVip')}</Btn>
                         </div>
                       </td>
                     </tr>

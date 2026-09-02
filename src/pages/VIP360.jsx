@@ -76,6 +76,13 @@ export default function VIP360() {
   const [editForm, setEditForm] = useState({})
   const [editSaving, setEditSaving] = useState(false)
 
+  // Deposit calendar
+  const [calMonth, setCalMonth] = useState(() => {
+    const n = new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}`
+  })
+  const [calData, setCalData] = useState([])
+  const [calLoading, setCalLoading] = useState(false)
+
   const load = useCallback(async () => {
     setLoading(true); setError(null)
     try {
@@ -122,6 +129,22 @@ export default function VIP360() {
   }, [id])
 
   useEffect(() => { load() }, [load])
+
+  // Deposit calendar fetch
+  useEffect(() => {
+    if (tab !== 'calendar' || !id) return
+    setCalLoading(true)
+    const [y, m] = calMonth.split('-').map(Number)
+    const start = `${calMonth}-01`
+    const daysInMonth = new Date(y, m, 0).getDate()
+    const end = `${calMonth}-${String(daysInMonth).padStart(2,'0')}`
+    supabase.from('vip_daily_snapshots')
+      .select('snapshot_date,total_deposit,total_withdrawal,monthly_valid_bet,bet_count')
+      .eq('vip_id', id)
+      .gte('snapshot_date', start)
+      .lte('snapshot_date', end)
+      .then(({ data }) => { setCalData(data || []); setCalLoading(false) })
+  }, [tab, calMonth, id])
 
   // Period-filtered monthly data
   const now = new Date()
@@ -188,6 +211,7 @@ export default function VIP360() {
     { key: 'activity',  label: 'Activity' },
     { key: 'campaigns', label: 'Campaigns', count: campaigns.length },
     { key: 'contact',   label: 'Contact',   count: contacts.length },
+    { key: 'calendar',  label: '📅 Deposit Calendar' },
     { key: 'notes',     label: 'Notes' },
     { key: 'insights',  label: 'Insights' },
   ]
@@ -491,6 +515,116 @@ export default function VIP360() {
               )}
             </div>
           )}
+
+          {/* DEPOSIT CALENDAR */}
+          {tab === 'calendar' && (() => {
+            const [y, m] = calMonth.split('-').map(Number)
+            const daysInMonth = new Date(y, m, 0).getDate()
+            const firstDow = new Date(y, m - 1, 1).getDay() // 0=Sun
+            const byDay = {}
+            calData.forEach(r => { byDay[r.snapshot_date] = r })
+            let depositDays = 0, turnoverOnlyDays = 0, absentDays = 0
+            let totalDeposit = 0, totalBet = 0, totalWithdrawal = 0, withdrawalDays = 0
+            for (let d = 1; d <= daysInMonth; d++) {
+              const key = `${calMonth}-${String(d).padStart(2,'0')}`
+              const row = byDay[key]
+              if (!row) { absentDays++; continue }
+              const dep = Number(row.total_deposit || 0)
+              const bet = Number(row.monthly_valid_bet || 0)
+              const bc = Number(row.bet_count || 0)
+              const wd = Number(row.total_withdrawal || 0)
+              totalDeposit += dep; totalBet += bet
+              if (wd > 0) { totalWithdrawal += wd; withdrawalDays++ }
+              if (dep > 0) depositDays++
+              else if (bc > 0) turnoverOnlyDays++
+              else absentDays++
+            }
+            const activeDays = depositDays + turnoverOnlyDays
+            const fmtK = v => v >= 1000000 ? (v/1000000).toFixed(2)+'M' : v >= 1000 ? (v/1000).toFixed(1)+'K' : v.toFixed(0)
+            const prevMonth = () => { const d=new Date(y,m-2,1); setCalMonth(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`) }
+            const nextMonth = () => { const d=new Date(y,m,1); setCalMonth(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`) }
+            const monthName = new Date(y, m-1, 1).toLocaleString('default', { month: 'long', year: 'numeric' })
+            return (
+              <div>
+                {/* Header + nav */}
+                <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
+                  <div style={{ fontSize:13, fontWeight:800, letterSpacing:'.3px' }}>📅 {monthName.toUpperCase()} DEPOSIT RECORDS</div>
+                  <div style={{ display:'flex', gap:6 }}>
+                    <Btn size="sm" variant="ghost" onClick={prevMonth}>‹</Btn>
+                    <Btn size="sm" variant="ghost" onClick={nextMonth}>›</Btn>
+                  </div>
+                </div>
+                {/* Stats */}
+                <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:10, marginBottom:12 }}>
+                  {[
+                    { label: `${calMonth} Deposit Days`, value: `${depositDays}/${daysInMonth} days`, color:'var(--success)' },
+                    { label: 'Turnover Only, No Deposit', value: turnoverOnlyDays, color:'#c9a961' },
+                    { label: `${calMonth} Deposit`, value: 'RM '+fmtK(totalDeposit), color:'var(--text)' },
+                    { label: `${calMonth} Valid Bet`, value: 'RM '+fmtK(totalBet), color:'var(--muted)' },
+                  ].map(s => (
+                    <div key={s.label} style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:9, padding:'10px 14px' }}>
+                      <div style={{ fontSize:17, fontWeight:800, color:s.color }}>{s.value}</div>
+                      <div style={{ fontSize:10, color:'var(--muted)', marginTop:3 }}>{s.label}</div>
+                    </div>
+                  ))}
+                </div>
+                <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:10, marginBottom:18 }}>
+                  {[
+                    { label: `${calMonth} Active Rate`, value: Math.round(activeDays/daysInMonth*100)+'%', color: activeDays/daysInMonth >= 0.5 ? 'var(--success)' : 'var(--warning)' },
+                    { label: `${calMonth} Deposit Rate`, value: Math.round(depositDays/daysInMonth*100)+'%', color:'var(--success)' },
+                    { label: `${calMonth} Withdrawal Rate`, value: Math.round(withdrawalDays/daysInMonth*100)+'%', color:'var(--danger)' },
+                  ].map(s => (
+                    <div key={s.label} style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:9, padding:'10px 14px' }}>
+                      <div style={{ fontSize:17, fontWeight:800, color:s.color }}>{s.value}</div>
+                      <div style={{ fontSize:10, color:'var(--muted)', marginTop:3 }}>{s.label}</div>
+                    </div>
+                  ))}
+                </div>
+                {/* Legend */}
+                <div style={{ display:'flex', gap:16, marginBottom:12, fontSize:11, color:'var(--muted)' }}>
+                  <span style={{ display:'flex', alignItems:'center', gap:5 }}><span style={{ width:12, height:12, borderRadius:3, background:'rgba(34,197,94,.85)', display:'inline-block' }}></span>Deposited</span>
+                  <span style={{ display:'flex', alignItems:'center', gap:5 }}><span style={{ width:12, height:12, borderRadius:3, background:'rgba(201,169,97,.85)', display:'inline-block' }}></span>Turnover only</span>
+                  <span style={{ display:'flex', alignItems:'center', gap:5 }}><span style={{ width:12, height:12, borderRadius:3, background:'var(--surface2)', border:'1px solid var(--border)', display:'inline-block' }}></span>Absent</span>
+                </div>
+                {/* Calendar grid */}
+                {calLoading ? <LoadingState /> : (
+                  <div style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:10, overflow:'hidden' }}>
+                    <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)', borderBottom:'1px solid var(--border)' }}>
+                      {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => (
+                        <div key={d} style={{ padding:'7px 0', textAlign:'center', fontSize:10, fontWeight:700, color:'var(--muted)' }}>{d}</div>
+                      ))}
+                    </div>
+                    <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)', gap:3, padding:6 }}>
+                      {Array.from({ length: firstDow }).map((_,i) => <div key={`e${i}`} />)}
+                      {Array.from({ length: daysInMonth }).map((_,i) => {
+                        const d = i + 1
+                        const key = `${calMonth}-${String(d).padStart(2,'0')}`
+                        const row = byDay[key]
+                        const dep = row ? Number(row.total_deposit || 0) : 0
+                        const bc = row ? Number(row.bet_count || 0) : 0
+                        const bet = row ? Number(row.monthly_valid_bet || 0) : 0
+                        const isDeposit = dep > 0
+                        const isTurnover = !isDeposit && bc > 0
+                        const bg = isDeposit ? 'rgba(34,197,94,.82)' : isTurnover ? 'rgba(201,169,97,.82)' : 'transparent'
+                        const textColor = (isDeposit || isTurnover) ? '#fff' : 'var(--muted)'
+                        const today = new Date()
+                        const isToday = today.getFullYear()===y && today.getMonth()+1===m && today.getDate()===d
+                        return (
+                          <div key={d} title={row ? `Deposit: RM${dep} · Bet: RM${fmtK(bet)}` : 'No activity'}
+                            style={{ background:bg, borderRadius:6, padding:'8px 4px', textAlign:'center', minHeight:52, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:2,
+                              outline: isToday ? '2px solid var(--accent)' : 'none', outlineOffset:'-2px' }}>
+                            <div style={{ fontSize:12, fontWeight:700, color: isToday && !row ? 'var(--accent)' : textColor }}>{d}</div>
+                            {isDeposit && <div style={{ fontSize:9, fontWeight:600, color:'rgba(255,255,255,.9)' }}>+{fmtK(dep)}</div>}
+                            {isTurnover && <div style={{ fontSize:9, fontWeight:600, color:'rgba(255,255,255,.9)' }}>bet</div>}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )
+          })()}
 
           {/* INSIGHTS */}
           {tab === 'insights' && (

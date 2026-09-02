@@ -8,7 +8,7 @@ export const CAMPAIGN_CREATOR_TYPES = {
   tiered_deposit_reward: { label:'🎁 Tiered Deposit Reward' },
 }
 
-export function buildCampaignInsert({ campaign_type, campaign_name, campaign_code, countries=[], tiers=[], manualUserIds=[] }) {
+export function buildCampaignInsert({ campaign_type, campaign_name, campaign_code, countries=[], tiers=[], manualUserIds=[], payout_mode='all' }) {
   const type = campaign_type === 'tiered_deposit_reward' ? 'fixed_reward' : campaign_type
   return {
     campaign_type: type,
@@ -19,6 +19,7 @@ export function buildCampaignInsert({ campaign_type, campaign_name, campaign_cod
     auto_enroll_tiers: tiers,
     enrollment_mode: manualUserIds.length ? 'mixed' : 'auto_tier',
     is_multi_level: campaign_type === 'tiered_deposit_reward',
+    payout_mode: campaign_type === 'tiered_deposit_reward' ? (payout_mode === 'highest_only' ? 'highest_only' : 'all') : 'all',
   }
 }
 

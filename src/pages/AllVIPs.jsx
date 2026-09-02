@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
+import { useLanguage } from '../contexts/LanguageContext'
 import {
   PageHeader, Card, Btn, Input, Select, FilterPills,
   LoadingState, ErrorState, EmptyState, Pagination, Badge,
@@ -41,6 +42,7 @@ function downloadCSV(rows, filename) {
 export default function AllVIPs() {
   const navigate = useNavigate()
   const { profile } = useAuth()
+  const { t } = useLanguage()
   const [vips, setVips]         = useState([])
   const [loading, setLoading]   = useState(true)
   const [error, setError]       = useState(null)
@@ -166,9 +168,9 @@ export default function AllVIPs() {
   const sortIcon = col => sortCol === col ? (sortAsc ? ' ↑' : ' ↓') : ''
 
   const SAVED_VIEWS = [
-    { value: 'all',      label: 'All VIPs' },
-    { value: 'active',   label: 'Active' },
-    { value: 'risk',     label: 'At Risk' },
+    { value: 'all',      label: t('allVips.viewAll') },
+    { value: 'active',   label: t('common.active') },
+    { value: 'risk',     label: t('common.atRisk') },
     { value: 'diamond',  label: 'Diamond' },
     { value: 'platinum', label: 'Platinum' },
     { value: 'noctact',  label: 'No Contact 7d+' },
@@ -177,17 +179,17 @@ export default function AllVIPs() {
   return (
     <div style={{ padding: '24px 28px' }}>
       <PageHeader
-        title="VIP Operations"
+        title={t('allVips.title')}
         subtitle={`${total.toLocaleString()} VIPs`}
         actions={
           <>
             {profile?.role === 'admin' && (
               <Btn size="sm" variant="ghost" onClick={() => downloadCSV(filtered, 'vips-export.csv')}>
-                ↓ Export CSV
+                {t('allVips.exportCsv')}
               </Btn>
             )}
             <Btn size="sm" variant="primary" onClick={() => navigate('/vips')}>
-              Refresh
+              {t('allVips.refresh')}
             </Btn>
           </>
         }
@@ -228,23 +230,23 @@ export default function AllVIPs() {
       {/* Filters */}
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 16, alignItems: 'center' }}>
         <input ref={searchRef} value={search} onChange={e => { setSearch(e.target.value); setPage(1) }}
-          placeholder="Search name / login / phone…"
+          placeholder={t('allVips.searchPlaceholder')}
           style={{ background:'var(--surface)', border:'1px solid var(--border)', color:'var(--text)', padding:'8px 14px', borderRadius:8, fontSize:13, width:240, outline:'none' }} />
         <Select value={tier} onChange={e => { setTier(e.target.value); setPage(1) }} style={{ minWidth: 120 }}>
-          {TIERS.map(t => <option key={t} value={t}>{t === 'ALL' ? 'All Tiers' : t}</option>)}
+          {TIERS.map(tv => <option key={tv} value={tv}>{tv === 'ALL' ? t('allVips.allTiers') : tv}</option>)}
         </Select>
         <Select value={status} onChange={e => { setStatus(e.target.value); setPage(1) }} style={{ minWidth: 120 }}>
-          {STATUSES.map(s => <option key={s} value={s}>{s === 'ALL' ? 'All Status' : s}</option>)}
+          {STATUSES.map(s => <option key={s} value={s}>{s === 'ALL' ? t('allVips.allStatus') : s}</option>)}
         </Select>
         <Select value={region} onChange={e => { setRegion(e.target.value); setPage(1) }} style={{ minWidth: 130 }}>
           {REGIONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
         </Select>
         <Select value={host} onChange={e => { setHost(e.target.value); setPage(1) }} style={{ minWidth: 130 }}>
-          {hosts.map(h => <option key={h} value={h}>{h === 'ALL' ? 'All Hosts' : h}</option>)}
+          {hosts.map(h => <option key={h} value={h}>{h === 'ALL' ? t('allVips.allHosts') : h}</option>)}
         </Select>
         {(search || tier !== 'ALL' || status !== 'ALL' || region !== 'ALL' || host !== 'ALL') && (
           <Btn size="sm" variant="ghost" onClick={() => { setSearch(''); setTier('ALL'); setStatus('ALL'); setRegion('ALL'); setHost('ALL'); setPage(1) }}>
-            Clear filters
+            {t('allVips.clearFilters')}
           </Btn>
         )}
       </div>
@@ -257,16 +259,16 @@ export default function AllVIPs() {
               <thead>
                 <tr>
                   {[
-                    { key:'name', label:'VIP', sortable:true },
-                    { key:'tier', label:'Tier', sortable:true },
-                    { key:'activity_status', label:'Status', sortable:false },
-                    { key:'dep', label:'Deposit', sortable:true },
-                    { key:'win_loss', label:'Win/Loss', sortable:false },
-                    { key:'last_contact_date', label:'Last Contact', sortable:false },
-                    { key:'last_deposit_date', label:'Last Deposit', sortable:false },
-                    { key:'host_assigned', label:'Host', sortable:false },
-                    { key:'churn_risk', label:'Risk', sortable:false },
-                    { key:'action', label:'Next Action', sortable:false },
+                    { key:'name', label:t('allVips.colVip'), sortable:true },
+                    { key:'tier', label:t('common.tier'), sortable:true },
+                    { key:'activity_status', label:t('common.status'), sortable:false },
+                    { key:'dep', label:t('allVips.colDeposit'), sortable:true },
+                    { key:'win_loss', label:t('common.winLoss'), sortable:false },
+                    { key:'last_contact_date', label:t('allVips.colLastContact'), sortable:false },
+                    { key:'last_deposit_date', label:t('allVips.colLastDeposit'), sortable:false },
+                    { key:'host_assigned', label:t('common.host'), sortable:false },
+                    { key:'churn_risk', label:t('common.atRisk'), sortable:false },
+                    { key:'action', label:t('allVips.colNextAction'), sortable:false },
                   ].map(col => (
                     <th key={col.key}
                       onClick={() => col.sortable && toggleSort(col.key)}
@@ -300,8 +302,8 @@ export default function AllVIPs() {
                       style={{ cursor:'pointer', transition:'background .1s' }}
                     >
                       <td style={{ padding:'9px 12px', borderBottom:'1px solid var(--border)' }}>
-                        <div style={{ fontWeight:600, color:'var(--text)' }}>{v.full_name || v.username}</div>
-                        <div style={{ fontSize:11, color:'var(--muted)' }}>{v.username}</div>
+                        <div style={{ fontWeight:600, color:'var(--text)' }}>{v.username}</div>
+                        <div style={{ fontSize:11, color:'var(--muted)' }}>{v.full_name || ''}</div>
                       </td>
                       <td style={{ padding:'9px 12px', borderBottom:'1px solid var(--border)' }}>
                         <TierBadge tier={v.tier} />
@@ -334,7 +336,7 @@ export default function AllVIPs() {
                       <td style={{ padding:'9px 12px', borderBottom:'1px solid var(--border)' }}>
                         <div style={{ display:'flex', gap:6, alignItems:'center', flexWrap:'wrap' }}>
                           <Btn size="sm" variant="ghost" onClick={e => { e.stopPropagation(); navigate(`/vips/${v.id}`) }}>
-                            Open VIP →
+                            {t('allVips.openVip')}
                           </Btn>
                           {profile?.role === 'admin' && (
                             <Btn
@@ -344,7 +346,7 @@ export default function AllVIPs() {
                               onClick={e => { e.stopPropagation(); generateActivation(v) }}
                               title="Generate a one-time Player Portal activation link"
                             >
-                              {activationBusy === v.id ? 'Generating…' : '🔐 Activate Portal'}
+                              {activationBusy === v.id ? t('allVips.generating') : t('allVips.activatePortal')}
                             </Btn>
                           )}
                         </div>
