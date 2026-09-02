@@ -65,6 +65,8 @@ export default function RetentionAnalytics() {
   const [error, setError] = useState('')
   const ALL_TIERS = ['BLACK','DIAMOND','PLATINUM','GOLD','SILVER','BRONZE']
   const [selectedTiers, setSelectedTiers] = useState(['DIAMOND','PLATINUM','GOLD'])
+  const [vipListTab, setVipListTab] = useState(null) // null | 'churned' | 'inactive' | 'reactivated'
+  const [vipListSearch, setVipListSearch] = useState('')
 
   // Load available months once
   useEffect(() => {
@@ -153,6 +155,15 @@ export default function RetentionAnalytics() {
   const filteredRetained       = useMemo(() => retained.filter(tierMatch),       [retained,        selectedTiers])
   const filteredChurned        = useMemo(() => churned.filter(tierMatch),         [churned,         selectedTiers])
   const filteredReactivated    = useMemo(() => reactivatedRows.filter(tierMatch), [reactivatedRows, selectedTiers])
+
+  // Inactive VIPs: appeared in previous snapshot but total_deposit = 0 (not in previousActive), filtered by tier
+  const prevSnapshotIds = useMemo(() => new Set(
+    rows.filter(r => r.snapshot_month === previousSnapshotMonth).map(r => String(r.vip_id || r.username))
+  ), [rows, previousSnapshotMonth])
+  const inactiveVips = useMemo(() =>
+    stats.filter(x => prevSnapshotIds.has(String(x.id)) && x.prev <= 0 && tierMatch(x)),
+    [stats, prevSnapshotIds, selectedTiers]
+  )
 
   const reactivatedCount = filteredReactivated.length
   const metrics = calculateRetentionMetrics({ openingVipCount: filteredPreviousActive.length, retainedVipCount: filteredRetained.length, churnedVipCount: filteredChurned.length, reactivatedVipCount: reactivatedCount, recoveredDeposits: filteredReactivated.filter(r => r.recoveryAmount > 0).map(r => ({ amount: r.recoveryAmount, currency: r.currency })) })
@@ -347,6 +358,106 @@ export default function RetentionAnalytics() {
           {tierKpis.filter(k => selectedTiers.includes(k.tier)).length === 0 && <div className="col-span-3 py-8 text-center text-sm opacity-60">Select at least one tier above to view performance.</div>}
         </div>
       </section>
+
+      {/* VIP Player Lists — Churned / Inactive / Reactivated */}
+      {(() => {
+        const tabs = [
+          { key: 'churned',     label: 'Churned',      count: filteredChurned.length,     color: '#d94b4b' },
+          { key: 'inactive',    label: 'Inactive',     count: inactiveVips.length,         color: '#d29922' },
+          { key: 'reactivated', label: 'Reactivated',  count: filteredReactivated.length,  color: '#20a36a' },
+        ]
+        const listData = vipListTab === 'churned' ? filteredChurned
+          : vipListTab === 'inactive' ? inactiveVips
+          : vipListTab === 'reactivated' ? filteredReactivated : []
+        const q = vipListSearch.trim().toLowerCase()
+        const filtered = q ? listData.filter(v => (v.username||'').toLowerCase().includes(q) || (v.host||'').toLowerCase().includes(q) || (String(v.tier||'')).toLowerCase().includes(q)) : listData
+        const TIER_COLOR = { BLACK:'#c9d1d9', DIAMOND:'#58a6ff', PLATINUM:'#a371f7', GOLD:'#e3b341', SILVER:'#8b949e', BRONZE:'#b87333' }
+
+        return (
+          <section className="rounded-xl border overflow-hidden">
+            <div className="border-b px-5 py-4 flex items-center justify-between flex-wrap gap-3">
+              <div className="font-medium">👥 VIP Player Details</div>
+              <div style={{ display:'flex', gap:6 }}>
+                {tabs.map(tab => (
+                  <button key={tab.key} onClick={() => { setVipListTab(v => v === tab.key ? null : tab.key); setVipListSearch('') }}
+                    style={{ padding:'4px 12px', borderRadius:20, fontSize:12, fontWeight:600, cursor:'pointer',
+                      border:`1px solid ${vipListTab === tab.key ? tab.color : 'var(--border)'}`,
+                      background: vipListTab === tab.key ? tab.color+'22' : 'transparent',
+                      color: vipListTab === tab.key ? tab.color : 'var(--muted)' }}>
+                    {tab.label} <strong style={{ marginLeft:4 }}>{tab.count}</strong>
+                  </button>
+                ))}
+              </div>
+            </div>
+            {vipListTab && (
+              <>
+                <div style={{ padding:'10px 20px', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', gap:8 }}>
+                  <input value={vipListSearch} onChange={e => setVipListSearch(e.target.value)}
+                    placeholder={`🔍 Search ${filtered.length} players…`}
+                    style={{ flex:1, maxWidth:280, padding:'5px 10px', borderRadius:8, border:'1px solid var(--border)', background:'var(--surface2)', color:'var(--text)', fontSize:12 }} />
+                  {vipListSearch && <button onClick={() => setVipListSearch('')} style={{ fontSize:11, color:'var(--muted)', background:'none', border:'none', cursor:'pointer' }}>✕ Clear</button>}
+                  <span style={{ fontSize:11, color:'var(--muted)', marginLeft:'auto' }}>{filtered.length} players</span>
+                </div>
+                <div style={{ overflowX:'auto' }}>
+                  <table style={{ width:'100%', borderCollapse:'collapse', fontSize:13 }}>
+                    <thead>
+                      <tr style={{ borderBottom:'1px solid var(--border)', background:'var(--surface2)' }}>
+                        <th style={{ padding:'8px 16px', textAlign:'left', fontSize:11, fontWeight:600, color:'var(--muted)', textTransform:'uppercase', letterSpacing:'.4px' }}>#</th>
+                        <th style={{ padding:'8px 16px', textAlign:'left', fontSize:11, fontWeight:600, color:'var(--muted)', textTransform:'uppercase', letterSpacing:'.4px' }}>Username</th>
+                        <th style={{ padding:'8px 16px', textAlign:'left', fontSize:11, fontWeight:600, color:'var(--muted)', textTransform:'uppercase', letterSpacing:'.4px' }}>Tier</th>
+                        <th style={{ padding:'8px 16px', textAlign:'left', fontSize:11, fontWeight:600, color:'var(--muted)', textTransform:'uppercase', letterSpacing:'.4px' }}>Host</th>
+                        {vipListTab === 'churned' && <th style={{ padding:'8px 16px', textAlign:'right', fontSize:11, fontWeight:600, color:'var(--muted)', textTransform:'uppercase', letterSpacing:'.4px' }}>Prev Deposit</th>}
+                        {vipListTab === 'inactive' && <th style={{ padding:'8px 16px', textAlign:'right', fontSize:11, fontWeight:600, color:'var(--muted)', textTransform:'uppercase', letterSpacing:'.4px' }}>Status</th>}
+                        {vipListTab === 'reactivated' && <th style={{ padding:'8px 16px', textAlign:'right', fontSize:11, fontWeight:600, color:'var(--muted)', textTransform:'uppercase', letterSpacing:'.4px' }}>Recovery Deposit</th>}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filtered.length === 0
+                        ? <tr><td colSpan={5} style={{ padding:24, textAlign:'center', color:'var(--muted)', fontSize:13 }}>No players found.</td></tr>
+                        : filtered.map((v, i) => (
+                          <tr key={v.id || v.username || i} style={{ borderBottom:'1px solid var(--border)' }}
+                            onMouseEnter={e=>e.currentTarget.style.background='var(--surface2)'}
+                            onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+                            <td style={{ padding:'9px 16px', color:'var(--muted)', fontSize:11 }}>{i+1}</td>
+                            <td style={{ padding:'9px 16px', fontWeight:600 }}>{v.username || '—'}</td>
+                            <td style={{ padding:'9px 16px' }}>
+                              {v.tier
+                                ? <span style={{ padding:'2px 8px', borderRadius:20, fontSize:11, fontWeight:700, background:(TIER_COLOR[String(v.tier).toUpperCase()]||'#8b949e')+'22', color:TIER_COLOR[String(v.tier).toUpperCase()]||'#8b949e' }}>{v.tier}</span>
+                                : <span style={{ color:'var(--muted)' }}>—</span>}
+                            </td>
+                            <td style={{ padding:'9px 16px', color:'var(--muted)', fontSize:12 }}>{v.host || 'Unassigned'}</td>
+                            {vipListTab === 'churned' && (
+                              <td style={{ padding:'9px 16px', textAlign:'right', color:'#d94b4b', fontWeight:600 }}>
+                                {v.currency ? money(v.prev, v.currency) : (v.prev ? `${Number(v.prev).toLocaleString()}` : '—')}
+                              </td>
+                            )}
+                            {vipListTab === 'inactive' && (
+                              <td style={{ padding:'9px 16px', textAlign:'right' }}>
+                                <span style={{ padding:'2px 8px', borderRadius:20, fontSize:11, fontWeight:600, background:'#d2992222', color:'#d29922' }}>No Deposit</span>
+                              </td>
+                            )}
+                            {vipListTab === 'reactivated' && (
+                              <td style={{ padding:'9px 16px', textAlign:'right', color:'#20a36a', fontWeight:600 }}>
+                                {v.recoveryAmount > 0
+                                  ? money(v.recoveryAmount, v.currency)
+                                  : <span style={{ color:'var(--muted)' }}>—</span>}
+                              </td>
+                            )}
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+            {!vipListTab && (
+              <div style={{ padding:20, textAlign:'center', fontSize:12, color:'var(--muted)' }}>
+                Click Churned, Inactive, or Reactivated above to view the player list.
+              </div>
+            )}
+          </section>
+        )
+      })()}
 
       {/* Recovery deposits */}
       <section className="rounded-xl border">
