@@ -16,7 +16,7 @@ export function buildMultiLevelPlayerMetrics(player, levels = [], playerLevels =
   return { currentLevel, nextLevel, unlockedLevels, completedCount, allCompleted, qualifiedRewardTotal }
 }
 
-export function buildPayoutRows(players = [], levels = [], playerLevels = [], rewards = []) {
+export function buildPayoutRows(players = [], levels = [], playerLevels = [], rewards = [], payoutMode = 'all') {
   const playersById = new Map(players.map(p => [p.id, p]))
   const levelsById = new Map(levels.map(l => [l.id, l]))
   const unlocked = new Set(
@@ -24,7 +24,7 @@ export function buildPayoutRows(players = [], levels = [], playerLevels = [], re
       .filter(pl => UNLOCKED_LEVEL_STATUSES.has(pl.status))
       .map(pl => `${pl.campaign_player_id}:${pl.campaign_level_id}`)
   )
-  return rewards
+  let rows = rewards
     .filter(r => unlocked.has(`${r.campaign_player_id}:${r.campaign_level_id}`))
     .map(r => {
       const player = playersById.get(r.campaign_player_id)
@@ -44,6 +44,20 @@ export function buildPayoutRows(players = [], levels = [], playerLevels = [], re
       }
     })
     .sort((a, b) => a.levelOrder - b.levelOrder || a.username.localeCompare(b.username))
+
+  if (payoutMode === 'highest_only') {
+    // Per player: keep only the row with the highest level order
+    const highestByPlayer = new Map()
+    for (const row of rows) {
+      const existing = highestByPlayer.get(row.playerId)
+      if (!existing || row.levelOrder > existing.levelOrder) {
+        highestByPlayer.set(row.playerId, row)
+      }
+    }
+    rows = [...highestByPlayer.values()].sort((a, b) => a.username.localeCompare(b.username))
+  }
+
+  return rows
 }
 
 export function buildCampaignSummary(players = [], levels = [], playerLevels = [], rewards = []) {

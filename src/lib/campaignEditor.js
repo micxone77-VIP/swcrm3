@@ -4,7 +4,7 @@ export const EDITABLE_CAMPAIGN_FIELDS = [
   'campaign_type','platform','reward_pct','reward_fixed','reward_cap','reward_delivery',
   'reward_tiers','min_valid_bet','top_n','rank_rewards','min_deposit_lb',
   'settlement_frequency','campaign_category','is_multi_level','max_levels','requires_period_deposit',
-  'enrollment_mode','auto_enroll_tiers','leaderboard_metric',
+  'enrollment_mode','auto_enroll_tiers','leaderboard_metric','payout_mode',
 ]
 
 export const EMPTY_LEVEL = () => ({
@@ -56,6 +56,7 @@ export function normalizeCampaignForEdit(campaign) {
   form.enrollment_mode = c.enrollment_mode || (form.target_tier.length ? 'auto_tier' : 'manual')
   form.auto_enroll_tiers = Array.isArray(c.auto_enroll_tiers) ? [...c.auto_enroll_tiers] : [...form.target_tier]
   form.leaderboard_metric = ['turnover', 'deposit', 'turnover_deposit'].includes(c.leaderboard_metric) ? c.leaderboard_metric : 'turnover'
+  form.payout_mode = c.payout_mode === 'highest_only' ? 'highest_only' : 'all'
   form.start_date = normalizeDate(c.start_date)
   form.end_date = normalizeDate(c.end_date)
   return form
@@ -139,6 +140,7 @@ export function buildCampaignUpdate(form) {
     is_multi_level: Boolean(form.is_multi_level),
     max_levels: Boolean(form.is_multi_level) ? Number(form.max_levels) || 1 : 1,
     requires_period_deposit: form.requires_period_deposit !== false,
+    payout_mode: form.payout_mode === 'highest_only' ? 'highest_only' : 'all',
   }
 }
 

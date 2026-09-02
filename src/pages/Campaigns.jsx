@@ -899,7 +899,7 @@ export default function Campaigns() {
   const totalDep    = players.reduce((s,p)=>s+playerDeposit(p),0)
 
   const multiMetricsByPlayer = Object.fromEntries(players.map(p => [p.id, buildMultiLevelPlayerMetrics(p, campaignLevels, campaignPlayerLevels)]))
-  const multiPayoutRows = buildPayoutRows(players, campaignLevels, campaignPlayerLevels, campaignRewards)
+  const multiPayoutRows = buildPayoutRows(players, campaignLevels, campaignPlayerLevels, campaignRewards, selected?.payout_mode || 'all')
   const multiSummary = buildCampaignSummary(players, campaignLevels, campaignPlayerLevels, campaignRewards)
 
   // ── Leaderboard-specific ranking/qualification
@@ -1418,6 +1418,19 @@ export default function Campaigns() {
                     <label style={{ display:'flex', alignItems:'center', gap:8, fontSize:12, cursor:'pointer' }}><input type="checkbox" checked={Boolean(editCampForm.is_multi_level)} onChange={e=>setEditCampForm(f=>({...f,is_multi_level:e.target.checked,max_levels:e.target.checked?Math.max(1,campaignLevelsEdit.length):1}))} /> Enable levels</label>
                   </div>
                   {editCampForm.is_multi_level && <>
+                    <div style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'10px 12px', marginBottom:10 }}>
+                      <div style={{ fontSize:10, color:'var(--muted)', fontWeight:800, marginBottom:8 }}>PAYOUT MODE</div>
+                      <div style={{ display:'flex', gap:20, flexWrap:'wrap' }}>
+                        <label style={{ display:'flex', alignItems:'center', gap:7, fontSize:12, cursor:'pointer' }}>
+                          <input type="radio" name="edit_payout_mode" value="all" checked={(editCampForm.payout_mode||'all')==='all'} onChange={()=>setEditCampForm(f=>({...f,payout_mode:'all'}))} />
+                          <span><strong>Pay all unlocked levels</strong> — each level earns its own reward</span>
+                        </label>
+                        <label style={{ display:'flex', alignItems:'center', gap:7, fontSize:12, cursor:'pointer' }}>
+                          <input type="radio" name="edit_payout_mode" value="highest_only" checked={editCampForm.payout_mode==='highest_only'} onChange={()=>setEditCampForm(f=>({...f,payout_mode:'highest_only'}))} />
+                          <span><strong>Pay highest level only</strong> — one reward per player (the biggest)</span>
+                        </label>
+                      </div>
+                    </div>
                     <div style={{ display:'flex', justifyContent:'flex-end', marginBottom:8 }}><button type="button" style={{ ...s.btnSm, fontSize:11 }} onClick={()=>setCampaignLevelsEdit(prev=>[...prev,{...normalizeLevel({},prev.length),level_order:prev.length+1}])}>+ Add Level</button></div>
                     <div style={{ background:'var(--bg)', border:'1px solid var(--border)', borderRadius:9, overflow:'hidden' }}>
                       <div style={{ display:'grid', gridTemplateColumns:'46px 100px 1.2fr 110px 110px 110px 1.2fr 32px', gap:6, padding:'7px 10px', background:'var(--surface2)', fontSize:10, color:'var(--muted)', fontWeight:800 }}><span>#</span><span>CODE</span><span>LEVEL NAME</span><span>DEPOSIT</span><span>REWARD</span><span>MAX %</span><span>DESCRIPTION</span><span></span></div>
@@ -1729,7 +1742,7 @@ export default function Campaigns() {
             {activeTab === 'payout' && (
               <div style={{ overflowX:'auto' }}>
                 <div style={{ padding:'8px 24px', fontSize:11, color:'var(--muted)', background:'rgba(63,185,80,.04)', borderBottom:'1px solid var(--border)' }}>
-                  {selected?.is_multi_level ? 'Each unlocked campaign level is a separate Credit reward. Mark the individual reward paid only after it is actually issued.' : isDailyMode ? <>Showing players who qualified on <strong style={{ color:'#c9a961' }}>{entryDate}</strong>.</> : 'Only showing players who reached the campaign target.'}
+                  {selected?.is_multi_level ? (selected?.payout_mode === 'highest_only' ? 'Payout mode: Highest level only — one reward per player. Mark paid only after it is actually issued.' : 'Payout mode: All levels — each unlocked level earns its own reward. Mark the individual reward paid only after it is actually issued.') : isDailyMode ? <>Showing players who qualified on <strong style={{ color:'#c9a961' }}>{entryDate}</strong>.</> : 'Only showing players who reached the campaign target.'}
                 </div>
                 {selected?.is_multi_level ? (
                   multiPayoutRows.length === 0 ? <div style={{ padding:32, textAlign:'center', color:'var(--muted)' }}>No unlocked rewards are ready for payout yet.</div> : (
