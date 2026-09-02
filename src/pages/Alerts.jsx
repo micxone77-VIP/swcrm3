@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { PageHeader, Card, Tabs, Btn, Badge, LoadingState, EmptyState } from '../components/ui'
 import { TierBadge, RiskBadge } from '../components/ui'
+import { useLanguage } from '../contexts/LanguageContext'
 
 function timeAgo(d) {
   if (!d) return '—'
@@ -16,6 +17,7 @@ function timeAgo(d) {
 
 export default function Alerts() {
   const navigate = useNavigate()
+  const { t } = useLanguage()
   const [vips, setVips]       = useState([])
   const [loading, setLoading] = useState(true)
   const [tab, setTab]         = useState('critical')
@@ -46,9 +48,9 @@ export default function Alerts() {
   }).filter(v => !['CRITICAL','HIGH'].includes((v.churn_risk||'').toUpperCase()))
 
   const tabs = [
-    { key: 'critical', label: 'Critical',      count: critical.length },
-    { key: 'high',     label: 'High Risk',     count: highRisk.length },
-    { key: 'contact',  label: 'No Contact 7d+',count: noContact.length },
+    { key: 'critical', label: t('alerts.tabCritical'),  count: critical.length },
+    { key: 'high',     label: t('alerts.tabHigh'),      count: highRisk.length },
+    { key: 'contact',  label: t('alerts.tabNoContact'), count: noContact.length },
   ]
 
   const displayMap = { critical, high: highRisk, contact: noContact }
@@ -56,7 +58,7 @@ export default function Alerts() {
 
   return (
     <div style={{ padding: '24px 28px', maxWidth: 1100 }}>
-      <PageHeader title="Alerts" subtitle="VIPs that need immediate attention" />
+      <PageHeader title={t('alerts.title')} subtitle={t('alerts.subtitle')} />
 
       {loading ? <LoadingState /> : (
         <Card>
@@ -64,13 +66,13 @@ export default function Alerts() {
             <Tabs tabs={tabs} active={tab} onChange={setTab} />
           </div>
           {display.length === 0 ? (
-            <EmptyState icon="✅" title="No alerts in this category" message="Great — nothing critical to action right now." />
+            <EmptyState icon="✅" title={t('alerts.noAlerts')} message={t('alerts.noAlertsMsg')} />
           ) : (
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                 <thead>
                   <tr>
-                    {['VIP', 'Tier', 'Risk', 'Days Inactive', 'Last Contact', 'Host', 'Action'].map(h => (
+                    {[t('alerts.colVip'), t('alerts.colTier'), t('alerts.colRisk'), t('alerts.colDaysInactive'), t('alerts.colLastContact'), t('alerts.colHost'), t('alerts.colAction')].map(h => (
                       <th key={h} style={{ padding: '9px 14px', textAlign: 'left', background: 'var(--surface)', color: 'var(--muted)', fontWeight: 600, fontSize: 11, borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap' }}>{h}</th>
                     ))}
                   </tr>
@@ -97,7 +99,7 @@ export default function Alerts() {
                       </td>
                       <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', color: 'var(--muted)' }}>{v.host_assigned || '—'}</td>
                       <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)' }}>
-                        <Btn size="sm" variant="primary" onClick={e => { e.stopPropagation(); navigate(`/vips/${v.id}`) }}>Open VIP</Btn>
+                        <Btn size="sm" variant="primary" onClick={e => { e.stopPropagation(); navigate(`/vips/${v.id}`) }}>{t('alerts.openVip')}</Btn>
                       </td>
                     </tr>
                   ))}

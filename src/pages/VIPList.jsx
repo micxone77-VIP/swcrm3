@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { useUrlParam, useUrlParamNumber, useUrlParamBool, useUrlParamsRaw } from '../hooks/useUrlParam'
+import { useLanguage } from '../contexts/LanguageContext'
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 const TIERS    = ['ALL','BLACK','DIAMOND','PLATINUM','GOLD','SILVER','BRONZE']
@@ -113,6 +114,7 @@ function downloadCSV(rows, filename) {
 
 export default function VIPList() {
   const { profile }               = useAuth()
+  const { t }                     = useLanguage()
   const isAdmin = profile?.role === 'admin'
   const myName  = profile?.full_name || ''
   const navigate                  = useNavigate()
@@ -311,7 +313,7 @@ export default function VIPList() {
       {/* Header */}
       <div style={s.hdr}>
         <div>
-          <div style={s.title}>👑 VIP Members</div>
+          <div style={s.title}>👑 {t('vipList.title')}</div>
           <div style={s.sub}>{total} members · {totalAll} total in database</div>
         </div>
       </div>
@@ -384,7 +386,7 @@ export default function VIPList() {
       <div style={s.bar}>
         <input
           style={s.search}
-          placeholder="🔍  Search username, name, phone..."
+          placeholder={t('vipList.searchPlaceholder')}
           value={search}
           onChange={e => setSearch(e.target.value)}
         />
@@ -394,7 +396,7 @@ export default function VIPList() {
         <button
           onClick={() => urlRaw.set({ mine: (!mineOnly).toString(), unassigned: 'false' }, { mine: 'false', unassigned: 'false' })}
           style={{ background: mineOnly?'var(--accent)':'var(--surface2)', color: mineOnly?'#fff':'var(--text)', border: mineOnly?'none':'1px solid var(--border)', padding:'7px 14px', borderRadius:7, fontSize:12, fontWeight:600, cursor:'pointer' }}>
-          {mineOnly ? '★ My VIPs' : '☆ My VIPs'}
+          {mineOnly ? t('vipList.myVipsOn') : t('vipList.myVipsOff')}
         </button>
         <button
           onClick={() => urlRaw.set({ unassigned: (!unassignedOnly).toString(), mine: 'false' }, { mine: 'false', unassigned: 'false' })}
@@ -405,10 +407,10 @@ export default function VIPList() {
           onClick={handleExport}
           disabled={exporting}
           style={{ background: exporting?'var(--border)':'#10b981', color: exporting?'var(--muted)':'#fff', border:'none', padding:'7px 14px', borderRadius:7, fontSize:12, fontWeight:600, cursor: exporting?'not-allowed':'pointer' }}>
-          {exporting ? 'Exporting...' : '⬇ Export'}
+          {exporting ? t('vipList.exporting') : t('vipList.exportBtn')}
         </button>
         <div style={{marginLeft:'auto',fontSize:12,color:'var(--muted)'}}>
-          {loading ? 'Loading...' : unassignedOnly ? `${total} unassigned VIPs` : `${total} results · page ${page+1}/${Math.max(1,totalPages)}`}
+          {loading ? t('vipList.loading') : unassignedOnly ? t('vipList.unassignedVips').replace('{n}',total) : t('vipList.results').replace('{n}',total).replace('{p}',page+1).replace('{t}',Math.max(1,totalPages))}
         </div>
       </div>
 
@@ -419,25 +421,25 @@ export default function VIPList() {
             <thead>
               <tr>
                 <th style={s.th}>#</th>
-                <th style={s.th} onClick={()=>toggleSort('username')}>Username <SortIcon col="username"/></th>
-                <th style={s.th} onClick={()=>toggleSort('tier')}>Tier <SortIcon col="tier"/></th>
+                <th style={s.th} onClick={()=>toggleSort('username')}>{t('vipList.colVip')} <SortIcon col="username"/></th>
+                <th style={s.th} onClick={()=>toggleSort('tier')}>{t('vipList.colTier')} <SortIcon col="tier"/></th>
                 <th style={s.th}>Region</th>
-                <th style={s.th} onClick={()=>toggleSort('total_deposit')}>Total Dep <SortIcon col="total_deposit"/></th>
-                <th style={s.th} onClick={()=>toggleSort('win_loss')}>Win/Loss <SortIcon col="win_loss"/></th>
-                <th style={s.th} onClick={()=>toggleSort('days_inactive')}>Days Inactive <SortIcon col="days_inactive"/></th>
-                <th style={s.th} onClick={()=>toggleSort('activity_status')}>Status <SortIcon col="activity_status"/></th>
-                <th style={s.th} onClick={()=>toggleSort('last_contact_date')}>Last Contact <SortIcon col="last_contact_date"/></th>
+                <th style={s.th} onClick={()=>toggleSort('total_deposit')}>{t('common.deposit')} <SortIcon col="total_deposit"/></th>
+                <th style={s.th} onClick={()=>toggleSort('win_loss')}>{t('common.winLoss')} <SortIcon col="win_loss"/></th>
+                <th style={s.th} onClick={()=>toggleSort('days_inactive')}>{t('vipList.colDays')} <SortIcon col="days_inactive"/></th>
+                <th style={s.th} onClick={()=>toggleSort('activity_status')}>{t('vipList.colStatus')} <SortIcon col="activity_status"/></th>
+                <th style={s.th} onClick={()=>toggleSort('last_contact_date')}>{t('vipList.colLastContact')} <SortIcon col="last_contact_date"/></th>
                 <th style={s.th} onClick={()=>toggleSort('vip_score')}>Score <SortIcon col="vip_score"/></th>
-                <th style={s.th} onClick={()=>toggleSort('churn_risk')}>Risk <SortIcon col="churn_risk"/></th>
+                <th style={s.th} onClick={()=>toggleSort('churn_risk')}>{t('vipList.colRisk')} <SortIcon col="churn_risk"/></th>
                 <th style={s.th}>Phone</th>
-                <th style={s.th}>Host</th>
+                <th style={s.th}>{t('vipList.colHost')}</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={13} style={{...s.td, textAlign:'center', padding:'40px', color:'var(--muted)'}}>Loading...</td></tr>
+                <tr><td colSpan={13} style={{...s.td, textAlign:'center', padding:'40px', color:'var(--muted)'}}>{t('vipList.loading')}</td></tr>
               ) : vips.length === 0 ? (
-                <tr><td colSpan={13} style={{...s.td, textAlign:'center', padding:'40px', color:'var(--muted)'}}>No VIPs found</td></tr>
+                <tr><td colSpan={13} style={{...s.td, textAlign:'center', padding:'40px', color:'var(--muted)'}}>—</td></tr>
               ) : vips.map((v, i) => {
                 const isMyVIP = !!(myName && v.host_assigned === myName)
                 const rowBg = isMyVIP ? 'rgba(99,102,241,0.06)' : v.win_loss > 20000 ? 'rgba(248,81,73,.05)' : v.days_inactive > 60 ? 'rgba(248,81,73,.03)' : 'transparent'

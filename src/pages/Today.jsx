@@ -12,6 +12,7 @@ import {
 import { TierBadge, RiskBadge } from '../components/ui'
 import { formatMoney } from '../lib/format'
 import VipQuickSearch from '../components/VipQuickSearch'
+import { useLanguage } from '../contexts/LanguageContext'
 
 const OUTCOMES = ['Contacted', 'No Reply', 'Replied', 'Deposited', 'Reactivated']
 const TIER_ORDER = { BLACK:0, DIAMOND:1, PLATINUM:2, GOLD:3, SILVER:4, BRONZE:5 }
@@ -28,6 +29,7 @@ export default function Today() {
   const navigate = useNavigate()
   const { profile } = useAuth()
   const { toast, ToastContainer } = useToast()
+  const { t } = useLanguage()
   const [host, setHost] = useState('All')
   const [activeQueue, setActiveQueue] = useState('all')
   const [hostList, setHostList] = useState(['All'])
@@ -106,12 +108,12 @@ export default function Today() {
               {greeting}, {profile?.full_name?.split(' ')[0] || 'there'}
             </h1>
             <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 4 }}>
-              {dateStr} · Here's what needs your attention today.
+              {dateStr} · {t('today.subtitle')}
             </div>
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <VipQuickSearch />
-            <Btn variant="primary" onClick={refresh} size="sm">↺ Refresh</Btn>
+            <Btn variant="primary" onClick={refresh} size="sm">{t('today.refresh')}</Btn>
           </div>
         </div>
 
@@ -128,32 +130,32 @@ export default function Today() {
       {/* ── KPI Summary ── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginBottom: 24 }}>
         <KpiCard
-          label="VIP Follow-ups"
+          label={t('today.kpiFollowUps')}
           value={followUp.length}
           color="var(--info)"
           onClick={() => setActiveQueue('follow')}
-          sub="Need contact today"
+          sub={t('today.kpiFollowUpsSub')}
         />
         <KpiCard
-          label="Overdue"
+          label={t('today.kpiOverdue')}
           value={overdue.length}
           color="var(--danger)"
           onClick={() => setActiveQueue('overdue')}
-          sub="High risk, no contact 3d+"
+          sub={t('today.kpiOverdueSub')}
         />
         <KpiCard
-          label="At Risk"
+          label={t('today.kpiAtRisk')}
           value={atRisk.length}
           color="var(--warning)"
           onClick={() => setActiveQueue('risk')}
-          sub="High or critical churn risk"
+          sub={t('today.kpiAtRiskSub')}
         />
         <KpiCard
-          label="Birthdays Today"
+          label={t('today.kpiBirthdays')}
           value={birthdays.length}
           color="#EC4899"
           onClick={() => setActiveQueue('birthday')}
-          sub="VIPs with birthday today"
+          sub={t('today.kpiBirthdaysSub')}
         />
       </div>
 
@@ -161,12 +163,12 @@ export default function Today() {
       <Card style={{ marginBottom: 24, padding: '14px 18px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
           <div style={{ fontSize: 13, fontWeight: 600 }}>
-            Contacted Today
+            {t('today.contactedToday')}
             <span style={{ marginLeft: 12, fontSize: 22, fontWeight: 700, color: 'var(--success)' }}>{contactedToday}</span>
             <span style={{ marginLeft: 6, fontSize: 13, color: 'var(--muted)' }}>/ {contactedToday + needContact} VIPs</span>
           </div>
           <div style={{ fontSize: 13, color: 'var(--muted)' }}>
-            {contactedToday + needContact > 0 ? Math.round(contactedToday / (contactedToday + needContact) * 100) : 0}% done
+            {contactedToday + needContact > 0 ? Math.round(contactedToday / (contactedToday + needContact) * 100) : 0}{t('today.pctDone')}
           </div>
         </div>
         <div style={{ background: 'var(--surface2)', borderRadius: 4, height: 6, overflow: 'hidden' }}>
@@ -183,14 +185,14 @@ export default function Today() {
       <Card>
         <CardHeader>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
-            <span>⚡ Priority Today</span>
+            <span>{t('today.priorityTitle')}</span>
             <div style={{ display: 'flex', gap: 6 }}>
               {[
-                { value: 'all', label: 'All Priority' },
-                { value: 'overdue', label: `Overdue (${overdue.length})` },
-                { value: 'follow', label: `Follow Up (${followUp.length})` },
-                { value: 'risk', label: `At Risk (${atRisk.length})` },
-                { value: 'birthday', label: `Birthdays (${birthdays.length})` },
+                { value: 'all', label: t('today.tabAll') },
+                { value: 'overdue', label: t('today.tabOverdue').replace('{n}', overdue.length) },
+                { value: 'follow', label: t('today.tabFollow').replace('{n}', followUp.length) },
+                { value: 'risk', label: t('today.tabRisk').replace('{n}', atRisk.length) },
+                { value: 'birthday', label: t('today.tabBirthday').replace('{n}', birthdays.length) },
               ].map(q => (
                 <button key={q.value} onClick={() => setActiveQueue(q.value)} style={{
                   padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600,
@@ -207,15 +209,15 @@ export default function Today() {
         {displayItems.length === 0 ? (
           <div style={{ padding: '32px', textAlign: 'center', color: 'var(--muted)' }}>
             <div style={{ fontSize: 28, marginBottom: 8 }}>✅</div>
-            <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-2)' }}>All clear</div>
-            <div style={{ fontSize: 13, marginTop: 4 }}>No items in this queue right now.</div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-2)' }}>{t('today.allClear')}</div>
+            <div style={{ fontSize: 13, marginTop: 4 }}>{t('today.noItems')}</div>
           </div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
                 <tr>
-                  {['VIP', 'Tier', 'Trigger / Reason', 'Last Contact', 'Last Deposit', 'Risk', 'Action'].map(h => (
+                  {[t('today.colVip'), t('today.colTier'), t('today.colTrigger'), t('today.colLastContact'), t('today.colLastDeposit'), t('today.colRisk'), t('today.colAction')].map(h => (
                     <th key={h} style={{ padding: '9px 14px', textAlign: 'left', background: 'var(--surface)', color: 'var(--muted)', fontWeight: 600, fontSize: 11, borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap', letterSpacing: '.3px' }}>{h}</th>
                   ))}
                 </tr>
@@ -234,7 +236,7 @@ export default function Today() {
                         <div style={{ fontWeight: 600, cursor: 'pointer', color: 'var(--text)' }}
                           onClick={() => navigate(`/vips/${v.id}`)}>{v.full_name || v.username}</div>
                         <div style={{ fontSize: 11, color: 'var(--muted)' }}>{v.username}</div>
-                        {isBirthday && <span style={{ fontSize: 10, color: '#EC4899' }}>🎂 Birthday!</span>}
+                        {isBirthday && <span style={{ fontSize: 10, color: '#EC4899' }}>{t('today.birthday')}</span>}
                       </td>
                       <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)' }}>
                         <TierBadge tier={v.tier} />
@@ -261,9 +263,9 @@ export default function Today() {
                         <div style={{ display: 'flex', gap: 6 }}>
                           <Btn size="sm" variant={isContacted ? 'ghost' : 'primary'}
                             onClick={() => setLogTarget(v)}>
-                            {isContacted ? '✓ Logged' : 'Log Contact'}
+                            {isContacted ? t('today.loggedBtn') : t('today.logContact')}
                           </Btn>
-                          <Btn size="sm" variant="ghost" onClick={() => navigate(`/vips/${v.id}`)}>Open</Btn>
+                          <Btn size="sm" variant="ghost" onClick={() => navigate(`/vips/${v.id}`)}>{t('today.openBtn')}</Btn>
                         </div>
                       </td>
                     </tr>
@@ -276,24 +278,24 @@ export default function Today() {
       </Card>
 
       {/* ── Quick Log Modal ── */}
-      <Modal open={!!logTarget} onClose={() => { setLogTarget(null); setLogNote('') }} title="Log Contact" width={420}>
+      <Modal open={!!logTarget} onClose={() => { setLogTarget(null); setLogNote('') }} title={t('today.modalTitle')} width={420}>
         {logTarget && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div style={{ fontSize: 14, fontWeight: 600 }}>{logTarget.full_name || logTarget.username}</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <label style={{ fontSize: 12, color: 'var(--muted)' }}>Outcome</label>
+              <label style={{ fontSize: 12, color: 'var(--muted)' }}>{t('today.outcome')}</label>
               <Select value={logOutcome} onChange={e => setLogOutcome(e.target.value)}>
                 {OUTCOMES.map(o => <option key={o} value={o}>{o}</option>)}
               </Select>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <label style={{ fontSize: 12, color: 'var(--muted)' }}>Notes (optional)</label>
-              <Textarea value={logNote} onChange={e => setLogNote(e.target.value)} placeholder="What happened?" rows={3} />
+              <label style={{ fontSize: 12, color: 'var(--muted)' }}>{t('today.notesLabel')}</label>
+              <Textarea value={logNote} onChange={e => setLogNote(e.target.value)} placeholder={t('today.notesPlaceholder')} rows={3} />
             </div>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <Btn variant="ghost" onClick={() => { setLogTarget(null); setLogNote('') }}>Cancel</Btn>
+              <Btn variant="ghost" onClick={() => { setLogTarget(null); setLogNote('') }}>{t('common.cancel')}</Btn>
               <Btn variant="primary" onClick={submitLog} disabled={logSaving}>
-                {logSaving ? 'Saving…' : 'Save Log'}
+                {logSaving ? t('today.savingLog') : t('today.saveLog')}
               </Btn>
             </div>
           </div>
