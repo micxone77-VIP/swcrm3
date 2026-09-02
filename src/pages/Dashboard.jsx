@@ -14,8 +14,6 @@ const todayEnd   = () => { const d = new Date(); d.setHours(23,59,59,999); retur
 const TIER_ORDER = { BLACK:0, DIAMOND:1, PLATINUM:2, GOLD:3, SILVER:4 }
 const tierRank = t => TIER_ORDER[(t||'').toUpperCase()] ?? 9
 
-const HOSTS = ['All', 'Marcus', 'Angel']
-
 export default function Dashboard() {
   const navigate = useNavigate()
   const { user } = useAuth()
@@ -28,6 +26,7 @@ export default function Dashboard() {
   const [monthlyRecall, setMonthlyRecall] = useState(0)
   const [loading, setLoading]           = useState(true)
   const [dbError, setDbError]           = useState(null)
+  const [HOSTS, setHOSTS]               = useState(['All'])
 
   // Filters
   const [hostFilter, setHostFilter]       = useState('All')       // All / Marcus / Angel
@@ -61,6 +60,18 @@ export default function Dashboard() {
   }, [])
 
   useEffect(() => { loadAll() }, [loadAll])
+
+  // Load host list dynamically from profiles
+  useEffect(() => {
+    supabase.from('profiles')
+      .select('full_name')
+      .in('role', ['admin', 'host'])
+      .order('full_name')
+      .then(({ data }) => {
+        const names = (data || []).map(p => p.full_name).filter(Boolean)
+        setHOSTS(['All', ...names])
+      })
+  }, [])
 
   const now = new Date()
 
