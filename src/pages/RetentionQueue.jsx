@@ -18,20 +18,37 @@ function waLink(v){const raw=(v.whatsapp||v.phone||'').replace(/\D/g,'');return 
 
 export default function RetentionQueue(){
   const navigate=useNavigate(); const {profile}=useAuth(); const [rows,setRows]=useState([]); const [loading,setLoading]=useState(true); const [error,setError]=useState('')
-  const [logVip,setLogVip]=useState(null); const [logChannel,setLogChannel]=useState('WhatsApp'); const [logOutcome,setLogOutcome]=useState('Contacted'); const [logNotes,setLogNotes]=useState(''); const [logSaving,setLogSaving]=useState(false); const [logError,setLogError]=useState('')
+  const [logVip,setLogVip]=useState(null); const [logChannel,setLogChannel]=useState('WhatsApp'); const [logOutcome,setLogOutcome]=useState('Contacted'); const [logNotes,setLogNotes]=useState(''); const [logSaving,setLogSaving]=useState(false); const [logError,setLogError]=useState(''); const [logRecoveryAmount,setLogRecoveryAmount]=useState(''); const [logRecoveryCurrency,setLogRecoveryCurrency]=useState('MYR')
   const myName=profile?.full_name||profile?.username||''
   useEffect(()=>{loadQueue()},[profile?.id])
   useEffect(()=>{const handleFocus=()=>loadQueue();window.addEventListener('focus',handleFocus);return()=>window.removeEventListener('focus',handleFocus)},[profile?.id])
-  function openQuickLog(v){setLogVip(v);setLogChannel('WhatsApp');setLogOutcome('Contacted');setLogNotes('');setLogError('')}
+  function openQuickLog(v){setLogVip(v);setLogChannel('WhatsApp');setLogOutcome('Contacted');setLogNotes('');setLogError('');setLogRecoveryAmount('');setLogRecoveryCurrency(v.currency||'MYR')}
   function closeQuickLog(){if(logSaving)return;setLogVip(null);setLogNotes('');setLogError('')}
   async function saveQuickLog(){
     if(!logVip||!logNotes.trim()||logSaving)return
+    if(logOutcome==='Reactivated'&&(!(Number(logRecoveryAmount)>0)||!logRecoveryCurrency)){
+      setLogError('Reactivation requires a valid deposit amount and currency');return
+    }
     setLogSaving(true);setLogError('')
     try{
+      const nowIso=new Date().toISOString()
       const payload=buildRetentionContactPayload({vip:logVip,profile,channel:logChannel,outcome:logOutcome,notes:logNotes})
       const {error:insertError}=await supabase.from('contact_logs').insert(payload)
       if(insertError)throw insertError
-      setLogVip(null);setLogNotes('')
+      if(logOutcome==='Reactivated'){
+        const {error:reactError}=await supabase.from('reactivation_logs').upsert({
+          vip_id:logVip.id,
+          username:logVip.username,
+          tier:logVip.tier,
+          currency:logRecoveryCurrency,
+          reactivation_deposit:Number(logRecoveryAmount),
+          host_name:profile?.full_name||logVip.host_assigned||null,
+          reactivated_month:nowIso.slice(0,7),
+          created_at:nowIso,
+        },{onConflict:'username,reactivated_month'})
+        if(reactError)throw reactError
+      }
+      setLogVip(null);setLogNotes('');setLogRecoveryAmount('');setLogRecoveryCurrency('MYR')
       await loadQueue()
     }catch(e){console.error(e);setLogError(e?.message||'Unable to save contact log')}finally{setLogSaving(false)}
   }
@@ -79,6 +96,7 @@ export default function RetentionQueue(){
     {error&&<div style={{marginTop:14,padding:12,border:'1px solid #f85149',borderRadius:8,color:'#f85149',fontSize:12}}>{error}</div>}
     <div style={styles.grid}><div style={styles.card}><div style={{fontSize:11,color:'var(--muted)'}}>🔴 Follow-up Due</div><div style={{fontSize:28,fontWeight:900}}>{due.length}</div></div><div style={styles.card}><div style={{fontSize:11,color:'var(--muted)'}}>🟠 At Risk</div><div style={{fontSize:28,fontWeight:900}}>{risk.length}</div></div><div style={styles.card}><div style={{fontSize:11,color:'var(--muted)'}}>✅ Contacted Today</div><div style={{fontSize:28,fontWeight:900}}>{contacted.length}</div></div><div style={styles.card}><div style={{fontSize:11,color:'var(--muted)'}}>♻️ Reactivated</div><div style={{fontSize:28,fontWeight:900}}>{reactivated.length}</div></div></div>
     {loading?<div style={styles.card}>Loading retention queue…</div>:<><QueueSection title="Follow-up Due" icon="🔴" rows={due} empty="No Diamond or Platinum follow-up due right now." navigate={navigate} onLog={openQuickLog}/><QueueSection title="At Risk" icon="🟠" rows={risk} empty="No additional Diamond or Platinum at-risk VIPs." navigate={navigate} onLog={openQuickLog}/><QueueSection title="Gold Monitor" icon="🟡" rows={gold.filter(x=>x.priority==='MONITOR')} empty="No Gold monitoring items." navigate={navigate} onLog={openQuickLog}/><QueueSection title="Contacted Today" icon="✅" rows={contacted} empty="No contacts logged yet today." navigate={navigate} onLog={openQuickLog}/><QueueSection title="Reactivated This Month" icon="♻️" rows={reactivated} empty="No reactivated VIPs in this queue this month." navigate={navigate} onLog={openQuickLog}/><div style={{fontSize:11,color:'var(--muted)',padding:'4px 2px'}}>Host scope: {profile?.role==='host'?(myName||'—'):'All hosts'} · Monitor pool: {monitor.length} · Gold: {gold.length}</div></>}
-    {logVip&&<div style={styles.overlay} onClick={closeQuickLog}><div style={styles.modal} onClick={e=>e.stopPropagation()}><div style={{fontSize:17,fontWeight:800,color:'var(--text)'}}>Log retention contact</div><div style={{fontSize:12,color:'var(--muted)',marginTop:4,marginBottom:16}}>{logVip.username} · {logVip.tier} · {logVip.host_assigned||'Unassigned'}</div><div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:12}}><div><div style={{fontSize:11,color:'var(--muted)',marginBottom:4}}>Channel</div><select style={styles.input} value={logChannel} onChange={e=>setLogChannel(e.target.value)}>{CHANNELS.map(x=><option key={x}>{x}</option>)}</select></div><div><div style={{fontSize:11,color:'var(--muted)',marginBottom:4}}>Outcome</div><select style={styles.input} value={logOutcome} onChange={e=>setLogOutcome(e.target.value)}>{OUTCOMES.map(x=><option key={x}>{x}</option>)}</select></div></div><div style={{fontSize:11,color:'var(--muted)',marginBottom:4}}>Notes *</div><textarea rows={4} style={{...styles.input,resize:'vertical',fontFamily:'inherit'}} value={logNotes} onChange={e=>setLogNotes(e.target.value)} placeholder="VIP response, mood, promise or follow-up detail..." autoFocus/>{logError&&<div style={{fontSize:12,color:'#f85149',marginTop:8}}>{logError}</div>}<div style={{display:'flex',gap:8,justifyContent:'space-between',alignItems:'center',marginTop:14,flexWrap:'wrap'}}><button style={styles.btn} onClick={()=>navigate(buildContactLogUrl(logVip.username))}>Open full Contact Log</button><div style={{display:'flex',gap:8}}><button style={styles.btn} onClick={closeQuickLog} disabled={logSaving}>Cancel</button><button style={{...styles.primary,opacity:!logNotes.trim()||logSaving?.55:1}} onClick={saveQuickLog} disabled={!logNotes.trim()||logSaving}>{logSaving?'Saving…':'Save Contact'}</button></div></div></div></div>}
+    {logVip&&<div style={styles.overlay} onClick={closeQuickLog}><div style={styles.modal} onClick={e=>e.stopPropagation()}><div style={{fontSize:17,fontWeight:800,color:'var(--text)'}}>Log retention contact</div><div style={{fontSize:12,color:'var(--muted)',marginTop:4,marginBottom:16}}>{logVip.username} · {logVip.tier} · {logVip.host_assigned||'Unassigned'}</div><div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:12}}><div><div style={{fontSize:11,color:'var(--muted)',marginBottom:4}}>Channel</div><select style={styles.input} value={logChannel} onChange={e=>setLogChannel(e.target.value)}>{CHANNELS.map(x=><option key={x}>{x}</option>)}</select></div><div><div style={{fontSize:11,color:'var(--muted)',marginBottom:4}}>Outcome</div><select style={styles.input} value={logOutcome} onChange={e=>setLogOutcome(e.target.value)}>{OUTCOMES.map(x=><option key={x}>{x}</option>)}</select></div></div>{logOutcome==='Reactivated'&&<><div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:12}}><div><div style={{fontSize:11,color:'var(--muted)',marginBottom:4}}>Recovery Deposit *</div><input type="number" min="0" step="0.01" style={styles.input} value={logRecoveryAmount} onChange={e=>setLogRecoveryAmount(e.target.value)} placeholder="0.00"/></div><div><div style={{fontSize:11,color:'var(--muted)',marginBottom:4}}>Currency *</div><select style={styles.input} value={logRecoveryCurrency} onChange={e=>setLogRecoveryCurrency(e.target.value)}><option value="">Select</option><option value="MYR">MYR</option><option value="SGD">SGD</option><option value="KHUSD">KHUSD</option></select></div></div></>}
+<div style={{fontSize:11,color:'var(--muted)',marginBottom:4}}>Notes *</div><textarea rows={4} style={{...styles.input,resize:'vertical',fontFamily:'inherit'}} value={logNotes} onChange={e=>setLogNotes(e.target.value)} placeholder="VIP response, mood, promise or follow-up detail..." autoFocus/>{logError&&<div style={{fontSize:12,color:'#f85149',marginTop:8}}>{logError}</div>}<div style={{display:'flex',gap:8,justifyContent:'space-between',alignItems:'center',marginTop:14,flexWrap:'wrap'}}><button style={styles.btn} onClick={()=>navigate(buildContactLogUrl(logVip.username))}>Open full Contact Log</button><div style={{display:'flex',gap:8}}><button style={styles.btn} onClick={closeQuickLog} disabled={logSaving}>Cancel</button><button style={{...styles.primary,opacity:!logNotes.trim()||logSaving?.55:1}} onClick={saveQuickLog} disabled={!logNotes.trim()||logSaving}>{logSaving?'Saving…':'Save Contact'}</button></div></div></div></div>}
   </div>
 }
