@@ -234,8 +234,8 @@ export default function Today() {
                     >
                       <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)' }}>
                         <div style={{ fontWeight: 600, cursor: 'pointer', color: 'var(--text)' }}
-                          onClick={() => navigate(`/vips/${v.id}`)}>{v.full_name || v.username}</div>
-                        <div style={{ fontSize: 11, color: 'var(--muted)' }}>{v.username}</div>
+                          onClick={() => navigate(`/vips/${v.id}`)}>{v.username}</div>
+                        {v.full_name && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{v.full_name}</div>}
                         {isBirthday && <span style={{ fontSize: 10, color: '#EC4899' }}>{t('today.birthday')}</span>}
                       </td>
                       <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)' }}>
