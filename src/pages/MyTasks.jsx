@@ -10,6 +10,7 @@ import {
   Input, Select, Textarea, useToast,
 } from '../components/ui'
 import { TierBadge } from '../components/ui'
+import { useLanguage } from '../contexts/LanguageContext'
 
 const TASK_TYPES = ['Follow Up', 'VIP Contact', 'Campaign', 'Upgrade', 'Birthday', 'Review', 'Other']
 const PRIORITIES  = ['Urgent', 'High', 'Medium', 'Low']
@@ -39,7 +40,7 @@ const sourceLabel = src => {
   return map[src] || null
 }
 
-function TaskRow({ task, onStatusChange, onDelete, onOpen }) {
+function TaskRow({ task, onStatusChange, onDelete, onOpen, t }) {
   const [saving, setSaving] = useState(false)
 
   async function setStatus(status) {
@@ -99,13 +100,13 @@ function TaskRow({ task, onStatusChange, onDelete, onOpen }) {
       <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'center' }}>
         {task.status !== 'Completed' && (
           <Btn size="sm" variant="ghost" disabled={saving} onClick={() => setStatus('Completed')}
-            style={{ color: 'var(--success)', borderColor: 'var(--success)' }}>✓ Done</Btn>
+            style={{ color: 'var(--success)', borderColor: 'var(--success)' }}>{t('myTasks.doneBtn')}</Btn>
         )}
         {task.status === 'Open' && (
-          <Btn size="sm" variant="ghost" disabled={saving} onClick={() => setStatus('In Progress')}>Start</Btn>
+          <Btn size="sm" variant="ghost" disabled={saving} onClick={() => setStatus('In Progress')}>{t('myTasks.startBtn')}</Btn>
         )}
         {task.status === 'Completed' && (
-          <Btn size="sm" variant="ghost" disabled={saving} onClick={() => setStatus('Open')}>Reopen</Btn>
+          <Btn size="sm" variant="ghost" disabled={saving} onClick={() => setStatus('Open')}>{t('myTasks.reopenBtn')}</Btn>
         )}
         <Btn size="sm" variant="ghost" disabled={saving} onClick={() => onDelete?.(task.id)}
           style={{ color: 'var(--muted)', fontSize: 16, padding: '2px 8px' }}>×</Btn>
@@ -118,6 +119,7 @@ export default function MyTasks() {
   const navigate = useNavigate()
   const { profile } = useAuth()
   const { toast, ToastContainer } = useToast()
+  const { t } = useLanguage()
 
   const [tasks, setTasks]               = useState([])
   const [loading, setLoading]           = useState(true)
@@ -219,10 +221,10 @@ export default function MyTasks() {
   const displayTasks = tabMap[tab] || openTasks
 
   const tabs = [
-    { key: 'overdue', label: 'Overdue',   count: overdueTasks.length },
-    { key: 'open',    label: 'Open',      count: openTasks.length },
-    { key: 'snoozed', label: 'Snoozed',   count: snoozed.length },
-    { key: 'done',    label: 'Completed', count: doneTasks.length },
+    { key: 'overdue', label: t('myTasks.tabOverdue'),  count: overdueTasks.length },
+    { key: 'open',    label: t('myTasks.tabOpen'),     count: openTasks.length },
+    { key: 'snoozed', label: t('myTasks.tabSnoozed'),  count: snoozed.length },
+    { key: 'done',    label: t('myTasks.tabDone'),     count: doneTasks.length },
   ]
 
   if (loading) return <div style={{ padding: 32 }}><LoadingState /></div>
@@ -232,24 +234,24 @@ export default function MyTasks() {
     <div style={{ padding: '24px 28px', maxWidth: 900 }}>
       <ToastContainer />
       <PageHeader
-        title="My Tasks"
-        subtitle="Your personal work queue — manual and auto-generated"
+        title={t('myTasks.title')}
+        subtitle={t('myTasks.subtitle')}
         actions={
           <div style={{ display: 'flex', gap: 8 }}>
             <Btn variant="ghost" onClick={runAutoSync} disabled={syncing}>
-              {syncing ? '⏳ Syncing…' : '⚡ Auto-Sync'}
+              {syncing ? t('myTasks.syncing') : t('myTasks.autoSync')}
             </Btn>
-            <Btn variant="primary" onClick={() => setShowCreate(true)}>+ New Task</Btn>
+            <Btn variant="primary" onClick={() => setShowCreate(true)}>{t('myTasks.newTask')}</Btn>
           </div>
         }
       />
 
       {/* KPIs */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginBottom: 24 }}>
-        <KpiCard label="Overdue"   value={overdueTasks.length} color="var(--danger)"  onClick={() => setTab('overdue')} />
-        <KpiCard label="Open"      value={openTasks.length}    color="var(--info)"    onClick={() => setTab('open')} />
-        <KpiCard label="Snoozed"   value={snoozed.length}      color="var(--muted)"   onClick={() => setTab('snoozed')} />
-        <KpiCard label="Completed" value={doneTasks.length}    color="var(--success)" onClick={() => setTab('done')} />
+        <KpiCard label={t('myTasks.kpiOverdue')}   value={overdueTasks.length} color="var(--danger)"  onClick={() => setTab('overdue')} />
+        <KpiCard label={t('myTasks.kpiOpen')}      value={openTasks.length}    color="var(--info)"    onClick={() => setTab('open')} />
+        <KpiCard label={t('myTasks.kpiSnoozed')}   value={snoozed.length}      color="var(--muted)"   onClick={() => setTab('snoozed')} />
+        <KpiCard label={t('myTasks.kpiCompleted')} value={doneTasks.length}    color="var(--success)" onClick={() => setTab('done')} />
       </div>
 
       {/* Task list */}
@@ -262,18 +264,19 @@ export default function MyTasks() {
             <div style={{ padding: 32 }}>
               <EmptyState
                 icon={tab === 'done' ? '✅' : tab === 'overdue' ? '🎉' : '📋'}
-                title={tab === 'done' ? 'No completed tasks yet' : tab === 'overdue' ? 'No overdue tasks!' : 'No tasks here'}
-                message={tab === 'open' ? 'Click + New Task or ⚡ Auto-Sync to populate from live data.' : ''}
+                title={tab === 'done' ? t('myTasks.emptyDone') : tab === 'overdue' ? t('myTasks.emptyOverdue') : t('myTasks.emptyTasks')}
+                message={tab === 'open' ? t('myTasks.emptyOpenHint') : ''}
               />
             </div>
           ) : (
-            displayTasks.map(t => (
+            displayTasks.map(task => (
               <TaskRow
-                key={t.id}
-                task={t}
+                key={task.id}
+                task={task}
                 onStatusChange={load}
                 onDelete={deleteTask}
                 onOpen={id => navigate(`/vips/${id}`)}
+                t={t}
               />
             ))
           )}
@@ -281,15 +284,15 @@ export default function MyTasks() {
       </Card>
 
       {/* Create Task Modal */}
-      <Modal open={showCreate} onClose={() => { setShowCreate(false); setForm(emptyForm); setVipSearch('') }} title="New Task">
+      <Modal open={showCreate} onClose={() => { setShowCreate(false); setForm(emptyForm); setVipSearch('') }} title={t('myTasks.modalTitle')}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div>
-            <label style={{ fontSize: 12, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>Title *</label>
+            <label style={{ fontSize: 12, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>{t('myTasks.titleLabel')}</label>
             <Input value={form.title} onChange={e => setForm(f => ({...f, title: e.target.value}))} placeholder="What needs to be done?" />
           </div>
           <div>
-            <label style={{ fontSize: 12, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>VIP (optional)</label>
-            <Input value={vipSearch} onChange={e => setVipSearch(e.target.value)} placeholder="Search username or name…" />
+            <label style={{ fontSize: 12, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>{t('myTasks.vipLabel')}</label>
+            <Input value={vipSearch} onChange={e => setVipSearch(e.target.value)} placeholder={t('myTasks.searchVip')} />
             {vipResults.length > 0 && (
               <div style={{ border: '1px solid var(--border)', borderRadius: 6, marginTop: 4, background: 'var(--surface2)', maxHeight: 180, overflowY: 'auto' }}>
                 {vipResults.map(v => (
@@ -311,29 +314,29 @@ export default function MyTasks() {
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div>
-              <label style={{ fontSize: 12, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>Type</label>
+              <label style={{ fontSize: 12, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>{t('myTasks.typeLabel')}</label>
               <Select value={form.task_type} onChange={e => setForm(f => ({...f, task_type: e.target.value}))} style={{ width: '100%' }}>
                 {TASK_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
               </Select>
             </div>
             <div>
-              <label style={{ fontSize: 12, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>Priority</label>
+              <label style={{ fontSize: 12, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>{t('myTasks.priorityLabel')}</label>
               <Select value={form.priority} onChange={e => setForm(f => ({...f, priority: e.target.value}))} style={{ width: '100%' }}>
                 {PRIORITIES.map(p => <option key={p} value={p}>{p}</option>)}
               </Select>
             </div>
           </div>
           <div>
-            <label style={{ fontSize: 12, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>Due Date</label>
+            <label style={{ fontSize: 12, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>{t('myTasks.dueDateLabel')}</label>
             <Input type="datetime-local" value={form.due_date} onChange={e => setForm(f => ({...f, due_date: e.target.value}))} />
           </div>
           <div>
-            <label style={{ fontSize: 12, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>Notes</label>
-            <Textarea value={form.notes} onChange={e => setForm(f => ({...f, notes: e.target.value}))} rows={2} placeholder="Optional context…" />
+            <label style={{ fontSize: 12, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>{t('myTasks.notesLabel')}</label>
+            <Textarea value={form.notes} onChange={e => setForm(f => ({...f, notes: e.target.value}))} rows={2} placeholder={t('myTasks.notesPlaceholder')} />
           </div>
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-            <Btn variant="ghost" onClick={() => { setShowCreate(false); setForm(emptyForm); setVipSearch('') }}>Cancel</Btn>
-            <Btn variant="primary" onClick={createTask} disabled={saving}>{saving ? 'Creating…' : 'Create Task'}</Btn>
+            <Btn variant="ghost" onClick={() => { setShowCreate(false); setForm(emptyForm); setVipSearch('') }}>{t('common.cancel')}</Btn>
+            <Btn variant="primary" onClick={createTask} disabled={saving}>{saving ? t('myTasks.creating') : t('myTasks.createTask')}</Btn>
           </div>
         </div>
       </Modal>

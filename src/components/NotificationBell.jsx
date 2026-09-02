@@ -8,6 +8,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
+import { useLanguage } from '../contexts/LanguageContext'
 
 const POLL_INTERVAL_MS = 5 * 60 * 1000 // 5 minutes
 const HIGH_RISK_DAYS = 60
@@ -64,8 +65,8 @@ async function checkAlerts() {
   if (unassignedCount > 0) {
     alerts.push({
       key: 'unassigned', icon: '🚫', severity: 'high',
-      title: `${unassignedCount} VIP${unassignedCount === 1 ? '' : 's'} unassigned`,
-      desc: 'No host assigned — at risk of being missed entirely',
+      titleKey: 'notificationBell.unassignedTitle', titleParams: { n: unassignedCount, s: unassignedCount === 1 ? '' : 's' },
+      descKey: 'notificationBell.unassignedDesc',
       link: '/vips?unassigned=true',
     })
   }
@@ -76,8 +77,8 @@ async function checkAlerts() {
     if (uncontacted.length > 0) {
       alerts.push({
         key: 'dp_uncontacted', icon: '💎', severity: 'high',
-        title: `${uncontacted.length} Diamond/Platinum not contacted this month`,
-        desc: 'Highest-value VIPs with zero contact log entries so far',
+        titleKey: 'notificationBell.dpTitle', titleParams: { n: uncontacted.length },
+        descKey: 'notificationBell.dpDesc',
         link: '/churn?tab=diamond',
       })
     }
@@ -86,8 +87,8 @@ async function checkAlerts() {
   if (highRiskCount > 0) {
     alerts.push({
       key: 'high_risk', icon: '🔴', severity: 'high',
-      title: `${highRiskCount} VIP${highRiskCount === 1 ? '' : 's'} high risk / ${HIGH_RISK_DAYS}+ days inactive`,
-      desc: 'Flagged as high churn risk or long-dormant',
+      titleKey: 'notificationBell.highRiskTitle', titleParams: { n: highRiskCount, s: highRiskCount === 1 ? '' : 's', d: HIGH_RISK_DAYS },
+      descKey: 'notificationBell.highRiskDesc',
       link: '/churn',
     })
   }
@@ -95,8 +96,8 @@ async function checkAlerts() {
   if (!expensesCount || expensesCount === 0) {
     alerts.push({
       key: 'no_expenses', icon: '💸', severity: 'low',
-      title: `No expenses logged for ${currentMonth}`,
-      desc: 'Expense Tracker has nothing recorded yet this month',
+      titleKey: 'notificationBell.noExpensesTitle', titleParams: { month: currentMonth },
+      descKey: 'notificationBell.noExpensesDesc',
       link: '/expenses',
     })
   }
@@ -104,8 +105,14 @@ async function checkAlerts() {
   return alerts
 }
 
+function applyParams(str, params) {
+  if (!params) return str
+  return Object.entries(params).reduce((s, [k, v]) => s.replace(`{${k}}`, v), str)
+}
+
 export default function NotificationBell() {
   const { profile } = useAuth()
+  const { t } = useLanguage()
   const navigate = useNavigate()
   const [alerts, setAlerts] = useState([])
   const [open, setOpen] = useState(false)
@@ -172,12 +179,12 @@ export default function NotificationBell() {
             boxShadow: '0 8px 24px rgba(0,0,0,.4)', zIndex: 41,
           }}>
             <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--border)', fontSize: 13, fontWeight: 700 }}>
-              System Status
+              {t('notificationBell.systemStatus')}
             </div>
             {loading ? (
-              <div style={{ padding: 24, textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}>Checking…</div>
+              <div style={{ padding: 24, textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}>{t('notificationBell.checking')}</div>
             ) : alerts.length === 0 ? (
-              <div style={{ padding: 24, textAlign: 'center', color: '#3fb950', fontSize: 12 }}>✓ Nothing needs attention right now</div>
+              <div style={{ padding: 24, textAlign: 'center', color: '#3fb950', fontSize: 12 }}>{t('notificationBell.allClear')}</div>
             ) : (
               alerts.map(a => (
                 <div key={a.key}
@@ -187,8 +194,8 @@ export default function NotificationBell() {
                   onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                   <div style={{ fontSize: 18, flexShrink: 0 }}>{a.icon}</div>
                   <div>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: a.severity === 'high' ? '#f85149' : '#d29922' }}>{a.title}</div>
-                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{a.desc}</div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: a.severity === 'high' ? '#f85149' : '#d29922' }}>{applyParams(t(a.titleKey), a.titleParams)}</div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{t(a.descKey)}</div>
                   </div>
                 </div>
               ))

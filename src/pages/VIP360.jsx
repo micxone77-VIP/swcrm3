@@ -12,6 +12,7 @@ import {
 } from '../components/ui'
 import { TierBadge, StatusBadge, RiskBadge } from '../components/ui'
 import { callAI } from '../lib/aiApi'
+import { useLanguage } from '../contexts/LanguageContext'
 
 const TIERS = ['BRONZE','SILVER','GOLD','PLATINUM','DIAMOND','BLACK']
 const PERIODS = [
@@ -49,6 +50,7 @@ export default function VIP360() {
   const navigate = useNavigate()
   const { profile } = useAuth()
   const { toast, ToastContainer } = useToast()
+  const { t } = useLanguage()
 
   const [vip, setVip]             = useState(null)
   const [monthly, setMonthly]     = useState([])
@@ -180,7 +182,7 @@ export default function VIP360() {
     await supabase.from('vip_members').update({ last_contact_date: nowStr }).eq('id', id)
     setLogSaving(false)
     if (err) { toast('Error: ' + err.message, 'error'); return }
-    toast('Contact logged ✓', 'success')
+    toast(t('vip360.contactLogged'), 'success')
     setShowLog(false); setLogNote('')
     load()
   }
@@ -190,7 +192,7 @@ export default function VIP360() {
     const { error: err } = await supabase.from('vip_members').update(editForm).eq('id', id)
     setEditSaving(false)
     if (err) { toast('Error: ' + err.message, 'error'); return }
-    toast('Saved ✓', 'success')
+    toast(t('vip360.savedMsg'), 'success')
     setShowEdit(false)
     load()
   }
@@ -201,23 +203,23 @@ export default function VIP360() {
       const summary = `VIP: ${vip.full_name||vip.username}, Tier: ${vip.tier}, Risk: ${vip.churn_risk}, Days inactive: ${daysInactive}, Total deposit: ${formatMoney(vip.total_deposit, vip.currency)}. Last 3 months deposits: ${periodMonthly.slice(0,3).map(m=>formatMoney(m.total_deposit,vip.currency)).join(', ')}.`
       const result = await callAI(`Analyze this VIP player and provide a brief insight with recommended action: ${summary}`)
       setAiInsight(result)
-    } catch(e) { toast('AI unavailable', 'error') }
+    } catch(e) { toast(t('vip360.aiUnavailable'), 'error') }
     setAiLoading(false)
   }
 
   const TABS = [
-    { key: 'overview',  label: 'Overview' },
-    { key: 'financial', label: 'Financial' },
-    { key: 'activity',  label: 'Activity' },
-    { key: 'campaigns', label: 'Campaigns', count: campaigns.length },
-    { key: 'contact',   label: 'Contact',   count: contacts.length },
-    { key: 'calendar',  label: '📅 Deposit Calendar' },
-    { key: 'notes',     label: 'Notes' },
-    { key: 'insights',  label: 'Insights' },
+    { key: 'overview',  label: t('vip360.tabOverview') },
+    { key: 'financial', label: t('vip360.tabFinancial') },
+    { key: 'activity',  label: t('vip360.tabActivity') },
+    { key: 'campaigns', label: t('vip360.tabCampaigns'), count: campaigns.length },
+    { key: 'contact',   label: t('vip360.tabContact'),   count: contacts.length },
+    { key: 'calendar',  label: t('vip360.tabCalendar') },
+    { key: 'notes',     label: t('vip360.tabNotes') },
+    { key: 'insights',  label: t('vip360.tabInsights') },
   ]
 
-  if (loading) return <div style={{ padding: 32 }}><LoadingState message="Loading VIP 360…" /></div>
-  if (error || !vip) return <div style={{ padding: 32 }}><ErrorState message={error || 'VIP not found'} onRetry={load} /></div>
+  if (loading) return <div style={{ padding: 32 }}><LoadingState message={t('vip360.loadingMsg')} /></div>
+  if (error || !vip) return <div style={{ padding: 32 }}><ErrorState message={error || t('vip360.vipNotFound')} onRetry={load} /></div>
 
   const tierCfg   = TIER_CONFIG[(vip.tier||'').toUpperCase()] || TIER_CONFIG.SILVER
   const statusCfg = STATUS_CONFIG[vip.activity_status] || { color:'var(--muted)', bg:'var(--surface2)' }
@@ -230,7 +232,7 @@ export default function VIP360() {
       <button onClick={() => navigate(-1)} style={{
         background:'none', border:'none', color:'var(--muted)', fontSize:13,
         cursor:'pointer', display:'flex', alignItems:'center', gap:6, marginBottom:20, padding:0,
-      }}>← Back to VIP Operations</button>
+      }}>{t('vip360.backBtn')}</button>
 
       {/* ── Identity Header ── */}
       <div style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:12, padding:'20px 24px', marginBottom:20 }}>
@@ -260,9 +262,9 @@ export default function VIP360() {
             </div>
           </div>
           <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
-            <Btn variant="primary" onClick={() => setShowLog(true)}>+ Log Contact</Btn>
+            <Btn variant="primary" onClick={() => setShowLog(true)}>{t('vip360.logContact')}</Btn>
             {profile?.role !== 'readonly' && (
-              <Btn variant="secondary" onClick={() => setShowEdit(true)}>Edit VIP</Btn>
+              <Btn variant="secondary" onClick={() => setShowEdit(true)}>{t('vip360.editVip')}</Btn>
             )}
           </div>
         </div>
@@ -649,7 +651,7 @@ export default function VIP360() {
               ) : (
                 <div style={{ textAlign:'center', padding:'24px 0' }}>
                   <Btn variant="secondary" onClick={getAIInsight} disabled={aiLoading}>
-                    {aiLoading ? 'Generating…' : '✨ Generate AI Insight'}
+                    {aiLoading ? t('vip360.aiLoading') : t('vip360.getInsight')}
                   </Btn>
                   <div style={{ fontSize:11, color:'var(--muted)', marginTop:8 }}>
                     AI insights are labeled and separate from confirmed CRM data.

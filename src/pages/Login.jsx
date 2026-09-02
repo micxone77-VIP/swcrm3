@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
+import { useLanguage } from '../contexts/LanguageContext'
 
 const s = {
   wrap:  { minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg)', padding: '20px' },
@@ -19,6 +20,7 @@ const s = {
 export default function Login() {
   const { signIn } = useAuth()
   const navigate   = useNavigate()
+  const { t } = useLanguage()
   const [email, setEmail]       = useState('')
   const [password, setPassword] = useState('')
   const [error, setError]       = useState('')
@@ -31,7 +33,7 @@ export default function Login() {
     const { error } = await signIn(email, password)
     if (error) {
       setError(error.message === 'Invalid login credentials'
-        ? 'Wrong email or password. Please try again.'
+        ? t('login.wrongCredentials')
         : error.message)
       setLoading(false)
     } else {
@@ -45,13 +47,13 @@ export default function Login() {
         <div style={s.logo}>
           <span style={s.crown}>👑</span>
           <div style={s.title}>SureWin VIP CRM</div>
-          <div style={s.sub}>VIP Retention Hub — Sign in to continue</div>
+          <div style={s.sub}>{t('login.subtitle')}</div>
         </div>
 
         {error && <div style={s.err}>{error}</div>}
 
         <form onSubmit={handleSubmit}>
-          <label style={s.label}>Email</label>
+          <label style={s.label}>{t('login.emailLabel')}</label>
           <input
             style={s.input}
             type="email"
@@ -62,7 +64,7 @@ export default function Login() {
             autoFocus
           />
 
-          <label style={s.label}>Password</label>
+          <label style={s.label}>{t('login.passwordLabel')}</label>
           <input
             style={s.input}
             type="password"
@@ -73,12 +75,12 @@ export default function Login() {
           />
 
           <button style={s.btn} type="submit" disabled={loading}>
-            {loading ? 'Signing in…' : 'Sign in →'}
+            {loading ? t('login.signingIn') : t('login.signIn')}
           </button>
         </form>
 
         <div style={s.foot}>
-          Forgot your password? Contact your admin.
+          {t('login.forgot')}
         </div>
       </div>
     </div>

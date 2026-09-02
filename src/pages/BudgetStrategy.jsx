@@ -4,6 +4,7 @@ import { useAuth } from '../hooks/useAuth'
 import { MONTHS, TIER_COLOR, TIER_BG, CURRENCY_LIST, CURRENCY_SYMBOL, CURRENCY_REGION, REGION_LABEL } from '../lib/constants'
 import { formatMoney } from '../lib/format'
 import { useUrlParam, useUrlParamNumber } from '../hooks/useUrlParam'
+import { useLanguage } from '../contexts/LanguageContext'
 
 const s = {
   page:    { padding:'24px 28px', minHeight:'100vh' },
@@ -34,6 +35,7 @@ const DEFAULT_BUDGET = {
 
 export default function BudgetStrategy() {
   const { profile } = useAuth()
+  const { t } = useLanguage()
   const isAdmin = profile?.role === 'admin'
 
   const now = new Date()
@@ -113,7 +115,7 @@ export default function BudgetStrategy() {
       {/* Header */}
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:20, flexWrap:'wrap', gap:12 }}>
         <div>
-          <div style={s.title}>💼 Budget Strategy</div>
+          <div style={s.title}>💼 {t('budgetStrategy.title')}</div>
           <div style={s.sub}>Bonus budget planning and allocation tracking — {REGION_LABEL[CURRENCY_REGION[currency]]} ({CURRENCY_SYMBOL[currency]}) only</div>
         </div>
         <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
@@ -132,11 +134,11 @@ export default function BudgetStrategy() {
             value={year} onChange={e=>setYear(parseInt(e.target.value))}>
             {[2024,2025,2026,2027].map(y => <option key={y}>{y}</option>)}
           </select>
-          {isAdmin && !editing && <button style={s.btnSm} onClick={()=>setEditing(true)}>⚙️ Set Budget</button>}
+          {isAdmin && !editing && <button style={s.btnSm} onClick={()=>setEditing(true)}>⚙️ {t('budgetStrategy.setBudget')}</button>}
           {editing && (
             <>
-              <button style={s.btn} onClick={saveBudget}>💾 Save</button>
-              <button style={s.btnSm} onClick={()=>setEditing(false)}>Cancel</button>
+              <button style={s.btn} onClick={saveBudget}>💾 {t('budgetStrategy.saveBudget')}</button>
+              <button style={s.btnSm} onClick={()=>setEditing(false)}>{t('budgetStrategy.cancel')}</button>
             </>
           )}
         </div>
@@ -145,9 +147,9 @@ export default function BudgetStrategy() {
       {/* Budget overview */}
       <div style={{ ...s.grid4, marginBottom:16 }}>
         {[
-          { label:'Total Budget', value: fmt(totalBudget), color:'var(--accent)' },
-          { label:'Spent',        value: fmt(totalSpent),  color: budgetColor },
-          { label:'Remaining',    value: fmt(remaining),   color: remaining>=0?'#3fb950':'#f85149' },
+          { label: t('budgetStrategy.totalBudget'), value: fmt(totalBudget), color:'var(--accent)' },
+          { label: t('budgetStrategy.used'),        value: fmt(totalSpent),  color: budgetColor },
+          { label: t('budgetStrategy.remaining'),   value: fmt(remaining),   color: remaining>=0?'#3fb950':'#f85149' },
           { label:'Bonuses Given',value: logs.length,        color:'var(--text)', sub:`${MONTHS[month]} ${year}` },
         ].map(({ label, value, color, sub }) => (
           <div key={label} style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:10, padding:'16px 18px' }}>
@@ -237,7 +239,7 @@ export default function BudgetStrategy() {
             {loading ? (
               <div style={{ padding:20, textAlign:'center', color:'var(--muted)' }}>Loading...</div>
             ) : logs.length === 0 ? (
-              <div style={{ padding:20, textAlign:'center', color:'var(--muted)', fontSize:13 }}>No bonuses given this month.</div>
+              <div style={{ padding:20, textAlign:'center', color:'var(--muted)', fontSize:13 }}>{t('budgetStrategy.noData')}</div>
             ) : (
               <table style={s.tbl}>
                 <thead>
