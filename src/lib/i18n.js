@@ -326,6 +326,9 @@ export const translations = {
       confirmReactivated: 'Confirm Reactivated',
       saveFailed: 'Save failed: {msg}',
       tabAtRisk: '⚠️ At-Risk ({n})',
+      recoveryDepositLabel: 'Recovery Deposit',
+      currencyLabel: 'Currency',
+      recoveryAmountRequired: 'Please enter a valid recovery deposit amount (0 or above).',
     },
     expenseTracker: {
       pageTitle: 'Department Expense Tracker',
@@ -938,6 +941,9 @@ export const translations = {
       confirmReactivated: '确认已激活',
       saveFailed: '保存失败: {msg}',
       tabAtRisk: '⚠️ 高风险 ({n})',
+      recoveryDepositLabel: '回充金额',
+      currencyLabel: '货币',
+      recoveryAmountRequired: '请输入有效的回充金额（≥ 0）。',
     },
     expenseTracker: {
       pageTitle: '部门费用追踪',
