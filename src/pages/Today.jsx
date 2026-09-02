@@ -1,5 +1,5 @@
 // src/pages/Today.jsx — Command Center / Today (V2)
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import { useDashboard } from '../hooks/useDashboard'
@@ -13,7 +13,6 @@ import { TierBadge, RiskBadge } from '../components/ui'
 import { formatMoney } from '../lib/format'
 import VipQuickSearch from '../components/VipQuickSearch'
 
-const HOSTS = ['All', 'Marcus', 'Angel']
 const OUTCOMES = ['Contacted', 'No Reply', 'Replied', 'Deposited', 'Reactivated']
 const TIER_ORDER = { BLACK:0, DIAMOND:1, PLATINUM:2, GOLD:3, SILVER:4, BRONZE:5 }
 
@@ -31,6 +30,19 @@ export default function Today() {
   const { toast, ToastContainer } = useToast()
   const [host, setHost] = useState('All')
   const [activeQueue, setActiveQueue] = useState('all')
+  const [hostList, setHostList] = useState(['All'])
+
+  // Load hosts dynamically from profiles (same as AtRisk.jsx)
+  useEffect(() => {
+    supabase.from('profiles')
+      .select('full_name')
+      .in('role', ['admin', 'host'])
+      .order('full_name')
+      .then(({ data }) => {
+        const names = (data || []).map(p => p.full_name).filter(Boolean)
+        setHostList(['All', ...names])
+      })
+  }, [])
 
   const {
     loading, error, refresh,
@@ -106,7 +118,7 @@ export default function Today() {
         {/* Host filter */}
         <div style={{ marginTop: 16 }}>
           <FilterPills
-            options={HOSTS.map(h => ({ value: h, label: h === 'All' ? 'All Hosts' : h }))}
+            options={hostList.map(h => ({ value: h, label: h === 'All' ? 'All Hosts' : h }))}
             active={host}
             onChange={setHost}
           />
