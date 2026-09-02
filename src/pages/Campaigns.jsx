@@ -184,6 +184,8 @@ export default function Campaigns() {
   const [campaignPlayerLevels, setCampaignPlayerLevels] = useState([])
   const [campaignRewards, setCampaignRewards] = useState([])
   const [activeTab,  setActiveTab]  = useState('chase')
+  const [chaseFilter, setChaseFilter] = useState('')
+  const [copiedId, setCopiedId] = useState(null)
   const [entryDate, setEntryDate] = useState('')
   const [dailyEntries, setDailyEntries] = useState({}) // player_id -> {turnover_amount, tier_achieved, credit_reward, wcash_reward}
   const [dailyLoading, setDailyLoading] = useState(false)
@@ -972,6 +974,14 @@ export default function Campaigns() {
     : players.filter(p=>p.payout_status==='paid').reduce((s,p)=>s+calcReward(campType,playerDeposit(p),rewardPct,rewardFixed,goldVal,rewardCap,rewardTiers,campaignLevels,selected?.is_multi_level),0)
   const pendingPay = Math.max(0,totalReward-paidOut)
   const chaseList = campType==='leaderboard' ? lbRanked : [...players].sort((a,b)=>playerDeposit(b)-playerDeposit(a))
+  const filteredChaseList = chaseFilter.trim()
+    ? chaseList.filter(p => (p.username||'').toLowerCase().includes(chaseFilter.toLowerCase()) || (p.full_name||'').toLowerCase().includes(chaseFilter.toLowerCase()))
+    : chaseList
+  function copyUsername(id, username) {
+    navigator.clipboard.writeText(username).catch(()=>{})
+    setCopiedId(id)
+    setTimeout(() => setCopiedId(c => c === id ? null : c), 1500)
+  }
 
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
@@ -1558,6 +1568,19 @@ export default function Campaigns() {
                 <div style={{ padding:'8px 24px', fontSize:11, color:'var(--muted)', background:'rgba(88,166,255,.04)', borderBottom:'1px solid var(--border)' }}>
                   Click deposit field to update · reward auto-calculated based on campaign type
                 </div>
+                {/* Chase list search filter */}
+                <div style={{ padding:'8px 24px', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', gap:8 }}>
+                  <input
+                    value={chaseFilter}
+                    onChange={e => setChaseFilter(e.target.value)}
+                    placeholder={`🔍 Filter ${chaseList.length} players by username…`}
+                    style={{ ...s.smInput, width:280, fontSize:12 }}
+                  />
+                  {chaseFilter && (
+                    <button onClick={() => setChaseFilter('')} style={{ fontSize:11, color:'var(--muted)', background:'none', border:'none', cursor:'pointer', padding:'2px 6px' }}>✕ Clear</button>
+                  )}
+                  {chaseFilter && <span style={{ fontSize:11, color:'var(--muted)' }}>{filteredChaseList.length} match{filteredChaseList.length !== 1 ? 'es' : ''}</span>}
+                </div>
                 {isDailyMode && (
                   <div style={{ padding:'12px 24px', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', gap:12, flexWrap:'wrap' }}>
                     <span style={{ fontSize:12, fontWeight:700, color:'#c9a961' }}>📅 Entry Date:</span>
@@ -1585,9 +1608,9 @@ export default function Campaigns() {
                       <th style={s.th}>✕</th>
                     </tr></thead>
                     <tbody>
-                      {chaseList.length === 0
-                        ? <tr><td colSpan={11} style={{ ...s.td, textAlign:'center', padding:24, color:'var(--muted)' }}>Add players above to start tracking.</td></tr>
-                        : chaseList.map((p,i) => {
+                      {filteredChaseList.length === 0
+                        ? <tr><td colSpan={11} style={{ ...s.td, textAlign:'center', padding:24, color:'var(--muted)' }}>{chaseList.length === 0 ? 'Add players above to start tracking.' : 'No players match the search.'}</td></tr>
+                        : filteredChaseList.map((p,i) => {
                             const rankingTarget = leaderboardMetric === 'deposit' ? minDepLb : minBetTarget
                             const pr = getProgress(p._rankingValue||0, rankingTarget)
                             const inTopByPosition = i < topN && p._qualified
@@ -1595,9 +1618,12 @@ export default function Campaigns() {
                             return (
                               <tr key={p.id} onMouseEnter={e=>e.currentTarget.style.background='var(--surface2)'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
                                 <td style={{ ...s.td, color:'var(--muted)', fontSize:11 }}>{i+1}</td>
-                                <td style={{ ...s.td, fontWeight:700, cursor:'pointer' }} onClick={()=>{if(p.vip_id){closeModal();navigate(`/vips/${p.vip_id}`)}}}>
-                                  {p.username}
-                                  {p.tier && <span style={{ ...s.badge, background:TIER_BG[p.tier]||'transparent', color:TIER_COLOR[p.tier]||'var(--muted)', marginLeft:6, fontSize:10 }}>{p.tier}</span>}
+                                <td style={{ ...s.td, fontWeight:700 }}>
+                                  <div style={{ display:'flex', alignItems:'center', gap:4 }}>
+                                    <span style={{ cursor:'pointer' }} onClick={()=>{if(p.vip_id){closeModal();navigate(`/vips/${p.vip_id}`)}}}>{p.username}</span>
+                                    {p.tier && <span style={{ ...s.badge, background:TIER_BG[p.tier]||'transparent', color:TIER_COLOR[p.tier]||'var(--muted)', fontSize:10 }}>{p.tier}</span>}
+                                    <button title="Copy username" onClick={()=>copyUsername(p.id, p.username)} style={{ marginLeft:2, background:'none', border:'none', cursor:'pointer', fontSize:11, color: copiedId===p.id ? '#3fb950' : 'var(--muted)', padding:'1px 4px', borderRadius:4 }}>{copiedId===p.id ? '✓' : '⎘'}</button>
+                                  </div>
                                 </td>
                                 <td style={{ ...s.td, fontSize:12, color:'var(--muted)' }}>
                                   <input defaultValue={p.whatsapp||''} onBlur={e=>{if(e.target.value!==(p.whatsapp||''))updatePlayer(p.id,{whatsapp:e.target.value})}} style={{ ...s.editInput, width:120 }} placeholder="—" />
@@ -1657,12 +1683,14 @@ export default function Campaigns() {
                     <tbody>
                       {chaseList.length === 0
                         ? <tr><td colSpan={9} style={{ ...s.td, textAlign:'center', padding:24, color:'var(--muted)' }}>Add players above to start tracking.</td></tr>
-                        : chaseList.map((p,i) => {
+                        : filteredChaseList.length === 0
+                        ? <tr><td colSpan={9} style={{ ...s.td, textAlign:'center', padding:24, color:'var(--muted)' }}>No players match the search.</td></tr>
+                        : filteredChaseList.map((p,i) => {
                             const multi = selected?.is_multi_level && campType === 'fixed_reward'
                             const multiMetric = multi ? multiMetricsByPlayer[p.id] : null
                             const dailyEntry = dailyEntries[p.id]
                             const dualReward = campType==='dual_tier'
-                              ? (isDailyMode ? calcDualTierReward(0, dailyEntry?.turnover_amount||0, rewardTiers) : calcDualTierReward(playerDeposit(p), p.valid_bet, rewardTiers))
+                              ? (isDailyMode ? calcDualTierReward(dailyEntry?.deposit_amount||0, dailyEntry?.turnover_amount||0, rewardTiers) : calcDualTierReward(playerDeposit(p), p.valid_bet, rewardTiers))
                               : null
                             let pr
                             if (multi) {
@@ -1707,9 +1735,16 @@ export default function Campaigns() {
                             return (
                               <tr key={p.id} onMouseEnter={e=>e.currentTarget.style.background='var(--surface2)'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
                                 <td style={{ ...s.td, color:'var(--muted)', fontSize:11 }}>{i+1}</td>
-                                <td style={{ ...s.td, fontWeight:700, cursor:'pointer' }} onClick={()=>{if(p.vip_id){closeModal();navigate(`/vips/${p.vip_id}`)}}}>
-                                  {p.username}
-                                  {p.tier && <span style={{ ...s.badge, background:TIER_BG[p.tier]||'transparent', color:TIER_COLOR[p.tier]||'var(--muted)', marginLeft:6, fontSize:10 }}>{p.tier}</span>}
+                                <td style={{ ...s.td, fontWeight:700 }}>
+                                  <div style={{ display:'flex', alignItems:'center', gap:4 }}>
+                                    <span style={{ cursor:'pointer' }} onClick={()=>{if(p.vip_id){closeModal();navigate(`/vips/${p.vip_id}`)}}}>
+                                      {p.username}
+                                    </span>
+                                    {p.tier && <span style={{ ...s.badge, background:TIER_BG[p.tier]||'transparent', color:TIER_COLOR[p.tier]||'var(--muted)', fontSize:10 }}>{p.tier}</span>}
+                                    <button title="Copy username" onClick={()=>copyUsername(p.id, p.username)} style={{ marginLeft:2, background:'none', border:'none', cursor:'pointer', fontSize:11, color: copiedId===p.id ? '#3fb950' : 'var(--muted)', padding:'1px 4px', borderRadius:4 }}>
+                                      {copiedId===p.id ? '✓' : '⎘'}
+                                    </button>
+                                  </div>
                                 </td>
                                 <td style={{ ...s.td, fontSize:12, color:'var(--muted)' }}>
                                   <input defaultValue={p.whatsapp||''} onBlur={e=>{if(e.target.value!==(p.whatsapp||''))updatePlayer(p.id,{whatsapp:e.target.value})}} style={{ ...s.editInput, width:120 }} placeholder="—" />

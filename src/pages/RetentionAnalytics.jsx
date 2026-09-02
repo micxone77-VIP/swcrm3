@@ -63,6 +63,8 @@ export default function RetentionAnalytics() {
   const [usedFallback, setUsedFallback] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const ALL_TIERS = ['BLACK','DIAMOND','PLATINUM','GOLD','SILVER','BRONZE']
+  const [selectedTiers, setSelectedTiers] = useState(['DIAMOND','PLATINUM','GOLD'])
 
   // Load available months once
   useEffect(() => {
@@ -156,7 +158,7 @@ export default function RetentionAnalytics() {
     return { ...s, reactivatedCount: compReactRows.length, retentionRate: compMetrics.retentionRate }
   }, [compRows, compPeriodMonths, compReactivated])
 
-  const tierKpis = useMemo(() => ['DIAMOND', 'PLATINUM', 'GOLD'].map(tier => {
+  const tierKpis = useMemo(() => ALL_TIERS.map(tier => {
     const opening = previousActive.filter(v => String(v.tier).toUpperCase() === tier).length
     const kept = retained.filter(v => String(v.tier).toUpperCase() === tier).length
     const lost = churned.filter(v => String(v.tier).toUpperCase() === tier).length
@@ -164,8 +166,11 @@ export default function RetentionAnalytics() {
     const back = tierReact.length
     const recoveryByCurrency = tierReact.filter(v => v.recoveryAmount > 0).reduce((acc, v) => { const c = String(v.currency || '').toUpperCase(); if (c) acc[c] = (acc[c] || 0) + v.recoveryAmount; return acc }, {})
     const recoveryText = Object.entries(recoveryByCurrency).map(([c, a]) => money(a, c)).join(' · ')
-    return { tier, opening, kept, lost, back, recoveryByCurrency, recoveryText, rate: calculateRetentionMetrics({ openingVipCount: opening, retainedVipCount: kept, churnedVipCount: lost }).retentionRate }
-  }), [previousActive, retained, churned, reactivatedRows])
+    // Total players in this tier in the previous snapshot (whether active/inactive)
+    const totalInTierPrev = rows.filter(r => r.snapshot_month === previousSnapshotMonth && String(r.tier).toUpperCase() === tier).length
+    const inactive = totalInTierPrev - opening // in prev snapshot but deposit=0
+    return { tier, totalInTierPrev, inactive, opening, kept, lost, back, recoveryByCurrency, recoveryText, rate: calculateRetentionMetrics({ openingVipCount: opening, retainedVipCount: kept, churnedVipCount: lost }).retentionRate }
+  }), [ALL_TIERS, previousActive, retained, churned, reactivatedRows, rows, previousSnapshotMonth])
 
   const hosts = useMemo(() => {
     const assignedByHost = new Map()
@@ -291,21 +296,38 @@ export default function RetentionAnalytics() {
 
       {/* Priority tier performance */}
       <section className="rounded-xl border overflow-hidden">
-        <div className="border-b px-5 py-4 font-medium">{t('retention.priorityTierPerformance')}</div>
-        <div className="grid gap-3 p-5 md:grid-cols-3">
-          {tierKpis.map(k => (
-            <div key={k.tier} className="rounded-lg border p-4">
-              <div className="text-sm font-semibold">{k.tier === 'DIAMOND' ? '💎' : k.tier === 'PLATINUM' ? '🔷' : '🟡'} {k.tier}</div>
-              <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
-                <div><div className="text-xs opacity-60">{t('retention.previousActive')}</div><strong>{k.opening}</strong></div>
-                <div><div className="text-xs opacity-60">{t('retention.retained')}</div><strong>{k.kept}</strong></div>
-                <div><div className="text-xs opacity-60">{t('retention.churned')}</div><strong>{k.lost}</strong></div>
-                <div><div className="text-xs opacity-60">{t('retention.reactivatedCount')}</div><strong>{k.back}</strong></div>
+        <div className="border-b px-5 py-4 flex items-center justify-between flex-wrap gap-3">
+          <div className="font-medium">{t('retention.priorityTierPerformance')}</div>
+          <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+            <button onClick={() => setSelectedTiers(ALL_TIERS)} style={{ padding:'3px 10px', borderRadius:20, fontSize:11, fontWeight:600, cursor:'pointer', border:'1px solid var(--border)', background: selectedTiers.length === ALL_TIERS.length ? 'var(--accent)' : 'transparent', color: selectedTiers.length === ALL_TIERS.length ? '#fff' : 'var(--muted)' }}>All</button>
+            {ALL_TIERS.map(tier => {
+              const icon = {BLACK:'⬛',DIAMOND:'💎',PLATINUM:'🔷',GOLD:'🟡',SILVER:'⚪',BRONZE:'🟤'}[tier]
+              const active = selectedTiers.includes(tier)
+              return <button key={tier} onClick={() => setSelectedTiers(prev => prev.includes(tier) ? prev.filter(t=>t!==tier) : [...prev, tier])} style={{ padding:'3px 10px', borderRadius:20, fontSize:11, fontWeight:600, cursor:'pointer', border:`1px solid ${active?'var(--accent)':'var(--border)'}`, background: active ? 'rgba(88,166,255,.12)' : 'transparent', color: active ? 'var(--accent)' : 'var(--muted)' }}>{icon} {tier.charAt(0)+tier.slice(1).toLowerCase()}</button>
+            })}
+          </div>
+        </div>
+        <div className="grid gap-3 p-5" style={{ gridTemplateColumns: `repeat(${Math.min(selectedTiers.length, 3)}, 1fr)` }}>
+          {tierKpis.filter(k => selectedTiers.includes(k.tier)).map(k => {
+            const icon = {BLACK:'⬛',DIAMOND:'💎',PLATINUM:'🔷',GOLD:'🟡',SILVER:'⚪',BRONZE:'🟤'}[k.tier]
+            return (
+              <div key={k.tier} className="rounded-lg border p-4">
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start' }}>
+                  <div className="text-sm font-semibold">{icon} {k.tier}</div>
+                  {k.totalInTierPrev > 0 && <div style={{ fontSize:10, color:'var(--muted)', textAlign:'right' }}>Total in prev snapshot<br/><strong style={{ fontSize:14, color:'var(--text)' }}>{k.totalInTierPrev}</strong></div>}
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
+                  <div><div className="text-xs opacity-60">{t('retention.previousActive')}</div><strong>{k.opening}</strong>{k.inactive > 0 && <span style={{ fontSize:10, color:'var(--muted)', marginLeft:4 }}>({k.inactive} inactive)</span>}</div>
+                  <div><div className="text-xs opacity-60">{t('retention.retained')}</div><strong>{k.kept}</strong></div>
+                  <div><div className="text-xs opacity-60">{t('retention.churned')}</div><strong style={{ color: k.lost > 0 ? '#d94b4b' : 'inherit' }}>{k.lost}</strong></div>
+                  <div><div className="text-xs opacity-60">{t('retention.reactivatedCount')}</div><strong style={{ color: k.back > 0 ? '#20a36a' : 'inherit' }}>{k.back}</strong></div>
+                </div>
+                <div className="mt-3 text-lg font-semibold" style={{ color: k.rate >= 85 ? '#20a36a' : k.rate >= 70 ? '#d29922' : '#d94b4b' }}>{k.rate}% {t('retention.retention')}</div>
+                {k.recoveryText && <div className="mt-3 rounded-md border px-3 py-2 text-sm"><div className="text-xs opacity-60">{t('retention.reactivatedDeposit')}</div><strong>{k.recoveryText}</strong></div>}
               </div>
-              <div className="mt-3 text-lg font-semibold">{k.rate}% {t('retention.retention')}</div>
-              {k.recoveryText && <div className="mt-3 rounded-md border px-3 py-2 text-sm"><div className="text-xs opacity-60">{t('retention.reactivatedDeposit')}</div><strong>{k.recoveryText}</strong></div>}
-            </div>
-          ))}
+            )
+          })}
+          {tierKpis.filter(k => selectedTiers.includes(k.tier)).length === 0 && <div className="col-span-3 py-8 text-center text-sm opacity-60">Select at least one tier above to view performance.</div>}
         </div>
       </section>
 
