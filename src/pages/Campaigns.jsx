@@ -586,7 +586,12 @@ export default function Campaigns() {
 
   async function deleteCampaign() {
     if (!window.confirm(`Delete "${selected.campaign_name}"? This will also remove all player records.`)) return
+    // Delete child rows in dependency order before removing the campaign itself.
+    // daily_turnover_entries references both campaign_id AND player_id (→ campaign_players),
+    // so it must be removed first; then campaign_players; then campaign_levels; finally campaigns.
+    await supabase.from('daily_turnover_entries').delete().eq('campaign_id', selected.id)
     await supabase.from('campaign_players').delete().eq('campaign_id', selected.id)
+    await supabase.from('campaign_levels').delete().eq('campaign_id', selected.id)
     const { error } = await supabase.from('campaigns').delete().eq('id', selected.id)
     if (error) { alert('Delete failed: ' + error.message); return }
     closeModal()
@@ -598,7 +603,7 @@ export default function Campaigns() {
   async function loadDailyEntries(campaignId, date) {
     setDailyLoading(true)
     const { data, error } = await supabase.from('daily_turnover_entries')
-      .select('player_id, turnover_amount, tier_achieved, credit_reward, wcash_reward')
+      .select('player_id, deposit_amount, turnover_amount, tier_achieved, credit_reward, wcash_reward')
       .eq('campaign_id', campaignId).eq('entry_date', date)
     if (error) { console.error('loadDailyEntries error', error); setDailyEntries({}); setDailyLoading(false); return }
     const map = {}
@@ -610,10 +615,12 @@ export default function Campaigns() {
   // Upserts a player's turnover for the currently-selected date only — every
   // other date's row for this player is untouched. This IS the "doesn't carry
   // over to the next day" behavior: each date is its own independent record.
-  async function saveDailyTurnover(playerId, turnoverAmount) {
-    const dualReward = calcDualTierReward(0, turnoverAmount, rewardTiers) // deposit=0: daily mode is turnover-only by design
+  async function saveDailyEntry(playerId, depositAmount, turnoverAmount) {
+    // Both deposit AND turnover must meet a tier's thresholds to qualify.
+    const dualReward = calcDualTierReward(depositAmount, turnoverAmount, rewardTiers)
     const payload = {
       campaign_id: selected.id, player_id: playerId, entry_date: entryDate,
+      deposit_amount: depositAmount,
       turnover_amount: turnoverAmount,
       tier_achieved: dualReward.tierIndex >= 0 ? dualReward.tierIndex : null,
       credit_reward: dualReward.creditAmount, wcash_reward: dualReward.wcashAmount,
@@ -726,20 +733,21 @@ export default function Campaigns() {
   async function loadCampaignSummary(campaignId) {
     setSummaryLoading(true)
     const { data, error } = await supabase.from('daily_turnover_entries')
-      .select('player_id, entry_date, turnover_amount')
+      .select('player_id, entry_date, deposit_amount, turnover_amount')
       .eq('campaign_id', campaignId)
       .order('entry_date', { ascending: true })
     if (error) { console.error('loadCampaignSummary error', error); setSummaryData(null); setSummaryLoading(false); return }
 
-    // Always recompute credit/wcash fresh from turnover_amount + the campaign's
-    // CURRENT tier settings — never trust the stored credit_reward/wcash_reward
-    // columns directly. Those are a snapshot from whenever that row was saved;
-    // if an entry was saved before some bug fix, the stored figure can be
-    // stale and wrong even though the raw turnover_amount is correct.
+    // Always recompute credit/wcash fresh from deposit_amount + turnover_amount
+    // against the campaign's CURRENT tier settings — never trust the stored
+    // credit_reward/wcash_reward columns. Both conditions must be met; older
+    // rows that predate the deposit_amount column will have null/0 deposit and
+    // will only qualify if their tier's depositThreshold is also 0.
     const entries = (data || [])
       .filter(e => (parseFloat(e.turnover_amount) || 0) > 0)
       .map(e => {
-        const r = calcDualTierReward(0, e.turnover_amount, rewardTiers)
+        const dep = parseFloat(e.deposit_amount) || 0
+        const r = calcDualTierReward(dep, e.turnover_amount, rewardTiers)
         return { ...e, tier_achieved: r.tierIndex >= 0 ? r.tierIndex : null, credit_reward: r.creditAmount, wcash_reward: r.wcashAmount }
       })
 
@@ -1632,7 +1640,7 @@ export default function Campaigns() {
                       <th style={s.th}>#</th>
                       <th style={s.th}>Player</th>
                       <th style={s.th}>WhatsApp</th>
-                      <th style={s.th}>{isDailyMode ? 'Turnover (RM)' : campType==='dual_tier' ? 'Deposit / Turnover (RM)' : 'Campaign Deposit (RM)'}</th>
+                      <th style={s.th}>{campType==='dual_tier' ? 'Deposit / Turnover (RM)' : 'Campaign Deposit (RM)'}</th>
                       <th style={s.th}>Progress</th>
                       <th style={s.th}>Reward</th>
                       <th style={s.th}>Contact</th>
@@ -1656,22 +1664,31 @@ export default function Campaigns() {
                               else if (target) pr = getProgress(playerDeposit(p), Number(target))
                               else pr = { pct:0, color:'#8b949e', bg:'rgba(139,148,158,.15)', label:'IN PROGRESS' }
                             } else if (isDailyMode && campType==='dual_tier') {
+                              const currentDeposit = dailyEntry?.deposit_amount || 0
                               const currentTurnover = dailyEntry?.turnover_amount || 0
                               if (dualReward.tierIndex >= 0) {
                                 // At least one tier reached — show which one explicitly, and progress
-                                // toward the NEXT tier (not the highest) so achieving tier 1 or 2 doesn't
-                                // still look like "behind" just because the top tier isn't reached yet.
+                                // toward the NEXT tier so achieving tier 1 or 2 doesn't look like "behind".
                                 const nextTier = rewardTiers[dualReward.tierIndex + 1]
                                 if (nextTier) {
-                                  const nextThreshold = parseFloat(nextTier.turnoverThreshold) || 0
-                                  const pct = nextThreshold > 0 ? Math.min(100, Math.round(currentTurnover / nextThreshold * 100)) : 100
+                                  const nextDepThreshold = parseFloat(nextTier.depositThreshold) || 0
+                                  const nextTOThreshold = parseFloat(nextTier.turnoverThreshold) || 0
+                                  const depPct = nextDepThreshold > 0 ? Math.min(100, Math.round(currentDeposit / nextDepThreshold * 100)) : 100
+                                  const toPct  = nextTOThreshold  > 0 ? Math.min(100, Math.round(currentTurnover / nextTOThreshold * 100)) : 100
+                                  const pct = Math.min(depPct, toPct)
                                   pr = { pct, color:'#3fb950', bg:'rgba(63,185,80,.15)', label:`✅ Tier ${dualReward.tierIndex+1} Achieved` }
                                 } else {
                                   pr = { pct:100, color:'#3fb950', bg:'rgba(63,185,80,.15)', label:`✅ Tier ${dualReward.tierIndex+1} (Highest)` }
                                 }
                               } else {
-                                const firstThreshold = parseFloat(rewardTiers[0]?.turnoverThreshold) || 0
-                                pr = getProgress(currentTurnover, firstThreshold)
+                                // Not yet qualified — progress = worst of deposit% vs turnover% toward first tier
+                                const firstDepThreshold = parseFloat(rewardTiers[0]?.depositThreshold) || 0
+                                const firstTOThreshold  = parseFloat(rewardTiers[0]?.turnoverThreshold) || 0
+                                const depPct = firstDepThreshold > 0 ? Math.min(100, Math.round(currentDeposit / firstDepThreshold * 100)) : 100
+                                const toPct  = firstTOThreshold  > 0 ? Math.min(100, Math.round(currentTurnover / firstTOThreshold * 100)) : 100
+                                const pct = Math.min(depPct, toPct)
+                                const color = pct >= 100 ? '#f0883e' : pct >= 70 ? '#f0883e' : '#f85149' // never green until both pass
+                                pr = { pct, color, bg: color+'18', label: pct >= 70 ? '⚡ CLOSE' : '🔴 BEHIND' }
                               }
                             } else {
                               pr = getProgress(playerDeposit(p), depTarget)
@@ -1692,9 +1709,14 @@ export default function Campaigns() {
                                 </td>
                                 <td style={s.td}>
                                   {isDailyMode ? (
-                                    <input type="number" key={`${p.id}-${entryDate}`} defaultValue={dailyEntry?.turnover_amount || ''}
-                                      onBlur={e=>{ const v=parseFloat(e.target.value)||0; if(v!==(dailyEntry?.turnover_amount||0)) saveDailyTurnover(p.id, v) }}
-                                      style={{ ...s.smInput, width:110 }} placeholder="Turnover" disabled={dailyLoading} />
+                                    <>
+                                      <input type="number" key={`${p.id}-${entryDate}-dep`} defaultValue={dailyEntry?.deposit_amount || ''}
+                                        onBlur={e=>{ const v=parseFloat(e.target.value)||0; if(v!==(dailyEntry?.deposit_amount||0)) saveDailyEntry(p.id, v, dailyEntry?.turnover_amount||0) }}
+                                        style={{ ...s.smInput, width:110, display:'block', marginBottom:4 }} placeholder="Deposit" disabled={dailyLoading} />
+                                      <input type="number" key={`${p.id}-${entryDate}-to`} defaultValue={dailyEntry?.turnover_amount || ''}
+                                        onBlur={e=>{ const v=parseFloat(e.target.value)||0; if(v!==(dailyEntry?.turnover_amount||0)) saveDailyEntry(p.id, dailyEntry?.deposit_amount||0, v) }}
+                                        style={{ ...s.smInput, width:110 }} placeholder="Turnover" disabled={dailyLoading} />
+                                    </>
                                   ) : <>
                                     <input type="number" defaultValue={playerDeposit(p)||''}
                                       onBlur={e=>{ const v=parseFloat(e.target.value)||0; if(v!==playerDeposit(p)) updatePlayer(p.id,{total_deposit:v, converted: campType==='dual_tier' ? calcDualTierReward(v,p.valid_bet,rewardTiers).tierIndex>=0 : v>=depTarget}) }}
