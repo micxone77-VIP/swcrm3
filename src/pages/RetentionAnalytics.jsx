@@ -146,23 +146,35 @@ export default function RetentionAnalytics() {
   const retained = previousActive.filter(x => x.current > 0)
   const churned = previousActive.filter(x => x.current <= 0)
   const reactivatedRows = useMemo(() => aggregateReactivationLogs(reactivated, stats), [reactivated, stats])
-  const reactivatedCount = reactivatedRows.length
-  const metrics = calculateRetentionMetrics({ openingVipCount: previousActive.length, retainedVipCount: retained.length, churnedVipCount: churned.length, reactivatedVipCount: reactivatedCount, recoveredDeposits: reactivatedRows.filter(r => r.recoveryAmount > 0).map(r => ({ amount: r.recoveryAmount, currency: r.currency })) })
+
+  // Tier-filtered views — these drive the MoM table, KPI tiles, and tier cards
+  const tierMatch = (x) => !selectedTiers.length || selectedTiers.includes(String(x.tier || '').toUpperCase())
+  const filteredPreviousActive = useMemo(() => previousActive.filter(tierMatch), [previousActive, selectedTiers])
+  const filteredRetained       = useMemo(() => retained.filter(tierMatch),       [retained,        selectedTiers])
+  const filteredChurned        = useMemo(() => churned.filter(tierMatch),         [churned,         selectedTiers])
+  const filteredReactivated    = useMemo(() => reactivatedRows.filter(tierMatch), [reactivatedRows, selectedTiers])
+
+  const reactivatedCount = filteredReactivated.length
+  const metrics = calculateRetentionMetrics({ openingVipCount: filteredPreviousActive.length, retainedVipCount: filteredRetained.length, churnedVipCount: filteredChurned.length, reactivatedVipCount: reactivatedCount, recoveredDeposits: filteredReactivated.filter(r => r.recoveryAmount > 0).map(r => ({ amount: r.recoveryAmount, currency: r.currency })) })
 
   // Comparison period
   const compStats = useMemo(() => {
     if (!compPeriodMonths.curr || !compPeriodMonths.prev || !compRows.length) return null
     const s = computePeriodStats(compRows, compPeriodMonths.prev, compPeriodMonths.curr)
     const compReactRows = aggregateReactivationLogs(compReactivated, s.previousActive)
-    const compMetrics = calculateRetentionMetrics({ openingVipCount: s.previousActive.length, retainedVipCount: s.retained.length, churnedVipCount: s.churned.length, reactivatedVipCount: compReactRows.length })
-    return { ...s, reactivatedCount: compReactRows.length, retentionRate: compMetrics.retentionRate }
-  }, [compRows, compPeriodMonths, compReactivated])
+    const fPA   = s.previousActive.filter(tierMatch)
+    const fRet  = s.retained.filter(tierMatch)
+    const fChurn= s.churned.filter(tierMatch)
+    const fReact= compReactRows.filter(tierMatch)
+    const compMetrics = calculateRetentionMetrics({ openingVipCount: fPA.length, retainedVipCount: fRet.length, churnedVipCount: fChurn.length, reactivatedVipCount: fReact.length })
+    return { previousActive: fPA, retained: fRet, churned: fChurn, reactivatedCount: fReact.length, retentionRate: compMetrics.retentionRate }
+  }, [compRows, compPeriodMonths, compReactivated, selectedTiers])
 
   const tierKpis = useMemo(() => ALL_TIERS.map(tier => {
     const opening = previousActive.filter(v => String(v.tier).toUpperCase() === tier).length
     const kept = retained.filter(v => String(v.tier).toUpperCase() === tier).length
     const lost = churned.filter(v => String(v.tier).toUpperCase() === tier).length
-    const tierReact = reactivatedRows.filter(v => String(v.tier).toUpperCase() === tier)
+    const tierReact = reactivatedRows.filter(v => String(v.tier).toUpperCase() === tier)  // use full list for per-tier breakdown
     const back = tierReact.length
     const recoveryByCurrency = tierReact.filter(v => v.recoveryAmount > 0).reduce((acc, v) => { const c = String(v.currency || '').toUpperCase(); if (c) acc[c] = (acc[c] || 0) + v.recoveryAmount; return acc }, {})
     const recoveryText = Object.entries(recoveryByCurrency).map(([c, a]) => money(a, c)).join(' · ')
@@ -212,9 +224,21 @@ export default function RetentionAnalytics() {
           <h1 className="text-2xl font-semibold">📊 {t('retention.analytics')}</h1>
           <p className="mt-1 text-sm opacity-70">{t('retention.analyticsSubtitle')}</p>
         </div>
-        <div>
-          <label className="mr-2 text-sm opacity-70">{t('retention.reportingMonth')}</label>
-          <input aria-label={t('retention.reportingMonth')} type="month" value={month} onChange={e => setMonth(e.target.value)} className="rounded-lg border bg-transparent px-3 py-2" />
+        <div style={{ display:'flex', flexWrap:'wrap', gap:12, alignItems:'center' }}>
+          {/* Tier filter — affects all metrics */}
+          <div style={{ display:'flex', gap:5, flexWrap:'wrap', alignItems:'center' }}>
+            <span style={{ fontSize:11, color:'var(--muted)', fontWeight:600, marginRight:2 }}>TIERS</span>
+            <button onClick={() => setSelectedTiers(ALL_TIERS)} style={{ padding:'3px 10px', borderRadius:20, fontSize:11, fontWeight:600, cursor:'pointer', border:'1px solid var(--border)', background: selectedTiers.length === ALL_TIERS.length ? 'var(--accent)' : 'transparent', color: selectedTiers.length === ALL_TIERS.length ? '#fff' : 'var(--muted)' }}>All</button>
+            {ALL_TIERS.map(tier => {
+              const icon = {BLACK:'⬛',DIAMOND:'💎',PLATINUM:'🔷',GOLD:'🟡',SILVER:'⚪',BRONZE:'🟤'}[tier]
+              const active = selectedTiers.includes(tier)
+              return <button key={tier} onClick={() => setSelectedTiers(prev => prev.includes(tier) ? prev.filter(t=>t!==tier) : [...prev, tier])} style={{ padding:'3px 10px', borderRadius:20, fontSize:11, fontWeight:600, cursor:'pointer', border:`1px solid ${active?'var(--accent)':'var(--border)'}`, background: active ? 'rgba(88,166,255,.12)' : 'transparent', color: active ? 'var(--accent)' : 'var(--muted)' }}>{icon} {tier.charAt(0)+tier.slice(1).toLowerCase()}</button>
+            })}
+          </div>
+          <div>
+            <label className="mr-2 text-sm opacity-70">{t('retention.reportingMonth')}</label>
+            <input aria-label={t('retention.reportingMonth')} type="month" value={month} onChange={e => setMonth(e.target.value)} className="rounded-lg border bg-transparent px-3 py-2" />
+          </div>
         </div>
       </div>
 
@@ -241,9 +265,9 @@ export default function RetentionAnalytics() {
               </thead>
               <tbody>
                 {[
-                  { label: t('retention.previousActive'), curr: previousActive.length, comp: compStats.previousActive.length },
-                  { label: t('retention.retained'), curr: retained.length, comp: compStats.retained.length },
-                  { label: t('retention.churned'), curr: churned.length, comp: compStats.churned.length, invertDelta: true },
+                  { label: t('retention.previousActive'), curr: filteredPreviousActive.length, comp: compStats.previousActive.length },
+                  { label: t('retention.retained'), curr: filteredRetained.length, comp: compStats.retained.length },
+                  { label: t('retention.churned'), curr: filteredChurned.length, comp: compStats.churned.length, invertDelta: true },
                   { label: t('retention.reactivatedCount'), curr: reactivatedCount, comp: compStats.reactivatedCount },
                   { label: t('retention.retentionRate'), curr: metrics.retentionRate, comp: compStats.retentionRate, isRate: true },
                 ].map((row, i) => (
@@ -286,9 +310,9 @@ export default function RetentionAnalytics() {
 
       {/* Current period KPIs */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-6">
-        <Kpi label={t('retention.previousActive')} value={previousActive.length} sub={monthLabel(previousSnapshotMonth)} />
-        <Kpi label={t('retention.retained')} value={retained.length} />
-        <Kpi label={t('retention.churned')} value={churned.length} />
+        <Kpi label={t('retention.previousActive')} value={filteredPreviousActive.length} sub={monthLabel(previousSnapshotMonth)} />
+        <Kpi label={t('retention.retained')} value={filteredRetained.length} />
+        <Kpi label={t('retention.churned')} value={filteredChurned.length} />
         <Kpi label={t('retention.retention')} value={`${metrics.retentionRate}%`} />
         <Kpi label={t('retention.churn')} value={`${metrics.churnRate}%`} />
         <Kpi label={t('retention.reactivatedCount')} value={`${reactivatedCount} (${metrics.reactivationRate}%)`} />
@@ -296,16 +320,9 @@ export default function RetentionAnalytics() {
 
       {/* Priority tier performance */}
       <section className="rounded-xl border overflow-hidden">
-        <div className="border-b px-5 py-4 flex items-center justify-between flex-wrap gap-3">
+        <div className="border-b px-5 py-4">
           <div className="font-medium">{t('retention.priorityTierPerformance')}</div>
-          <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
-            <button onClick={() => setSelectedTiers(ALL_TIERS)} style={{ padding:'3px 10px', borderRadius:20, fontSize:11, fontWeight:600, cursor:'pointer', border:'1px solid var(--border)', background: selectedTiers.length === ALL_TIERS.length ? 'var(--accent)' : 'transparent', color: selectedTiers.length === ALL_TIERS.length ? '#fff' : 'var(--muted)' }}>All</button>
-            {ALL_TIERS.map(tier => {
-              const icon = {BLACK:'⬛',DIAMOND:'💎',PLATINUM:'🔷',GOLD:'🟡',SILVER:'⚪',BRONZE:'🟤'}[tier]
-              const active = selectedTiers.includes(tier)
-              return <button key={tier} onClick={() => setSelectedTiers(prev => prev.includes(tier) ? prev.filter(t=>t!==tier) : [...prev, tier])} style={{ padding:'3px 10px', borderRadius:20, fontSize:11, fontWeight:600, cursor:'pointer', border:`1px solid ${active?'var(--accent)':'var(--border)'}`, background: active ? 'rgba(88,166,255,.12)' : 'transparent', color: active ? 'var(--accent)' : 'var(--muted)' }}>{icon} {tier.charAt(0)+tier.slice(1).toLowerCase()}</button>
-            })}
-          </div>
+          <div className="text-xs opacity-60 mt-1">Filtered by tier selection above</div>
         </div>
         <div className="grid gap-3 p-5" style={{ gridTemplateColumns: `repeat(${Math.min(selectedTiers.length, 3)}, 1fr)` }}>
           {tierKpis.filter(k => selectedTiers.includes(k.tier)).map(k => {
