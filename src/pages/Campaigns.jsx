@@ -40,8 +40,8 @@ const REWARD_DELIVERY = {
   voucher:  { label:'🎫 Voucher',     color:'#8b5cf6' },
 }
 
-const STATUS_COLOR = { draft:'#8b949e', active:'#3fb950', paused:'#d29922', ended:'#f85149' }
-const STATUS_BG    = { draft:'rgba(139,148,158,.15)', active:'rgba(63,185,80,.15)', paused:'rgba(210,153,34,.15)', ended:'rgba(248,81,73,.15)' }
+const STATUS_COLOR = { draft:'#8b949e', upcoming:'#58a6ff', active:'#3fb950', paused:'#d29922', ended:'#f85149' }
+const STATUS_BG    = { draft:'rgba(139,148,158,.15)', upcoming:'rgba(88,166,255,.15)', active:'rgba(63,185,80,.15)', paused:'rgba(210,153,34,.15)', ended:'rgba(248,81,73,.15)' }
 const PLATFORMS    = ['MY','SG','KH','BOTH']
 
 const CURRENCY_PREFIX = { MYR: 'RM', SGD: 'S$', KHUSD: 'USD' }
@@ -184,6 +184,8 @@ export default function Campaigns() {
   const [campaignPlayerLevels, setCampaignPlayerLevels] = useState([])
   const [campaignRewards, setCampaignRewards] = useState([])
   const [activeTab,  setActiveTab]  = useState('chase')
+  const [chaseFilter, setChaseFilter] = useState('')
+  const [copiedId, setCopiedId] = useState(null)
   const [entryDate, setEntryDate] = useState('')
   const [dailyEntries, setDailyEntries] = useState({}) // player_id -> {turnover_amount, tier_achieved, credit_reward, wcash_reward}
   const [dailyLoading, setDailyLoading] = useState(false)
@@ -586,7 +588,19 @@ export default function Campaigns() {
 
   async function deleteCampaign() {
     if (!window.confirm(`Delete "${selected.campaign_name}"? This will also remove all player records.`)) return
+    // Delete child rows in dependency order before removing the campaign itself.
+    // daily_turnover_entries references both campaign_id AND player_id (→ campaign_players),
+    // so it must be removed first; then campaign_players; then campaign_levels; finally campaigns.
+    await supabase.from('daily_turnover_entries').delete().eq('campaign_id', selected.id)
+    // campaign_rewards and campaign_player_levels both FK → campaign_players, so delete them first
+    const { data: cpRows } = await supabase.from('campaign_players').select('id').eq('campaign_id', selected.id)
+    const cpIds = (cpRows || []).map(r => r.id)
+    if (cpIds.length) {
+      await supabase.from('campaign_rewards').delete().in('campaign_player_id', cpIds)
+      await supabase.from('campaign_player_levels').delete().in('campaign_player_id', cpIds)
+    }
     await supabase.from('campaign_players').delete().eq('campaign_id', selected.id)
+    await supabase.from('campaign_levels').delete().eq('campaign_id', selected.id)
     const { error } = await supabase.from('campaigns').delete().eq('id', selected.id)
     if (error) { alert('Delete failed: ' + error.message); return }
     closeModal()
@@ -598,7 +612,7 @@ export default function Campaigns() {
   async function loadDailyEntries(campaignId, date) {
     setDailyLoading(true)
     const { data, error } = await supabase.from('daily_turnover_entries')
-      .select('player_id, turnover_amount, tier_achieved, credit_reward, wcash_reward')
+      .select('player_id, deposit_amount, turnover_amount, tier_achieved, credit_reward, wcash_reward')
       .eq('campaign_id', campaignId).eq('entry_date', date)
     if (error) { console.error('loadDailyEntries error', error); setDailyEntries({}); setDailyLoading(false); return }
     const map = {}
@@ -610,10 +624,12 @@ export default function Campaigns() {
   // Upserts a player's turnover for the currently-selected date only — every
   // other date's row for this player is untouched. This IS the "doesn't carry
   // over to the next day" behavior: each date is its own independent record.
-  async function saveDailyTurnover(playerId, turnoverAmount) {
-    const dualReward = calcDualTierReward(0, turnoverAmount, rewardTiers) // deposit=0: daily mode is turnover-only by design
+  async function saveDailyEntry(playerId, depositAmount, turnoverAmount) {
+    // Both deposit AND turnover must meet a tier's thresholds to qualify.
+    const dualReward = calcDualTierReward(depositAmount, turnoverAmount, rewardTiers)
     const payload = {
       campaign_id: selected.id, player_id: playerId, entry_date: entryDate,
+      deposit_amount: depositAmount,
       turnover_amount: turnoverAmount,
       tier_achieved: dualReward.tierIndex >= 0 ? dualReward.tierIndex : null,
       credit_reward: dualReward.creditAmount, wcash_reward: dualReward.wcashAmount,
@@ -726,20 +742,21 @@ export default function Campaigns() {
   async function loadCampaignSummary(campaignId) {
     setSummaryLoading(true)
     const { data, error } = await supabase.from('daily_turnover_entries')
-      .select('player_id, entry_date, turnover_amount')
+      .select('player_id, entry_date, deposit_amount, turnover_amount')
       .eq('campaign_id', campaignId)
       .order('entry_date', { ascending: true })
     if (error) { console.error('loadCampaignSummary error', error); setSummaryData(null); setSummaryLoading(false); return }
 
-    // Always recompute credit/wcash fresh from turnover_amount + the campaign's
-    // CURRENT tier settings — never trust the stored credit_reward/wcash_reward
-    // columns directly. Those are a snapshot from whenever that row was saved;
-    // if an entry was saved before some bug fix, the stored figure can be
-    // stale and wrong even though the raw turnover_amount is correct.
+    // Always recompute credit/wcash fresh from deposit_amount + turnover_amount
+    // against the campaign's CURRENT tier settings — never trust the stored
+    // credit_reward/wcash_reward columns. Both conditions must be met; older
+    // rows that predate the deposit_amount column will have null/0 deposit and
+    // will only qualify if their tier's depositThreshold is also 0.
     const entries = (data || [])
       .filter(e => (parseFloat(e.turnover_amount) || 0) > 0)
       .map(e => {
-        const r = calcDualTierReward(0, e.turnover_amount, rewardTiers)
+        const dep = parseFloat(e.deposit_amount) || 0
+        const r = calcDualTierReward(dep, e.turnover_amount, rewardTiers)
         return { ...e, tier_achieved: r.tierIndex >= 0 ? r.tierIndex : null, credit_reward: r.creditAmount, wcash_reward: r.wcashAmount }
       })
 
@@ -957,6 +974,14 @@ export default function Campaigns() {
     : players.filter(p=>p.payout_status==='paid').reduce((s,p)=>s+calcReward(campType,playerDeposit(p),rewardPct,rewardFixed,goldVal,rewardCap,rewardTiers,campaignLevels,selected?.is_multi_level),0)
   const pendingPay = Math.max(0,totalReward-paidOut)
   const chaseList = campType==='leaderboard' ? lbRanked : [...players].sort((a,b)=>playerDeposit(b)-playerDeposit(a))
+  const filteredChaseList = chaseFilter.trim()
+    ? chaseList.filter(p => (p.username||'').toLowerCase().includes(chaseFilter.toLowerCase()) || (p.full_name||'').toLowerCase().includes(chaseFilter.toLowerCase()))
+    : chaseList
+  function copyUsername(id, username) {
+    navigator.clipboard.writeText(username).catch(()=>{})
+    setCopiedId(id)
+    setTimeout(() => setCopiedId(c => c === id ? null : c), 1500)
+  }
 
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
@@ -1075,7 +1100,7 @@ export default function Campaigns() {
                 </div>
                 <div style={s.frow}><div style={s.flbl}>{t('common.status')}</div>
                   <select style={s.fsel} value={form.status} onChange={e=>setForm({...form,status:e.target.value})}>
-                    {['draft','active','paused','ended'].map(s=><option key={s}>{s}</option>)}
+                    {['draft','upcoming','active','paused','ended'].map(s=><option key={s}>{s}</option>)}
                   </select>
                 </div>
                 <div style={s.frow}><div style={s.flbl}>{t('campaigns.startDate')}</div><input type="date" style={s.finput} value={form.start_date} onChange={e=>setForm({...form,start_date:e.target.value})} /></div>
@@ -1325,7 +1350,12 @@ export default function Campaigns() {
                 </div>
               </div>
               <div style={{ display:'flex', gap:6, flexShrink:0 }}>
-                {selected.status==='draft'  && <button style={s.btnG} onClick={()=>setCampStatus(selected.id,'active')}>▶ {t('campaigns.activate')}</button>}
+                {selected.status==='draft' && (() => {
+                  const today = new Date().toISOString().slice(0,10)
+                  const isFuture = selected.start_date && selected.start_date > today
+                  return <button style={s.btnG} onClick={()=>setCampStatus(selected.id, isFuture ? 'upcoming' : 'active')}>▶ {isFuture ? 'Publish Upcoming' : t('campaigns.activate')}</button>
+                })()}
+                {selected.status==='upcoming' && <><button style={{ ...s.btnG, background:'#3fb950', borderColor:'#3fb950' }} onClick={()=>setCampStatus(selected.id,'active')}>🚀 Launch Now</button><button style={s.btnSm} onClick={()=>setCampStatus(selected.id,'draft')}>↩ Back to Draft</button></>}
                 {selected.status==='active' && <><button style={s.btnSm} onClick={()=>setCampStatus(selected.id,'paused')}>⏸ {t('campaigns.pause')}</button><button style={s.btnR} onClick={()=>setCampStatus(selected.id,'ended')}>⏹ {t('campaigns.end')}</button></>}
                 {selected.status==='paused' && <button style={s.btnG} onClick={()=>setCampStatus(selected.id,'active')}>▶ {t('campaigns.resume')}</button>}
                 {players.length > 0 && (
@@ -1378,7 +1408,7 @@ export default function Campaigns() {
                   <div><div style={s.flbl}>Campaign Type</div><select style={s.fsel} value={editCampForm.campaign_type||'gold_bar'} onChange={e=>setEditCampForm(f=>({...f,campaign_type:e.target.value}))}>{Object.entries(CAMPAIGN_TYPES).map(([k,v])=><option key={k} value={k}>{k==='fixed_reward' && editCampForm.is_multi_level ? 'Tiered Deposit Reward' : v.label.replace(/^[^ ]+ /,'')}</option>)}</select></div>
                   <div><div style={s.flbl}>Campaign Category (Optional)</div><select style={s.fsel} value={editCampForm.campaign_category||'standard'} onChange={e=>setEditCampForm(f=>({...f,campaign_category:e.target.value}))}><option value="standard">Standard</option><option value="deposit_milestone">Deposit Milestone</option><option value="leaderboard">Leaderboard</option><option value="vip_exclusive">VIP Exclusive</option></select></div>
                   <div><div style={s.flbl}>Platform</div><select style={s.fsel} value={editCampForm.platform||'MY'} onChange={e=>setEditCampForm(f=>({...f,platform:e.target.value}))}>{PLATFORMS.map(p=><option key={p} value={p}>{p}</option>)}</select></div>
-                  <div><div style={s.flbl}>Status</div><select style={s.fsel} value={editCampForm.status||'draft'} onChange={e=>setEditCampForm(f=>({...f,status:e.target.value}))}>{['draft','active','paused','ended'].map(v=><option key={v} value={v}>{v.toUpperCase()}</option>)}</select></div>
+                  <div><div style={s.flbl}>Status</div><select style={s.fsel} value={editCampForm.status||'draft'} onChange={e=>setEditCampForm(f=>({...f,status:e.target.value}))}>{['draft','upcoming','active','paused','ended'].map(v=><option key={v} value={v}>{v.toUpperCase()}</option>)}</select></div>
                   <div><div style={s.flbl}>Festival / Occasion</div><input style={s.finput} value={editCampForm.festival||''} onChange={e=>setEditCampForm(f=>({...f,festival:e.target.value}))} placeholder="e.g. Merdeka 2026" /></div>
                   <div><div style={s.flbl}>Budget (RM)</div><input type="number" min="0" style={s.finput} value={editCampForm.budget_rm??''} onChange={e=>setEditCampForm(f=>({...f,budget_rm:e.target.value}))} /></div>
                 </div>
@@ -1543,6 +1573,19 @@ export default function Campaigns() {
                 <div style={{ padding:'8px 24px', fontSize:11, color:'var(--muted)', background:'rgba(88,166,255,.04)', borderBottom:'1px solid var(--border)' }}>
                   Click deposit field to update · reward auto-calculated based on campaign type
                 </div>
+                {/* Chase list search filter */}
+                <div style={{ padding:'8px 24px', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', gap:8 }}>
+                  <input
+                    value={chaseFilter}
+                    onChange={e => setChaseFilter(e.target.value)}
+                    placeholder={`🔍 Filter ${chaseList.length} players by username…`}
+                    style={{ ...s.smInput, width:280, fontSize:12 }}
+                  />
+                  {chaseFilter && (
+                    <button onClick={() => setChaseFilter('')} style={{ fontSize:11, color:'var(--muted)', background:'none', border:'none', cursor:'pointer', padding:'2px 6px' }}>✕ Clear</button>
+                  )}
+                  {chaseFilter && <span style={{ fontSize:11, color:'var(--muted)' }}>{filteredChaseList.length} match{filteredChaseList.length !== 1 ? 'es' : ''}</span>}
+                </div>
                 {isDailyMode && (
                   <div style={{ padding:'12px 24px', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', gap:12, flexWrap:'wrap' }}>
                     <span style={{ fontSize:12, fontWeight:700, color:'#c9a961' }}>📅 Entry Date:</span>
@@ -1570,9 +1613,9 @@ export default function Campaigns() {
                       <th style={s.th}>✕</th>
                     </tr></thead>
                     <tbody>
-                      {chaseList.length === 0
-                        ? <tr><td colSpan={11} style={{ ...s.td, textAlign:'center', padding:24, color:'var(--muted)' }}>Add players above to start tracking.</td></tr>
-                        : chaseList.map((p,i) => {
+                      {filteredChaseList.length === 0
+                        ? <tr><td colSpan={11} style={{ ...s.td, textAlign:'center', padding:24, color:'var(--muted)' }}>{chaseList.length === 0 ? 'Add players above to start tracking.' : 'No players match the search.'}</td></tr>
+                        : filteredChaseList.map((p,i) => {
                             const rankingTarget = leaderboardMetric === 'deposit' ? minDepLb : minBetTarget
                             const pr = getProgress(p._rankingValue||0, rankingTarget)
                             const inTopByPosition = i < topN && p._qualified
@@ -1580,9 +1623,12 @@ export default function Campaigns() {
                             return (
                               <tr key={p.id} onMouseEnter={e=>e.currentTarget.style.background='var(--surface2)'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
                                 <td style={{ ...s.td, color:'var(--muted)', fontSize:11 }}>{i+1}</td>
-                                <td style={{ ...s.td, fontWeight:700, cursor:'pointer' }} onClick={()=>{if(p.vip_id){closeModal();navigate(`/vips/${p.vip_id}`)}}}>
-                                  {p.username}
-                                  {p.tier && <span style={{ ...s.badge, background:TIER_BG[p.tier]||'transparent', color:TIER_COLOR[p.tier]||'var(--muted)', marginLeft:6, fontSize:10 }}>{p.tier}</span>}
+                                <td style={{ ...s.td, fontWeight:700 }}>
+                                  <div style={{ display:'flex', alignItems:'center', gap:4 }}>
+                                    <span style={{ cursor:'pointer' }} onClick={()=>{if(p.vip_id){closeModal();navigate(`/vips/${p.vip_id}`)}}}>{p.username}</span>
+                                    {p.tier && <span style={{ ...s.badge, background:TIER_BG[p.tier]||'transparent', color:TIER_COLOR[p.tier]||'var(--muted)', fontSize:10 }}>{p.tier}</span>}
+                                    <button title="Copy username" onClick={()=>copyUsername(p.id, p.username)} style={{ marginLeft:2, background:'none', border:'none', cursor:'pointer', fontSize:11, color: copiedId===p.id ? '#3fb950' : 'var(--muted)', padding:'1px 4px', borderRadius:4 }}>{copiedId===p.id ? '✓' : '⎘'}</button>
+                                  </div>
                                 </td>
                                 <td style={{ ...s.td, fontSize:12, color:'var(--muted)' }}>
                                   <input defaultValue={p.whatsapp||''} onBlur={e=>{if(e.target.value!==(p.whatsapp||''))updatePlayer(p.id,{whatsapp:e.target.value})}} style={{ ...s.editInput, width:120 }} placeholder="—" />
@@ -1632,7 +1678,7 @@ export default function Campaigns() {
                       <th style={s.th}>#</th>
                       <th style={s.th}>Player</th>
                       <th style={s.th}>WhatsApp</th>
-                      <th style={s.th}>{isDailyMode ? 'Turnover (RM)' : campType==='dual_tier' ? 'Deposit / Turnover (RM)' : 'Campaign Deposit (RM)'}</th>
+                      <th style={s.th}>{campType==='dual_tier' ? 'Deposit / Turnover (RM)' : 'Campaign Deposit (RM)'}</th>
                       <th style={s.th}>Progress</th>
                       <th style={s.th}>Reward</th>
                       <th style={s.th}>Contact</th>
@@ -1642,12 +1688,14 @@ export default function Campaigns() {
                     <tbody>
                       {chaseList.length === 0
                         ? <tr><td colSpan={9} style={{ ...s.td, textAlign:'center', padding:24, color:'var(--muted)' }}>Add players above to start tracking.</td></tr>
-                        : chaseList.map((p,i) => {
+                        : filteredChaseList.length === 0
+                        ? <tr><td colSpan={9} style={{ ...s.td, textAlign:'center', padding:24, color:'var(--muted)' }}>No players match the search.</td></tr>
+                        : filteredChaseList.map((p,i) => {
                             const multi = selected?.is_multi_level && campType === 'fixed_reward'
                             const multiMetric = multi ? multiMetricsByPlayer[p.id] : null
                             const dailyEntry = dailyEntries[p.id]
                             const dualReward = campType==='dual_tier'
-                              ? (isDailyMode ? calcDualTierReward(0, dailyEntry?.turnover_amount||0, rewardTiers) : calcDualTierReward(playerDeposit(p), p.valid_bet, rewardTiers))
+                              ? (isDailyMode ? calcDualTierReward(dailyEntry?.deposit_amount||0, dailyEntry?.turnover_amount||0, rewardTiers) : calcDualTierReward(playerDeposit(p), p.valid_bet, rewardTiers))
                               : null
                             let pr
                             if (multi) {
@@ -1656,22 +1704,31 @@ export default function Campaigns() {
                               else if (target) pr = getProgress(playerDeposit(p), Number(target))
                               else pr = { pct:0, color:'#8b949e', bg:'rgba(139,148,158,.15)', label:'IN PROGRESS' }
                             } else if (isDailyMode && campType==='dual_tier') {
+                              const currentDeposit = dailyEntry?.deposit_amount || 0
                               const currentTurnover = dailyEntry?.turnover_amount || 0
                               if (dualReward.tierIndex >= 0) {
                                 // At least one tier reached — show which one explicitly, and progress
-                                // toward the NEXT tier (not the highest) so achieving tier 1 or 2 doesn't
-                                // still look like "behind" just because the top tier isn't reached yet.
+                                // toward the NEXT tier so achieving tier 1 or 2 doesn't look like "behind".
                                 const nextTier = rewardTiers[dualReward.tierIndex + 1]
                                 if (nextTier) {
-                                  const nextThreshold = parseFloat(nextTier.turnoverThreshold) || 0
-                                  const pct = nextThreshold > 0 ? Math.min(100, Math.round(currentTurnover / nextThreshold * 100)) : 100
+                                  const nextDepThreshold = parseFloat(nextTier.depositThreshold) || 0
+                                  const nextTOThreshold = parseFloat(nextTier.turnoverThreshold) || 0
+                                  const depPct = nextDepThreshold > 0 ? Math.min(100, Math.round(currentDeposit / nextDepThreshold * 100)) : 100
+                                  const toPct  = nextTOThreshold  > 0 ? Math.min(100, Math.round(currentTurnover / nextTOThreshold * 100)) : 100
+                                  const pct = Math.min(depPct, toPct)
                                   pr = { pct, color:'#3fb950', bg:'rgba(63,185,80,.15)', label:`✅ Tier ${dualReward.tierIndex+1} Achieved` }
                                 } else {
                                   pr = { pct:100, color:'#3fb950', bg:'rgba(63,185,80,.15)', label:`✅ Tier ${dualReward.tierIndex+1} (Highest)` }
                                 }
                               } else {
-                                const firstThreshold = parseFloat(rewardTiers[0]?.turnoverThreshold) || 0
-                                pr = getProgress(currentTurnover, firstThreshold)
+                                // Not yet qualified — progress = worst of deposit% vs turnover% toward first tier
+                                const firstDepThreshold = parseFloat(rewardTiers[0]?.depositThreshold) || 0
+                                const firstTOThreshold  = parseFloat(rewardTiers[0]?.turnoverThreshold) || 0
+                                const depPct = firstDepThreshold > 0 ? Math.min(100, Math.round(currentDeposit / firstDepThreshold * 100)) : 100
+                                const toPct  = firstTOThreshold  > 0 ? Math.min(100, Math.round(currentTurnover / firstTOThreshold * 100)) : 100
+                                const pct = Math.min(depPct, toPct)
+                                const color = pct >= 100 ? '#f0883e' : pct >= 70 ? '#f0883e' : '#f85149' // never green until both pass
+                                pr = { pct, color, bg: color+'18', label: pct >= 70 ? '⚡ CLOSE' : '🔴 BEHIND' }
                               }
                             } else {
                               pr = getProgress(playerDeposit(p), depTarget)
@@ -1683,18 +1740,30 @@ export default function Campaigns() {
                             return (
                               <tr key={p.id} onMouseEnter={e=>e.currentTarget.style.background='var(--surface2)'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
                                 <td style={{ ...s.td, color:'var(--muted)', fontSize:11 }}>{i+1}</td>
-                                <td style={{ ...s.td, fontWeight:700, cursor:'pointer' }} onClick={()=>{if(p.vip_id){closeModal();navigate(`/vips/${p.vip_id}`)}}}>
-                                  {p.username}
-                                  {p.tier && <span style={{ ...s.badge, background:TIER_BG[p.tier]||'transparent', color:TIER_COLOR[p.tier]||'var(--muted)', marginLeft:6, fontSize:10 }}>{p.tier}</span>}
+                                <td style={{ ...s.td, fontWeight:700 }}>
+                                  <div style={{ display:'flex', alignItems:'center', gap:4 }}>
+                                    <span style={{ cursor:'pointer' }} onClick={()=>{if(p.vip_id){closeModal();navigate(`/vips/${p.vip_id}`)}}}>
+                                      {p.username}
+                                    </span>
+                                    {p.tier && <span style={{ ...s.badge, background:TIER_BG[p.tier]||'transparent', color:TIER_COLOR[p.tier]||'var(--muted)', fontSize:10 }}>{p.tier}</span>}
+                                    <button title="Copy username" onClick={()=>copyUsername(p.id, p.username)} style={{ marginLeft:2, background:'none', border:'none', cursor:'pointer', fontSize:11, color: copiedId===p.id ? '#3fb950' : 'var(--muted)', padding:'1px 4px', borderRadius:4 }}>
+                                      {copiedId===p.id ? '✓' : '⎘'}
+                                    </button>
+                                  </div>
                                 </td>
                                 <td style={{ ...s.td, fontSize:12, color:'var(--muted)' }}>
                                   <input defaultValue={p.whatsapp||''} onBlur={e=>{if(e.target.value!==(p.whatsapp||''))updatePlayer(p.id,{whatsapp:e.target.value})}} style={{ ...s.editInput, width:120 }} placeholder="—" />
                                 </td>
                                 <td style={s.td}>
                                   {isDailyMode ? (
-                                    <input type="number" key={`${p.id}-${entryDate}`} defaultValue={dailyEntry?.turnover_amount || ''}
-                                      onBlur={e=>{ const v=parseFloat(e.target.value)||0; if(v!==(dailyEntry?.turnover_amount||0)) saveDailyTurnover(p.id, v) }}
-                                      style={{ ...s.smInput, width:110 }} placeholder="Turnover" disabled={dailyLoading} />
+                                    <>
+                                      <input type="number" key={`${p.id}-${entryDate}-dep`} defaultValue={dailyEntry?.deposit_amount || ''}
+                                        onBlur={e=>{ const v=parseFloat(e.target.value)||0; if(v!==(dailyEntry?.deposit_amount||0)) saveDailyEntry(p.id, v, dailyEntry?.turnover_amount||0) }}
+                                        style={{ ...s.smInput, width:110, display:'block', marginBottom:4 }} placeholder="Deposit" disabled={dailyLoading} />
+                                      <input type="number" key={`${p.id}-${entryDate}-to`} defaultValue={dailyEntry?.turnover_amount || ''}
+                                        onBlur={e=>{ const v=parseFloat(e.target.value)||0; if(v!==(dailyEntry?.turnover_amount||0)) saveDailyEntry(p.id, dailyEntry?.deposit_amount||0, v) }}
+                                        style={{ ...s.smInput, width:110 }} placeholder="Turnover" disabled={dailyLoading} />
+                                    </>
                                   ) : <>
                                     <input type="number" defaultValue={playerDeposit(p)||''}
                                       onBlur={e=>{ const v=parseFloat(e.target.value)||0; if(v!==playerDeposit(p)) updatePlayer(p.id,{total_deposit:v, converted: campType==='dual_tier' ? calcDualTierReward(v,p.valid_bet,rewardTiers).tierIndex>=0 : v>=depTarget}) }}
@@ -1774,8 +1843,8 @@ export default function Campaigns() {
                   <div style={{ padding:32,textAlign:'center',color:'var(--muted)' }}>{isDailyMode?'No players qualified on this date yet.':'No players have reached the target yet.'}</div>
                 ) : (
                   <table style={s.tbl}>
-                    <thead><tr><th style={s.th}>#</th><th style={s.th}>Player</th><th style={s.th}>Tier</th><th style={s.th}>{isDailyMode?'Turnover (this date)':'Deposit'}</th><th style={s.th}>Reward</th><th style={s.th}>Payout Status</th><th style={s.th}>Notes</th></tr></thead>
-                    <tbody>{(isDailyMode?dailyAchieved:achieved).map((p,i)=>{const dualReward=isDailyMode?calcDualTierReward(0,dailyEntries[p.id]?.turnover_amount||0,rewardTiers):campType==='dual_tier'?calcDualTierReward(playerDeposit(p),p.valid_bet,rewardTiers):null;const reward=campType==='dual_tier'?(dualReward.creditAmount+dualReward.wcashAmount):calcReward(campType,playerDeposit(p),rewardPct,rewardFixed,goldVal,rewardCap,rewardTiers,campaignLevels,selected?.is_multi_level);const paid=p.payout_status==='paid';return <tr key={p.id}><td style={{...s.td,color:'var(--muted)',fontSize:11}}>{i+1}</td><td style={{...s.td,fontWeight:700}}>{p.username}</td><td style={s.td}>{p.tier||'—'}</td><td style={{...s.td,color:'#3fb950',fontWeight:600}}>{isDailyMode?rmFmt(dailyEntries[p.id]?.turnover_amount||0,campCurrency):rmFmt(playerDeposit(p),campCurrency)}</td><td style={{...s.td,color:typeInfo.color,fontWeight:700}}>{campType==='dual_tier'?<span>{rmFmt(dualReward.creditAmount,campCurrency)} Credit<br/><span style={{fontSize:10,color:'var(--muted)'}}>+ {rmFmt(dualReward.wcashAmount,campCurrency)} WCash</span></span>:rmFmt(reward,campCurrency)}</td><td style={s.td}><button onClick={()=>updatePlayer(p.id,{payout_status:paid?'pending':'paid',payout_date:paid?null:new Date().toISOString()})} style={{...s.tag(paid?'#3fb950':'#f59e0b',paid?'rgba(63,185,80,.15)':'rgba(245,158,11,.15)'),cursor:'pointer'}}>{paid?'✅ Paid':'⏳ Pending'}</button></td><td style={s.td}><input defaultValue={p.notes||''} onBlur={e=>{if(e.target.value!==(p.notes||''))updatePlayer(p.id,{notes:e.target.value})}} style={{...s.editInput,width:140}} placeholder="Add note..."/></td></tr>})}</tbody>
+                    <thead><tr><th style={s.th}>#</th><th style={s.th}>Player</th><th style={s.th}>Tier</th><th style={s.th}>{isDailyMode&&campType==='dual_tier'?'Deposit / Turnover (this date)':isDailyMode?'Turnover (this date)':'Deposit'}</th><th style={s.th}>Reward</th><th style={s.th}>Payout Status</th><th style={s.th}>Notes</th></tr></thead>
+                    <tbody>{(isDailyMode?dailyAchieved:achieved).map((p,i)=>{const dualReward=isDailyMode?calcDualTierReward(dailyEntries[p.id]?.deposit_amount||0,dailyEntries[p.id]?.turnover_amount||0,rewardTiers):campType==='dual_tier'?calcDualTierReward(playerDeposit(p),p.valid_bet,rewardTiers):null;const reward=campType==='dual_tier'?(dualReward.creditAmount+dualReward.wcashAmount):calcReward(campType,playerDeposit(p),rewardPct,rewardFixed,goldVal,rewardCap,rewardTiers,campaignLevels,selected?.is_multi_level);const paid=p.payout_status==='paid';return <tr key={p.id}><td style={{...s.td,color:'var(--muted)',fontSize:11}}>{i+1}</td><td style={{...s.td,fontWeight:700}}>{p.username}</td><td style={s.td}>{p.tier||'—'}</td><td style={{...s.td,color:'#3fb950',fontWeight:600}}>{isDailyMode&&campType==='dual_tier'?<span>{rmFmt(dailyEntries[p.id]?.deposit_amount||0,campCurrency)}<br/><span style={{fontSize:10,color:'var(--muted)'}}>{rmFmt(dailyEntries[p.id]?.turnover_amount||0,campCurrency)} TO</span></span>:isDailyMode?rmFmt(dailyEntries[p.id]?.turnover_amount||0,campCurrency):rmFmt(playerDeposit(p),campCurrency)}</td><td style={{...s.td,color:typeInfo.color,fontWeight:700}}>{campType==='dual_tier'?<span>{rmFmt(dualReward.creditAmount,campCurrency)} Credit<br/><span style={{fontSize:10,color:'var(--muted)'}}>+ {rmFmt(dualReward.wcashAmount,campCurrency)} WCash</span></span>:rmFmt(reward,campCurrency)}</td><td style={s.td}><button onClick={()=>updatePlayer(p.id,{payout_status:paid?'pending':'paid',payout_date:paid?null:new Date().toISOString()})} style={{...s.tag(paid?'#3fb950':'#f59e0b',paid?'rgba(63,185,80,.15)':'rgba(245,158,11,.15)'),cursor:'pointer'}}>{paid?'✅ Paid':'⏳ Pending'}</button></td><td style={s.td}><input defaultValue={p.notes||''} onBlur={e=>{if(e.target.value!==(p.notes||''))updatePlayer(p.id,{notes:e.target.value})}} style={{...s.editInput,width:140}} placeholder="Add note..."/></td></tr>})}</tbody>
                   </table>
                 )}
               </div>

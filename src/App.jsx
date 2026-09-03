@@ -34,6 +34,7 @@ import ChurnAlerts           from './pages/ChurnAlerts'
 import RetentionWorkspace    from './pages/RetentionWorkspace'
 import RetentionAnalytics    from './pages/RetentionAnalytics'
 import RetentionQueue        from './pages/RetentionQueue'
+import MonthlyReportExport   from './pages/MonthlyReportExport'
 import './pages/RetentionAnalytics.css'
 
 export default function App() {
@@ -71,6 +72,7 @@ export default function App() {
       <Route path="retention" element={<RequireRole roles={['admin','host','readonly']}><RetentionWorkspace /></RequireRole>} />
       <Route path="retention-queue" element={<RequireRole roles={['admin','host','readonly']}><RetentionQueue /></RequireRole>} />
       <Route path="retention-analytics" element={<RequireRole roles={['admin','readonly']}><RetentionAnalytics /></RequireRole>} />
+      <Route path="monthly-report" element={<RequireRole roles={['admin']}><MonthlyReportExport /></RequireRole>} />
     </Route>
     <Route path="*" element={<Navigate to="/today" replace />} />
   </Routes></BrowserRouter></LanguageProvider></AuthProvider>
