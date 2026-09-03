@@ -40,8 +40,8 @@ const REWARD_DELIVERY = {
   voucher:  { label:'🎫 Voucher',     color:'#8b5cf6' },
 }
 
-const STATUS_COLOR = { draft:'#8b949e', active:'#3fb950', paused:'#d29922', ended:'#f85149' }
-const STATUS_BG    = { draft:'rgba(139,148,158,.15)', active:'rgba(63,185,80,.15)', paused:'rgba(210,153,34,.15)', ended:'rgba(248,81,73,.15)' }
+const STATUS_COLOR = { draft:'#8b949e', upcoming:'#58a6ff', active:'#3fb950', paused:'#d29922', ended:'#f85149' }
+const STATUS_BG    = { draft:'rgba(139,148,158,.15)', upcoming:'rgba(88,166,255,.15)', active:'rgba(63,185,80,.15)', paused:'rgba(210,153,34,.15)', ended:'rgba(248,81,73,.15)' }
 const PLATFORMS    = ['MY','SG','KH','BOTH']
 
 const CURRENCY_PREFIX = { MYR: 'RM', SGD: 'S$', KHUSD: 'USD' }
@@ -1100,7 +1100,7 @@ export default function Campaigns() {
                 </div>
                 <div style={s.frow}><div style={s.flbl}>{t('common.status')}</div>
                   <select style={s.fsel} value={form.status} onChange={e=>setForm({...form,status:e.target.value})}>
-                    {['draft','active','paused','ended'].map(s=><option key={s}>{s}</option>)}
+                    {['draft','upcoming','active','paused','ended'].map(s=><option key={s}>{s}</option>)}
                   </select>
                 </div>
                 <div style={s.frow}><div style={s.flbl}>{t('campaigns.startDate')}</div><input type="date" style={s.finput} value={form.start_date} onChange={e=>setForm({...form,start_date:e.target.value})} /></div>
@@ -1350,7 +1350,12 @@ export default function Campaigns() {
                 </div>
               </div>
               <div style={{ display:'flex', gap:6, flexShrink:0 }}>
-                {selected.status==='draft'  && <button style={s.btnG} onClick={()=>setCampStatus(selected.id,'active')}>▶ {t('campaigns.activate')}</button>}
+                {selected.status==='draft' && (() => {
+                  const today = new Date().toISOString().slice(0,10)
+                  const isFuture = selected.start_date && selected.start_date > today
+                  return <button style={s.btnG} onClick={()=>setCampStatus(selected.id, isFuture ? 'upcoming' : 'active')}>▶ {isFuture ? 'Publish Upcoming' : t('campaigns.activate')}</button>
+                })()}
+                {selected.status==='upcoming' && <><button style={{ ...s.btnG, background:'#3fb950', borderColor:'#3fb950' }} onClick={()=>setCampStatus(selected.id,'active')}>🚀 Launch Now</button><button style={s.btnSm} onClick={()=>setCampStatus(selected.id,'draft')}>↩ Back to Draft</button></>}
                 {selected.status==='active' && <><button style={s.btnSm} onClick={()=>setCampStatus(selected.id,'paused')}>⏸ {t('campaigns.pause')}</button><button style={s.btnR} onClick={()=>setCampStatus(selected.id,'ended')}>⏹ {t('campaigns.end')}</button></>}
                 {selected.status==='paused' && <button style={s.btnG} onClick={()=>setCampStatus(selected.id,'active')}>▶ {t('campaigns.resume')}</button>}
                 {players.length > 0 && (
@@ -1403,7 +1408,7 @@ export default function Campaigns() {
                   <div><div style={s.flbl}>Campaign Type</div><select style={s.fsel} value={editCampForm.campaign_type||'gold_bar'} onChange={e=>setEditCampForm(f=>({...f,campaign_type:e.target.value}))}>{Object.entries(CAMPAIGN_TYPES).map(([k,v])=><option key={k} value={k}>{k==='fixed_reward' && editCampForm.is_multi_level ? 'Tiered Deposit Reward' : v.label.replace(/^[^ ]+ /,'')}</option>)}</select></div>
                   <div><div style={s.flbl}>Campaign Category (Optional)</div><select style={s.fsel} value={editCampForm.campaign_category||'standard'} onChange={e=>setEditCampForm(f=>({...f,campaign_category:e.target.value}))}><option value="standard">Standard</option><option value="deposit_milestone">Deposit Milestone</option><option value="leaderboard">Leaderboard</option><option value="vip_exclusive">VIP Exclusive</option></select></div>
                   <div><div style={s.flbl}>Platform</div><select style={s.fsel} value={editCampForm.platform||'MY'} onChange={e=>setEditCampForm(f=>({...f,platform:e.target.value}))}>{PLATFORMS.map(p=><option key={p} value={p}>{p}</option>)}</select></div>
-                  <div><div style={s.flbl}>Status</div><select style={s.fsel} value={editCampForm.status||'draft'} onChange={e=>setEditCampForm(f=>({...f,status:e.target.value}))}>{['draft','active','paused','ended'].map(v=><option key={v} value={v}>{v.toUpperCase()}</option>)}</select></div>
+                  <div><div style={s.flbl}>Status</div><select style={s.fsel} value={editCampForm.status||'draft'} onChange={e=>setEditCampForm(f=>({...f,status:e.target.value}))}>{['draft','upcoming','active','paused','ended'].map(v=><option key={v} value={v}>{v.toUpperCase()}</option>)}</select></div>
                   <div><div style={s.flbl}>Festival / Occasion</div><input style={s.finput} value={editCampForm.festival||''} onChange={e=>setEditCampForm(f=>({...f,festival:e.target.value}))} placeholder="e.g. Merdeka 2026" /></div>
                   <div><div style={s.flbl}>Budget (RM)</div><input type="number" min="0" style={s.finput} value={editCampForm.budget_rm??''} onChange={e=>setEditCampForm(f=>({...f,budget_rm:e.target.value}))} /></div>
                 </div>
