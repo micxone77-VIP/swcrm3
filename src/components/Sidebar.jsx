@@ -36,6 +36,7 @@ const NAV_GROUPS = [
     { to: '/period-report', label: 'Reports', icon: '📅', roles: ['admin','readonly'] },
     { to: '/profiling', label: 'Player Insights', icon: '🧠', roles: ['admin','readonly'] },
     { to: '/ask', label: 'Ask Data', icon: '💬', roles: ['admin','host'] },
+    { to: '/monthly-report', label: 'Monthly PPT', icon: '📊', roles: ['admin'] },
   ] },
   { key: 'system', label: 'System', icon: '⚙️', items: [
     { to: '/users', label: 'Users', icon: '👥', roles: ['admin'] },
