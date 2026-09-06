@@ -58,6 +58,8 @@ export default function AllVIPs() {
   const [view, setView]         = useState('all')
   const [activationBusy, setActivationBusy] = useState(null)
   const [activationNotice, setActivationNotice] = useState(null)
+  const [assigningVip, setAssigningVip] = useState(null)
+  const [assignBusy, setAssignBusy] = useState(null)
   const searchRef = useRef(null)
 
   const TIER_ORDER = { BLACK:0, DIAMOND:1, PLATINUM:2, GOLD:3, SILVER:4, BRONZE:5 }
@@ -73,7 +75,7 @@ export default function AllVIPs() {
       ])
       if (vipRes.error) throw vipRes.error
       setVips(vipRes.data || [])
-      const hostNames = ['ALL', ...(hostRes.data||[]).map(h => h.full_name).filter(Boolean)]
+      const hostNames = ['ALL', '__unassigned__', ...(hostRes.data||[]).map(h => h.full_name).filter(Boolean)]
       setHosts(hostNames)
     } catch(e) { setError(e.message || String(e)) }
     setLoading(false)
@@ -115,6 +117,22 @@ export default function AllVIPs() {
     }
   }
 
+  const assignHost = async (vipId, hostName) => {
+    setAssignBusy(vipId)
+    try {
+      const { error: updErr } = await supabase.from('vip_members')
+        .update({ host_assigned: hostName || null })
+        .eq('id', vipId)
+      if (updErr) throw updErr
+      setVips(prev => prev.map(v => v.id === vipId ? { ...v, host_assigned: hostName || null } : v))
+      setAssigningVip(null)
+    } catch (e) {
+      console.error('assignHost error:', e)
+    } finally {
+      setAssignBusy(null)
+    }
+  }
+
   // Saved views shortcuts
   const applyView = v => {
     setView(v); setPage(1)
@@ -132,7 +150,8 @@ export default function AllVIPs() {
     if (tier !== 'ALL' && v.tier?.toUpperCase() !== tier) return false
     if (status !== 'ALL' && v.activity_status !== status) return false
     if (region !== 'ALL' && v.region !== region) return false
-    if (host !== 'ALL' && v.host_assigned !== host) return false
+    if (host === '__unassigned__') { if (v.host_assigned) return false }
+    else if (host !== 'ALL' && v.host_assigned !== host) return false
     if (view === 'noctact') {
       const lastC = v.last_contacted || v.last_contact_date
       if (lastC && Math.floor((now - new Date(lastC)) / 86400000) < 7) return false
@@ -242,7 +261,7 @@ export default function AllVIPs() {
           {REGIONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
         </Select>
         <Select value={host} onChange={e => { setHost(e.target.value); setPage(1) }} style={{ minWidth: 130 }}>
-          {hosts.map(h => <option key={h} value={h}>{h === 'ALL' ? t('allVips.allHosts') : h}</option>)}
+          {hosts.map(h => <option key={h} value={h}>{h === 'ALL' ? t('allVips.allHosts') : h === '__unassigned__' ? '⚠️ Unassigned' : h}</option>)}
         </Select>
         {(search || tier !== 'ALL' || status !== 'ALL' || region !== 'ALL' || host !== 'ALL') && (
           <Btn size="sm" variant="ghost" onClick={() => { setSearch(''); setTier('ALL'); setStatus('ALL'); setRegion('ALL'); setHost('ALL'); setPage(1) }}>
@@ -327,8 +346,43 @@ export default function AllVIPs() {
                       <td style={{ padding:'9px 12px', borderBottom:'1px solid var(--border)', color:'var(--muted)', fontSize:12 }}>
                         {daysAgoLabel(v.last_deposit_date)}
                       </td>
-                      <td style={{ padding:'9px 12px', borderBottom:'1px solid var(--border)', color:'var(--muted)', fontSize:12 }}>
-                        {v.host_assigned || '—'}
+                      <td style={{ padding:'9px 12px', borderBottom:'1px solid var(--border)', fontSize:12 }} onClick={e => e.stopPropagation()}>
+                        {v.host_assigned ? (
+                          <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                            <span style={{ color:'var(--text)', fontWeight:500 }}>{v.host_assigned}</span>
+                            {profile?.role === 'admin' && (
+                              <button
+                                onClick={e => { e.stopPropagation(); setAssigningVip(v.id) }}
+                                title="Reassign host"
+                                style={{ background:'none', border:'none', color:'var(--muted)', cursor:'pointer', fontSize:11, padding:'1px 4px', borderRadius:4, lineHeight:1 }}
+                              >✎</button>
+                            )}
+                          </div>
+                        ) : profile?.role === 'admin' ? (
+                          assigningVip === v.id ? (
+                            <div style={{ display:'flex', gap:4, alignItems:'center' }}>
+                              <select
+                                autoFocus
+                                disabled={assignBusy === v.id}
+                                onChange={e => { if (e.target.value) assignHost(v.id, e.target.value) }}
+                                style={{ background:'var(--surface)', border:'1px solid var(--brand)', color:'var(--text)', padding:'4px 6px', borderRadius:5, fontSize:12, cursor:'pointer', maxWidth:130 }}
+                              >
+                                <option value="">Pick host…</option>
+                                {hosts.filter(h => h !== 'ALL' && h !== '__unassigned__').map(h => <option key={h} value={h}>{h}</option>)}
+                              </select>
+                              <button onClick={() => setAssigningVip(null)} style={{ background:'none', border:'none', color:'var(--muted)', cursor:'pointer', fontSize:13, padding:'2px 4px' }}>✕</button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={e => { e.stopPropagation(); setAssigningVip(v.id) }}
+                              style={{ background:'rgba(255,106,0,.1)', border:'1px solid var(--brand)', color:'var(--brand)', padding:'3px 9px', borderRadius:5, fontSize:11, cursor:'pointer', fontWeight:600, whiteSpace:'nowrap' }}
+                            >
+                              {assignBusy === v.id ? '…' : '+ Assign'}
+                            </button>
+                          )
+                        ) : (
+                          <span style={{ color:'var(--muted)' }}>—</span>
+                        )}
                       </td>
                       <td style={{ padding:'9px 12px', borderBottom:'1px solid var(--border)' }}>
                         <RiskBadge risk={v.churn_risk} />

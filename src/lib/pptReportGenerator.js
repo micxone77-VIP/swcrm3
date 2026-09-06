@@ -503,7 +503,7 @@ function slide18_19_campaigns_summary(pptx, d) {
     return [
       cell(c.campaign_name||'—', { bold:true, ...altRow(ri) }),
       cell(c.campaign_type||'—', { color:C.MUTED, ...altRow(ri) }),
-      cell(c.target_tier||'ALL', { color:TIER_C[(c.target_tier||'').toUpperCase()]||C.MUTED, bold:true, ...altRow(ri) }),
+      cell(Array.isArray(c.target_tier)?c.target_tier.join(','): (c.target_tier||'ALL'), { color:TIER_C[String(c.target_tier||'').toUpperCase()]||C.MUTED, bold:true, ...altRow(ri) }),
       cell(players.length, { align:'center', ...altRow(ri) }),
       cell(paidCnt, { align:'center', color:C.GREEN, ...altRow(ri) }),
       cell(fmt(paid), { align:'right', color:C.AMBER, bold:true, ...altRow(ri) }),
@@ -670,7 +670,7 @@ function slide28_upcoming_campaigns(pptx, d) {
   const rows = d.upcoming.map((c,ri)=>[
     cell(c.campaign_name||'—', { bold:true, ...altRow(ri) }),
     cell(c.campaign_type||'—', { color:C.MUTED, ...altRow(ri) }),
-    cell(c.target_tier||'ALL', { color:TIER_C[(c.target_tier||'').toUpperCase()]||C.MUTED, bold:true, ...altRow(ri) }),
+    cell(Array.isArray(c.target_tier)?c.target_tier.join(','): (c.target_tier||'ALL'), { color:TIER_C[String(c.target_tier||'').toUpperCase()]||C.MUTED, bold:true, ...altRow(ri) }),
     cell(c.start_date||'—', { align:'center', ...altRow(ri) }),
     cell(c.end_date||'—', { align:'center', ...altRow(ri) }),
     cell(c.status||'—', { align:'center', color:c.status==='active'?C.GREEN:C.ACC, bold:true, ...altRow(ri) }),
