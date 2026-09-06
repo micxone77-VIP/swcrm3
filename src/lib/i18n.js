@@ -703,6 +703,7 @@ export const translations = {
     },
     allVips: {
       title: 'VIP Operations',
+      viewAll: 'All VIPs',
       exportCsv: '↓ Export CSV',
       refresh: 'Refresh',
       searchPlaceholder: 'Search name / login / phone…',
@@ -1694,6 +1695,7 @@ export const translations = {
     },
     allVips: {
       title: 'VIP管理',
+      viewAll: '全部VIP',
       exportCsv: '↓ 导出CSV',
       refresh: '刷新',
       searchPlaceholder: '搜索姓名/账号/电话…',
