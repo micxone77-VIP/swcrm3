@@ -360,6 +360,7 @@ export default function ContactLog() {
   const [editingLogId, setEditingLogId]       = useState(null)
   const [editingNote, setEditingNote]         = useState('')
   const [editingOutcome, setEditingOutcome]   = useState('Contacted')
+  const [noteModal, setNoteModal]             = useState(null)
   const [vipSearch,    setVipSearch]   = useState('')
   const [vipResults,   setVipResults]  = useState([])
   const [selectedVip,  setSelectedVip] = useState(null)
@@ -737,7 +738,15 @@ export default function ContactLog() {
                     onMouseLeave={e => e.currentTarget.style.background='transparent'}
                     onClick={() => !isEditingThis && navigate(`/vips/${log.vip_id}`)}>
                     <td style={{ ...s.td, color:'var(--muted)', fontSize:11 }}>{page*PAGE_SIZE+i+1}</td>
-                    <td style={{ ...s.td, fontWeight:700 }}>{log.username}</td>
+                    <td style={{ ...s.td, fontWeight:700 }} onClick={e => e.stopPropagation()}>
+                      <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                        <span style={{ cursor:'pointer' }} onClick={() => navigate(`/vips/${log.vip_id}`)}>{log.username}</span>
+                        <button
+                          onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(log.username) }}
+                          title="Copy username"
+                          style={{ background:'none', border:'1px solid var(--border)', color:'var(--muted)', padding:'1px 6px', borderRadius:4, fontSize:10, cursor:'pointer', lineHeight:1.4 }}>⎘</button>
+                      </div>
+                    </td>
                     <td style={s.td}>
                       {tier ? <span style={{ ...s.badge, background:TIER_BG[tier]||'transparent', color:TIER_COLOR[tier]||'var(--text)' }}>{tier}</span>
                              : <span style={{ color:'var(--muted)' }}>-</span>}
@@ -774,7 +783,11 @@ export default function ContactLog() {
                           </div>
                         </div>
                       ) : (
-                        <div style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{log.notes || '-'}</div>
+                        <div
+                          style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', cursor: log.notes ? 'pointer' : 'default' }}
+                          onClick={e => { if(log.notes){ e.stopPropagation(); setNoteModal(log) } }}
+                          title={log.notes ? 'Click to view full note' : undefined}
+                        >{log.notes || '-'}</div>
                       )}
                     </td>
                     <td style={{ ...s.td, fontSize:12, color:log.host_name===myName?'var(--accent)':'var(--muted)', fontWeight:log.host_name===myName?600:400 }}>
@@ -809,6 +822,36 @@ export default function ContactLog() {
           </div>
         )}
       </div>
+
+      {noteModal && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.6)', zIndex:1000, display:'flex', alignItems:'center', justifyContent:'center' }}
+          onClick={() => setNoteModal(null)}>
+          <div style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:14, padding:'24px 28px', width:520, maxWidth:'90vw', maxHeight:'80vh', overflowY:'auto' }}
+            onClick={e => e.stopPropagation()}>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:14 }}>
+              <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                <span style={{ fontWeight:700, color:'var(--text)', fontSize:15 }}>{noteModal.username}</span>
+                {(noteModal.vip_members?.tier || noteModal.tier) && (
+                  <span style={{ ...s.badge, background:TIER_BG[noteModal.vip_members?.tier||noteModal.tier]||'transparent', color:TIER_COLOR[noteModal.vip_members?.tier||noteModal.tier]||'var(--text)' }}>
+                    {noteModal.vip_members?.tier||noteModal.tier}
+                  </span>
+                )}
+              </div>
+              <div style={{ fontSize:11, color:'var(--muted)' }}>{timeAgo(noteModal.logged_at)}</div>
+            </div>
+            <div style={{ display:'flex', gap:8, marginBottom:16 }}>
+              <span style={{ ...s.tag, background:`${TYPE_COLOR[noteModal.channel]||'#8b949e'}22`, color:TYPE_COLOR[noteModal.channel]||'#8b949e' }}>{noteModal.channel}</span>
+              <span style={{ ...s.tag, background:`${OUTCOME_COLOR[noteModal.outcome]||'#8b949e'}22`, color:OUTCOME_COLOR[noteModal.outcome]||'#8b949e' }}>{noteModal.outcome}</span>
+            </div>
+            <div style={{ fontSize:14, color:'var(--text)', lineHeight:1.75, whiteSpace:'pre-wrap', wordBreak:'break-word', borderTop:'1px solid var(--border)', paddingTop:14 }}>
+              {noteModal.notes || '—'}
+            </div>
+            <div style={{ marginTop:20, textAlign:'right' }}>
+              <button onClick={() => setNoteModal(null)} style={{ background:'var(--surface2)', color:'var(--text)', border:'1px solid var(--border)', padding:'6px 16px', borderRadius:7, fontSize:12, cursor:'pointer' }}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
