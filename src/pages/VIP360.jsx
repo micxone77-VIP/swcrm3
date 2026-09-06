@@ -333,6 +333,9 @@ export default function VIP360() {
                 <Field label="Phone">{vip.phone}</Field>
                 <Field label="WhatsApp">{vip.whatsapp}</Field>
                 <Field label="Email">{vip.email}</Field>
+                <Field label="Telegram">{vip.telegram ? `@${vip.telegram}` : '—'}</Field>
+                <Field label="Address">{vip.address}</Field>
+                <Field label="Remark">{vip.special_requests}</Field>
                 <Field label="Birthday">{vip.birthday ? fmtDate(vip.birthday) : '—'}</Field>
                 <Field label="Registered">{fmtDate(vip.registration_date || vip.created_at)}</Field>
               </div>
@@ -487,6 +490,9 @@ export default function VIP360() {
                 <Field label="Phone">{vip.phone || '—'}</Field>
                 <Field label="WhatsApp">{vip.whatsapp || '—'}</Field>
                 <Field label="Email">{vip.email || '—'}</Field>
+                <Field label="Telegram">{vip.telegram ? `@${vip.telegram}` : '—'}</Field>
+                <Field label="Address">{vip.address || '—'}</Field>
+                <Field label="Remark">{vip.special_requests || '—'}</Field>
               </div>
               {contacts.length === 0 ? (
                 <EmptyState icon="📞" title="No contact records" message="No contact logs found for this VIP." />
@@ -735,6 +741,24 @@ export default function VIP360() {
               <label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>WhatsApp</label>
               <Input value={editForm.whatsapp||''} onChange={e => setEditForm(f=>({...f,whatsapp:e.target.value}))} />
             </div>
+          </div>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
+            <div>
+              <label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>Email</label>
+              <Input value={editForm.email||''} onChange={e => setEditForm(f=>({...f,email:e.target.value}))} />
+            </div>
+            <div>
+              <label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>Telegram</label>
+              <Input value={editForm.telegram||''} onChange={e => setEditForm(f=>({...f,telegram:e.target.value}))} placeholder="without @" />
+            </div>
+          </div>
+          <div>
+            <label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>Address</label>
+            <Textarea value={editForm.address||''} onChange={e => setEditForm(f=>({...f,address:e.target.value}))} rows={2} />
+          </div>
+          <div>
+            <label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>Remark</label>
+            <Textarea value={editForm.special_requests||''} onChange={e => setEditForm(f=>({...f,special_requests:e.target.value}))} rows={2} />
           </div>
           <div>
             <label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>Internal Notes</label>
