@@ -319,7 +319,7 @@ export default function Today() {
       <Modal open={!!logTarget} onClose={() => { setLogTarget(null); setLogNote('') }} title={t('today.modalTitle')} width={420}>
         {logTarget && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <div style={{ fontSize: 14, fontWeight: 600 }}>{logTarget.full_name || logTarget.username}</div>
+            <div style={{ fontSize: 14, fontWeight: 600 }}>{(logTarget.full_name && logTarget.full_name !== '(Name)') ? logTarget.full_name : logTarget.username}</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               <label style={{ fontSize: 12, color: 'var(--muted)' }}>{t('today.outcome')}</label>
               <Select value={logOutcome} onChange={e => setLogOutcome(e.target.value)}>
