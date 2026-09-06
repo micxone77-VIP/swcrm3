@@ -175,9 +175,9 @@ export default function VIP360() {
     const nowStr = new Date().toISOString()
     const { error: err } = await supabase.from('contact_logs').insert({
       vip_id: id, username: vip.username,
-      contact_type: logType, outcome: logOutcome,
+      channel: logType, outcome: logOutcome,
       notes: logNote || null, host_name: profile?.full_name || null,
-      logged_at: nowStr, created_at: nowStr,
+      logged_at: nowStr,
     })
     await supabase.from('vip_members').update({ last_contact_date: nowStr }).eq('id', id)
     setLogSaving(false)
@@ -340,7 +340,7 @@ export default function VIP360() {
                 ) : contacts.slice(0,5).map(c => (
                   <div key={c.id} style={{ borderBottom:'1px solid var(--border)', padding:'10px 0' }}>
                     <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-                      <span style={{ fontSize:13, fontWeight:600 }}>{c.contact_type || c.outcome || 'Contact'}</span>
+                      <span style={{ fontSize:13, fontWeight:600 }}>{c.channel || c.outcome || 'Contact'}</span>
                       <span style={{ fontSize:11, color:'var(--muted)' }}>{timeAgo(c.logged_at)}</span>
                     </div>
                     {(c.notes || c.outcome) && (
@@ -422,11 +422,11 @@ export default function VIP360() {
               ) : contacts.map(c => (
                 <div key={c.id} style={{ borderBottom:'1px solid var(--border)', padding:'12px 0', display:'flex', gap:12 }}>
                   <div style={{ width:36, height:36, borderRadius:'50%', background:'var(--surface2)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:16, flexShrink:0 }}>
-                    {c.contact_type === 'WhatsApp' ? '💬' : c.contact_type === 'Call' ? '📞' : '📋'}
+                    {c.channel === 'WhatsApp' ? '💬' : c.channel === 'Call' ? '📞' : '📋'}
                   </div>
                   <div style={{ flex:1 }}>
                     <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-                      <div style={{ fontSize:13, fontWeight:600 }}>{c.contact_type || 'Contact'}</div>
+                      <div style={{ fontSize:13, fontWeight:600 }}>{c.channel || 'Contact'}</div>
                       <div style={{ fontSize:11, color:'var(--muted)' }}>{timeAgo(c.logged_at)}</div>
                     </div>
                     <div style={{ fontSize:12, marginTop:3 }}>
@@ -489,7 +489,7 @@ export default function VIP360() {
               ) : contacts.map(c => (
                 <div key={c.id} style={{ borderBottom:'1px solid var(--border)', padding:'10px 0' }}>
                   <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-                    <span style={{ fontSize:13, fontWeight:600 }}>{c.contact_type || 'Contact'}</span>
+                    <span style={{ fontSize:13, fontWeight:600 }}>{c.channel || 'Contact'}</span>
                     <span style={{ fontSize:11, color:'var(--muted)' }}>{timeAgo(c.logged_at)}</span>
                   </div>
                   <div style={{ fontSize:12, color:'var(--muted)', marginTop:3 }}>{c.outcome}{c.notes?' — '+c.notes:''}</div>
