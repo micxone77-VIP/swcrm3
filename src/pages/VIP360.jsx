@@ -248,12 +248,21 @@ export default function VIP360() {
               display:'flex', alignItems:'center', justifyContent:'center',
               fontSize:22, fontWeight:700, color:tierCfg.color, flexShrink:0,
             }}>
-              {(vip.full_name||vip.username||'?')[0].toUpperCase()}
+              {(vip.username||vip.full_name||'?')[0].toUpperCase()}
             </div>
             <div>
-              <h2 style={{ fontSize:22, fontWeight:700, margin:0 }}>{vip.full_name || vip.username}</h2>
-              <div style={{ display:'flex', alignItems:'center', gap:8, marginTop:6, flexWrap:'wrap' }}>
-                <span style={{ fontSize:12, color:'var(--muted)' }}>{vip.username}</span>
+              <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:2 }}>
+                <h2 style={{ fontSize:22, fontWeight:700, margin:0 }}>{vip.username}</h2>
+                <button
+                  title="Copy username"
+                  onClick={() => navigator.clipboard.writeText(vip.username)}
+                  style={{ background:'none', border:'none', color:'var(--muted)', cursor:'pointer', fontSize:14, padding:'0 2px', lineHeight:1, opacity:.6 }}
+                  onMouseEnter={e => e.currentTarget.style.opacity=1}
+                  onMouseLeave={e => e.currentTarget.style.opacity=.6}
+                >⎘</button>
+              </div>
+              {vip.full_name && <div style={{ fontSize:13, color:'var(--muted)', marginBottom:4 }}>{vip.full_name}</div>}
+              <div style={{ display:'flex', alignItems:'center', gap:8, marginTop:2, flexWrap:'wrap' }}>
                 <TierBadge tier={vip.tier} />
                 <StatusBadge status={vip.activity_status} />
                 <RiskBadge risk={vip.churn_risk} />

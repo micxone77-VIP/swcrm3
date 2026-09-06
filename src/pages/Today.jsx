@@ -31,8 +31,17 @@ export default function Today() {
   const { toast, ToastContainer } = useToast()
   const { t } = useLanguage()
   const [host, setHost] = useState('All')
+  const [tierFilter, setTierFilter] = useState(['PLATINUM','DIAMOND'])
   const [activeQueue, setActiveQueue] = useState('all')
   const [hostList, setHostList] = useState(['All'])
+  const TIER_OPTS = ['DIAMOND','PLATINUM','GOLD','SILVER','BRONZE']
+  function toggleTier(tier) {
+    setTierFilter(prev => {
+      if (tier === 'ALL') return []
+      const next = prev.includes(tier) ? prev.filter(t => t !== tier) : [...prev, tier]
+      return next
+    })
+  }
 
   // Load hosts dynamically from profiles (same as AtRisk.jsx)
   useEffect(() => {
@@ -83,15 +92,18 @@ export default function Today() {
     refresh()
   }
 
+  // Tier filter helper
+  const applyTier = arr => tierFilter.length === 0 ? arr : arr.filter(v => tierFilter.includes((v.tier||'').toUpperCase()))
+
   // Queue data
   const queueMap = {
-    all: priorityQueue,
-    overdue: overdue,
-    follow: followUp,
-    risk: atRisk,
-    birthday: birthdays,
+    all: applyTier(priorityQueue),
+    overdue: applyTier(overdue),
+    follow: applyTier(followUp),
+    risk: applyTier(atRisk),
+    birthday: applyTier(birthdays),
   }
-  const displayItems = (queueMap[activeQueue] || priorityQueue).slice(0, 30)
+  const displayItems = (queueMap[activeQueue] || applyTier(priorityQueue)).slice(0, 30)
 
   if (loading) return <div style={{ padding: 32 }}><LoadingState message="Loading today's work…" /></div>
   if (error) return <div style={{ padding: 32 }}><ErrorState message={error} onRetry={refresh} /></div>
@@ -124,6 +136,31 @@ export default function Today() {
             active={host}
             onChange={setHost}
           />
+        </div>
+
+        {/* Tier filter */}
+        <div style={{ marginTop: 10, display:'flex', alignItems:'center', gap:6, flexWrap:'wrap' }}>
+          <span style={{ fontSize:11, color:'var(--muted)', fontWeight:600, marginRight:4 }}>Tier:</span>
+          <button
+            onClick={() => setTierFilter([])}
+            style={{
+              padding:'3px 11px', borderRadius:20, fontSize:11, fontWeight:600, cursor:'pointer',
+              border:`1px solid ${tierFilter.length===0?'var(--brand)':'var(--border)'}`,
+              background: tierFilter.length===0?'var(--brand-dim)':'transparent',
+              color: tierFilter.length===0?'var(--brand)':'var(--muted)',
+            }}
+          >All</button>
+          {TIER_OPTS.map(tier => {
+            const active = tierFilter.includes(tier)
+            return (
+              <button key={tier} onClick={() => toggleTier(tier)} style={{
+                padding:'3px 11px', borderRadius:20, fontSize:11, fontWeight:600, cursor:'pointer',
+                border:`1px solid ${active?'var(--brand)':'var(--border)'}`,
+                background: active?'var(--brand-dim)':'transparent',
+                color: active?'var(--brand)':'var(--muted)',
+              }}>{tier.charAt(0)+tier.slice(1).toLowerCase()}</button>
+            )
+          })}
         </div>
       </div>
 
@@ -253,8 +290,9 @@ export default function Today() {
                         {timeAgo(v.last_contacted || v.last_contact_date)}
                       </td>
                       <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', fontSize: 12 }}>
-                        <div style={{ color: 'var(--text)' }}>{formatMoney(v.total_deposit, v.currency)}</div>
-                        <div style={{ fontSize: 11, color: 'var(--muted)' }}>{timeAgo(v.last_deposit_date)}</div>
+                        {v.last_deposit_date
+                          ? <><div style={{ color:'var(--text)', fontWeight:600 }}>{new Date(v.last_deposit_date).toLocaleDateString('en-MY',{day:'2-digit',month:'short',year:'numeric'})}</div><div style={{ fontSize:11, color:'var(--muted)' }}>{timeAgo(v.last_deposit_date)}</div></>
+                          : <span style={{ color:'var(--muted)' }}>—</span>}
                       </td>
                       <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)' }}>
                         <RiskBadge risk={v.churn_risk} />
