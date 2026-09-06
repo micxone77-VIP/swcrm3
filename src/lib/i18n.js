@@ -719,6 +719,7 @@ export const translations = {
       allTiers: 'All Tiers',
       allStatus: 'All Status',
       allHosts: 'All Hosts',
+      viewAll: 'View All',
     },
     atRisk: {
       title: 'At Risk VIPs',
@@ -1710,6 +1711,7 @@ export const translations = {
       allTiers: '所有层级',
       allStatus: '所有状态',
       allHosts: '所有主机',
+      viewAll: '查看全部',
     },
     atRisk: {
       title: '风险VIP',

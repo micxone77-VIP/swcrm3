@@ -357,6 +357,7 @@ export default function ContactLog() {
   const [hosts,    setHosts]    = useState([])
   const [stats,    setStats]    = useState({ total:0, today:0, positive:0, bonusTotal:0 })
   const [showForm, setShowForm]     = useState(false)
+  const [notePopup, setNotePopup]   = useState(null) // { username, notes }
   const [editingLogId, setEditingLogId]       = useState(null)
   const [editingNote, setEditingNote]         = useState('')
   const [editingOutcome, setEditingOutcome]   = useState('Contacted')
@@ -737,7 +738,18 @@ export default function ContactLog() {
                     onMouseLeave={e => e.currentTarget.style.background='transparent'}
                     onClick={() => !isEditingThis && navigate(`/vips/${log.vip_id}`)}>
                     <td style={{ ...s.td, color:'var(--muted)', fontSize:11 }}>{page*PAGE_SIZE+i+1}</td>
-                    <td style={{ ...s.td, fontWeight:700 }}>{log.username}</td>
+                    <td style={{ ...s.td, fontWeight:700 }} onClick={e => e.stopPropagation()}>
+                      <span style={{ display:'inline-flex', alignItems:'center', gap:5 }}>
+                        <span style={{ cursor:'pointer' }} onClick={() => navigate(`/vips/${log.vip_id}`)}>{log.username}</span>
+                        <button
+                          title="Copy username"
+                          onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(log.username) }}
+                          style={{ background:'none', border:'none', color:'var(--muted)', cursor:'pointer', fontSize:12, padding:'0 2px', lineHeight:1, opacity:.6 }}
+                          onMouseEnter={e => e.currentTarget.style.opacity=1}
+                          onMouseLeave={e => e.currentTarget.style.opacity=.6}
+                        >⎘</button>
+                      </span>
+                    </td>
                     <td style={s.td}>
                       {tier ? <span style={{ ...s.badge, background:TIER_BG[tier]||'transparent', color:TIER_COLOR[tier]||'var(--text)' }}>{tier}</span>
                              : <span style={{ color:'var(--muted)' }}>-</span>}
@@ -774,7 +786,11 @@ export default function ContactLog() {
                           </div>
                         </div>
                       ) : (
-                        <div style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{log.notes || '-'}</div>
+                        <div
+                          style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', cursor: log.notes ? 'pointer' : 'default' }}
+                          title={log.notes ? 'Click to expand' : undefined}
+                          onClick={log.notes ? () => setNotePopup({ username: log.username, notes: log.notes }) : undefined}
+                        >{log.notes || '-'}</div>
                       )}
                     </td>
                     <td style={{ ...s.td, fontSize:12, color:log.host_name===myName?'var(--accent)':'var(--muted)', fontWeight:log.host_name===myName?600:400 }}>
@@ -809,6 +825,25 @@ export default function ContactLog() {
           </div>
         )}
       </div>
+
+      {/* Notes popup modal */}
+      {notePopup && (
+        <div
+          style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.6)', zIndex:1000, display:'flex', alignItems:'center', justifyContent:'center', padding:24 }}
+          onClick={() => setNotePopup(null)}
+        >
+          <div
+            style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:12, padding:'24px 28px', maxWidth:560, width:'100%', boxShadow:'0 16px 48px rgba(0,0,0,.5)', position:'relative' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:14 }}>
+              <div style={{ fontSize:13, fontWeight:700, color:'var(--accent)' }}>{notePopup.username} — Note</div>
+              <button onClick={() => setNotePopup(null)} style={{ background:'none', border:'none', color:'var(--muted)', fontSize:18, cursor:'pointer', lineHeight:1 }}>✕</button>
+            </div>
+            <div style={{ fontSize:13, color:'var(--text)', lineHeight:1.6, whiteSpace:'pre-wrap', wordBreak:'break-word' }}>{notePopup.notes}</div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
