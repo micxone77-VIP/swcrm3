@@ -189,7 +189,11 @@ export default function VIP360() {
 
   async function saveEdit() {
     setEditSaving(true)
-    const { error: err } = await supabase.from('vip_members').update(editForm).eq('id', id)
+    // Convert empty strings to null — enum columns reject '' with a 400
+    const clean = Object.fromEntries(
+      Object.entries(editForm).map(([k, v]) => [k, v === '' ? null : v])
+    )
+    const { error: err } = await supabase.from('vip_members').update(clean).eq('id', id)
     setEditSaving(false)
     if (err) { toast('Error: ' + err.message, 'error'); return }
     toast(t('vip360.savedMsg'), 'success')
