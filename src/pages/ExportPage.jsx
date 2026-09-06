@@ -165,11 +165,8 @@ export default function ExportPage() {
 
   async function exportMailingList() {
     setLoadingCSV(p => ({...p, mailing:true}))
-    // Wildcard select — deliberately not naming email/address/race explicitly.
-    // Those columns may not exist in this database yet; a wildcard select never
-    // errors on that, it just won't include a key that isn't there, and
-    // v.email/v.address/v.race below simply come back undefined → blank cell.
-    // Works correctly whether the columns exist-but-empty or don't exist at all.
+    // Wildcard select — covers all columns including telegram/special_requests
+    // which may be newly added; undefined columns simply come back as blank cells.
     const { data, error } = await supabase.from('vip_members').select('*').order('tier').order('username')
     if (error) { alert('Export failed: ' + error.message); setLoadingCSV(p => ({...p, mailing:false})); return }
     const vips = data || []
@@ -181,6 +178,8 @@ export default function ExportPage() {
       Email:    v.email || '',
       Address:  v.address || '',
       Race:     v.race || '',
+      Telegram: v.telegram || '',
+      Remark:   v.special_requests || '',
     })), `VIP_Mailing_List_${new Date().toISOString().slice(0,10)}.csv`)
     setLoadingCSV(p => ({...p, mailing:false}))
   }
@@ -191,9 +190,12 @@ export default function ExportPage() {
     setMailingResult(null)
     try {
       const buf = await file.arrayBuffer()
+      // raw: false forces all cells to return as formatted strings, which preserves
+      // phone numbers that Excel would otherwise silently convert to plain numbers
+      // (dropping leading zeros or switching to scientific notation).
       const wb = XLSX.read(buf, { type: 'array' })
       const sheet = wb.Sheets[wb.SheetNames[0]]
-      const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' })
+      const rows = XLSX.utils.sheet_to_json(sheet, { defval: '', raw: false })
 
       let updated = 0, skippedBlank = 0, notFound = 0, errors = 0
       const notFoundUsernames = []
@@ -208,22 +210,27 @@ export default function ExportPage() {
         const username = get('Username')
         if (!username) continue
 
-        const name = get('Name')
-        const email = get('Email')
-        const address = get('Address')
-        const race = get('Race')
+        const name     = get('Name')
+        const email    = get('Email')
+        const address  = get('Address')
+        const race     = get('Race')
+        const phone    = get('Phone')
+        const telegram = get('Telegram')
+        const remark   = get('Remark')
 
         const payload = {}
         // '(Name)' is the literal placeholder our own export uses for a blank
         // name — never write that string into the database as if it were real.
         if (name && name !== '(Name)') payload.full_name = name
-        if (email) payload.email = email
-        if (address) payload.address = address
-        if (race) payload.race = race
-        // Phone is deliberately never included here — it's corrupted by Excel's
-        // number auto-formatting in this file, and already correctly maintained
-        // by the regular CSV import from platform data. Touching it here risks
-        // overwriting a good number with a mangled one.
+        if (email)    payload.email = email
+        if (address)  payload.address = address
+        if (race)     payload.race = race
+        // Phone: imported as text (raw: false above) so numbers like "60123456789"
+        // come through correctly. Strip anything clearly not a phone (e.g. Excel
+        // artefacts like "E+10" or single-digit placeholders).
+        if (phone && phone.length > 5 && !phone.includes('E+')) payload.phone = phone
+        if (telegram) payload.telegram = telegram.replace(/^@/, '') // strip leading @ if present
+        if (remark)   payload.special_requests = remark
 
         if (Object.keys(payload).length === 0) { skippedBlank++; continue }
 
@@ -1355,14 +1362,14 @@ export default function ExportPage() {
 
         <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
           <CSVExportCard icon="👑" title="VIP Members"             desc="All VIP profiles — tier, valid bet, deposit, host, birthday, region" color="#6366f1" loading={loadingCSV.vip}       onExport={exportVIPs} />
-          <CSVExportCard icon="📮" title="VIP Mailing List"        desc="Tier, username, name, phone, email, address, race — for holiday gift mailing. Email/address/race aren't tracked yet, so those columns come out blank to fill in by hand." color="#14b8a6" loading={loadingCSV.mailing}   onExport={exportMailingList} />
+          <CSVExportCard icon="📮" title="VIP Mailing List"        desc="Tier, username, name, phone, email, address, race, telegram, remark — for holiday gift mailing. Fill in any blank columns by hand and re-import." color="#14b8a6" loading={loadingCSV.mailing}   onExport={exportMailingList} />
 
           <div style={{ background:'var(--surface)', border:'1px dashed var(--border)', borderRadius:10, padding:'14px 16px', display:'flex', alignItems:'center', gap:14 }}>
             <div style={{ fontSize:22 }}>⬆️</div>
             <div style={{ flex:1 }}>
               <div style={{ fontSize:13, fontWeight:700 }}>Import Completed Mailing List</div>
               <div style={{ fontSize:11, color:'var(--muted)', marginTop:2 }}>
-                Upload the filled-in .xlsx back — updates Name, Email, Address, Race by matching Username. Blank cells are left untouched, never overwrite existing data. Phone is never touched by this import.
+                Upload the filled-in .xlsx or .csv back — updates Name, Phone, Email, Address, Race, Telegram, and Remark by matching Username. Blank cells are left untouched and never overwrite existing data.
               </div>
               {mailingResult && (
                 <div style={{ marginTop:8, fontSize:12, padding:'8px 12px', borderRadius:6, background:'var(--surface2)' }}>
