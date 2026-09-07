@@ -16,19 +16,19 @@ const CATEGORIES = [
 ]
 
 const PROVIDERS = [
-  { name:'Sentuh', category:['wellness','beauty'], service:'Massage · Spa · Beauty · Wellness', home:'House Call', coverage:'KL / Selangor', booking:'App / WhatsApp', phone:'+60 3-2787 9191', website:'https://sentuh.my/house-call/', rating:'4.8', reviews:'500+', tag:'Recommended', monogram:'se', tone:'gold' },
+  { name:'Sentuh', category:['wellness','beauty'], service:'Massage · Spa · Beauty · Wellness', home:'House Call', coverage:'KL / Selangor', booking:'App / WhatsApp', phone:'Contact via website', website:'https://sentuh.my/house-call/', rating:'4.8', reviews:'500+', tag:'Recommended', monogram:'se', tone:'gold' },
   { name:'Snooze', category:['wellness'], service:'Massage · Manicure · Pedicure', home:'House Call', coverage:'KL / Selangor / PJ', booking:'Online / WhatsApp', phone:'+60 17-300 3370', website:'https://www.snooze.my/', rating:'4.8', reviews:'200+', tag:'Recommended', monogram:'sn', tone:'blue' },
-  { name:'Effortless', category:['beauty'], service:'Hair · Nail · Lash · Makeup · Home Beauty', home:'House Call', coverage:'Klang Valley', booking:'Website / WhatsApp', phone:'+60 12-274 6188', website:'https://www.effortless.com.my/', rating:'4.7', reviews:'300+', tag:'Recommended', monogram:'ef', tone:'rose' },
+  { name:'Effortless', category:['beauty'], service:'Hair · Nail · Lash · Makeup · Home Beauty', home:'House Call', coverage:'Klang Valley', booking:'Website / WhatsApp', phone:'Contact via website', website:'https://www.effortless.com.my/', rating:'4.7', reviews:'300+', tag:'Recommended', monogram:'ef', tone:'rose' },
   { name:'Raptor Montefiore', category:['grooming'], service:'Mobile Barber · Men Grooming · Beard Care', home:'House Call', coverage:'KL / Selangor', booking:'Website / WhatsApp', phone:'+60 17-573 5809', website:'https://raptormontefiore.com/mobile-barber-service', rating:'4.8', reviews:'200+', tag:'Top Pick', monogram:'rm', tone:'black' },
   { name:'makansquad', category:['dining','home'], service:'Private Chef · Meal Prep · Events · Dinner', home:'House Call', coverage:'Klang Valley', booking:'Website / WhatsApp', phone:'+60 11-1161 7632', website:'https://makansquad.my/en/', rating:'4.9', reviews:'400+', tag:'Recommended', monogram:'ms', tone:'amber' },
   { name:'MyFitSquad', category:['fitness'], service:'Personal Training · Yoga · HIIT · Wellness', home:'House Call', coverage:'KL / Selangor / Putrajaya', booking:'WhatsApp', phone:'+60 11-2434 9125', website:'https://docsquad.my/en/fitness/home-training/', rating:'4.8', reviews:'200+', tag:'Recommended', monogram:'mf', tone:'teal' },
-  { name:'KinesioFitness', category:['fitness'], service:'1-to-1 Training · Home / Condo Gym', home:'House Call', coverage:'KL / Selangor', booking:'Website / WhatsApp', phone:'Contact provider', website:'https://www.kinesiofitness.com.my/', rating:'4.7', reviews:'100+', tag:'Premium', monogram:'kf', tone:'green' },
+  { name:'KinesioFitness', category:['fitness'], service:'1-to-1 Training · Home / Condo Gym', home:'House Call', coverage:'KL / Selangor', booking:'Website / WhatsApp', phone:'Contact via website', website:'https://www.kinesiofitness.com.my/', rating:'4.7', reviews:'100+', tag:'Premium', monogram:'kf', tone:'green' },
   { name:'dobiQueen', category:['laundry'], service:'Laundry · Dry Cleaning · Pickup & Delivery', home:'Pickup & Delivery', coverage:'KL / PJ / Selangor', booking:'Online / WhatsApp', phone:'+60 3-8084 3737', website:'https://www.dobiqueen.my/', rating:'4.7', reviews:'300+', tag:'Recommended', monogram:'dq', tone:'pink' },
   { name:'Partylicious', category:['celebration'], service:'Birthday · Anniversary · Kids Setup · Events', home:'House Call', coverage:'KL / Selangor', booking:'WhatsApp', phone:'+60 10-8366 329', website:'https://www.partylicious.com.my/', rating:'4.9', reviews:'500+', tag:'Recommended', monogram:'pa', tone:'rose' },
   { name:'Amazing Baby', category:['photo','celebration'], service:'Newborn · Kids · Family · Photoshoot', home:'Studio / Enquiry', coverage:'Klang Valley', booking:'WhatsApp / Website', phone:'+60 16-714 0669', website:'https://amazingbaby.com.my/en/book-a-shoot', rating:'4.9', reviews:'600+', tag:'Premium', monogram:'ab', tone:'peach' },
-  { name:'YoloFoods', category:['dining'], service:'Healthy Meal Delivery · Diet Food · Meal Prep', home:'Delivery', coverage:'Klang Valley', booking:'Website / App', phone:'+60 3-2935 9425', website:'https://yolofoods.com/', rating:'4.6', reviews:'300+', tag:'Recommended', monogram:'yo', tone:'orange' },
-  { name:'Therapeutic Massage', category:['wellness'], service:'Therapeutic Massage · Recovery · Wellness', home:'House Call', coverage:'KL / Selangor', booking:'Website / WhatsApp', phone:'Contact provider', website:'https://www.therapeuticmassage.com.my/', rating:'4.8', reviews:'200+', tag:'Premium', monogram:'tm', tone:'slate' },
-  { name:'Helping Malaysia', category:['home'], service:'Home Cleaning · Deep Cleaning · Interior', home:'House Call', coverage:'KL / Selangor / PJ', booking:'Website / App', phone:'+60 3-9212 9303', website:'https://www.helping.my/', rating:'4.6', reviews:'400+', tag:'Recommended', monogram:'hm', tone:'cyan' },
+  { name:'J Healthy Delivery', category:['dining'], service:'Healthy Meal Delivery · Weekly Meal Plans', home:'Delivery', coverage:'Kuala Lumpur / PJ', booking:'Website / WhatsApp', phone:'+60 13-930 1963', website:'https://jhealthydelivery.com/v2/product/delivery?merchant_domain_name=jhealthydelivery', rating:'4.6', reviews:'—', tag:'Recommended', monogram:'jh', tone:'orange' },
+  { name:'Therapeutic Massage', category:['wellness'], service:'Therapeutic Massage · Recovery · Wellness', home:'House Call', coverage:'KL / Selangor', booking:'Website / WhatsApp', phone:'Contact via website', website:'https://www.therapeuticmassage.com.my/', rating:'4.8', reviews:'200+', tag:'Premium', monogram:'tm', tone:'slate' },
+  { name:'Helping Malaysia', category:['home'], service:'Home Cleaning · Deep Cleaning · Interior', home:'House Call', coverage:'KL / Selangor / PJ', booking:'Website / App', phone:'Contact via website', website:'https://www.helping.my/', rating:'4.6', reviews:'400+', tag:'Recommended', monogram:'hm', tone:'cyan' },
   { name:'Shangri-La Kuala Lumpur', category:['staycation'], service:'Hotels · Family Getaway · VIP Experience', home:'Physical Location', coverage:'Kuala Lumpur', booking:'Website / Concierge', phone:'+60 3-2074 3900', website:'https://www.shangri-la.com/kualalumpur/shangrila/', rating:'4.8', reviews:'1K+', tag:'Featured', monogram:'sk', tone:'navy' },
 ]
 
@@ -67,7 +67,7 @@ export default function VipConcierge() {
 
   function whatsapp(phone, name) {
     const digits = phone.replace(/\D/g, '')
-    if (!digits) return '#'
+    if (!digits || phone.includes('Contact via')) return '#'
     const message = encodeURIComponent(`Hi, I would like to enquire about a VIP booking with ${name}.`)
     return `https://wa.me/${digits}?text=${message}`
   }
@@ -112,7 +112,7 @@ export default function VipConcierge() {
           <article className="vc-card" key={p.name}>
             <div className={`vc-card-cover ${p.tone}`}><div className="vc-pattern">✦</div><span className="vc-tag">{p.tag}</span></div>
             <div className="vc-card-body">
-              <div className="vc-provider-head"><div className={`vc-logo ${p.tone}`}>{p.monogram}</div><div><h3>{p.name}</h3><div className="vc-rating">★ {p.rating} <small>({p.reviews})</small></div></div></div>
+              <div className="vc-provider-head"><div className={`vc-logo ${p.tone}`}>{p.monogram}</div><div><h3>{p.name}</h3><div className="vc-rating">★ {p.rating} <small>{p.reviews === '—' ? '' : `(${p.reviews})`}</small></div></div></div>
               <p className="vc-service">{p.service}</p>
               <dl>
                 <div><dt>⌂</dt><dd><b>Service</b><span>{p.home}</span></dd></div>
@@ -121,7 +121,7 @@ export default function VipConcierge() {
                 <div><dt>☎</dt><dd><b>Contact</b><span>{p.phone}</span></dd></div>
               </dl>
               <div className="vc-actions">
-                <a href={whatsapp(p.phone, p.name)} target="_blank" rel="noreferrer" className="vc-btn vc-wa">WhatsApp</a>
+                <a href={whatsapp(p.phone, p.name)} target="_blank" rel="noreferrer" className={`vc-btn vc-wa ${p.phone.includes('Contact via') ? 'disabled' : ''}`}>WhatsApp</a>
                 <a href={p.website} target="_blank" rel="noreferrer" className="vc-btn vc-web">Visit Website</a>
               </div>
             </div>
@@ -132,8 +132,8 @@ export default function VipConcierge() {
       {!filtered.length && <div className="vc-empty"><strong>No partners match these filters.</strong><span>Try another category, service mode or location.</span></div>}
 
       <section className="vc-cta">
-        <div className="vc-cta-icon">◉</div><div><h2>Need Personal Assistance?</h2><p>Our concierge team is here to help you arrange the perfect experience.</p></div>
-        <a href="https://wa.me/60100000000?text=Hi%20SureWin%20VIP%20Concierge%2C%20I%20need%20help%20arranging%20a%20VIP%20service." target="_blank" rel="noreferrer">Contact VIP Concierge <span>→</span></a>
+        <div className="vc-cta-icon">◉</div><div><h2>Need Personal Assistance?</h2><p>Use the provider links above or contact your VIP host to arrange the experience.</p></div>
+        <div className="vc-cta-note">VIP concierge team<br /><b>Ready to assist</b></div>
         <div className="vc-cta-points"><span>✓ Curated Partners</span><span>✓ Hassle-Free Booking</span><span>✓ Exclusive for SureWin VIP</span></div>
       </section>
 
