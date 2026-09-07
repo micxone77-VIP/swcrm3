@@ -1854,8 +1854,34 @@ export default function Campaigns() {
             {/* ── ALL PLAYERS TAB ── */}
             {activeTab === 'register' && (
               <div style={{ overflowX:'auto' }}>
-                <div style={{ padding:'8px 24px', fontSize:11, color:'var(--muted)', background:'rgba(88,166,255,.04)', borderBottom:'1px solid var(--border)' }}>
-                  Deposit is manually tracked for reward eligibility · Turnover/Withdrawal are real platform data for the campaign period ({fmtDate(selected.start_date)} → {fmtDate(selected.end_date)})
+                <div style={{ padding:'8px 24px', fontSize:11, color:'var(--muted)', background:'rgba(88,166,255,.04)', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+                  <span>Deposit is manually tracked for reward eligibility · Turnover/Withdrawal are real platform data for the campaign period ({fmtDate(selected.start_date)} → {fmtDate(selected.end_date)})</span>
+                  <button onClick={()=>{
+                    const headers = ['#','Username','Tier','WhatsApp','Deposit (RM)','Turnover Real (RM)','Withdrawal Real (RM)','vs Target','Reward (RM)','Status','Added']
+                    const rows = players.map((p,i)=>{
+                      const real = realFinancials?.byPlayer?.[p.username]
+                      const dailyTotal = isDailyMode ? summaryData?.playerRows?.find(r=>r.username===p.username) : null
+                      const multi = selected?.is_multi_level && campType==='fixed_reward'
+                      const multiMetric = multi ? multiMetricsByPlayer[p.id] : null
+                      const dualReward = campType==='dual_tier' && !isDailyMode ? calcDualTierReward(playerDeposit(p),p.valid_bet,rewardTiers) : null
+                      const qualified = multi ? (multiMetric?.completedCount>0) : isDailyMode ? !!dailyTotal : campType==='dual_tier' ? dualReward.tierIndex>=0 : playerDeposit(p)>=depTarget
+                      const reward = multi ? (multiMetric?.qualifiedRewardTotal||0) : isDailyMode ? (dailyTotal ? dailyTotal.credit+dailyTotal.wcash : 0) : !qualified ? 0 : campType==='dual_tier' ? (dualReward.creditAmount+dualReward.wcashAmount) : calcReward(campType,playerDeposit(p),rewardPct,rewardFixed,goldVal,rewardCap,rewardTiers,campaignLevels,selected?.is_multi_level)
+                      const gap = multi ? (multiMetric?.nextLevel ? playerDeposit(p)-Number(multiMetric.nextLevel.deposit_threshold) : 0) : campType==='dual_tier' ? null : playerDeposit(p)-depTarget
+                      const statusLabel = multi ? (multiMetric?.allCompleted ? 'Complete' : `${multiMetric?.completedCount||0}/${campaignLevels.length} Levels`) : (p.payout_status==='paid' ? 'Paid' : qualified ? 'Qualified' : 'In Progress')
+                      const deposit = isDailyMode ? (real ? real.deposit : 0) : playerDeposit(p)
+                      const vsTarget = campType==='dual_tier' ? 'N/A' : (gap!=null ? (gap>=0?'+':'')+gap.toFixed(0) : '—')
+                      const added = p.added_at ? new Date(p.added_at).toLocaleDateString('en-MY',{day:'numeric',month:'short',year:'numeric'}) : '—'
+                      return [i+1, p.username, p.tier||'', p.whatsapp||'', deposit.toFixed(2), real ? real.validBet.toFixed(2) : '', real ? real.withdrawal.toFixed(2) : '', vsTarget, reward.toFixed(2), statusLabel, added]
+                    })
+                    const csv = [headers, ...rows].map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n')
+                    const blob = new Blob([csv], {type:'text/csv'})
+                    const url = URL.createObjectURL(blob)
+                    const a = document.createElement('a')
+                    a.href = url
+                    a.download = `${selected.campaign_code||selected.campaign_name}-all-players.csv`
+                    a.click()
+                    URL.revokeObjectURL(url)
+                  }} style={{ background:'var(--surface2)', border:'1px solid var(--border)', color:'var(--text)', padding:'5px 12px', borderRadius:6, fontSize:11, cursor:'pointer', whiteSpace:'nowrap', flexShrink:0 }}>⬇ Export CSV</button>
                 </div>
                 <table style={s.tbl}>
                   <thead><tr>
