@@ -35,6 +35,7 @@ import RetentionWorkspace    from './pages/RetentionWorkspace'
 import RetentionAnalytics    from './pages/RetentionAnalytics'
 import RetentionQueue        from './pages/RetentionQueue'
 import MonthlyReportExport   from './pages/MonthlyReportExport'
+import VipConcierge          from './pages/VipConcierge'
 import './pages/RetentionAnalytics.css'
 
 export default function App() {
@@ -51,6 +52,7 @@ export default function App() {
       <Route path="at-risk" element={<RequireRole roles={['admin','host']}><AtRisk /></RequireRole>} />
       <Route path="follow-up" element={<RequireRole roles={['admin','host']}><FollowUp /></RequireRole>} />
       <Route path="birthdays" element={<RequireRole roles={['admin','host','readonly']}><BirthdayReminder /></RequireRole>} />
+      <Route path="concierge" element={<RequireRole roles={['admin','host','readonly']}><VipConcierge /></RequireRole>} />
       <Route path="campaigns" element={<RequireRole roles={['admin','host']}><CampaignsCountryTieredFixed /></RequireRole>} />
       <Route path="upgrades" element={<RequireRole roles={['admin','host']}><Upgrades /></RequireRole>} />
       <Route path="transfer" element={<RequireRole roles={['admin']}><TransferTracker /></RequireRole>} />
