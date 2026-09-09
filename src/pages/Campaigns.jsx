@@ -642,6 +642,116 @@ export default function Campaigns() {
     setDailyEntries(prev => ({ ...prev, [playerId]: payload }))
   }
 
+  // ── Import from VIP snapshot data ───────────────────────────────────────────
+  // Reads vip_daily_snapshots for the campaign date range (or selected date in
+  // daily mode) and bulk-writes deposit + turnover for every campaign player
+  // whose snapshot data exists. Players with no snapshot row are left unchanged.
+  async function importFromVipData() {
+    if (!selected || !players.length) return
+    const startDate = isDailyMode ? entryDate : selected.start_date
+    const endDate   = isDailyMode ? entryDate : selected.end_date
+    if (!startDate || !endDate) { alert('Campaign dates are not set.'); return }
+
+    const confirmed = window.confirm(
+      isDailyMode
+        ? `Import real deposit + turnover from VIP snapshot for ${entryDate}?\nThis will overwrite all values entered for that date.`
+        : `Import real deposit + turnover from VIP snapshots (${fmtDate(startDate)} → ${fmtDate(endDate)})?\nThis will overwrite existing values for players found in the snapshot data.`
+    )
+    if (!confirmed) return
+
+    setDailyLoading(true)
+    const usernameSet = new Set(players.map(p => p.username))
+    let all = [], from = 0
+    const PAGE = 1000
+    while (true) {
+      const { data, error } = await supabase.from('vip_daily_snapshots')
+        .select('username, snapshot_date, total_deposit, monthly_valid_bet')
+        .gte('snapshot_date', startDate).lte('snapshot_date', endDate)
+        .range(from, from + PAGE - 1)
+      if (error) { alert('Failed to load snapshot data: ' + error.message); setDailyLoading(false); return }
+      all = all.concat((data || []).filter(r => usernameSet.has(r.username)))
+      if (!data || data.length < PAGE) break
+      from += PAGE
+    }
+
+    // Aggregate per player: sum deposit + turnover across all days in range
+    // Only count rows with genuine activity (monthly_valid_bet > 0)
+    const activeRows = all.filter(r => (parseFloat(r.monthly_valid_bet) || 0) > 0)
+    const byUsername = {}
+    activeRows.forEach(r => {
+      if (!byUsername[r.username]) byUsername[r.username] = { deposit: 0, validBet: 0 }
+      byUsername[r.username].deposit  += parseFloat(r.total_deposit)    || 0
+      byUsername[r.username].validBet += parseFloat(r.monthly_valid_bet) || 0
+    })
+
+    const playersByUsername = Object.fromEntries(players.map(p => [p.username, p]))
+    const matched = Object.keys(byUsername).filter(u => playersByUsername[u])
+
+    if (!matched.length) {
+      alert('No matching players found in the snapshot data for this date range.')
+      setDailyLoading(false)
+      return
+    }
+
+    if (isDailyMode) {
+      // Daily mode: upsert into daily_turnover_entries for selected date
+      const upserts = matched.map(username => {
+        const p = playersByUsername[username]
+        const snap = byUsername[username]
+        const dep = Math.round(snap.deposit)
+        const to  = Math.round(snap.validBet)
+        const dualReward = calcDualTierReward(dep, to, rewardTiers)
+        return {
+          campaign_id: selected.id,
+          player_id: p.id,
+          entry_date: entryDate,
+          deposit_amount: dep,
+          turnover_amount: to,
+          tier_achieved: dualReward.tierIndex >= 0 ? dualReward.tierIndex : null,
+          credit_reward: dualReward.creditAmount,
+          wcash_reward: dualReward.wcashAmount,
+          entered_by: (profile?.full_name || 'Import') + ' (auto)',
+          updated_at: new Date().toISOString(),
+        }
+      })
+      const BATCH = 50
+      for (let i = 0; i < upserts.length; i += BATCH) {
+        const { error } = await supabase.from('daily_turnover_entries')
+          .upsert(upserts.slice(i, i + BATCH), { onConflict: 'campaign_id,player_id,entry_date' })
+        if (error) { alert('Batch upsert failed: ' + error.message); setDailyLoading(false); return }
+      }
+      await loadDailyEntries(selected.id, entryDate)
+    } else {
+      // Non-daily: update campaign_players.total_deposit + valid_bet one by one
+      // (uses existing updatePlayer path so sync_manual_campaign_player_progress fires)
+      for (const username of matched) {
+        const p = playersByUsername[username]
+        const snap = byUsername[username]
+        const dep = Math.round(snap.deposit)
+        const to  = Math.round(snap.validBet)
+        const qualified = campType === 'dual_tier'
+          ? calcDualTierReward(dep, to, rewardTiers).tierIndex >= 0
+          : dep >= depTarget
+        await supabase.from('campaign_players')
+          .update({ total_deposit: dep, valid_bet: to, converted: qualified })
+          .eq('id', p.id)
+        // Sync campaign progress for deposit-based campaigns
+        if (campType !== 'dual_tier') {
+          await supabase.rpc('sync_manual_campaign_player_progress', {
+            p_campaign_player_id: p.id,
+            p_campaign_period_deposit: dep,
+          }).catch(e => console.error('progress sync failed for', username, e))
+        }
+      }
+      await loadPlayers(selected.id)
+    }
+
+    setDailyLoading(false)
+    setMsg({ text: `✅ Imported data for ${matched.length} / ${players.length} players from VIP snapshots.`, ok: true })
+    // Also refresh real financials
+    loadRealFinancials(selected.start_date, selected.end_date, players)
+  }
+
   async function runCampaignAnalysis() {
     if (!selected) return
     setAnalyzing(true)
@@ -1586,6 +1696,18 @@ export default function Campaigns() {
                     <button onClick={() => setChaseFilter('')} style={{ fontSize:11, color:'var(--muted)', background:'none', border:'none', cursor:'pointer', padding:'2px 6px' }}>✕ Clear</button>
                   )}
                   {chaseFilter && <span style={{ fontSize:11, color:'var(--muted)' }}>{filteredChaseList.length} match{filteredChaseList.length !== 1 ? 'es' : ''}</span>}
+                  <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:8 }}>
+                    {campType !== 'leaderboard' && (
+                      <button
+                        onClick={importFromVipData}
+                        disabled={dailyLoading || realFinancialsLoading}
+                        title="Auto-fill deposit and turnover from VIP daily snapshot data for the campaign date range"
+                        style={{ background:'rgba(88,166,255,.12)', border:'1px solid rgba(88,166,255,.3)', color:'#58a6ff', padding:'5px 12px', borderRadius:6, fontSize:11, fontWeight:700, cursor:'pointer', whiteSpace:'nowrap', opacity: (dailyLoading||realFinancialsLoading) ? 0.5 : 1 }}
+                      >
+                        {dailyLoading ? '⏳ Importing…' : '⬇ Import from VIP Data'}
+                      </button>
+                    )}
+                  </div>
                 </div>
                 {isDailyMode && (
                   <div style={{ padding:'12px 24px', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', gap:12, flexWrap:'wrap' }}>
