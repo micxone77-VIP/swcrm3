@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { fetchPPTData, generateMonthlyPPT } from '../lib/pptReportGenerator'
+import { generateServiceReport } from '../lib/serviceReportGenerator'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const fmt = (n, sym = 'RM') => {
@@ -392,6 +393,159 @@ export default function MonthlyReportExport() {
       </div>
 
       <style>{`@keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }`}</style>
+
+      {/* ═══════════════════════════════════════════════════════════════════
+          3-Month VIP Service Report Section
+          ═══════════════════════════════════════════════════════════════════ */}
+      <ServiceReportSection />
+    </div>
+  )
+}
+
+// ─── 3-Month Service Report ───────────────────────────────────────────────────
+function ServiceReportSection() {
+  const monthOptions = getMonthOptions()
+  // Default: most recent month
+  const [endMonth, setEndMonth] = useState(monthOptions[0].val)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(null)
+
+  // Derive the 3-month labels for display
+  function shiftMonth(ym, delta) {
+    const [y, m] = ym.split('-').map(Number)
+    let month = m + delta, year = y
+    while (month < 1)  { month += 12; year-- }
+    while (month > 12) { month -= 12; year++ }
+    return `${year}-${String(month).padStart(2, '0')}`
+  }
+  function toLabel(ym) {
+    const [y, m] = ym.split('-').map(Number)
+    return new Date(y, m - 1, 1).toLocaleString('en-US', { month: 'short', year: 'numeric' })
+  }
+  const m0 = shiftMonth(endMonth, -2)
+  const m1 = shiftMonth(endMonth, -1)
+  const m2 = endMonth
+  const rangeLabel = `${toLabel(m0)} – ${toLabel(m2)}`
+
+  async function handleDownload() {
+    setBusy(true)
+    setError(null)
+    try {
+      await generateServiceReport(endMonth, supabase)
+    } catch (e) {
+      setError(e.message || 'Failed to generate report')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div style={{
+      marginTop: 36,
+      background: '#0F1C3A',
+      border: '1px solid #2A3F6F',
+      borderRadius: 14,
+      padding: '28px 32px',
+    }}>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
+        <span style={{ fontSize: 24 }}>📋</span>
+        <div>
+          <div style={{ fontSize: 18, fontWeight: 700, color: '#E2E8F0' }}>
+            3-Month VIP Service Report
+          </div>
+          <div style={{ fontSize: 12, color: '#8B9BB8', marginTop: 2 }}>
+            Diamond &amp; Platinum contact coverage — exported as Excel (.xlsx)
+          </div>
+        </div>
+      </div>
+
+      {/* Description */}
+      <div style={{
+        background: '#162040', border: '1px solid #2A3F6F', borderRadius: 8,
+        padding: '12px 16px', marginBottom: 22, fontSize: 13, color: '#94A3B8', lineHeight: 1.6,
+      }}>
+        Shows every Diamond and Platinum VIP with a ✓ / ✗ for each of the 3 selected months.
+        Use it to track who has and hasn't been contacted, and to report coverage to management.
+      </div>
+
+      {/* Controls row */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap', marginBottom: 20 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <label style={{ fontSize: 11, fontWeight: 700, color: '#8B9BB8', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+            End Month (most recent)
+          </label>
+          <select
+            value={endMonth}
+            onChange={e => setEndMonth(e.target.value)}
+            disabled={busy}
+            style={{
+              background: '#162040', border: '1px solid #2A3F6F', borderRadius: 7,
+              color: '#E2E8F0', padding: '8px 14px', fontSize: 14, cursor: 'pointer',
+            }}
+          >
+            {monthOptions.map(o => (
+              <option key={o.val} value={o.val}>{o.label}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Range indicator */}
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 8, marginTop: 18,
+          background: '#162040', border: '1px solid #2A3F6F', borderRadius: 7,
+          padding: '8px 16px',
+        }}>
+          {[m0, m1, m2].map((m, i) => (
+            <span key={m} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{
+                background: '#1E2761', border: '1px solid #4A90E2', borderRadius: 5,
+                padding: '3px 10px', fontSize: 13, color: '#4A90E2', fontWeight: 600,
+              }}>{toLabel(m)}</span>
+              {i < 2 && <span style={{ color: '#4A5568', fontSize: 12 }}>→</span>}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      {/* Error */}
+      {error && (
+        <div style={{
+          background: '#2D1515', border: '1px solid #7F1D1D', borderRadius: 7,
+          padding: '10px 14px', marginBottom: 16, color: '#FCA5A5', fontSize: 13,
+        }}>
+          ⚠ {error}
+        </div>
+      )}
+
+      {/* Download button */}
+      <button
+        onClick={handleDownload}
+        disabled={busy}
+        style={{
+          padding: '12px 36px', borderRadius: 8, border: 'none',
+          cursor: busy ? 'not-allowed' : 'pointer',
+          background: busy ? '#1A3260' : '#16A34A',
+          color: busy ? '#8B9BB8' : '#FFFFFF',
+          fontSize: 15, fontWeight: 700,
+          display: 'flex', alignItems: 'center', gap: 10,
+          boxShadow: !busy ? '0 4px 20px #16A34A33' : 'none',
+          transition: 'all 0.2s',
+        }}
+      >
+        {busy ? (
+          <>
+            <span style={{ display: 'inline-block', animation: 'spin 1s linear infinite' }}>⏳</span>
+            Fetching data &amp; building Excel…
+          </>
+        ) : (
+          <>⬇ Generate Service Report — {rangeLabel} (.xlsx)</>
+        )}
+      </button>
+
+      <div style={{ marginTop: 14, fontSize: 11, color: '#475569' }}>
+        The file downloads directly in your browser. 3 sheets: Overview, Diamond VIPs, Platinum VIPs.
+      </div>
     </div>
   )
 }
