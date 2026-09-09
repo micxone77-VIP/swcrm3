@@ -14,6 +14,7 @@ const NAV_GROUPS = [
   { key: 'vip', label: 'VIP Operations', icon: '👑', items: [
     { to: '/vips', label: 'All VIPs', icon: '👥', roles: ['admin','host'] },
     { to: '/at-risk', label: 'At Risk', icon: '⚠️', roles: ['admin','host'] },
+    { to: '/active-tracker', label: 'Active Tracker', icon: '📡', roles: ['admin','host'] },
     { to: '/follow-up', label: 'Follow Up', icon: '📞', roles: ['admin','host'] },
     { to: '/birthdays', label: 'Birthdays', icon: '🎂', roles: ['admin','host','readonly'] },
   ] },

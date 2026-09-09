@@ -309,27 +309,27 @@ export default function Today() {
                   return (
                     <div key={t.tier} style={{
                       background:'var(--surface2)', borderRadius:8, padding:'10px 14px',
-                      minWidth:110, borderLeft:`3px solid ${color}`,
+                      minWidth:140, borderLeft:`3px solid ${color}`,
                     }}>
-                      <div style={{ fontSize:10, fontWeight:700, color, letterSpacing:'.4px', marginBottom:6 }}>
+                      <div style={{ fontSize:10, fontWeight:700, color, letterSpacing:'.4px', marginBottom:8 }}>
                         {t.tier.charAt(0) + t.tier.slice(1).toLowerCase()}
                       </div>
-                      {/* total / month active */}
-                      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:3 }}>
-                        <span style={{ fontSize:10, color:'var(--muted)' }}>Month</span>
-                        <span style={{ fontSize:13, fontWeight:700, color:'var(--text)' }}>
-                          {t.thisMonth}<span style={{ fontSize:10, color:'var(--muted)', fontWeight:400 }}>/{t.total}</span>
-                          {t.total > 0 && <span style={{ marginLeft:4, fontSize:10, fontWeight:700, color: mRate >= 50 ? '#3fb950' : mRate >= 30 ? '#d29922' : '#f85149' }}>{mRate}%</span>}
+                      {/* Month active */}
+                      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:4 }}>
+                        <span style={{ fontSize:10, color:'var(--muted)' }}>Active this month</span>
+                        <span style={{ fontSize:12, fontWeight:700, color:'var(--text)' }}>
+                          {t.thisMonth} <span style={{ fontWeight:400, color:'var(--muted)' }}>/ {t.total} members</span>
+                          {t.total > 0 && <span style={{ marginLeft:5, fontSize:10, fontWeight:700, color: mRate >= 50 ? '#3fb950' : mRate >= 30 ? '#d29922' : '#f85149' }}>({mRate}%)</span>}
                         </span>
                       </div>
-                      {/* this week / vs lw */}
+                      {/* This week */}
                       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-                        <span style={{ fontSize:10, color:'var(--muted)' }}>Week</span>
-                        <span style={{ fontSize:13, fontWeight:700, color:'var(--text)' }}>
+                        <span style={{ fontSize:10, color:'var(--muted)' }}>Active this week</span>
+                        <span style={{ fontSize:12, fontWeight:700, color:'var(--text)' }}>
                           {t.thisWeek}
-                          <span style={{ marginLeft:5, fontSize:10, fontWeight:700, color: wD === 0 ? 'var(--muted)' : wD > 0 ? '#3fb950' : '#f85149' }}>
-                            {wD === 0 ? '' : `${wD > 0 ? '+' : ''}${wD}`}
-                          </span>
+                          {wD !== 0 && <span style={{ marginLeft:5, fontSize:10, fontWeight:700, color: wD > 0 ? '#3fb950' : '#f85149' }}>
+                            ({wD > 0 ? '+' : ''}{wD} vs last week)
+                          </span>}
                         </span>
                       </div>
                     </div>
