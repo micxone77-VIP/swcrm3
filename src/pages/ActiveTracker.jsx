@@ -34,9 +34,10 @@ export default function ActiveTracker() {
       { data: monthSnap },
     ] = await Promise.all([
       supabase.from('vip_members')
-        .select('id, username, full_name, tier, host_assigned, days_inactive')
+        .select('id, username, full_name, tier, host_assigned, days_inactive, total_deposit, currency')
+        .in('tier', ['DIAMOND', 'Platinum', 'PLATINUM', 'Diamond'])
         .eq('is_excluded', false)
-        .order('username'),
+        .order('tier').order('username'),
       supabase.from('vip_daily_snapshots')
         .select('username, total_deposit, monthly_valid_bet')
         .gte('snapshot_date', thisStart).lte('snapshot_date', thisEnd)
@@ -75,7 +76,7 @@ export default function ActiveTracker() {
 
   if (loading) return <div style={{ padding:32 }}><LoadingState message="Loading activity data…" /></div>
 
-  const { result, thisStart, thisEnd, lastStart, lastEnd, monthStart } = data
+  const { result, thisStart, thisEnd, lastStart, monthStart } = data
   const d = result[tier]
   const color = TIER_COLOR[tier] || '#888'
   const tierLabel = tier.charAt(0) + tier.slice(1).toLowerCase()
