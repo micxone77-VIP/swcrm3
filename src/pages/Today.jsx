@@ -59,6 +59,62 @@ export default function Today() {
   const [logNote, setLogNote] = useState('')
   const [logSaving, setLogSaving] = useState(false)
 
+  // ── Weekly active players ──────────────────────────────────────────────────
+  const [weeklyActive, setWeeklyActive] = useState(null)
+  const [weeklyLoading, setWeeklyLoading] = useState(true)
+
+  useEffect(() => {
+    async function fetchWeekly() {
+      setWeeklyLoading(true)
+      const today = new Date()
+      const fmt = d => d.toISOString().slice(0, 10)
+      const pad = n => new Date(today.getTime() - n * 86400000)
+
+      const thisStart = fmt(pad(6))   // last 7 days incl. today
+      const thisEnd   = fmt(today)
+      const lastStart = fmt(pad(13))  // prior 7 days
+      const lastEnd   = fmt(pad(7))
+
+      const [{ data: thisData }, { data: lastData }] = await Promise.all([
+        supabase.from('vip_daily_snapshots')
+          .select('username, tier, monthly_valid_bet')
+          .gte('snapshot_date', thisStart).lte('snapshot_date', thisEnd)
+          .gt('monthly_valid_bet', 0),
+        supabase.from('vip_daily_snapshots')
+          .select('username, tier, monthly_valid_bet')
+          .gte('snapshot_date', lastStart).lte('snapshot_date', lastEnd)
+          .gt('monthly_valid_bet', 0),
+      ])
+
+      const distinct = (rows) => {
+        const seen = new Map()
+        ;(rows || []).forEach(r => {
+          if (!seen.has(r.username)) seen.set(r.username, (r.tier || '').toUpperCase())
+        })
+        return seen
+      }
+
+      const thisMap = distinct(thisData)
+      const lastMap = distinct(lastData)
+
+      const TIERS = ['DIAMOND','PLATINUM','GOLD','SILVER','BRONZE']
+      const byTier = TIERS.map(t => ({
+        tier: t,
+        thisWeek: [...thisMap.values()].filter(v => v === t).length,
+        lastWeek: [...lastMap.values()].filter(v => v === t).length,
+      })).filter(t => t.thisWeek > 0 || t.lastWeek > 0)
+
+      setWeeklyActive({
+        thisWeek: thisMap.size,
+        lastWeek: lastMap.size,
+        thisStart, thisEnd, lastStart, lastEnd,
+        byTier,
+      })
+      setWeeklyLoading(false)
+    }
+    fetchWeekly()
+  }, [])
+
   const now = new Date()
   const hour = now.getHours()
   const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'
@@ -158,6 +214,70 @@ export default function Today() {
           sub={t('today.kpiBirthdaysSub')}
         />
       </div>
+
+      {/* ── Weekly Active Players ── */}
+      {!weeklyLoading && weeklyActive && (() => {
+        const diff = weeklyActive.thisWeek - weeklyActive.lastWeek
+        const pct  = weeklyActive.lastWeek > 0 ? Math.round(Math.abs(diff) / weeklyActive.lastWeek * 100) : null
+        const up   = diff > 0
+        const same = diff === 0
+        const TIER_COLOR = { DIAMOND:'#58a6ff', PLATINUM:'#e2e8f0', GOLD:'#fbbf24', SILVER:'#94a3b8', BRONZE:'#c2855a' }
+        return (
+          <Card style={{ marginBottom: 24, padding: '14px 20px' }}>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:12 }}>
+              {/* Left — main numbers */}
+              <div style={{ display:'flex', alignItems:'center', gap:20 }}>
+                <div>
+                  <div style={{ fontSize:11, fontWeight:700, color:'var(--muted)', letterSpacing:'.5px', textTransform:'uppercase', marginBottom:2 }}>
+                    Active Players · This Week
+                  </div>
+                  <div style={{ display:'flex', alignItems:'baseline', gap:10 }}>
+                    <span style={{ fontSize:34, fontWeight:800, color:'var(--text)', lineHeight:1 }}>
+                      {weeklyActive.thisWeek}
+                    </span>
+                    <div style={{ display:'flex', flexDirection:'column' }}>
+                      <span style={{ fontSize:12, color: same ? 'var(--muted)' : up ? '#3fb950' : '#f85149', fontWeight:700 }}>
+                        {same ? '→ No change' : `${up ? '▲' : '▼'} ${Math.abs(diff)}${pct !== null ? ` (${pct}%)` : ''}`}
+                      </span>
+                      <span style={{ fontSize:11, color:'var(--muted)' }}>
+                        vs {weeklyActive.lastWeek} last week
+                      </span>
+                    </div>
+                  </div>
+                  <div style={{ fontSize:10, color:'var(--disabled)', marginTop:2 }}>
+                    {weeklyActive.thisStart} → {weeklyActive.thisEnd}
+                  </div>
+                </div>
+              </div>
+
+              {/* Right — tier breakdown */}
+              {weeklyActive.byTier.length > 0 && (
+                <div style={{ display:'flex', gap:10, flexWrap:'wrap' }}>
+                  {weeklyActive.byTier.map(t => {
+                    const d = t.thisWeek - t.lastWeek
+                    const color = TIER_COLOR[t.tier] || 'var(--muted)'
+                    return (
+                      <div key={t.tier} style={{
+                        background:'var(--surface2)', borderRadius:8, padding:'8px 14px',
+                        minWidth:80, textAlign:'center',
+                        borderTop:`2px solid ${color}`,
+                      }}>
+                        <div style={{ fontSize:10, fontWeight:700, color, letterSpacing:'.4px', marginBottom:2 }}>
+                          {t.tier.charAt(0) + t.tier.slice(1).toLowerCase()}
+                        </div>
+                        <div style={{ fontSize:20, fontWeight:700, color:'var(--text)' }}>{t.thisWeek}</div>
+                        <div style={{ fontSize:10, color: d === 0 ? 'var(--muted)' : d > 0 ? '#3fb950' : '#f85149', fontWeight:600 }}>
+                          {d === 0 ? '—' : `${d > 0 ? '+' : ''}${d} vs LW`}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          </Card>
+        )
+      })()}
 
       {/* ── Progress bar ── */}
       <Card style={{ marginBottom: 24, padding: '14px 18px' }}>
