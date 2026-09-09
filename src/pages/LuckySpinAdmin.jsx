@@ -1,0 +1,1241 @@
+// src/pages/LuckySpinAdmin.jsx
+import { useState, useEffect, useCallback } from 'react'
+import { supabase } from '../lib/supabase'
+import { useAuth } from '../hooks/useAuth'
+
+const STATUS_COLORS = {
+  pending:    { bg: '#FF8C0022', color: '#FF8C00', label: 'Pending' },
+  processing: { bg: '#3B82F622', color: '#3B82F6', label: 'Processing' },
+  completed:  { bg: '#22C55E22', color: '#22C55E', label: 'Completed' },
+  cancelled:  { bg: '#EF444422', color: '#EF4444', label: 'Cancelled' },
+}
+const PRIZE_TYPE_COLORS = {
+  cash:     { bg: '#FF6B0022', color: '#FF6B00' },
+  cashback: { bg: '#8B5CF622', color: '#8B5CF6' },
+  physical: { bg: '#22C55E22', color: '#22C55E' },
+  voucher:  { bg: '#F59E0B22', color: '#F59E0B' },
+}
+const ALL_TIERS = ['gold', 'platinum', 'diamond', 'vip']
+
+const BLANK_CAMPAIGN = {
+  name: '', description: '', status: 'active',
+  start_date: '', end_date: '',
+  spin_interval: 'once', max_spins_per_day: 1,
+  allowed_tiers: [],
+}
+
+const BLANK_PRIZE = {
+  name_zh: '', name_en: '', name_bm: '',
+  prize_type: 'cash', prize_value: '', probability: 1,
+  stock: -1, turnover_multiplier: 0, color: '#FF6B00', is_active: true,
+}
+
+const BLANK_WHEEL = {
+  // Text & Language
+  title_zh: '', title_en: '', title_bm: '',
+  subtitle_zh: '', subtitle_en: '', subtitle_bm: '',
+  btn_zh: '立即抽奖', btn_en: 'SPIN NOW', btn_bm: 'PUSING SEKARANG',
+  center_zh: '旋转', center_en: 'SPIN', center_bm: 'PUSING',
+  segments: 8,
+  default_lang: 'en',
+  bottom_tagline: 'EXCLUSIVE FOR VIP MEMBERS',
+  win_instruction_zh: '', win_instruction_en: '', win_instruction_bm: '',
+  // Contact
+  telegram_url: '', telegram_label: 'Telegram',
+  whatsapp_url: '', whatsapp_label: 'WhatsApp',
+  // Images
+  bg_image: '', wheel_frame: '', win_banner: '', win_bg: '',
+  // Layout
+  wheel_x: 50.4, wheel_y: 48.2,
+  wheel_diameter: 70, center_btn_size: 28, center_hole: 0,
+  subtitle_height: 22, subtitle_width: 63,
+  input_y: 76, input_height: 5.5, input_width: 67.5,
+  btn_y: 79.6, btn_height: 7.5,
+  poster_ratio: '', overall_size: 100, offset_x: 0, offset_y: 0,
+  prize_position: 68,
+  win_prize_name_pos: 26, win_prize_y: 53,
+  show_subtitle: true, bottom_brand: true,
+  // Colors
+  color_text_large: '#d4a843', color_text_small: '#d4a843',
+  color_segment: '#1a0a00', segment_opacity: 100,
+  divider_color: '#d4a843', color_gold: '#d4a843', color_blue: '#3B82F6',
+  // Effects
+  fx_fog: true, fx_diamond_ring: true, fx_bg_diamonds: true,
+  fx_ring_flash: true, fx_prize_glow: true, fx_btn_flow: false,
+  input_style: 'minimal_gold',
+  skin_mode: 'bg_image', skin_width: 480,
+  wheel_top: 0, input_margin: 0,
+  theme: 'dark_gold',
+  show_crown: true, show_pointer: true, show_dividers: true,
+  icon_size: 150, font_weight: 'extra_bold',
+  scroll_mode: false, prefill_username: false,
+  win_page_style: 'full_bg',
+  center_style: 'transparent_frame',
+}
+
+function Modal({ title, onClose, children, wide }) {
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+      onClick={e => e.target === e.currentTarget && onClose()}>
+      <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, padding: 28, width: '100%', maxWidth: wide ? 720 : 540, maxHeight: '90vh', overflowY: 'auto' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+          <h2 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>{title}</h2>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 18, cursor: 'pointer', lineHeight: 1 }}>✕</button>
+        </div>
+        {children}
+      </div>
+    </div>
+  )
+}
+
+function Field({ label, children, hint }) {
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '.05em' }}>{label}</div>
+      {children}
+      {hint && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>{hint}</div>}
+    </div>
+  )
+}
+
+const inp = { background: 'var(--surface2)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 7, padding: '8px 12px', fontSize: 13, width: '100%', boxSizing: 'border-box' }
+
+function WSection({ title, children, emoji }) {
+  return (
+    <div style={{ marginBottom: 20, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
+      <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', background: 'rgba(255,107,0,0.06)', fontWeight: 700, fontSize: 13, color: 'var(--text)' }}>{emoji} {title}</div>
+      <div style={{ padding: '16px 16px 4px' }}>{children}</div>
+    </div>
+  )
+}
+
+function Toggle({ value, onChange, label }) {
+  return (
+    <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', marginBottom: 10 }}>
+      <div onClick={() => onChange(!value)} style={{ width: 38, height: 22, borderRadius: 11, background: value ? 'var(--brand)' : 'var(--border)', position: 'relative', transition: 'background 0.2s', flexShrink: 0 }}>
+        <div style={{ width: 16, height: 16, borderRadius: 8, background: '#fff', position: 'absolute', top: 3, left: value ? 19 : 3, transition: 'left 0.2s' }} />
+      </div>
+      <span style={{ fontSize: 13, color: 'var(--text)' }}>{label}</span>
+    </label>
+  )
+}
+
+// ── Campaign form fields (shared between Create & Edit) ──────────────────────
+function CampaignFormFields({ form, setForm }) {
+  return (
+    <>
+      <Field label="Campaign Name *">
+        <input style={inp} placeholder="e.g. VIP Lucky Spin — October 2026" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
+      </Field>
+      <Field label="Description">
+        <textarea style={{ ...inp, minHeight: 60, resize: 'vertical' }} placeholder="Brief description…" value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
+      </Field>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        <Field label="Start Date">
+          <input type="date" style={inp} value={form.start_date} onChange={e => setForm(f => ({ ...f, start_date: e.target.value }))} />
+        </Field>
+        <Field label="End Date">
+          <input type="date" style={inp} value={form.end_date} onChange={e => setForm(f => ({ ...f, end_date: e.target.value }))} />
+        </Field>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        <Field label="Spin Interval">
+          <select style={inp} value={form.spin_interval} onChange={e => setForm(f => ({ ...f, spin_interval: e.target.value }))}>
+            <option value="once">Once (per code)</option>
+            <option value="daily">Daily</option>
+            <option value="weekly">Weekly</option>
+          </select>
+        </Field>
+        {form.spin_interval === 'daily' && (
+          <Field label="Max Spins / Day">
+            <input type="number" min="1" style={inp} value={form.max_spins_per_day} onChange={e => setForm(f => ({ ...f, max_spins_per_day: e.target.value }))} />
+          </Field>
+        )}
+      </div>
+      <Field label="Status">
+        <select style={inp} value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}>
+          <option value="draft">Draft</option>
+          <option value="active">Active</option>
+          <option value="paused">Paused</option>
+          <option value="ended">Ended</option>
+        </select>
+      </Field>
+      <Field label="Allowed Tiers (leave empty = all tiers)">
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {ALL_TIERS.map(tier => {
+            const checked = form.allowed_tiers.includes(tier)
+            return (
+              <label key={tier} style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer', padding: '6px 12px', borderRadius: 7, border: `1px solid ${checked ? 'var(--brand)' : 'var(--border)'}`, background: checked ? 'rgba(255,107,0,0.1)' : 'var(--surface2)', fontSize: 12, fontWeight: checked ? 700 : 400, color: checked ? 'var(--brand)' : 'var(--muted)' }}>
+                <input type="checkbox" checked={checked} onChange={e => setForm(f => ({ ...f, allowed_tiers: e.target.checked ? [...f.allowed_tiers, tier] : f.allowed_tiers.filter(t => t !== tier) }))} style={{ display: 'none' }} />
+                {tier.charAt(0).toUpperCase() + tier.slice(1)}
+              </label>
+            )
+          })}
+        </div>
+        <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>Selected: {form.allowed_tiers.length === 0 ? 'All tiers' : form.allowed_tiers.join(', ')}</div>
+      </Field>
+    </>
+  )
+}
+
+// ── Classify campaign into Active / Upcoming / Ended ─────────────────────────
+function classifyCampaign(c) {
+  const today = new Date(); today.setHours(0, 0, 0, 0)
+  const start = c.start_date ? new Date(c.start_date) : null
+  const end   = c.end_date   ? new Date(c.end_date)   : null
+  if (c.status === 'ended') return 'ended'
+  if (end && end < today) return 'ended'
+  if (c.status === 'draft' || (start && start > today)) return 'upcoming'
+  return 'active'
+}
+
+// ── Date helpers ──────────────────────────────────────────────────────────────
+function toDateInput(iso) {
+  if (!iso) return ''
+  return new Date(iso).toISOString().slice(0, 10)
+}
+
+export default function LuckySpinAdmin() {
+  const { profile } = useAuth()
+  const [tab, setTab] = useState('records')
+  const [campaigns, setCampaigns] = useState([])
+  const [selectedCampaign, setSelectedCampaign] = useState(null)
+  const [records, setRecords] = useState([])
+  const [codes, setCodes] = useState([])
+  const [prizes, setPrizes] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [searchMember, setSearchMember] = useState('')
+  const [updatingId, setUpdatingId] = useState(null)
+  const [newCodeMember, setNewCodeMember] = useState('')
+  const [generatingCode, setGeneratingCode] = useState(false)
+  const [note, setNote] = useState({})
+  const [editNote, setEditNote] = useState(null)
+
+  // Campaign tab: active | upcoming | ended
+  const [campaignTab, setCampaignTab] = useState('active')
+
+  // Create Campaign
+  const [showCreateModal, setShowCreateModal] = useState(false)
+  const [createForm, setCreateForm] = useState(BLANK_CAMPAIGN)
+  const [creating, setCreating] = useState(false)
+
+  // Edit Campaign
+  const [showEditModal, setShowEditModal] = useState(false)
+  const [editCampaignForm, setEditCampaignForm] = useState(BLANK_CAMPAIGN)
+  const [editingCampaign, setEditingCampaign] = useState(false)
+
+  // Delete Campaign
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+
+  // Prize editing
+  const [editingPrize, setEditingPrize] = useState(null)
+  const [prizeEdits, setPrizeEdits] = useState({})
+  const [savingPrize, setSavingPrize] = useState(false)
+  const [showAddPrize, setShowAddPrize] = useState(false)
+  const [addPrizeForm, setAddPrizeForm] = useState(BLANK_PRIZE)
+  const [addingPrize, setAddingPrize] = useState(false)
+
+  // Wheel Settings
+  const [ws, setWs] = useState(BLANK_WHEEL)
+  const [savingWs, setSavingWs] = useState(false)
+  const [wsSaveMsg, setWsSaveMsg] = useState('')
+
+  useEffect(() => {
+    supabase
+      .from('vip_campaigns')
+      .select('*')
+      .eq('type', 'lucky_spin')
+      .order('created_at', { ascending: false })
+      .then(({ data }) => {
+        if (data?.length) { setCampaigns(data); setSelectedCampaign(data[0]) }
+        setLoading(false)
+      })
+  }, [])
+
+  // When campaignTab changes, auto-select first campaign in that tab
+  useEffect(() => {
+    const inTab = campaigns.filter(c => classifyCampaign(c) === campaignTab)
+    if (inTab.length && (!selectedCampaign || classifyCampaign(selectedCampaign) !== campaignTab)) {
+      setSelectedCampaign(inTab[0])
+    } else if (inTab.length === 0) {
+      setSelectedCampaign(null)
+    }
+  }, [campaignTab, campaigns])
+
+  // Load wheel_settings when campaign changes
+  useEffect(() => {
+    if (selectedCampaign) {
+      setWs({ ...BLANK_WHEEL, ...(selectedCampaign.wheel_settings || {}) })
+    }
+  }, [selectedCampaign])
+
+  const loadRecords = useCallback(async () => {
+    if (!selectedCampaign) return
+    const { data } = await supabase.from('vip_campaign_records').select('*').eq('campaign_id', selectedCampaign.id).order('created_at', { ascending: false })
+    setRecords(data || [])
+  }, [selectedCampaign])
+
+  const loadCodes = useCallback(async () => {
+    if (!selectedCampaign) return
+    const { data } = await supabase.from('vip_campaign_codes').select('*').eq('campaign_id', selectedCampaign.id).order('created_at', { ascending: false })
+    setCodes(data || [])
+  }, [selectedCampaign])
+
+  const loadPrizes = useCallback(async () => {
+    if (!selectedCampaign) return
+    const { data } = await supabase.from('vip_campaign_prizes').select('*').eq('campaign_id', selectedCampaign.id).order('sort_order')
+    setPrizes(data || [])
+  }, [selectedCampaign])
+
+  useEffect(() => {
+    if (!selectedCampaign) return
+    loadRecords(); loadCodes(); loadPrizes()
+  }, [selectedCampaign, loadRecords, loadCodes, loadPrizes])
+
+  async function updateStatus(recordId, newStatus) {
+    setUpdatingId(recordId)
+    const { error } = await supabase.from('vip_campaign_records').update({ status: newStatus, handler: profile?.full_name || profile?.username || 'admin' }).eq('id', recordId)
+    if (!error) setRecords(r => r.map(rec => rec.id === recordId ? { ...rec, status: newStatus } : rec))
+    setUpdatingId(null)
+  }
+
+  async function saveNote(recordId) {
+    const text = note[recordId] || ''
+    const { error } = await supabase.from('vip_campaign_records').update({ note: text }).eq('id', recordId)
+    if (!error) { setRecords(r => r.map(rec => rec.id === recordId ? { ...rec, note: text } : rec)); setEditNote(null) }
+  }
+
+  async function generateCode() {
+    if (!selectedCampaign) return
+    setGeneratingCode(true)
+    const code = 'SPIN-' + Math.random().toString(36).substring(2, 8).toUpperCase()
+    const { error } = await supabase.from('vip_campaign_codes').insert({ campaign_id: selectedCampaign.id, code, member_username: newCodeMember || null, max_uses: 1, created_by: profile?.full_name || 'admin' })
+    if (!error) { setNewCodeMember(''); loadCodes() }
+    setGeneratingCode(false)
+  }
+
+  async function deleteCode(id) {
+    await supabase.from('vip_campaign_codes').delete().eq('id', id)
+    setCodes(c => c.filter(x => x.id !== id))
+  }
+
+  async function togglePrize(prizeId, isActive) {
+    await supabase.from('vip_campaign_prizes').update({ is_active: isActive }).eq('id', prizeId)
+    setPrizes(p => p.map(pr => pr.id === prizeId ? { ...pr, is_active: isActive } : pr))
+  }
+
+  // ── Create Campaign ──────────────────────────────────────────────────────────
+  async function createCampaign() {
+    if (!createForm.name) return
+    setCreating(true)
+    const payload = {
+      name: createForm.name,
+      description: createForm.description,
+      type: 'lucky_spin',
+      status: createForm.status,
+      start_date: createForm.start_date ? new Date(createForm.start_date).toISOString() : null,
+      end_date: createForm.end_date ? new Date(createForm.end_date + 'T23:59:59').toISOString() : null,
+      spin_interval: createForm.spin_interval,
+      max_spins_per_day: createForm.spin_interval === 'daily' ? Number(createForm.max_spins_per_day) : 1,
+      allowed_tiers: createForm.allowed_tiers,
+      created_by: profile?.full_name || profile?.username || 'admin',
+    }
+    const { data, error } = await supabase.from('vip_campaigns').insert(payload).select().single()
+    if (!error && data) {
+      setCampaigns(c => [data, ...c])
+      setSelectedCampaign(data)
+      setCampaignTab(classifyCampaign(data))
+      setShowCreateModal(false)
+      setCreateForm(BLANK_CAMPAIGN)
+    }
+    setCreating(false)
+  }
+
+  // ── Edit Campaign ────────────────────────────────────────────────────────────
+  function openEditModal() {
+    if (!selectedCampaign) return
+    setEditCampaignForm({
+      name: selectedCampaign.name || '',
+      description: selectedCampaign.description || '',
+      status: selectedCampaign.status || 'active',
+      start_date: toDateInput(selectedCampaign.start_date),
+      end_date: toDateInput(selectedCampaign.end_date),
+      spin_interval: selectedCampaign.spin_interval || 'once',
+      max_spins_per_day: selectedCampaign.max_spins_per_day || 1,
+      allowed_tiers: selectedCampaign.allowed_tiers || [],
+    })
+    setShowEditModal(true)
+  }
+
+  async function saveCampaignEdit() {
+    if (!selectedCampaign || !editCampaignForm.name) return
+    setEditingCampaign(true)
+    const payload = {
+      name: editCampaignForm.name,
+      description: editCampaignForm.description,
+      status: editCampaignForm.status,
+      start_date: editCampaignForm.start_date ? new Date(editCampaignForm.start_date).toISOString() : null,
+      end_date: editCampaignForm.end_date ? new Date(editCampaignForm.end_date + 'T23:59:59').toISOString() : null,
+      spin_interval: editCampaignForm.spin_interval,
+      max_spins_per_day: editCampaignForm.spin_interval === 'daily' ? Number(editCampaignForm.max_spins_per_day) : 1,
+      allowed_tiers: editCampaignForm.allowed_tiers,
+    }
+    const { data, error } = await supabase.from('vip_campaigns').update(payload).eq('id', selectedCampaign.id).select().single()
+    if (!error && data) {
+      setCampaigns(c => c.map(x => x.id === data.id ? data : x))
+      setSelectedCampaign(data)
+      setCampaignTab(classifyCampaign(data))
+      setShowEditModal(false)
+    }
+    setEditingCampaign(false)
+  }
+
+  // ── Delete Campaign ──────────────────────────────────────────────────────────
+  async function deleteCampaign() {
+    if (!selectedCampaign) return
+    setDeleting(true)
+    const { error } = await supabase.from('vip_campaigns').delete().eq('id', selectedCampaign.id)
+    if (!error) {
+      const remaining = campaigns.filter(c => c.id !== selectedCampaign.id)
+      setCampaigns(remaining)
+      const inTab = remaining.filter(c => classifyCampaign(c) === campaignTab)
+      setSelectedCampaign(inTab[0] || remaining[0] || null)
+      setShowDeleteConfirm(false)
+    }
+    setDeleting(false)
+  }
+
+  // ── Edit Prize ───────────────────────────────────────────────────────────────
+  function startEditPrize(p) {
+    setEditingPrize(p.id)
+    setPrizeEdits({ probability: p.probability, prize_value: p.prize_value, stock: p.stock, turnover_multiplier: p.turnover_multiplier, name_en: p.name_en })
+  }
+
+  async function savePrize(prizeId) {
+    setSavingPrize(true)
+    const updates = {
+      probability: Number(prizeEdits.probability),
+      prize_value: prizeEdits.prize_value,
+      stock: Number(prizeEdits.stock),
+      turnover_multiplier: Number(prizeEdits.turnover_multiplier),
+      name_en: prizeEdits.name_en,
+    }
+    const { error } = await supabase.from('vip_campaign_prizes').update(updates).eq('id', prizeId)
+    if (!error) {
+      setPrizes(p => p.map(pr => pr.id === prizeId ? { ...pr, ...updates } : pr))
+      setEditingPrize(null)
+    }
+    setSavingPrize(false)
+  }
+
+  // ── Add Prize ────────────────────────────────────────────────────────────────
+  async function addPrize() {
+    if (!selectedCampaign || !addPrizeForm.name_en) return
+    setAddingPrize(true)
+    const maxOrder = prizes.reduce((m, p) => Math.max(m, p.sort_order || 0), 0)
+    const payload = { ...addPrizeForm, campaign_id: selectedCampaign.id, sort_order: maxOrder + 1, probability: Number(addPrizeForm.probability), stock: Number(addPrizeForm.stock), turnover_multiplier: Number(addPrizeForm.turnover_multiplier) }
+    const { data, error } = await supabase.from('vip_campaign_prizes').insert(payload).select().single()
+    if (!error && data) { setPrizes(p => [...p, data]); setShowAddPrize(false); setAddPrizeForm(BLANK_PRIZE) }
+    setAddingPrize(false)
+  }
+
+  // ── Save Wheel Settings ──────────────────────────────────────────────────────
+  async function saveWheelSettings() {
+    if (!selectedCampaign) return
+    setSavingWs(true)
+    setWsSaveMsg('')
+    const { error } = await supabase.from('vip_campaigns').update({ wheel_settings: ws }).eq('id', selectedCampaign.id)
+    if (!error) {
+      setCampaigns(c => c.map(x => x.id === selectedCampaign.id ? { ...x, wheel_settings: ws } : x))
+      setSelectedCampaign(prev => ({ ...prev, wheel_settings: ws }))
+      setWsSaveMsg('✅ Saved!')
+      setTimeout(() => setWsSaveMsg(''), 3000)
+    } else {
+      setWsSaveMsg('❌ Save failed: ' + error.message)
+    }
+    setSavingWs(false)
+  }
+
+  // ── ROI Calculations ─────────────────────────────────────────────────────────
+  function calcROI() {
+    const totalWeight = prizes.filter(p => p.is_active).reduce((s, p) => s + (p.probability || 0), 0)
+    const totalSpins = records.length
+    const completed = records.filter(r => r.status === 'completed').length
+    const totalCost = prizes.reduce((sum, p) => {
+      if (!p.is_active || p.prize_type !== 'cash') return sum
+      const val = parseFloat(p.prize_value) || 0
+      const prob = totalWeight > 0 ? (p.probability / totalWeight) : 0
+      return sum + (val * prob * completed)
+    }, 0)
+    const estTurnover = prizes.reduce((sum, p) => {
+      if (!p.is_active) return sum
+      const val = parseFloat(p.prize_value) || 0
+      const prob = totalWeight > 0 ? (p.probability / totalWeight) : 0
+      const tm = p.turnover_multiplier || 0
+      return sum + (val * prob * completed * tm)
+    }, 0)
+    return { totalSpins, completed, totalCost: Math.round(totalCost), estTurnover: Math.round(estTurnover), totalWeight }
+  }
+
+  // ── Derived data ─────────────────────────────────────────────────────────────
+  const tabCounts = {
+    active:   campaigns.filter(c => classifyCampaign(c) === 'active').length,
+    upcoming: campaigns.filter(c => classifyCampaign(c) === 'upcoming').length,
+    ended:    campaigns.filter(c => classifyCampaign(c) === 'ended').length,
+  }
+  const tabCampaigns = campaigns.filter(c => classifyCampaign(c) === campaignTab)
+
+  const filteredRecords = records.filter(r => {
+    const matchStatus = statusFilter === 'all' || r.status === statusFilter
+    const matchMember = !searchMember || (r.member_username || '').toLowerCase().includes(searchMember.toLowerCase())
+    return matchStatus && matchMember
+  })
+
+  if (loading) return <div style={{ padding: 40, color: 'var(--muted)' }}>Loading…</div>
+
+  const TAB_BTN = (key, label) => {
+    const active = tab === key
+    return (
+      <button key={key} onClick={() => setTab(key)} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: active ? 'var(--brand)' : 'transparent', color: active ? '#fff' : 'var(--muted)', fontWeight: active ? 700 : 400, fontSize: 13, cursor: 'pointer' }}>
+        {label}
+      </button>
+    )
+  }
+
+  const roi = calcROI()
+
+  return (
+    <div style={{ padding: 24, maxWidth: 1100, margin: '0 auto' }}>
+
+      {/* ── Header ── */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+        <div>
+          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: 'var(--text)' }}>🎰 Lucky Spin Admin</h1>
+          <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 3 }}>Manage spin campaigns, prizes, codes & winner records</div>
+        </div>
+        <button onClick={() => { setCreateForm(BLANK_CAMPAIGN); setShowCreateModal(true) }} style={{ padding: '10px 20px', borderRadius: 10, border: 'none', background: 'linear-gradient(135deg,#FF6B00,#FF8C00)', color: '#fff', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>
+          + New Campaign
+        </button>
+      </div>
+
+      {/* ── Campaign Tabs: Active / Upcoming / Ended ── */}
+      <div style={{ display: 'flex', gap: 4, marginBottom: 16, background: 'var(--surface)', borderRadius: 10, padding: 4, width: 'fit-content', border: '1px solid var(--border)' }}>
+        {[['active','🟢 Active'], ['upcoming','🔵 Upcoming'], ['ended','⚫ Ended']].map(([key, label]) => {
+          const isActive = campaignTab === key
+          return (
+            <button key={key} onClick={() => setCampaignTab(key)} style={{ padding: '7px 16px', borderRadius: 7, border: 'none', background: isActive ? 'var(--brand)' : 'transparent', color: isActive ? '#fff' : 'var(--muted)', fontWeight: isActive ? 700 : 400, fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+              {label}
+              <span style={{ background: isActive ? 'rgba(255,255,255,0.25)' : 'var(--surface2)', borderRadius: 10, padding: '1px 7px', fontSize: 11, fontWeight: 700 }}>{tabCounts[key]}</span>
+            </button>
+          )
+        })}
+      </div>
+
+      {/* ── Campaign Selector ── */}
+      {tabCampaigns.length > 0 ? (
+        <div style={{ marginBottom: 16 }}>
+          <select
+            value={selectedCampaign?.id || ''}
+            onChange={e => setSelectedCampaign(tabCampaigns.find(c => c.id === e.target.value) || null)}
+            style={{ ...inp, maxWidth: 420, fontWeight: 600 }}
+          >
+            {tabCampaigns.map(c => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
+        </div>
+      ) : (
+        <div style={{ padding: '20px 0', color: 'var(--muted)', fontSize: 14 }}>
+          No {campaignTab} campaigns.{' '}
+          <button onClick={() => { setCreateForm(BLANK_CAMPAIGN); setShowCreateModal(true) }} style={{ color: 'var(--brand)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: 14 }}>+ Create one</button>
+        </div>
+      )}
+
+      {/* ── Campaign Info Banner ── */}
+      {selectedCampaign && (() => {
+        const classify = classifyCampaign(selectedCampaign)
+        const classifyColor = classify === 'active' ? '#22C55E' : classify === 'upcoming' ? '#3B82F6' : '#6B7280'
+        return (
+          <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 20px', marginBottom: 20, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 800, fontSize: 15, color: 'var(--text)', marginBottom: 4 }}>{selectedCampaign.name}</div>
+              {selectedCampaign.description && <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>{selectedCampaign.description}</div>}
+              <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', fontSize: 12, color: 'var(--muted)' }}>
+                <span>STATUS <strong style={{ color: classifyColor, marginLeft: 4 }}>{classify.toUpperCase()}</strong></span>
+                <span>START <strong style={{ color: 'var(--text)', marginLeft: 4 }}>{selectedCampaign.start_date ? new Date(selectedCampaign.start_date).toLocaleDateString('en-MY') : '—'}</strong></span>
+                <span>END <strong style={{ color: 'var(--text)', marginLeft: 4 }}>{selectedCampaign.end_date ? new Date(selectedCampaign.end_date).toLocaleDateString('en-MY') : '—'}</strong></span>
+                <span>SPIN <strong style={{ color: 'var(--text)', marginLeft: 4 }}>{selectedCampaign.spin_interval || 'once'}{selectedCampaign.spin_interval === 'daily' ? ` · max ${selectedCampaign.max_spins_per_day}/day` : ''}</strong></span>
+                <span>TIERS <strong style={{ color: 'var(--text)', marginLeft: 4 }}>{selectedCampaign.allowed_tiers?.length ? selectedCampaign.allowed_tiers.join(', ') : 'All'}</strong></span>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+              <button onClick={openEditModal} title="Edit campaign" style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)', fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, fontWeight: 600 }}>
+                ✏ Edit
+              </button>
+              <button onClick={() => setShowDeleteConfirm(true)} title="Delete campaign" style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid #EF444440', background: '#EF444411', color: '#EF4444', fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, fontWeight: 600 }}>
+                🗑 Delete
+              </button>
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* ── KPI Tiles ── */}
+      {selectedCampaign && (() => {
+        const pending    = records.filter(r => r.status === 'pending').length
+        const processing = records.filter(r => r.status === 'processing').length
+        const completed  = records.filter(r => r.status === 'completed').length
+        return (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginBottom: 20 }}>
+            {[
+              { label: 'Total Spins', val: records.length, color: 'var(--brand)' },
+              { label: 'Pending',     val: pending,        color: '#FF8C00' },
+              { label: 'Processing',  val: processing,     color: '#3B82F6' },
+              { label: 'Completed',   val: completed,      color: '#22C55E' },
+            ].map(({ label, val, color }) => (
+              <div key={label} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, padding: '16px 18px' }}>
+                <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 6 }}>{label}</div>
+                <div style={{ fontSize: 26, fontWeight: 800, color }}>{val}</div>
+              </div>
+            ))}
+          </div>
+        )
+      })()}
+
+      {/* ── Sub-tabs ── */}
+      {selectedCampaign && (
+        <>
+          <div style={{ display: 'flex', gap: 4, marginBottom: 16, borderBottom: '1px solid var(--border)', paddingBottom: 4 }}>
+            {TAB_BTN('records', '📋 Records')}
+            {TAB_BTN('codes',   '🔑 Codes')}
+            {TAB_BTN('prizes',  '🏆 Prizes')}
+            {TAB_BTN('roi',     '📊 ROI')}
+            {TAB_BTN('wheel',   '🎡 Wheel Settings')}
+          </div>
+
+          {/* RECORDS TAB */}
+          {tab === 'records' && (() => {
+            return (
+              <div>
+                <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <input placeholder="Search member…" value={searchMember} onChange={e => setSearchMember(e.target.value)} style={{ ...inp, maxWidth: 220 }} />
+                  {['all','pending','processing','completed','cancelled'].map(s => (
+                    <button key={s} onClick={() => setStatusFilter(s)} style={{ padding: '6px 14px', borderRadius: 20, border: `1px solid ${statusFilter === s ? 'var(--brand)' : 'var(--border)'}`, background: statusFilter === s ? 'rgba(255,107,0,0.12)' : 'transparent', color: statusFilter === s ? 'var(--brand)' : 'var(--muted)', fontSize: 12, fontWeight: statusFilter === s ? 700 : 400, cursor: 'pointer' }}>
+                      {s === 'all' ? `All (${records.length})` : `${s.charAt(0).toUpperCase() + s.slice(1)} (${records.filter(r => r.status === s).length})`}
+                    </button>
+                  ))}
+                  <button onClick={loadRecords} style={{ marginLeft: 'auto', padding: '6px 14px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface2)', color: 'var(--muted)', fontSize: 12, cursor: 'pointer' }}>↺ Refresh</button>
+                </div>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                        {['Member','Prize','Code Used','Status','Handler','Date','Note','Actions'].map(h => (
+                          <th key={h} style={{ padding: '10px 12px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase' }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredRecords.length === 0 ? (
+                        <tr><td colSpan={8} style={{ padding: 30, textAlign: 'center', color: 'var(--muted)' }}>No records found.</td></tr>
+                      ) : filteredRecords.map(rec => {
+                        const sc = STATUS_COLORS[rec.status] || STATUS_COLORS.pending
+                        return (
+                          <tr key={rec.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                            <td style={{ padding: '10px 12px', fontWeight: 600, color: 'var(--text)' }}>{rec.member_username}</td>
+                            <td style={{ padding: '10px 12px', fontSize: 12, color: 'var(--text)' }}>{rec.prize_name_en || rec.prize_id}</td>
+                            <td style={{ padding: '10px 12px', fontSize: 12, color: 'var(--muted)', fontFamily: 'monospace' }}>{rec.code_used || '—'}</td>
+                            <td style={{ padding: '10px 12px' }}>
+                              <span style={{ background: sc.bg, color: sc.color, borderRadius: 5, padding: '2px 8px', fontSize: 11, fontWeight: 700 }}>{sc.label}</span>
+                            </td>
+                            <td style={{ padding: '10px 12px', fontSize: 12, color: 'var(--muted)' }}>{rec.handler || '—'}</td>
+                            <td style={{ padding: '10px 12px', fontSize: 11, color: 'var(--muted)' }}>{rec.created_at ? new Date(rec.created_at).toLocaleDateString('en-MY') : '—'}</td>
+                            <td style={{ padding: '10px 12px', fontSize: 12, color: 'var(--muted)', maxWidth: 140 }}>
+                              {editNote === rec.id ? (
+                                <div style={{ display: 'flex', gap: 4 }}>
+                                  <input value={note[rec.id] ?? rec.note ?? ''} onChange={e => setNote(n => ({ ...n, [rec.id]: e.target.value }))} style={{ ...inp, fontSize: 11, padding: '4px 8px' }} />
+                                  <button onClick={() => saveNote(rec.id)} style={{ fontSize: 11, padding: '4px 8px', borderRadius: 5, border: 'none', background: 'var(--brand)', color: '#fff', cursor: 'pointer' }}>✓</button>
+                                </div>
+                              ) : (
+                                <span onClick={() => { setEditNote(rec.id); setNote(n => ({ ...n, [rec.id]: rec.note || '' })) }} style={{ cursor: 'pointer' }}>{rec.note || <span style={{ color: 'var(--border)' }}>+ add</span>}</span>
+                              )}
+                            </td>
+                            <td style={{ padding: '10px 12px' }}>
+                              <select value={rec.status} disabled={updatingId === rec.id} onChange={e => updateStatus(rec.id, e.target.value)} style={{ ...inp, fontSize: 12, padding: '4px 8px', width: 'auto' }}>
+                                {Object.keys(STATUS_COLORS).map(s => <option key={s} value={s}>{STATUS_COLORS[s].label}</option>)}
+                              </select>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                <div style={{ marginTop: 10, fontSize: 12, color: 'var(--muted)' }}>{filteredRecords.length} of {records.length} records</div>
+              </div>
+            )
+          })()}
+
+          {/* CODES TAB */}
+          {tab === 'codes' && (
+            <div>
+              <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'flex-end' }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginBottom: 5, textTransform: 'uppercase' }}>Member Username (optional)</div>
+                  <input placeholder="Leave blank for open code" value={newCodeMember} onChange={e => setNewCodeMember(e.target.value)} style={{ ...inp, maxWidth: 280 }} />
+                </div>
+                <button onClick={generateCode} disabled={generatingCode} style={{ padding: '10px 20px', borderRadius: 8, border: 'none', background: 'linear-gradient(135deg,#FF6B00,#FF8C00)', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+                  {generatingCode ? 'Generating…' : '+ Generate Code'}
+                </button>
+              </div>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                      {['Code','Member','Uses','Created By','Created At','Actions'].map(h => (
+                        <th key={h} style={{ padding: '10px 12px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {codes.length === 0 ? (
+                      <tr><td colSpan={6} style={{ padding: 30, textAlign: 'center', color: 'var(--muted)' }}>No codes yet.</td></tr>
+                    ) : codes.map(c => (
+                      <tr key={c.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                        <td style={{ padding: '10px 12px', fontFamily: 'monospace', fontWeight: 700, color: 'var(--brand)' }}>{c.code}</td>
+                        <td style={{ padding: '10px 12px', color: 'var(--text)' }}>{c.member_username || <span style={{ color: 'var(--muted)' }}>Open</span>}</td>
+                        <td style={{ padding: '10px 12px', color: 'var(--muted)' }}>{c.used_count || 0} / {c.max_uses}</td>
+                        <td style={{ padding: '10px 12px', color: 'var(--muted)', fontSize: 12 }}>{c.created_by}</td>
+                        <td style={{ padding: '10px 12px', color: 'var(--muted)', fontSize: 11 }}>{c.created_at ? new Date(c.created_at).toLocaleDateString('en-MY') : '—'}</td>
+                        <td style={{ padding: '10px 12px' }}>
+                          <button onClick={() => deleteCode(c.id)} style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid #EF444440', background: '#EF444411', color: '#EF4444', fontSize: 12, cursor: 'pointer' }}>Delete</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* PRIZES TAB */}
+          {tab === 'prizes' && (
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 14 }}>
+                <button onClick={() => { setAddPrizeForm(BLANK_PRIZE); setShowAddPrize(true) }} style={{ padding: '8px 18px', borderRadius: 8, border: 'none', background: 'linear-gradient(135deg,#FF6B00,#FF8C00)', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+                  + Add Prize
+                </button>
+              </div>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                      {['Prize','Type','Value','Probability','Stock','Turnover','Active','Actions'].map(h => (
+                        <th key={h} style={{ padding: '10px 12px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {prizes.length === 0 ? (
+                      <tr><td colSpan={8} style={{ padding: 30, textAlign: 'center', color: 'var(--muted)' }}>No prizes configured.</td></tr>
+                    ) : prizes.map(p => {
+                      const tc = PRIZE_TYPE_COLORS[p.prize_type] || PRIZE_TYPE_COLORS.cash
+                      const isEditing = editingPrize === p.id
+                      return (
+                        <tr key={p.id} style={{ borderBottom: '1px solid var(--border)', background: isEditing ? 'rgba(255,107,0,0.04)' : 'transparent' }}>
+                          <td style={{ padding: '10px 12px', fontWeight: 600, color: 'var(--text)' }}>
+                            {isEditing
+                              ? <input value={prizeEdits.name_en} onChange={e => setPrizeEdits(x => ({ ...x, name_en: e.target.value }))} style={{ ...inp, fontSize: 12, padding: '4px 8px' }} />
+                              : p.name_en}
+                          </td>
+                          <td style={{ padding: '10px 12px' }}>
+                            <span style={{ background: tc.bg, color: tc.color, borderRadius: 5, padding: '2px 8px', fontSize: 11, fontWeight: 700 }}>{p.prize_type}</span>
+                          </td>
+                          <td style={{ padding: '10px 12px', color: 'var(--text)' }}>
+                            {isEditing
+                              ? <input value={prizeEdits.prize_value} onChange={e => setPrizeEdits(x => ({ ...x, prize_value: e.target.value }))} style={{ ...inp, fontSize: 12, padding: '4px 8px', width: 80 }} />
+                              : p.prize_value}
+                          </td>
+                          <td style={{ padding: '10px 12px', color: 'var(--muted)' }}>
+                            {isEditing
+                              ? <input type="number" min="0" value={prizeEdits.probability} onChange={e => setPrizeEdits(x => ({ ...x, probability: e.target.value }))} style={{ ...inp, fontSize: 12, padding: '4px 8px', width: 70 }} />
+                              : p.probability}
+                          </td>
+                          <td style={{ padding: '10px 12px', color: 'var(--muted)' }}>
+                            {isEditing
+                              ? <input type="number" value={prizeEdits.stock} onChange={e => setPrizeEdits(x => ({ ...x, stock: e.target.value }))} style={{ ...inp, fontSize: 12, padding: '4px 8px', width: 70 }} />
+                              : p.stock === -1 ? '∞' : p.stock}
+                          </td>
+                          <td style={{ padding: '10px 12px', color: 'var(--muted)' }}>
+                            {isEditing
+                              ? <input type="number" min="0" value={prizeEdits.turnover_multiplier} onChange={e => setPrizeEdits(x => ({ ...x, turnover_multiplier: e.target.value }))} style={{ ...inp, fontSize: 12, padding: '4px 8px', width: 60 }} />
+                              : `${p.turnover_multiplier}×`}
+                          </td>
+                          <td style={{ padding: '10px 12px' }}>
+                            <button onClick={() => togglePrize(p.id, !p.is_active)} style={{ padding: '3px 10px', borderRadius: 5, border: 'none', background: p.is_active ? '#22C55E22' : '#EF444422', color: p.is_active ? '#22C55E' : '#EF4444', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                              {p.is_active ? 'On' : 'Off'}
+                            </button>
+                          </td>
+                          <td style={{ padding: '10px 12px' }}>
+                            {isEditing ? (
+                              <div style={{ display: 'flex', gap: 6 }}>
+                                <button onClick={() => savePrize(p.id)} disabled={savingPrize} style={{ padding: '4px 12px', borderRadius: 6, border: 'none', background: 'var(--brand)', color: '#fff', fontSize: 12, cursor: 'pointer', fontWeight: 700 }}>Save</button>
+                                <button onClick={() => setEditingPrize(null)} style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface2)', color: 'var(--muted)', fontSize: 12, cursor: 'pointer' }}>✕</button>
+                              </div>
+                            ) : (
+                              <button onClick={() => startEditPrize(p)} style={{ padding: '4px 12px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)', fontSize: 12, cursor: 'pointer' }}>Edit</button>
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* ROI TAB */}
+          {tab === 'roi' && (() => {
+            const { totalSpins, completed, totalCost, estTurnover, totalWeight } = roi
+            const netROI = estTurnover - totalCost
+            return (
+              <div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginBottom: 20 }}>
+                  {[
+                    { label: 'Total Spins',    val: totalSpins,               color: 'var(--brand)',  prefix: '' },
+                    { label: 'Completed',      val: completed,                color: '#22C55E',       prefix: '' },
+                    { label: 'Est. Turnover',  val: `RM ${estTurnover.toLocaleString()}`,  color: '#3B82F6', raw: true },
+                    { label: 'Est. Prize Cost',val: `RM ${totalCost.toLocaleString()}`,    color: '#EF4444', raw: true },
+                  ].map(({ label, val, color, raw }) => (
+                    <div key={label} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, padding: '16px 18px' }}>
+                      <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 6 }}>{label}</div>
+                      <div style={{ fontSize: raw ? 18 : 26, fontWeight: 800, color }}>{val}</div>
+                    </div>
+                  ))}
+                </div>
+                <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, padding: 16, marginBottom: 16, fontSize: 12, color: 'var(--muted)', lineHeight: 1.7 }}>
+                  <strong style={{ color: 'var(--text)' }}>Methodology:</strong> Prize cost = (probability / totalWeight) × prize value × completed spins, for cash prizes only. Turnover = same formula × turnover multiplier. Estimates only — actual results depend on spin outcomes.
+                </div>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                        {['Prize','Type','Count (est.)','Turnover (est.)','Cost (est.)'].map(h => (
+                          <th key={h} style={{ padding: '10px 12px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase' }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {prizes.filter(p => p.is_active).map(p => {
+                        const tc = PRIZE_TYPE_COLORS[p.prize_type] || PRIZE_TYPE_COLORS.cash
+                        const prob = totalWeight > 0 ? (p.probability / totalWeight) : 0
+                        const count = Math.round(prob * completed)
+                        const val = parseFloat(p.prize_value) || 0
+                        const estT = Math.round(val * prob * completed * (p.turnover_multiplier || 0))
+                        const cost = p.prize_type === 'cash' ? Math.round(val * prob * completed) : 0
+                        return (
+                          <tr key={p.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                            <td style={{ padding: '10px 12px', fontWeight: 600, color: 'var(--text)' }}>{p.name_en}</td>
+                            <td style={{ padding: '10px 12px' }}>
+                              <span style={{ background: tc.bg, color: tc.color, borderRadius: 5, padding: '2px 8px', fontSize: 11, fontWeight: 700 }}>{p.prize_type}</span>
+                            </td>
+                            <td style={{ padding: '10px 12px', fontWeight: 700, color: 'var(--brand)' }}>{count}</td>
+                            <td style={{ padding: '10px 12px', color: '#3B82F6', fontWeight: 600 }}>{estT > 0 ? `RM ${estT.toLocaleString()}` : '—'}</td>
+                            <td style={{ padding: '10px 12px', color: cost > 0 ? '#EF4444' : 'var(--muted)', fontWeight: cost > 0 ? 700 : 400 }}>{cost > 0 ? `RM ${cost.toLocaleString()}` : '—'}</td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                {selectedCampaign && (
+                  <div style={{ marginTop: 16, fontSize: 12, color: 'var(--muted)' }}>
+                    Campaign: <strong style={{ color: 'var(--text)' }}>{selectedCampaign.name}</strong>
+                    {selectedCampaign.end_date && (
+                      <> · Ends {new Date(selectedCampaign.end_date).toLocaleDateString('en-MY')}
+                      <button
+                        onClick={() => { setShowCreateModal(true); setCreateForm({ ...BLANK_CAMPAIGN, name: selectedCampaign.name + ' (New)', spin_interval: selectedCampaign.spin_interval || 'once', allowed_tiers: selectedCampaign.allowed_tiers || [] }) }}
+                        style={{ marginLeft: 12, fontSize: 11, padding: '3px 10px', borderRadius: 5, background: 'rgba(255,107,0,0.12)', color: 'var(--brand)', border: '1px solid rgba(255,107,0,0.3)', cursor: 'pointer', fontWeight: 700 }}>
+                        + Create Next Campaign
+                      </button>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            )
+          })()}
+
+          {/* ── WHEEL SETTINGS TAB ── */}
+          {tab === 'wheel' && (
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--text)' }}>🎡 Wheel Appearance Settings</div>
+                  <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>Configure how the spin wheel looks on the player portal. Changes save per campaign.</div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  {wsSaveMsg && <span style={{ fontSize: 13, color: wsSaveMsg.startsWith('✅') ? '#22C55E' : '#EF4444', fontWeight: 600 }}>{wsSaveMsg}</span>}
+                  <button onClick={saveWheelSettings} disabled={savingWs} style={{ padding: '9px 22px', borderRadius: 9, border: 'none', background: 'linear-gradient(135deg,#FF6B00,#FF8C00)', color: '#fff', fontWeight: 700, fontSize: 13, cursor: savingWs ? 'not-allowed' : 'pointer', opacity: savingWs ? 0.7 : 1 }}>
+                    {savingWs ? 'Saving…' : '💾 Save Settings'}
+                  </button>
+                </div>
+              </div>
+
+              {/* SECTION 1: Text & Language */}
+              <WSection title="Text & Language" emoji="✏️">
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+                  <Field label="Title (ZH)"><input style={inp} placeholder="幸运转盘" value={ws.title_zh} onChange={e => setWs(w => ({ ...w, title_zh: e.target.value }))} /></Field>
+                  <Field label="Title (EN)"><input style={inp} placeholder="Lucky Spin" value={ws.title_en} onChange={e => setWs(w => ({ ...w, title_en: e.target.value }))} /></Field>
+                  <Field label="Title (BM)"><input style={inp} placeholder="Pusing Nasib" value={ws.title_bm} onChange={e => setWs(w => ({ ...w, title_bm: e.target.value }))} /></Field>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+                  <Field label="Subtitle (ZH)"><input style={inp} value={ws.subtitle_zh} onChange={e => setWs(w => ({ ...w, subtitle_zh: e.target.value }))} /></Field>
+                  <Field label="Subtitle (EN)"><input style={inp} value={ws.subtitle_en} onChange={e => setWs(w => ({ ...w, subtitle_en: e.target.value }))} /></Field>
+                  <Field label="Subtitle (BM)"><input style={inp} value={ws.subtitle_bm} onChange={e => setWs(w => ({ ...w, subtitle_bm: e.target.value }))} /></Field>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+                  <Field label="Spin Button (ZH)"><input style={inp} value={ws.btn_zh} onChange={e => setWs(w => ({ ...w, btn_zh: e.target.value }))} /></Field>
+                  <Field label="Spin Button (EN)"><input style={inp} value={ws.btn_en} onChange={e => setWs(w => ({ ...w, btn_en: e.target.value }))} /></Field>
+                  <Field label="Spin Button (BM)"><input style={inp} value={ws.btn_bm} onChange={e => setWs(w => ({ ...w, btn_bm: e.target.value }))} /></Field>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+                  <Field label="Center Text (ZH)"><input style={inp} value={ws.center_zh} onChange={e => setWs(w => ({ ...w, center_zh: e.target.value }))} /></Field>
+                  <Field label="Center Text (EN)"><input style={inp} value={ws.center_en} onChange={e => setWs(w => ({ ...w, center_en: e.target.value }))} /></Field>
+                  <Field label="Center Text (BM)"><input style={inp} value={ws.center_bm} onChange={e => setWs(w => ({ ...w, center_bm: e.target.value }))} /></Field>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+                  <Field label="Win Instruction (ZH)"><input style={inp} value={ws.win_instruction_zh} onChange={e => setWs(w => ({ ...w, win_instruction_zh: e.target.value }))} /></Field>
+                  <Field label="Win Instruction (EN)"><input style={inp} value={ws.win_instruction_en} onChange={e => setWs(w => ({ ...w, win_instruction_en: e.target.value }))} /></Field>
+                  <Field label="Win Instruction (BM)"><input style={inp} value={ws.win_instruction_bm} onChange={e => setWs(w => ({ ...w, win_instruction_bm: e.target.value }))} /></Field>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+                  <Field label="Bottom Tagline"><input style={inp} value={ws.bottom_tagline} onChange={e => setWs(w => ({ ...w, bottom_tagline: e.target.value }))} /></Field>
+                  <Field label="Default Language">
+                    <select style={inp} value={ws.default_lang} onChange={e => setWs(w => ({ ...w, default_lang: e.target.value }))}>
+                      <option value="en">English</option>
+                      <option value="zh">Chinese (ZH)</option>
+                      <option value="bm">Bahasa Malaysia</option>
+                    </select>
+                  </Field>
+                  <Field label="Number of Segments">
+                    <select style={inp} value={ws.segments} onChange={e => setWs(w => ({ ...w, segments: Number(e.target.value) }))}>
+                      {[6,7,8,9,10,12].map(n => <option key={n} value={n}>{n} segments</option>)}
+                    </select>
+                  </Field>
+                </div>
+              </WSection>
+
+              {/* SECTION 2: Contact */}
+              <WSection title="Contact Links" emoji="📞">
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <Field label="Telegram URL"><input style={inp} placeholder="https://t.me/yourusername" value={ws.telegram_url} onChange={e => setWs(w => ({ ...w, telegram_url: e.target.value }))} /></Field>
+                  <Field label="Telegram Label"><input style={inp} placeholder="Telegram" value={ws.telegram_label} onChange={e => setWs(w => ({ ...w, telegram_label: e.target.value }))} /></Field>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <Field label="WhatsApp URL" hint="e.g. https://wa.me/60123456789"><input style={inp} placeholder="https://wa.me/60123456789" value={ws.whatsapp_url} onChange={e => setWs(w => ({ ...w, whatsapp_url: e.target.value }))} /></Field>
+                  <Field label="WhatsApp Label"><input style={inp} placeholder="WhatsApp" value={ws.whatsapp_label} onChange={e => setWs(w => ({ ...w, whatsapp_label: e.target.value }))} /></Field>
+                </div>
+              </WSection>
+
+              {/* SECTION 3: Images */}
+              <WSection title="Images" emoji="🖼️">
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <Field label="Background Image URL" hint="Full background of the spin page">
+                    <input style={inp} placeholder="https://cdn.example.com/bg.jpg" value={ws.bg_image} onChange={e => setWs(w => ({ ...w, bg_image: e.target.value }))} />
+                    {ws.bg_image && <img src={ws.bg_image} alt="bg preview" style={{ marginTop: 6, maxHeight: 60, borderRadius: 6, objectFit: 'cover', width: '100%' }} onError={e => e.target.style.display='none'} />}
+                  </Field>
+                  <Field label="Wheel Frame URL" hint="Outer ring / frame that overlays the wheel segments">
+                    <input style={inp} placeholder="https://cdn.example.com/frame.png" value={ws.wheel_frame} onChange={e => setWs(w => ({ ...w, wheel_frame: e.target.value }))} />
+                    {ws.wheel_frame && <img src={ws.wheel_frame} alt="frame preview" style={{ marginTop: 6, maxHeight: 60, borderRadius: 6, objectFit: 'contain', width: '100%' }} onError={e => e.target.style.display='none'} />}
+                  </Field>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <Field label="Win Banner URL" hint="Top banner shown on the win result page">
+                    <input style={inp} placeholder="https://cdn.example.com/win-banner.png" value={ws.win_banner} onChange={e => setWs(w => ({ ...w, win_banner: e.target.value }))} />
+                    {ws.win_banner && <img src={ws.win_banner} alt="win banner preview" style={{ marginTop: 6, maxHeight: 60, borderRadius: 6, objectFit: 'contain', width: '100%' }} onError={e => e.target.style.display='none'} />}
+                  </Field>
+                  <Field label="Win Background URL" hint="Full background of the win result page">
+                    <input style={inp} placeholder="https://cdn.example.com/win-bg.png" value={ws.win_bg} onChange={e => setWs(w => ({ ...w, win_bg: e.target.value }))} />
+                    {ws.win_bg && <img src={ws.win_bg} alt="win bg preview" style={{ marginTop: 6, maxHeight: 60, borderRadius: 6, objectFit: 'cover', width: '100%' }} onError={e => e.target.style.display='none'} />}
+                  </Field>
+                </div>
+              </WSection>
+
+              {/* SECTION 4: Layout & Positioning */}
+              <WSection title="Layout & Positioning" emoji="📐">
+                <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>All values are percentages (%) of the poster width unless stated otherwise.</div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12 }}>
+                  <Field label="Wheel Center X (%)"><input type="number" style={inp} value={ws.wheel_x} onChange={e => setWs(w => ({ ...w, wheel_x: Number(e.target.value) }))} /></Field>
+                  <Field label="Wheel Center Y (%)"><input type="number" style={inp} value={ws.wheel_y} onChange={e => setWs(w => ({ ...w, wheel_y: Number(e.target.value) }))} /></Field>
+                  <Field label="Wheel Diameter (%)"><input type="number" style={inp} value={ws.wheel_diameter} onChange={e => setWs(w => ({ ...w, wheel_diameter: Number(e.target.value) }))} /></Field>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12 }}>
+                  <Field label="Center Button Size (%)"><input type="number" style={inp} value={ws.center_btn_size} onChange={e => setWs(w => ({ ...w, center_btn_size: Number(e.target.value) }))} /></Field>
+                  <Field label="Center Hole (%)"><input type="number" style={inp} value={ws.center_hole} onChange={e => setWs(w => ({ ...w, center_hole: Number(e.target.value) }))} /></Field>
+                  <Field label="Wheel Top Offset"><input type="number" style={inp} value={ws.wheel_top} onChange={e => setWs(w => ({ ...w, wheel_top: Number(e.target.value) }))} /></Field>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12 }}>
+                  <Field label="Subtitle Height (%)"><input type="number" style={inp} value={ws.subtitle_height} onChange={e => setWs(w => ({ ...w, subtitle_height: Number(e.target.value) }))} /></Field>
+                  <Field label="Subtitle Width (%)"><input type="number" style={inp} value={ws.subtitle_width} onChange={e => setWs(w => ({ ...w, subtitle_width: Number(e.target.value) }))} /></Field>
+                  <Field label="Prize Position (%)"><input type="number" style={inp} value={ws.prize_position} onChange={e => setWs(w => ({ ...w, prize_position: Number(e.target.value) }))} /></Field>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12 }}>
+                  <Field label="Input Y (%)"><input type="number" style={inp} value={ws.input_y} onChange={e => setWs(w => ({ ...w, input_y: Number(e.target.value) }))} /></Field>
+                  <Field label="Input Height (%)"><input type="number" style={inp} value={ws.input_height} onChange={e => setWs(w => ({ ...w, input_height: Number(e.target.value) }))} /></Field>
+                  <Field label="Input Width (%)"><input type="number" style={inp} value={ws.input_width} onChange={e => setWs(w => ({ ...w, input_width: Number(e.target.value) }))} /></Field>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12 }}>
+                  <Field label="Button Y (%)"><input type="number" style={inp} value={ws.btn_y} onChange={e => setWs(w => ({ ...w, btn_y: Number(e.target.value) }))} /></Field>
+                  <Field label="Button Height (%)"><input type="number" style={inp} value={ws.btn_height} onChange={e => setWs(w => ({ ...w, btn_height: Number(e.target.value) }))} /></Field>
+                  <Field label="Input Margin"><input type="number" style={inp} value={ws.input_margin} onChange={e => setWs(w => ({ ...w, input_margin: Number(e.target.value) }))} /></Field>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12 }}>
+                  <Field label="Overall Size (%)"><input type="number" style={inp} value={ws.overall_size} onChange={e => setWs(w => ({ ...w, overall_size: Number(e.target.value) }))} /></Field>
+                  <Field label="Offset X"><input type="number" style={inp} value={ws.offset_x} onChange={e => setWs(w => ({ ...w, offset_x: Number(e.target.value) }))} /></Field>
+                  <Field label="Offset Y"><input type="number" style={inp} value={ws.offset_y} onChange={e => setWs(w => ({ ...w, offset_y: Number(e.target.value) }))} /></Field>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12 }}>
+                  <Field label="Skin Width (px)"><input type="number" style={inp} value={ws.skin_width} onChange={e => setWs(w => ({ ...w, skin_width: Number(e.target.value) }))} /></Field>
+                  <Field label="Poster Ratio" hint="Leave blank = auto"><input style={inp} placeholder="e.g. 9:16" value={ws.poster_ratio} onChange={e => setWs(w => ({ ...w, poster_ratio: e.target.value }))} /></Field>
+                  <Field label="Win Prize Name Pos (%)"><input type="number" style={inp} value={ws.win_prize_name_pos} onChange={e => setWs(w => ({ ...w, win_prize_name_pos: Number(e.target.value) }))} /></Field>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 12 }}>
+                  <Field label="Win Prize Y (%)"><input type="number" style={inp} value={ws.win_prize_y} onChange={e => setWs(w => ({ ...w, win_prize_y: Number(e.target.value) }))} /></Field>
+                </div>
+                <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', marginTop: 4 }}>
+                  <Toggle value={ws.show_subtitle} onChange={v => setWs(w => ({ ...w, show_subtitle: v }))} label="Show Subtitle" />
+                  <Toggle value={ws.bottom_brand} onChange={v => setWs(w => ({ ...w, bottom_brand: v }))} label="Bottom Brand Tag" />
+                </div>
+              </WSection>
+
+              {/* SECTION 5: Colors */}
+              <WSection title="Colors" emoji="🎨">
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12 }}>
+                  <Field label="Prize Text (Large)">
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                      <input type="color" value={ws.color_text_large} onChange={e => setWs(w => ({ ...w, color_text_large: e.target.value }))} style={{ width: 44, height: 36, border: '1px solid var(--border)', borderRadius: 6, cursor: 'pointer', background: 'none', padding: 2 }} />
+                      <input style={{ ...inp, flex: 1 }} value={ws.color_text_large} onChange={e => setWs(w => ({ ...w, color_text_large: e.target.value }))} />
+                    </div>
+                  </Field>
+                  <Field label="Prize Text (Small)">
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                      <input type="color" value={ws.color_text_small} onChange={e => setWs(w => ({ ...w, color_text_small: e.target.value }))} style={{ width: 44, height: 36, border: '1px solid var(--border)', borderRadius: 6, cursor: 'pointer', background: 'none', padding: 2 }} />
+                      <input style={{ ...inp, flex: 1 }} value={ws.color_text_small} onChange={e => setWs(w => ({ ...w, color_text_small: e.target.value }))} />
+                    </div>
+                  </Field>
+                  <Field label="Segment Base Color">
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                      <input type="color" value={ws.color_segment} onChange={e => setWs(w => ({ ...w, color_segment: e.target.value }))} style={{ width: 44, height: 36, border: '1px solid var(--border)', borderRadius: 6, cursor: 'pointer', background: 'none', padding: 2 }} />
+                      <input style={{ ...inp, flex: 1 }} value={ws.color_segment} onChange={e => setWs(w => ({ ...w, color_segment: e.target.value }))} />
+                    </div>
+                  </Field>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12 }}>
+                  <Field label="Divider Color">
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                      <input type="color" value={ws.divider_color} onChange={e => setWs(w => ({ ...w, divider_color: e.target.value }))} style={{ width: 44, height: 36, border: '1px solid var(--border)', borderRadius: 6, cursor: 'pointer', background: 'none', padding: 2 }} />
+                      <input style={{ ...inp, flex: 1 }} value={ws.divider_color} onChange={e => setWs(w => ({ ...w, divider_color: e.target.value }))} />
+                    </div>
+                  </Field>
+                  <Field label="Gold Accent Color">
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                      <input type="color" value={ws.color_gold} onChange={e => setWs(w => ({ ...w, color_gold: e.target.value }))} style={{ width: 44, height: 36, border: '1px solid var(--border)', borderRadius: 6, cursor: 'pointer', background: 'none', padding: 2 }} />
+                      <input style={{ ...inp, flex: 1 }} value={ws.color_gold} onChange={e => setWs(w => ({ ...w, color_gold: e.target.value }))} />
+                    </div>
+                  </Field>
+                  <Field label="Blue Accent Color">
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                      <input type="color" value={ws.color_blue} onChange={e => setWs(w => ({ ...w, color_blue: e.target.value }))} style={{ width: 44, height: 36, border: '1px solid var(--border)', borderRadius: 6, cursor: 'pointer', background: 'none', padding: 2 }} />
+                      <input style={{ ...inp, flex: 1 }} value={ws.color_blue} onChange={e => setWs(w => ({ ...w, color_blue: e.target.value }))} />
+                    </div>
+                  </Field>
+                </div>
+                <Field label="Segment Opacity (%)" hint="0 = fully transparent, 100 = solid">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <input type="range" min="0" max="100" value={ws.segment_opacity} onChange={e => setWs(w => ({ ...w, segment_opacity: Number(e.target.value) }))} style={{ flex: 1 }} />
+                    <span style={{ color: 'var(--text)', fontWeight: 700, minWidth: 36 }}>{ws.segment_opacity}%</span>
+                  </div>
+                </Field>
+              </WSection>
+
+              {/* SECTION 6: Effects & Visual */}
+              <WSection title="Effects & Visual Switches" emoji="✨">
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 4, marginBottom: 12 }}>
+                  <Toggle value={ws.fx_fog}          onChange={v => setWs(w => ({ ...w, fx_fog: v }))}          label="Fog Effect" />
+                  <Toggle value={ws.fx_diamond_ring}  onChange={v => setWs(w => ({ ...w, fx_diamond_ring: v }))}  label="Diamond Ring" />
+                  <Toggle value={ws.fx_bg_diamonds}   onChange={v => setWs(w => ({ ...w, fx_bg_diamonds: v }))}   label="BG Diamonds" />
+                  <Toggle value={ws.fx_ring_flash}    onChange={v => setWs(w => ({ ...w, fx_ring_flash: v }))}    label="Ring Flash" />
+                  <Toggle value={ws.fx_prize_glow}    onChange={v => setWs(w => ({ ...w, fx_prize_glow: v }))}    label="Prize Glow" />
+                  <Toggle value={ws.fx_btn_flow}      onChange={v => setWs(w => ({ ...w, fx_btn_flow: v }))}      label="Button Flow" />
+                  <Toggle value={ws.show_crown}       onChange={v => setWs(w => ({ ...w, show_crown: v }))}       label="Show Crown" />
+                  <Toggle value={ws.show_pointer}     onChange={v => setWs(w => ({ ...w, show_pointer: v }))}     label="Show Pointer" />
+                  <Toggle value={ws.show_dividers}    onChange={v => setWs(w => ({ ...w, show_dividers: v }))}    label="Show Dividers" />
+                  <Toggle value={ws.scroll_mode}      onChange={v => setWs(w => ({ ...w, scroll_mode: v }))}      label="Scroll Mode" />
+                  <Toggle value={ws.prefill_username} onChange={v => setWs(w => ({ ...w, prefill_username: v }))} label="Prefill Username" />
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+                  <Field label="Theme">
+                    <select style={inp} value={ws.theme} onChange={e => setWs(w => ({ ...w, theme: e.target.value }))}>
+                      <option value="dark_gold">Dark Gold VIP (Black & Gold)</option>
+                      <option value="red_gold">Red Gold</option>
+                      <option value="blue_gold">Blue Gold</option>
+                      <option value="dark_blue">Dark Blue</option>
+                      <option value="custom">Custom</option>
+                    </select>
+                  </Field>
+                  <Field label="Skin Mode">
+                    <select style={inp} value={ws.skin_mode} onChange={e => setWs(w => ({ ...w, skin_mode: e.target.value }))}>
+                      <option value="bg_image">Use Background Image</option>
+                      <option value="color">Color Only</option>
+                      <option value="gradient">Gradient</option>
+                    </select>
+                  </Field>
+                  <Field label="Input Style">
+                    <select style={inp} value={ws.input_style} onChange={e => setWs(w => ({ ...w, input_style: e.target.value }))}>
+                      <option value="minimal_gold">Minimal Gold Line</option>
+                      <option value="outlined">Outlined Box</option>
+                      <option value="filled">Filled Dark</option>
+                    </select>
+                  </Field>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+                  <Field label="Center Style">
+                    <select style={inp} value={ws.center_style} onChange={e => setWs(w => ({ ...w, center_style: e.target.value }))}>
+                      <option value="transparent_frame">Transparent + Outer Frame</option>
+                      <option value="solid">Solid Color</option>
+                      <option value="image">Custom Image</option>
+                    </select>
+                  </Field>
+                  <Field label="Font Weight">
+                    <select style={inp} value={ws.font_weight} onChange={e => setWs(w => ({ ...w, font_weight: e.target.value }))}>
+                      <option value="normal">Normal</option>
+                      <option value="bold">Bold</option>
+                      <option value="extra_bold">Extra Bold</option>
+                    </select>
+                  </Field>
+                  <Field label="Icon Size (%)">
+                    <input type="number" style={inp} value={ws.icon_size} onChange={e => setWs(w => ({ ...w, icon_size: Number(e.target.value) }))} />
+                  </Field>
+                </div>
+              </WSection>
+
+              {/* SECTION 7: Win Page */}
+              <WSection title="Win Page Configuration" emoji="🏆">
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <Field label="Win Page Style">
+                    <select style={inp} value={ws.win_page_style} onChange={e => setWs(w => ({ ...w, win_page_style: e.target.value }))}>
+                      <option value="full_bg">Full Background Image</option>
+                      <option value="card">Card Style</option>
+                      <option value="overlay">Overlay</option>
+                    </select>
+                  </Field>
+                </div>
+                <div style={{ marginTop: 8, padding: '12px 14px', background: 'rgba(255,107,0,0.06)', borderRadius: 8, border: '1px solid rgba(255,107,0,0.15)', fontSize: 12, color: 'var(--muted)', lineHeight: 1.6 }}>
+                  <strong style={{ color: 'var(--text)' }}>💡 Win page position fields</strong> — Win banner URL, background, and prize text positions are configured in the Images and Layout sections above.
+                </div>
+              </WSection>
+
+              {/* Save button at bottom */}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 12, marginTop: 8, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
+                {wsSaveMsg && <span style={{ fontSize: 13, color: wsSaveMsg.startsWith('✅') ? '#22C55E' : '#EF4444', fontWeight: 600 }}>{wsSaveMsg}</span>}
+                <button onClick={saveWheelSettings} disabled={savingWs} style={{ padding: '10px 28px', borderRadius: 9, border: 'none', background: 'linear-gradient(135deg,#FF6B00,#FF8C00)', color: '#fff', fontWeight: 700, fontSize: 14, cursor: savingWs ? 'not-allowed' : 'pointer', opacity: savingWs ? 0.7 : 1 }}>
+                  {savingWs ? 'Saving…' : '💾 Save Wheel Settings'}
+                </button>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* 🟠 CREATE CAMPAIGN MODAL */}
+      {showCreateModal && (
+        <Modal title="✨ Create New Lucky Spin Campaign" onClose={() => setShowCreateModal(false)}>
+          <CampaignFormFields form={createForm} setForm={setCreateForm} />
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 8 }}>
+            <button onClick={() => setShowCreateModal(false)} style={{ padding: '9px 20px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface2)', color: 'var(--muted)', fontSize: 13, cursor: 'pointer' }}>Cancel</button>
+            <button disabled={creating || !createForm.name} onClick={createCampaign} style={{ padding: '9px 24px', borderRadius: 8, border: 'none', background: 'linear-gradient(135deg,#FF6B00,#FF8C00)', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', opacity: (!createForm.name || creating) ? 0.6 : 1 }}>
+              {creating ? 'Creating…' : 'Create Campaign'}
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {/* ✏ EDIT CAMPAIGN MODAL */}
+      {showEditModal && (
+        <Modal title="✏ Edit Campaign" onClose={() => setShowEditModal(false)}>
+          <CampaignFormFields form={editCampaignForm} setForm={setEditCampaignForm} />
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 8 }}>
+            <button onClick={() => setShowEditModal(false)} style={{ padding: '9px 20px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface2)', color: 'var(--muted)', fontSize: 13, cursor: 'pointer' }}>Cancel</button>
+            <button disabled={editingCampaign || !editCampaignForm.name} onClick={saveCampaignEdit} style={{ padding: '9px 24px', borderRadius: 8, border: 'none', background: 'linear-gradient(135deg,#FF6B00,#FF8C00)', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', opacity: (!editCampaignForm.name || editingCampaign) ? 0.6 : 1 }}>
+              {editingCampaign ? 'Saving…' : 'Save Changes'}
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {/* 🗑 DELETE CONFIRM MODAL */}
+      {showDeleteConfirm && (
+        <Modal title="🗑 Delete Campaign" onClose={() => setShowDeleteConfirm(false)}>
+          <div style={{ color: 'var(--text)', marginBottom: 16, lineHeight: 1.6 }}>
+            Are you sure you want to delete <strong>{selectedCampaign?.name}</strong>?<br />
+            <span style={{ color: '#EF4444', fontSize: 13 }}>This will permanently delete the campaign and all its associated data (records, codes, prizes). This cannot be undone.</span>
+          </div>
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+            <button onClick={() => setShowDeleteConfirm(false)} style={{ padding: '9px 20px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface2)', color: 'var(--muted)', fontSize: 13, cursor: 'pointer' }}>Cancel</button>
+            <button disabled={deleting} onClick={deleteCampaign} style={{ padding: '9px 24px', borderRadius: 8, border: 'none', background: '#EF4444', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', opacity: deleting ? 0.6 : 1 }}>
+              {deleting ? 'Deleting…' : 'Yes, Delete'}
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {/* 🏆 ADD PRIZE MODAL */}
+      {showAddPrize && (
+        <Modal title="+ Add Prize" onClose={() => setShowAddPrize(false)}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <Field label="Name (EN) *">
+              <input style={inp} placeholder="RM 168 Credit" value={addPrizeForm.name_en} onChange={e => setAddPrizeForm(f => ({ ...f, name_en: e.target.value }))} />
+            </Field>
+            <Field label="Name (ZH)">
+              <input style={inp} placeholder="RM 168 积分" value={addPrizeForm.name_zh} onChange={e => setAddPrizeForm(f => ({ ...f, name_zh: e.target.value }))} />
+            </Field>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+            <Field label="Prize Type">
+              <select style={inp} value={addPrizeForm.prize_type} onChange={e => setAddPrizeForm(f => ({ ...f, prize_type: e.target.value }))}>
+                <option value="cash">Cash Credit</option>
+                <option value="cashback">Cashback %</option>
+                <option value="physical">Physical Prize</option>
+                <option value="voucher">Voucher</option>
+              </select>
+            </Field>
+            <Field label="Value">
+              <input style={inp} placeholder="RM 168 / 8%" value={addPrizeForm.prize_value} onChange={e => setAddPrizeForm(f => ({ ...f, prize_value: e.target.value }))} />
+            </Field>
+            <Field label="Probability Weight">
+              <input type="number" min="0" style={inp} value={addPrizeForm.probability} onChange={e => setAddPrizeForm(f => ({ ...f, probability: e.target.value }))} />
+            </Field>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <Field label="Stock (-1 = unlimited)">
+              <input type="number" style={inp} value={addPrizeForm.stock} onChange={e => setAddPrizeForm(f => ({ ...f, stock: e.target.value }))} />
+            </Field>
+            <Field label="Turnover Multiplier">
+              <input type="number" min="0" style={inp} placeholder="0 = no requirement" value={addPrizeForm.turnover_multiplier} onChange={e => setAddPrizeForm(f => ({ ...f, turnover_multiplier: e.target.value }))} />
+            </Field>
+          </div>
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 8 }}>
+            <button onClick={() => setShowAddPrize(false)} style={{ padding: '9px 20px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface2)', color: 'var(--muted)', fontSize: 13, cursor: 'pointer' }}>Cancel</button>
+            <button disabled={addingPrize || !addPrizeForm.name_en} onClick={addPrize} style={{ padding: '9px 24px', borderRadius: 8, border: 'none', background: 'linear-gradient(135deg,#FF6B00,#FF8C00)', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', opacity: (!addPrizeForm.name_en || addingPrize) ? 0.6 : 1 }}>
+              {addingPrize ? 'Adding…' : 'Add Prize'}
+            </button>
+          </div>
+        </Modal>
+      )}
+    </div>
+  )
+}

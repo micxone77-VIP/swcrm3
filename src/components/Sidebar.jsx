@@ -26,6 +26,7 @@ const NAV_GROUPS = [
   ] },
   { key: 'campaigns', label: 'Campaigns', icon: '📢', items: [
     { to: '/campaigns', label: 'Campaigns', icon: '📢', roles: ['admin','host'] },
+    { to: '/lucky-spin-admin', label: 'Lucky Spin', icon: '🎰', roles: ['admin','host'] },
     { to: '/upgrades', label: 'Upgrades', icon: '⬆️', roles: ['admin','host'] },
     { to: '/transfer', label: 'Transfers', icon: '🔄', roles: ['admin'] },
     { to: '/budget', label: 'Budget', icon: '💰', roles: ['admin'] },
