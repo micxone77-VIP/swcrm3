@@ -76,7 +76,7 @@ export default function ActiveTracker() {
 
   if (loading) return <div style={{ padding:32 }}><LoadingState message="Loading activity data…" /></div>
 
-  const { result, thisStart, thisEnd, lastStart, monthStart } = data
+  const { result, thisStart, thisEnd, lastStart, lastEnd, monthStart } = data
   const d = result[tier]
   const color = TIER_COLOR[tier] || '#888'
   const tierLabel = tier.charAt(0) + tier.slice(1).toLowerCase()
