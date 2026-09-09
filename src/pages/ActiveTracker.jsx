@@ -34,10 +34,9 @@ export default function ActiveTracker() {
       { data: monthSnap },
     ] = await Promise.all([
       supabase.from('vip_members')
-        .select('id, username, full_name, tier, host_assigned, days_inactive, total_deposit, currency')
-        .in('tier', ['DIAMOND', 'Platinum', 'PLATINUM', 'Diamond'])
+        .select('id, username, full_name, tier, host_assigned, days_inactive')
         .eq('is_excluded', false)
-        .order('tier').order('username'),
+        .order('username'),
       supabase.from('vip_daily_snapshots')
         .select('username, total_deposit, monthly_valid_bet')
         .gte('snapshot_date', thisStart).lte('snapshot_date', thisEnd)
