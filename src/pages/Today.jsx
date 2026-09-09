@@ -70,22 +70,39 @@ export default function Today() {
       const fmt = d => d.toISOString().slice(0, 10)
       const pad = n => new Date(today.getTime() - n * 86400000)
 
-      const thisStart = fmt(pad(6))   // last 7 days incl. today
-      const thisEnd   = fmt(today)
-      const lastStart = fmt(pad(13))  // prior 7 days
-      const lastEnd   = fmt(pad(7))
+      const thisStart  = fmt(pad(6))    // last 7 days incl. today
+      const thisEnd    = fmt(today)
+      const lastStart  = fmt(pad(13))   // prior 7 days
+      const lastEnd    = fmt(pad(7))
+      const monthStart = fmt(new Date(today.getFullYear(), today.getMonth(), 1))
 
-      const [{ data: thisData }, { data: lastData }] = await Promise.all([
+      // Active = valid_bet > 0 OR total_deposit > 0 (login-only does NOT count)
+      const ACTIVE_FILTER = 'monthly_valid_bet.gt.0,total_deposit.gt.0'
+
+      const [
+        { data: thisData },
+        { data: lastData },
+        { data: monthData },
+        { data: memberData },
+      ] = await Promise.all([
         supabase.from('vip_daily_snapshots')
-          .select('username, tier, monthly_valid_bet')
+          .select('username, tier')
           .gte('snapshot_date', thisStart).lte('snapshot_date', thisEnd)
-          .gt('monthly_valid_bet', 0),
+          .or(ACTIVE_FILTER),
         supabase.from('vip_daily_snapshots')
-          .select('username, tier, monthly_valid_bet')
+          .select('username, tier')
           .gte('snapshot_date', lastStart).lte('snapshot_date', lastEnd)
-          .gt('monthly_valid_bet', 0),
+          .or(ACTIVE_FILTER),
+        supabase.from('vip_daily_snapshots')
+          .select('username, tier')
+          .gte('snapshot_date', monthStart).lte('snapshot_date', thisEnd)
+          .or(ACTIVE_FILTER),
+        supabase.from('vip_members')
+          .select('username, tier')
+          .eq('is_excluded', false),
       ])
 
+      // distinct username → tier
       const distinct = (rows) => {
         const seen = new Map()
         ;(rows || []).forEach(r => {
@@ -94,17 +111,30 @@ export default function Today() {
         return seen
       }
 
-      const thisMap = distinct(thisData)
-      const lastMap = distinct(lastData)
+      const thisMap  = distinct(thisData)
+      const lastMap  = distinct(lastData)
+      const monthMap = distinct(monthData)
+
+      // total members per tier
+      const totalByTier = {}
+      ;(memberData || []).forEach(m => {
+        const t = (m.tier || '').toUpperCase()
+        totalByTier[t] = (totalByTier[t] || 0) + 1
+      })
+      const totalAll = (memberData || []).length
 
       const TIERS = ['DIAMOND','PLATINUM','GOLD','SILVER','BRONZE']
       const byTier = TIERS.map(t => ({
         tier: t,
-        thisWeek: [...thisMap.values()].filter(v => v === t).length,
-        lastWeek: [...lastMap.values()].filter(v => v === t).length,
-      })).filter(t => t.thisWeek > 0 || t.lastWeek > 0)
+        total:     totalByTier[t] || 0,
+        thisMonth: [...monthMap.values()].filter(v => v === t).length,
+        thisWeek:  [...thisMap.values()].filter(v => v === t).length,
+        lastWeek:  [...lastMap.values()].filter(v => v === t).length,
+      })).filter(t => t.total > 0 || t.thisWeek > 0 || t.lastWeek > 0)
 
       setWeeklyActive({
+        totalAll,
+        thisMonth: monthMap.size,
         thisWeek: thisMap.size,
         lastWeek: lastMap.size,
         thisStart, thisEnd, lastStart, lastEnd,
@@ -215,66 +245,98 @@ export default function Today() {
         />
       </div>
 
-      {/* ── Weekly Active Players ── */}
+      {/* ── Active Player Rate ── */}
       {!weeklyLoading && weeklyActive && (() => {
-        const diff = weeklyActive.thisWeek - weeklyActive.lastWeek
-        const pct  = weeklyActive.lastWeek > 0 ? Math.round(Math.abs(diff) / weeklyActive.lastWeek * 100) : null
-        const up   = diff > 0
-        const same = diff === 0
-        const TIER_COLOR = { DIAMOND:'#58a6ff', PLATINUM:'#e2e8f0', GOLD:'#fbbf24', SILVER:'#94a3b8', BRONZE:'#c2855a' }
+        const wDiff = weeklyActive.thisWeek - weeklyActive.lastWeek
+        const wPct  = weeklyActive.lastWeek > 0 ? Math.round(Math.abs(wDiff) / weeklyActive.lastWeek * 100) : null
+        const wUp   = wDiff > 0
+        const TIER_COLOR = { DIAMOND:'#58a6ff', PLATINUM:'#cbd5e1', GOLD:'#fbbf24', SILVER:'#94a3b8', BRONZE:'#c2855a' }
+        const monthRate = weeklyActive.totalAll > 0 ? Math.round(weeklyActive.thisMonth / weeklyActive.totalAll * 100) : 0
         return (
-          <Card style={{ marginBottom: 24, padding: '14px 20px' }}>
-            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:12 }}>
-              {/* Left — main numbers */}
-              <div style={{ display:'flex', alignItems:'center', gap:20 }}>
-                <div>
-                  <div style={{ fontSize:11, fontWeight:700, color:'var(--muted)', letterSpacing:'.5px', textTransform:'uppercase', marginBottom:2 }}>
-                    Active Players · This Week
-                  </div>
-                  <div style={{ display:'flex', alignItems:'baseline', gap:10 }}>
-                    <span style={{ fontSize:34, fontWeight:800, color:'var(--text)', lineHeight:1 }}>
-                      {weeklyActive.thisWeek}
-                    </span>
-                    <div style={{ display:'flex', flexDirection:'column' }}>
-                      <span style={{ fontSize:12, color: same ? 'var(--muted)' : up ? '#3fb950' : '#f85149', fontWeight:700 }}>
-                        {same ? '→ No change' : `${up ? '▲' : '▼'} ${Math.abs(diff)}${pct !== null ? ` (${pct}%)` : ''}`}
-                      </span>
-                      <span style={{ fontSize:11, color:'var(--muted)' }}>
-                        vs {weeklyActive.lastWeek} last week
-                      </span>
-                    </div>
-                  </div>
-                  <div style={{ fontSize:10, color:'var(--disabled)', marginTop:2 }}>
-                    {weeklyActive.thisStart} → {weeklyActive.thisEnd}
-                  </div>
-                </div>
-              </div>
-
-              {/* Right — tier breakdown */}
-              {weeklyActive.byTier.length > 0 && (
-                <div style={{ display:'flex', gap:10, flexWrap:'wrap' }}>
-                  {weeklyActive.byTier.map(t => {
-                    const d = t.thisWeek - t.lastWeek
-                    const color = TIER_COLOR[t.tier] || 'var(--muted)'
-                    return (
-                      <div key={t.tier} style={{
-                        background:'var(--surface2)', borderRadius:8, padding:'8px 14px',
-                        minWidth:80, textAlign:'center',
-                        borderTop:`2px solid ${color}`,
-                      }}>
-                        <div style={{ fontSize:10, fontWeight:700, color, letterSpacing:'.4px', marginBottom:2 }}>
-                          {t.tier.charAt(0) + t.tier.slice(1).toLowerCase()}
-                        </div>
-                        <div style={{ fontSize:20, fontWeight:700, color:'var(--text)' }}>{t.thisWeek}</div>
-                        <div style={{ fontSize:10, color: d === 0 ? 'var(--muted)' : d > 0 ? '#3fb950' : '#f85149', fontWeight:600 }}>
-                          {d === 0 ? '—' : `${d > 0 ? '+' : ''}${d} vs LW`}
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
+          <Card style={{ marginBottom: 24, padding: '16px 20px' }}>
+            {/* Header row */}
+            <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:12 }}>
+              <span style={{ fontSize:11, fontWeight:700, color:'var(--muted)', letterSpacing:'.5px', textTransform:'uppercase' }}>
+                Active Player Rate
+              </span>
+              <span style={{ fontSize:10, color:'var(--disabled)' }}>
+                · active = valid bet OR deposit moved · login-only excluded
+              </span>
             </div>
+
+            {/* Summary stats row */}
+            <div style={{ display:'flex', gap:24, flexWrap:'wrap', marginBottom:14 }}>
+              {/* Total members */}
+              <div>
+                <div style={{ fontSize:10, color:'var(--muted)', fontWeight:600, marginBottom:2 }}>TOTAL MEMBERS</div>
+                <div style={{ fontSize:28, fontWeight:800, color:'var(--text)', lineHeight:1 }}>{weeklyActive.totalAll}</div>
+              </div>
+              {/* Separator */}
+              <div style={{ width:1, background:'var(--border)', alignSelf:'stretch' }} />
+              {/* This month */}
+              <div>
+                <div style={{ fontSize:10, color:'var(--muted)', fontWeight:600, marginBottom:2 }}>ACTIVE THIS MONTH</div>
+                <div style={{ display:'flex', alignItems:'baseline', gap:6 }}>
+                  <span style={{ fontSize:28, fontWeight:800, color:'var(--text)', lineHeight:1 }}>{weeklyActive.thisMonth}</span>
+                  <span style={{ fontSize:13, fontWeight:700, color: monthRate >= 50 ? '#3fb950' : monthRate >= 30 ? '#d29922' : '#f85149' }}>
+                    {monthRate}%
+                  </span>
+                </div>
+                <div style={{ fontSize:10, color:'var(--muted)' }}>of total members</div>
+              </div>
+              {/* Separator */}
+              <div style={{ width:1, background:'var(--border)', alignSelf:'stretch' }} />
+              {/* This week */}
+              <div>
+                <div style={{ fontSize:10, color:'var(--muted)', fontWeight:600, marginBottom:2 }}>ACTIVE THIS WEEK</div>
+                <div style={{ display:'flex', alignItems:'baseline', gap:8 }}>
+                  <span style={{ fontSize:28, fontWeight:800, color:'var(--text)', lineHeight:1 }}>{weeklyActive.thisWeek}</span>
+                  <span style={{ fontSize:12, fontWeight:700, color: wDiff === 0 ? 'var(--muted)' : wUp ? '#3fb950' : '#f85149' }}>
+                    {wDiff === 0 ? '→' : wUp ? '▲' : '▼'} {wDiff === 0 ? 'same' : `${Math.abs(wDiff)}${wPct !== null ? ` (${wPct}%)` : ''}`}
+                  </span>
+                </div>
+                <div style={{ fontSize:10, color:'var(--muted)' }}>vs {weeklyActive.lastWeek} last week</div>
+              </div>
+            </div>
+
+            {/* Tier breakdown table */}
+            {weeklyActive.byTier.length > 0 && (
+              <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+                {weeklyActive.byTier.map(t => {
+                  const wD = t.thisWeek - t.lastWeek
+                  const color = TIER_COLOR[t.tier] || 'var(--muted)'
+                  const mRate = t.total > 0 ? Math.round(t.thisMonth / t.total * 100) : 0
+                  return (
+                    <div key={t.tier} style={{
+                      background:'var(--surface2)', borderRadius:8, padding:'10px 14px',
+                      minWidth:110, borderLeft:`3px solid ${color}`,
+                    }}>
+                      <div style={{ fontSize:10, fontWeight:700, color, letterSpacing:'.4px', marginBottom:6 }}>
+                        {t.tier.charAt(0) + t.tier.slice(1).toLowerCase()}
+                      </div>
+                      {/* total / month active */}
+                      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:3 }}>
+                        <span style={{ fontSize:10, color:'var(--muted)' }}>Month</span>
+                        <span style={{ fontSize:13, fontWeight:700, color:'var(--text)' }}>
+                          {t.thisMonth}<span style={{ fontSize:10, color:'var(--muted)', fontWeight:400 }}>/{t.total}</span>
+                          {t.total > 0 && <span style={{ marginLeft:4, fontSize:10, fontWeight:700, color: mRate >= 50 ? '#3fb950' : mRate >= 30 ? '#d29922' : '#f85149' }}>{mRate}%</span>}
+                        </span>
+                      </div>
+                      {/* this week / vs lw */}
+                      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                        <span style={{ fontSize:10, color:'var(--muted)' }}>Week</span>
+                        <span style={{ fontSize:13, fontWeight:700, color:'var(--text)' }}>
+                          {t.thisWeek}
+                          <span style={{ marginLeft:5, fontSize:10, fontWeight:700, color: wD === 0 ? 'var(--muted)' : wD > 0 ? '#3fb950' : '#f85149' }}>
+                            {wD === 0 ? '' : `${wD > 0 ? '+' : ''}${wD}`}
+                          </span>
+                        </span>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
           </Card>
         )
       })()}
