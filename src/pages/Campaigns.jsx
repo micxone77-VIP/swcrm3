@@ -735,13 +735,11 @@ export default function Campaigns() {
         await supabase.from('campaign_players')
           .update({ total_deposit: dep, valid_bet: to, converted: qualified })
           .eq('id', p.id)
-        // Sync campaign progress for deposit-based campaigns
-        if (campType !== 'dual_tier') {
-          await supabase.rpc('sync_manual_campaign_player_progress', {
-            p_campaign_player_id: p.id,
-            p_campaign_period_deposit: dep,
-          }).catch(e => console.error('progress sync failed for', username, e))
-        }
+        // Sync campaign_period_deposit for all campaign types (including dual_tier)
+        await supabase.rpc('sync_manual_campaign_player_progress', {
+          p_campaign_player_id: p.id,
+          p_campaign_period_deposit: dep,
+        }).catch(e => console.error('progress sync failed for', username, e))
       }
       await loadPlayers(selected.id)
     }
