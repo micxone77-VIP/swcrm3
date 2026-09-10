@@ -473,6 +473,17 @@ export default function LuckySpinAdmin() {
     setAddingPrize(false)
   }
 
+  // ── Upload Wheel Image to Supabase Storage ───────────────────────────────────
+  async function uploadWheelImage(field, file) {
+    if (!file || !selectedCampaign) return
+    const ext = file.name.split('.').pop().toLowerCase()
+    const path = `campaigns/${selectedCampaign.id}/${field}_${Date.now()}.${ext}`
+    const { error: upErr } = await supabase.storage.from('lucky-spin-assets').upload(path, file, { upsert: true })
+    if (upErr) { alert('Upload failed: ' + upErr.message); return }
+    const { data } = supabase.storage.from('lucky-spin-assets').getPublicUrl(path)
+    setWs(w => ({ ...w, [field]: data.publicUrl }))
+  }
+
   // ── Save Wheel Settings ──────────────────────────────────────────────────────
   async function saveWheelSettings() {
     if (!selectedCampaign) return
@@ -1121,26 +1132,43 @@ export default function LuckySpinAdmin() {
 
               {/* SECTION 3: Images */}
               <WSection title="Images" emoji="🖼️">
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                  <Field label="Background Image URL" hint="Full background of the spin page">
-                    <input style={inp} placeholder="https://cdn.example.com/bg.jpg" value={ws.bg_image} onChange={e => setWs(w => ({ ...w, bg_image: e.target.value }))} />
-                    {ws.bg_image && <img src={ws.bg_image} alt="bg preview" style={{ marginTop: 6, maxHeight: 60, borderRadius: 6, objectFit: 'cover', width: '100%' }} onError={e => e.target.style.display='none'} />}
-                  </Field>
-                  <Field label="Wheel Frame URL" hint="Outer ring / frame that overlays the wheel segments">
-                    <input style={inp} placeholder="https://cdn.example.com/frame.png" value={ws.wheel_frame} onChange={e => setWs(w => ({ ...w, wheel_frame: e.target.value }))} />
-                    {ws.wheel_frame && <img src={ws.wheel_frame} alt="frame preview" style={{ marginTop: 6, maxHeight: 60, borderRadius: 6, objectFit: 'contain', width: '100%' }} onError={e => e.target.style.display='none'} />}
-                  </Field>
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                  <Field label="Win Banner URL" hint="Top banner shown on the win result page">
-                    <input style={inp} placeholder="https://cdn.example.com/win-banner.png" value={ws.win_banner} onChange={e => setWs(w => ({ ...w, win_banner: e.target.value }))} />
-                    {ws.win_banner && <img src={ws.win_banner} alt="win banner preview" style={{ marginTop: 6, maxHeight: 60, borderRadius: 6, objectFit: 'contain', width: '100%' }} onError={e => e.target.style.display='none'} />}
-                  </Field>
-                  <Field label="Win Background URL" hint="Full background of the win result page">
-                    <input style={inp} placeholder="https://cdn.example.com/win-bg.png" value={ws.win_bg} onChange={e => setWs(w => ({ ...w, win_bg: e.target.value }))} />
-                    {ws.win_bg && <img src={ws.win_bg} alt="win bg preview" style={{ marginTop: 6, maxHeight: 60, borderRadius: 6, objectFit: 'cover', width: '100%' }} onError={e => e.target.style.display='none'} />}
-                  </Field>
-                </div>
+                {(() => {
+                  const imgFields = [
+                    { key: 'bg_image',    label: '背景图 / Background',        hint: 'Full background of the spin page',           fit: 'cover'   },
+                    { key: 'wheel_frame', label: '转盘外框 / Wheel Frame',      hint: 'Outer ring overlaid on wheel (transparent PNG recommended)', fit: 'contain' },
+                    { key: 'win_banner',  label: '横幅 / Win Banner',           hint: 'Top banner shown on the win result page',     fit: 'contain' },
+                    { key: 'win_bg',      label: '开奖背景 / Win Background',   hint: 'Full background of the win result page',      fit: 'cover'   },
+                  ]
+                  return (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                      {imgFields.map(({ key, label, hint, fit }) => (
+                        <div key={key}>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)', marginBottom: 2 }}>{label}</div>
+                          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8 }}>{hint}</div>
+                          {/* Thumbnail */}
+                          {ws[key]
+                            ? <img src={ws[key]} alt={label} style={{ display: 'block', width: '100%', height: 80, objectFit: fit, borderRadius: 8, border: '1px solid var(--border)', marginBottom: 8, background: '#000' }} onError={e => { e.target.style.display='none' }} />
+                            : <div style={{ width: '100%', height: 80, borderRadius: 8, border: '1px dashed var(--border)', marginBottom: 8, background: 'var(--surface2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <span style={{ fontSize: 11, color: 'var(--muted)' }}>No image</span>
+                              </div>
+                          }
+                          {/* Buttons */}
+                          <div style={{ display: 'flex', gap: 8 }}>
+                            <label style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '7px 0', borderRadius: 7, background: 'linear-gradient(135deg,#7c3aed,#9333ea)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                              📤 上传图片
+                              <input type="file" accept="image/*" style={{ display: 'none' }} onChange={e => { if (e.target.files[0]) uploadWheelImage(key, e.target.files[0]); e.target.value = '' }} />
+                            </label>
+                            {ws[key] && (
+                              <button onClick={() => setWs(w => ({ ...w, [key]: '' }))} style={{ padding: '7px 14px', borderRadius: 7, border: '1px solid #EF4444', background: '#EF444415', color: '#EF4444', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                                移除
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )
+                })()}
               </WSection>
 
               {/* SECTION 4: Layout & Positioning */}
