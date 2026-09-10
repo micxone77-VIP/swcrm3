@@ -250,6 +250,11 @@ export default function LuckySpinAdmin() {
   const [loadingPreview, setLoadingPreview] = useState(false)
   const [generatingCodes, setGeneratingCodes] = useState(false)
   const [selectedAllocUsernames, setSelectedAllocUsernames] = useState(new Set())
+  // Exclusion list
+  const [excludedUsernames, setExcludedUsernames] = useState([])
+  const [exclusionInput, setExclusionInput] = useState('')
+  const [savingExclusions, setSavingExclusions] = useState(false)
+  const [exclusionSaveMsg, setExclusionSaveMsg] = useState('')
 
   useEffect(() => {
     supabase
@@ -291,6 +296,10 @@ export default function LuckySpinAdmin() {
         { threshold: 40000, spins: 1 },
       ])
       setMilestonePreview(null)
+      const ex = selectedCampaign.excluded_usernames
+      const exArr = Array.isArray(ex) ? ex : []
+      setExcludedUsernames(exArr)
+      setExclusionInput(exArr.join('\n'))
     }
   }, [selectedCampaign])
 
@@ -530,6 +539,18 @@ export default function LuckySpinAdmin() {
       depositMap[r.username] = (depositMap[r.username] || 0) + (parseFloat(r.total_deposit) || 0)
     })
 
+    // Tier filter — if campaign has allowed_tiers, fetch player tiers from vip_monthly_totals
+    const allowedTiers = selectedCampaign.allowed_tiers || []
+    let tierMap = {}
+    if (allowedTiers.length > 0) {
+      const monthStr = startDate.slice(0, 7)
+      const { data: tierRows } = await supabase
+        .from('vip_monthly_totals')
+        .select('username, tier')
+        .ilike('snapshot_month', monthStr + '%')
+      ;(tierRows || []).forEach(r => { tierMap[r.username] = r.tier })
+    }
+
     // Count existing codes per player for this campaign
     const { data: existingCodes } = await supabase
       .from('vip_campaign_codes')
@@ -540,27 +561,40 @@ export default function LuckySpinAdmin() {
       if (c.member_username) codeCountMap[c.member_username] = (codeCountMap[c.member_username] || 0) + 1
     })
 
+    // Build exclusion set (lowercase)
+    const exSet = new Set((selectedCampaign.excluded_usernames || []).map(u => u.toLowerCase()))
+
     // Calculate spins earned per player based on milestones
     const sortedMs = [...milestones].sort((a, b) => a.threshold - b.threshold)
     const preview = Object.entries(depositMap)
       .map(([username, totalDeposit]) => {
         const spinsEarned = sortedMs.reduce((sum, m) => totalDeposit >= (m.threshold || 0) ? sum + (m.spins || 1) : sum, 0)
         const codesExisting = codeCountMap[username] || 0
-        return { username, totalDeposit, spinsEarned, codesExisting }
+        const excluded = exSet.has(username.toLowerCase())
+        const playerTier = tierMap[username] || null
+        const tierBlocked = allowedTiers.length > 0 && (!playerTier || !allowedTiers.includes(playerTier))
+        return { username, totalDeposit, spinsEarned, codesExisting, excluded, tierBlocked, playerTier }
       })
       .filter(p => p.spinsEarned > 0)
-      .sort((a, b) => b.totalDeposit - a.totalDeposit)
+      .sort((a, b) => {
+        const aBlocked = a.excluded || a.tierBlocked ? 1 : 0
+        const bBlocked = b.excluded || b.tierBlocked ? 1 : 0
+        if (aBlocked !== bBlocked) return aBlocked - bBlocked
+        return b.totalDeposit - a.totalDeposit
+      })
 
     setMilestonePreview(preview)
-    // Pre-select players who still need codes
-    setSelectedAllocUsernames(new Set(preview.filter(p => p.codesExisting < p.spinsEarned).map(p => p.username)))
+    // Pre-select players who still need codes (excluding blocked)
+    setSelectedAllocUsernames(new Set(
+      preview.filter(p => !p.excluded && !p.tierBlocked && p.codesExisting < p.spinsEarned).map(p => p.username)
+    ))
     setLoadingPreview(false)
   }
 
   async function generateMilestoneCodes() {
     if (!selectedCampaign || !milestonePreview) return
-    const toGenerate = milestonePreview.filter(p => selectedAllocUsernames.has(p.username))
-    if (toGenerate.length === 0) { alert('No players selected.'); return }
+    const toGenerate = milestonePreview.filter(p => selectedAllocUsernames.has(p.username) && !p.excluded && !p.tierBlocked)
+    if (toGenerate.length === 0) { alert('No eligible players selected.'); return }
     const totalCodes = toGenerate.reduce((s, p) => s + Math.max(0, p.spinsEarned - p.codesExisting), 0)
     if (!window.confirm(`Generate ${totalCodes} spin code${totalCodes !== 1 ? 's' : ''} for ${toGenerate.length} player${toGenerate.length !== 1 ? 's' : ''}?\n\nPlayers already with enough codes will be skipped.`)) return
     setGeneratingCodes(true)
@@ -579,6 +613,26 @@ export default function LuckySpinAdmin() {
     await runMilestonePreview()
     setGeneratingCodes(false)
     alert(`✅ Generated ${inserts.length} spin code${inserts.length !== 1 ? 's' : ''} successfully.`)
+  }
+
+  async function saveExclusions() {
+    if (!selectedCampaign) return
+    setSavingExclusions(true)
+    setExclusionSaveMsg('')
+    const parsed = exclusionInput.split(/[\n,]+/).map(u => u.trim().toLowerCase()).filter(Boolean)
+    const unique  = [...new Set(parsed)]
+    const { error } = await supabase.from('vip_campaigns').update({ excluded_usernames: unique }).eq('id', selectedCampaign.id)
+    if (!error) {
+      setCampaigns(c => c.map(x => x.id === selectedCampaign.id ? { ...x, excluded_usernames: unique } : x))
+      setSelectedCampaign(prev => ({ ...prev, excluded_usernames: unique }))
+      setExcludedUsernames(unique)
+      setExclusionInput(unique.join('\n'))
+      setExclusionSaveMsg('✅ Saved!')
+      setTimeout(() => setExclusionSaveMsg(''), 3000)
+    } else {
+      setExclusionSaveMsg('❌ ' + error.message)
+    }
+    setSavingExclusions(false)
   }
 
   // ── ROI Calculations ─────────────────────────────────────────────────────────
@@ -1332,6 +1386,32 @@ export default function LuckySpinAdmin() {
                 </div>
               </div>
 
+              {/* Excluded Players */}
+              <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: 20, marginBottom: 20 }}>
+                <div style={{ fontWeight: 800, fontSize: 14, color: 'var(--text)', marginBottom: 4 }}>🚫 Excluded Players</div>
+                <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>
+                  Usernames listed here will appear in the preview but will be blocked from receiving spin codes.
+                  Enter one username per line (or comma-separated). Case-insensitive.
+                </div>
+                <textarea
+                  value={exclusionInput}
+                  onChange={e => setExclusionInput(e.target.value)}
+                  placeholder="e.g.&#10;player123&#10;vip_user&#10;john88"
+                  rows={5}
+                  style={{ width: '100%', boxSizing: 'border-box', background: 'var(--surface2)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px', fontSize: 13, fontFamily: 'monospace', resize: 'vertical' }}
+                />
+                <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 10 }}>
+                  <span style={{ fontSize: 12, color: 'var(--muted)' }}>
+                    {excludedUsernames.length > 0 ? `${excludedUsernames.length} username${excludedUsernames.length !== 1 ? 's' : ''} excluded` : 'No exclusions set'}
+                  </span>
+                  <div style={{ flex: 1 }} />
+                  {exclusionSaveMsg && <span style={{ fontSize: 13, color: exclusionSaveMsg.startsWith('✅') ? '#22C55E' : '#EF4444', fontWeight: 600 }}>{exclusionSaveMsg}</span>}
+                  <button onClick={saveExclusions} disabled={savingExclusions} style={{ padding: '9px 22px', borderRadius: 8, border: 'none', background: 'linear-gradient(135deg,#FF6B00,#FF8C00)', color: '#fff', fontWeight: 700, fontSize: 13, cursor: savingExclusions ? 'not-allowed' : 'pointer', opacity: savingExclusions ? 0.7 : 1 }}>
+                    {savingExclusions ? 'Saving…' : '💾 Save Exclusions'}
+                  </button>
+                </div>
+              </div>
+
               {/* Allocate Spins */}
               <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: 20 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
@@ -1392,9 +1472,10 @@ export default function LuckySpinAdmin() {
                             const done = p.codesExisting >= p.spinsEarned
                             const sel = selectedAllocUsernames.has(p.username)
                             return (
-                              <tr key={p.username} style={{ borderBottom: '1px solid var(--border)', opacity: done ? 0.6 : 1 }}>
+                              <tr key={p.username} style={{ borderBottom: '1px solid var(--border)', opacity: (p.excluded || p.tierBlocked) ? 0.45 : done ? 0.6 : 1 }}>
                                 <td style={{ padding: '8px 10px' }}>
-                                  <input type="checkbox" checked={sel} onChange={e => {
+                                  <input type="checkbox" checked={sel && !p.excluded && !p.tierBlocked} disabled={p.excluded || p.tierBlocked} onChange={e => {
+                                    if (p.excluded || p.tierBlocked) return
                                     const next = new Set(selectedAllocUsernames)
                                     e.target.checked ? next.add(p.username) : next.delete(p.username)
                                     setSelectedAllocUsernames(next)
@@ -1406,7 +1487,11 @@ export default function LuckySpinAdmin() {
                                 <td style={{ padding: '8px 10px', fontSize: 13, color: 'var(--muted)' }}>{p.codesExisting}</td>
                                 <td style={{ padding: '8px 10px', fontSize: 13, fontWeight: 700, color: needed > 0 ? '#FF8C00' : '#22C55E' }}>{needed > 0 ? `+${needed}` : '—'}</td>
                                 <td style={{ padding: '8px 10px' }}>
-                                  {done
+                                  {p.excluded
+                                    ? <span style={{ background: '#EF444422', color: '#EF4444', borderRadius: 5, padding: '2px 8px', fontSize: 11, fontWeight: 700 }}>🚫 Excluded</span>
+                                    : p.tierBlocked
+                                    ? <span style={{ background: 'rgba(150,150,150,0.15)', color: '#888', borderRadius: 5, padding: '2px 8px', fontSize: 11, fontWeight: 700 }}>⛔ Wrong Tier{p.playerTier ? ` (${p.playerTier})` : ''}</span>
+                                    : done
                                     ? <span style={{ background: '#22C55E22', color: '#22C55E', borderRadius: 5, padding: '2px 8px', fontSize: 11, fontWeight: 700 }}>✅ Done</span>
                                     : <span style={{ background: '#FF8C0022', color: '#FF8C00', borderRadius: 5, padding: '2px 8px', fontSize: 11, fontWeight: 700 }}>⏳ Needs Code</span>
                                   }
