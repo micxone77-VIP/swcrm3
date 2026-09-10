@@ -434,46 +434,66 @@ export default function Campaigns() {
     }
   }
 
-  // ── Import valid_bet (+ deposit re-sync for dual_tier) from vip_monthly_totals ─
+  // ── Import campaign-period deposit + turnover from vip_daily_snapshots ────────
+  // Queries the same source as loadRealFinancials (vip_daily_snapshots, filtered
+  // to the campaign's start→end date range) so the imported figures are always
+  // scoped to the campaign period — not the whole month. Only sums rows where
+  // monthly_valid_bet > 0 (active days), matching the platform's own convention.
   async function importFromVipData() {
     if (!selected || players.length === 0) return
-    const monthStr = selected.start_date ? selected.start_date.slice(0, 7) : null
-    if (!monthStr) { alert('Campaign has no start date — cannot import VIP data.'); return }
+    const startDate = selected.start_date
+    const endDate   = selected.end_date || selected.start_date
+    if (!startDate) { alert('Campaign has no start date — cannot import VIP data.'); return }
     if (!window.confirm(
-      `Import VIP monthly data for ${monthStr}?\n\n` +
-      `This will overwrite each enrolled player's Valid Bet (Turnover) with their ` +
-      `vip_monthly_totals figure for ${monthStr}. Manually entered values will be replaced.`
+      `Import VIP platform data for ${startDate === endDate ? startDate : `${startDate} → ${endDate}`}?\n\n` +
+      `This will overwrite each enrolled player's Deposit and Valid Bet (Turnover) ` +
+      `with their actual platform figures for the campaign period. Manually entered values will be replaced.`
     )) return
 
-    const usernames = players.map(p => p.username).filter(Boolean)
-    if (usernames.length === 0) return
+    const usernameSet = new Set(players.map(p => p.username).filter(Boolean))
+    if (usernameSet.size === 0) return
 
-    const { data: vipRows, error } = await supabase
-      .from('vip_monthly_totals')
-      .select('username, monthly_valid_bet')
-      .eq('snapshot_month', monthStr)
-      .in('username', usernames)
-    if (error) { alert('Failed to fetch VIP data: ' + error.message); return }
+    // Page through vip_daily_snapshots for the campaign date range
+    const PAGE = 1000
+    let all = [], from = 0
+    while (true) {
+      const { data, error } = await supabase
+        .from('vip_daily_snapshots')
+        .select('username, total_deposit, monthly_valid_bet')
+        .gte('snapshot_date', startDate)
+        .lte('snapshot_date', endDate)
+        .range(from, from + PAGE - 1)
+      if (error) { alert('Failed to fetch VIP data: ' + error.message); return }
+      all = all.concat((data || []).filter(r => usernameSet.has(r.username) && (parseFloat(r.monthly_valid_bet) || 0) > 0))
+      if (!data || data.length < PAGE) break
+      from += PAGE
+    }
 
+    // Sum deposit + turnover per player across all active days in the period
     const vipMap = {}
-    ;(vipRows || []).forEach(r => { vipMap[r.username] = parseFloat(r.monthly_valid_bet) || 0 })
+    all.forEach(r => {
+      if (!vipMap[r.username]) vipMap[r.username] = { deposit: 0, validBet: 0 }
+      vipMap[r.username].deposit  += parseFloat(r.total_deposit)      || 0
+      vipMap[r.username].validBet += parseFloat(r.monthly_valid_bet)  || 0
+    })
 
     let updated = 0, notFound = 0
     for (const p of players) {
-      if (vipMap[p.username] === undefined) { notFound++; continue }
-      const newVb = vipMap[p.username]
-      const curDeposit = playerDeposit(p)
-      const updates = { valid_bet: newVb }
+      const vip = vipMap[p.username]
+      if (!vip) { notFound++; continue }
+      const updates = {
+        valid_bet:     vip.validBet,
+        total_deposit: vip.deposit,   // always include so sync RPC runs
+      }
       if (campType === 'dual_tier') {
-        // Pass total_deposit so updatePlayer triggers sync_manual_campaign_player_progress,
-        // which writes campaign_period_deposit — the value the Deposit column actually reads.
-        updates.total_deposit = curDeposit
-        updates.converted = calcDualTierReward(curDeposit, newVb, rewardTiers).tierIndex >= 0
+        updates.converted = calcDualTierReward(vip.deposit, vip.validBet, rewardTiers).tierIndex >= 0
+      } else {
+        updates.converted = vip.deposit >= (selected.deposit_target || 0)
       }
       await updatePlayer(p.id, updates)
       updated++
     }
-    alert(`Import complete — ${updated} player${updated !== 1 ? 's' : ''} updated${notFound > 0 ? `, ${notFound} not found in VIP data for ${monthStr}` : ''}.`)
+    alert(`Import complete — ${updated} player${updated !== 1 ? 's' : ''} updated${notFound > 0 ? `, ${notFound} had no activity in VIP data for this period` : ''}.`)
   }
 
   // ── Update player ───────────────────────────────────────────────────────────
