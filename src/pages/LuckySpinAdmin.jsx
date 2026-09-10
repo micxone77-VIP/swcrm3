@@ -242,6 +242,15 @@ export default function LuckySpinAdmin() {
   const [savingWs, setSavingWs] = useState(false)
   const [wsSaveMsg, setWsSaveMsg] = useState('')
 
+  // Deposit Milestones
+  const [milestones, setMilestones] = useState([])
+  const [savingMilestones, setSavingMilestones] = useState(false)
+  const [milestoneSaveMsg, setMilestoneSaveMsg] = useState('')
+  const [milestonePreview, setMilestonePreview] = useState(null)
+  const [loadingPreview, setLoadingPreview] = useState(false)
+  const [generatingCodes, setGeneratingCodes] = useState(false)
+  const [selectedAllocUsernames, setSelectedAllocUsernames] = useState(new Set())
+
   useEffect(() => {
     supabase
       .from('vip_campaigns')
@@ -268,6 +277,20 @@ export default function LuckySpinAdmin() {
   useEffect(() => {
     if (selectedCampaign) {
       setWs({ ...BLANK_WHEEL, ...(selectedCampaign.wheel_settings || {}) })
+    }
+  }, [selectedCampaign])
+
+  // Load deposit_milestones when campaign changes
+  useEffect(() => {
+    if (selectedCampaign) {
+      const ms = selectedCampaign.deposit_milestones
+      setMilestones(Array.isArray(ms) && ms.length > 0 ? ms : [
+        { threshold: 5000,  spins: 1 },
+        { threshold: 15000, spins: 1 },
+        { threshold: 25000, spins: 1 },
+        { threshold: 40000, spins: 1 },
+      ])
+      setMilestonePreview(null)
     }
   }, [selectedCampaign])
 
@@ -458,6 +481,106 @@ export default function LuckySpinAdmin() {
     setSavingWs(false)
   }
 
+  // ── Deposit Milestone Functions ──────────────────────────────────────────────
+  async function saveMilestones() {
+    if (!selectedCampaign) return
+    setSavingMilestones(true)
+    setMilestoneSaveMsg('')
+    const sorted = [...milestones].sort((a, b) => a.threshold - b.threshold)
+    const { error } = await supabase.from('vip_campaigns').update({ deposit_milestones: sorted }).eq('id', selectedCampaign.id)
+    if (!error) {
+      setCampaigns(c => c.map(x => x.id === selectedCampaign.id ? { ...x, deposit_milestones: sorted } : x))
+      setSelectedCampaign(prev => ({ ...prev, deposit_milestones: sorted }))
+      setMilestones(sorted)
+      setMilestoneSaveMsg('✅ Milestones saved!')
+      setTimeout(() => setMilestoneSaveMsg(''), 3000)
+    } else {
+      setMilestoneSaveMsg('❌ Save failed: ' + error.message)
+    }
+    setSavingMilestones(false)
+  }
+
+  async function runMilestonePreview() {
+    if (!selectedCampaign || milestones.length === 0) return
+    const startDate = toDateInput(selectedCampaign.start_date)
+    const endDate   = toDateInput(selectedCampaign.end_date) || startDate
+    if (!startDate) { alert('Campaign has no start date.'); return }
+    setLoadingPreview(true)
+    setMilestonePreview(null)
+
+    // Fetch all active-day deposit rows for the campaign period
+    const PAGE = 1000
+    let all = [], from = 0
+    while (true) {
+      const { data, error } = await supabase
+        .from('vip_daily_snapshots')
+        .select('username, total_deposit, monthly_valid_bet')
+        .gte('snapshot_date', startDate)
+        .lte('snapshot_date', endDate)
+        .range(from, from + PAGE - 1)
+      if (error) { alert('VIP data fetch failed: ' + error.message); setLoadingPreview(false); return }
+      all = all.concat((data || []).filter(r => (parseFloat(r.monthly_valid_bet) || 0) > 0))
+      if (!data || data.length < PAGE) break
+      from += PAGE
+    }
+
+    // Sum deposits per player
+    const depositMap = {}
+    all.forEach(r => {
+      depositMap[r.username] = (depositMap[r.username] || 0) + (parseFloat(r.total_deposit) || 0)
+    })
+
+    // Count existing codes per player for this campaign
+    const { data: existingCodes } = await supabase
+      .from('vip_campaign_codes')
+      .select('member_username')
+      .eq('campaign_id', selectedCampaign.id)
+    const codeCountMap = {}
+    ;(existingCodes || []).forEach(c => {
+      if (c.member_username) codeCountMap[c.member_username] = (codeCountMap[c.member_username] || 0) + 1
+    })
+
+    // Calculate spins earned per player based on milestones
+    const sortedMs = [...milestones].sort((a, b) => a.threshold - b.threshold)
+    const preview = Object.entries(depositMap)
+      .map(([username, totalDeposit]) => {
+        const spinsEarned = sortedMs.reduce((sum, m) => totalDeposit >= (m.threshold || 0) ? sum + (m.spins || 1) : sum, 0)
+        const codesExisting = codeCountMap[username] || 0
+        return { username, totalDeposit, spinsEarned, codesExisting }
+      })
+      .filter(p => p.spinsEarned > 0)
+      .sort((a, b) => b.totalDeposit - a.totalDeposit)
+
+    setMilestonePreview(preview)
+    // Pre-select players who still need codes
+    setSelectedAllocUsernames(new Set(preview.filter(p => p.codesExisting < p.spinsEarned).map(p => p.username)))
+    setLoadingPreview(false)
+  }
+
+  async function generateMilestoneCodes() {
+    if (!selectedCampaign || !milestonePreview) return
+    const toGenerate = milestonePreview.filter(p => selectedAllocUsernames.has(p.username))
+    if (toGenerate.length === 0) { alert('No players selected.'); return }
+    const totalCodes = toGenerate.reduce((s, p) => s + Math.max(0, p.spinsEarned - p.codesExisting), 0)
+    if (!window.confirm(`Generate ${totalCodes} spin code${totalCodes !== 1 ? 's' : ''} for ${toGenerate.length} player${toGenerate.length !== 1 ? 's' : ''}?\n\nPlayers already with enough codes will be skipped.`)) return
+    setGeneratingCodes(true)
+    const inserts = []
+    for (const p of toGenerate) {
+      const needed = Math.max(0, p.spinsEarned - p.codesExisting)
+      for (let i = 0; i < needed; i++) {
+        const code = 'SPIN-' + Math.random().toString(36).substring(2, 8).toUpperCase()
+        inserts.push({ campaign_id: selectedCampaign.id, code, member_username: p.username, max_uses: 1, created_by: profile?.full_name || 'admin' })
+      }
+    }
+    if (inserts.length === 0) { alert('All selected players already have their codes.'); setGeneratingCodes(false); return }
+    const { error } = await supabase.from('vip_campaign_codes').insert(inserts)
+    if (error) { alert('Failed to generate codes: ' + error.message); setGeneratingCodes(false); return }
+    await loadCodes()
+    await runMilestonePreview()
+    setGeneratingCodes(false)
+    alert(`✅ Generated ${inserts.length} spin code${inserts.length !== 1 ? 's' : ''} successfully.`)
+  }
+
   // ── ROI Calculations ─────────────────────────────────────────────────────────
   function calcROI() {
     const totalWeight = prizes.filter(p => p.is_active).reduce((s, p) => s + (p.probability || 0), 0)
@@ -608,11 +731,12 @@ export default function LuckySpinAdmin() {
       {selectedCampaign && (
         <>
           <div style={{ display: 'flex', gap: 4, marginBottom: 16, borderBottom: '1px solid var(--border)', paddingBottom: 4 }}>
-            {TAB_BTN('records', '📋 Records')}
-            {TAB_BTN('codes',   '🔑 Codes')}
-            {TAB_BTN('prizes',  '🏆 Prizes')}
-            {TAB_BTN('roi',     '📊 ROI')}
-            {TAB_BTN('wheel',   '🎡 Wheel Settings')}
+            {TAB_BTN('records',    '📋 Records')}
+            {TAB_BTN('codes',      '🔑 Codes')}
+            {TAB_BTN('prizes',     '🏆 Prizes')}
+            {TAB_BTN('milestones', '💰 Milestones')}
+            {TAB_BTN('roi',        '📊 ROI')}
+            {TAB_BTN('wheel',      '🎡 Wheel Settings')}
           </div>
 
           {/* RECORDS TAB */}
@@ -1145,6 +1269,163 @@ export default function LuckySpinAdmin() {
                 <button onClick={saveWheelSettings} disabled={savingWs} style={{ padding: '10px 28px', borderRadius: 9, border: 'none', background: 'linear-gradient(135deg,#FF6B00,#FF8C00)', color: '#fff', fontWeight: 700, fontSize: 14, cursor: savingWs ? 'not-allowed' : 'pointer', opacity: savingWs ? 0.7 : 1 }}>
                   {savingWs ? 'Saving…' : '💾 Save Wheel Settings'}
                 </button>
+              </div>
+            </div>
+          )}
+
+          {/* ── MILESTONES TAB ── */}
+          {tab === 'milestones' && (
+            <div>
+              {/* Milestone Configurator */}
+              <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: 20, marginBottom: 20 }}>
+                <div style={{ fontWeight: 800, fontSize: 14, color: 'var(--text)', marginBottom: 4 }}>💰 Deposit Milestone Config</div>
+                <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 16 }}>
+                  Each milestone grants the player additional spin codes when their total campaign-period deposit reaches the threshold.
+                  Milestones are cumulative — a player who deposits RM 40,000 earns all 4 tiers of spins.
+                </div>
+                <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 14 }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                      {['#', 'Deposit Threshold (RM)', 'Spins Granted', ''].map(h => (
+                        <th key={h} style={{ padding: '8px 10px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {milestones.map((m, i) => (
+                      <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
+                        <td style={{ padding: '8px 10px', fontSize: 12, color: 'var(--muted)', fontWeight: 700 }}>Tier {i + 1}</td>
+                        <td style={{ padding: '8px 10px' }}>
+                          <input
+                            type="number" min="0" value={m.threshold}
+                            onChange={e => setMilestones(ms => ms.map((x, j) => j === i ? { ...x, threshold: parseFloat(e.target.value) || 0 } : x))}
+                            style={{ background: 'var(--surface2)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 10px', fontSize: 13, width: 160 }}
+                          />
+                        </td>
+                        <td style={{ padding: '8px 10px' }}>
+                          <input
+                            type="number" min="1" value={m.spins}
+                            onChange={e => setMilestones(ms => ms.map((x, j) => j === i ? { ...x, spins: parseInt(e.target.value) || 1 } : x))}
+                            style={{ background: 'var(--surface2)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 10px', fontSize: 13, width: 80 }}
+                          />
+                        </td>
+                        <td style={{ padding: '8px 10px' }}>
+                          <button onClick={() => setMilestones(ms => ms.filter((_, j) => j !== i))} style={{ background: '#EF444415', color: '#EF4444', border: '1px solid #EF444440', borderRadius: 6, padding: '4px 10px', fontSize: 12, cursor: 'pointer', fontWeight: 700 }}>✕ Remove</button>
+                        </td>
+                      </tr>
+                    ))}
+                    {milestones.length === 0 && (
+                      <tr><td colSpan={4} style={{ padding: 16, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>No milestones configured. Add one below.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+                <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                  <button
+                    onClick={() => setMilestones(ms => [...ms, { threshold: 0, spins: 1 }])}
+                    style={{ padding: '8px 16px', borderRadius: 8, border: '1px dashed var(--border)', background: 'transparent', color: 'var(--muted)', fontSize: 13, cursor: 'pointer', fontWeight: 600 }}
+                  >+ Add Milestone</button>
+                  <div style={{ flex: 1 }} />
+                  {milestoneSaveMsg && <span style={{ fontSize: 13, color: milestoneSaveMsg.startsWith('✅') ? '#22C55E' : '#EF4444', fontWeight: 600 }}>{milestoneSaveMsg}</span>}
+                  <button onClick={saveMilestones} disabled={savingMilestones} style={{ padding: '9px 22px', borderRadius: 8, border: 'none', background: 'linear-gradient(135deg,#FF6B00,#FF8C00)', color: '#fff', fontWeight: 700, fontSize: 13, cursor: savingMilestones ? 'not-allowed' : 'pointer', opacity: savingMilestones ? 0.7 : 1 }}>
+                    {savingMilestones ? 'Saving…' : '💾 Save Milestones'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Allocate Spins */}
+              <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: 20 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
+                  <div>
+                    <div style={{ fontWeight: 800, fontSize: 14, color: 'var(--text)', marginBottom: 4 }}>🎰 Allocate Spin Codes</div>
+                    <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+                      Preview which players qualify and auto-generate spin codes based on their campaign-period deposits.
+                    </div>
+                  </div>
+                  <button onClick={runMilestonePreview} disabled={loadingPreview || milestones.length === 0} style={{ padding: '9px 20px', borderRadius: 8, border: '1px solid rgba(14,165,233,.3)', background: 'rgba(14,165,233,.12)', color: '#0ea5e9', fontWeight: 700, fontSize: 13, cursor: (loadingPreview || milestones.length === 0) ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                    {loadingPreview ? '⏳ Loading…' : '📊 Preview Allocations'}
+                  </button>
+                </div>
+
+                {milestonePreview === null && !loadingPreview && (
+                  <div style={{ padding: '24px 0', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
+                    Click "Preview Allocations" to fetch VIP data for{' '}
+                    <strong style={{ color: 'var(--text)' }}>
+                      {toDateInput(selectedCampaign.start_date)} → {toDateInput(selectedCampaign.end_date) || toDateInput(selectedCampaign.start_date)}
+                    </strong>{' '}
+                    and calculate how many spins each player has earned.
+                  </div>
+                )}
+
+                {milestonePreview !== null && (
+                  <>
+                    {/* Summary bar */}
+                    <div style={{ display: 'flex', gap: 16, marginBottom: 14, padding: '10px 14px', background: 'rgba(255,107,0,0.06)', borderRadius: 9, border: '1px solid rgba(255,107,0,0.15)', fontSize: 12, color: 'var(--muted)', flexWrap: 'wrap' }}>
+                      <span><strong style={{ color: 'var(--text)' }}>{milestonePreview.length}</strong> qualifying players</span>
+                      <span><strong style={{ color: 'var(--text)' }}>{milestonePreview.reduce((s, p) => s + p.spinsEarned, 0)}</strong> total spins earned</span>
+                      <span><strong style={{ color: '#22C55E' }}>{milestonePreview.filter(p => p.codesExisting >= p.spinsEarned).length}</strong> already have codes</span>
+                      <span><strong style={{ color: '#FF8C00' }}>{milestonePreview.filter(p => p.codesExisting < p.spinsEarned).length}</strong> need new codes</span>
+                      <button onClick={runMilestonePreview} disabled={loadingPreview} style={{ marginLeft: 'auto', background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 12 }}>↺ Refresh</button>
+                    </div>
+
+                    {/* Select all / none */}
+                    <div style={{ display: 'flex', gap: 10, marginBottom: 10, alignItems: 'center' }}>
+                      <button onClick={() => setSelectedAllocUsernames(new Set(milestonePreview.filter(p => p.codesExisting < p.spinsEarned).map(p => p.username)))} style={{ fontSize: 12, padding: '4px 12px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface2)', color: 'var(--muted)', cursor: 'pointer' }}>Select Needs Code</button>
+                      <button onClick={() => setSelectedAllocUsernames(new Set(milestonePreview.map(p => p.username)))} style={{ fontSize: 12, padding: '4px 12px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface2)', color: 'var(--muted)', cursor: 'pointer' }}>Select All</button>
+                      <button onClick={() => setSelectedAllocUsernames(new Set())} style={{ fontSize: 12, padding: '4px 12px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface2)', color: 'var(--muted)', cursor: 'pointer' }}>Deselect All</button>
+                      <span style={{ fontSize: 12, color: 'var(--muted)' }}>{selectedAllocUsernames.size} selected</span>
+                    </div>
+
+                    {/* Player table */}
+                    <div style={{ overflowX: 'auto', marginBottom: 14 }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                        <thead>
+                          <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                            <th style={{ padding: '8px 10px', width: 32 }}></th>
+                            {['Username', 'Period Deposit', 'Spins Earned', 'Codes Existing', 'Codes Needed', 'Status'].map(h => (
+                              <th key={h} style={{ padding: '8px 10px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase' }}>{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {milestonePreview.map(p => {
+                            const needed = Math.max(0, p.spinsEarned - p.codesExisting)
+                            const done = p.codesExisting >= p.spinsEarned
+                            const sel = selectedAllocUsernames.has(p.username)
+                            return (
+                              <tr key={p.username} style={{ borderBottom: '1px solid var(--border)', opacity: done ? 0.6 : 1 }}>
+                                <td style={{ padding: '8px 10px' }}>
+                                  <input type="checkbox" checked={sel} onChange={e => {
+                                    const next = new Set(selectedAllocUsernames)
+                                    e.target.checked ? next.add(p.username) : next.delete(p.username)
+                                    setSelectedAllocUsernames(next)
+                                  }} />
+                                </td>
+                                <td style={{ padding: '8px 10px', fontWeight: 600, color: 'var(--text)', fontSize: 13 }}>{p.username}</td>
+                                <td style={{ padding: '8px 10px', fontSize: 13, color: 'var(--text)' }}>RM {p.totalDeposit.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                <td style={{ padding: '8px 10px', fontSize: 13, fontWeight: 700, color: 'var(--brand)' }}>{p.spinsEarned}</td>
+                                <td style={{ padding: '8px 10px', fontSize: 13, color: 'var(--muted)' }}>{p.codesExisting}</td>
+                                <td style={{ padding: '8px 10px', fontSize: 13, fontWeight: 700, color: needed > 0 ? '#FF8C00' : '#22C55E' }}>{needed > 0 ? `+${needed}` : '—'}</td>
+                                <td style={{ padding: '8px 10px' }}>
+                                  {done
+                                    ? <span style={{ background: '#22C55E22', color: '#22C55E', borderRadius: 5, padding: '2px 8px', fontSize: 11, fontWeight: 700 }}>✅ Done</span>
+                                    : <span style={{ background: '#FF8C0022', color: '#FF8C00', borderRadius: 5, padding: '2px 8px', fontSize: 11, fontWeight: 700 }}>⏳ Needs Code</span>
+                                  }
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Generate button */}
+                    <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                      <button onClick={generateMilestoneCodes} disabled={generatingCodes || selectedAllocUsernames.size === 0} style={{ padding: '10px 28px', borderRadius: 9, border: 'none', background: generatingCodes || selectedAllocUsernames.size === 0 ? 'var(--border)' : 'linear-gradient(135deg,#FF6B00,#FF8C00)', color: generatingCodes || selectedAllocUsernames.size === 0 ? 'var(--muted)' : '#fff', fontWeight: 700, fontSize: 14, cursor: generatingCodes || selectedAllocUsernames.size === 0 ? 'not-allowed' : 'pointer' }}>
+                        {generatingCodes ? '⏳ Generating…' : `🎰 Generate Codes for ${selectedAllocUsernames.size} Player${selectedAllocUsernames.size !== 1 ? 's' : ''}`}
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           )}
