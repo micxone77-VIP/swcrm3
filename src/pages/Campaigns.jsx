@@ -1799,6 +1799,31 @@ export default function Campaigns() {
                                 const color = pct >= 100 ? '#f0883e' : pct >= 70 ? '#f0883e' : '#f85149' // never green until both pass
                                 pr = { pct, color, bg: color+'18', label: pct >= 70 ? '⚡ CLOSE' : '🔴 BEHIND' }
                               }
+                            } else if (campType === 'dual_tier') {
+                              // Non-daily dual_tier: same tier-aware logic as isDailyMode branch above,
+                              // using the player's accumulated deposit/turnover from campaign_players.
+                              const currentDeposit = playerDeposit(p)
+                              const currentTurnover = p.valid_bet || 0
+                              if (dualReward.tierIndex >= 0) {
+                                const nextTier = rewardTiers[dualReward.tierIndex + 1]
+                                if (nextTier) {
+                                  const nextDepThreshold = parseFloat(nextTier.depositThreshold) || 0
+                                  const nextTOThreshold  = parseFloat(nextTier.turnoverThreshold)  || 0
+                                  const depPct = nextDepThreshold > 0 ? Math.min(100, Math.round(currentDeposit  / nextDepThreshold * 100)) : 100
+                                  const toPct  = nextTOThreshold  > 0 ? Math.min(100, Math.round(currentTurnover / nextTOThreshold  * 100)) : 100
+                                  pr = { pct: Math.min(depPct, toPct), color:'#3fb950', bg:'rgba(63,185,80,.15)', label:`✅ Tier ${dualReward.tierIndex+1} Achieved` }
+                                } else {
+                                  pr = { pct:100, color:'#3fb950', bg:'rgba(63,185,80,.15)', label:`✅ Tier ${dualReward.tierIndex+1} (Highest)` }
+                                }
+                              } else {
+                                const firstDepThreshold = parseFloat(rewardTiers[0]?.depositThreshold) || 0
+                                const firstTOThreshold  = parseFloat(rewardTiers[0]?.turnoverThreshold)  || 0
+                                const depPct = firstDepThreshold > 0 ? Math.min(100, Math.round(currentDeposit  / firstDepThreshold * 100)) : 100
+                                const toPct  = firstTOThreshold  > 0 ? Math.min(100, Math.round(currentTurnover / firstTOThreshold  * 100)) : 100
+                                const pct = Math.min(depPct, toPct)
+                                const color = pct >= 70 ? '#f0883e' : '#f85149'
+                                pr = { pct, color, bg: color+'18', label: pct >= 70 ? '⚡ CLOSE' : '🔴 BEHIND' }
+                              }
                             } else {
                               pr = getProgress(playerDeposit(p), depTarget)
                             }
