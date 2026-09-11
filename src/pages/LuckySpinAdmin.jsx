@@ -360,9 +360,13 @@ export default function LuckySpinAdmin() {
       campaign_id: selectedCampaign.id,
       member_username: manualRecord.member_username.trim(),
       prize_id: prize?.id || null,
-      prize_name: prize?.name_en || '',
-      prize_name_en: prize?.name_en || '',
-      prize_type: prize?.prize_type || '',
+      prize_snapshot: prize ? {
+        name_en: prize.name_en || '',
+        name_zh: prize.name_zh || '',
+        name_bm: prize.name_bm || '',
+        prize_type: prize.prize_type || '',
+        prize_value: prize.prize_value || '',
+      } : null,
       code_used: manualRecord.code_used.trim() || null,
       status: manualRecord.status,
       note: manualRecord.note.trim() || null,
@@ -959,7 +963,7 @@ export default function LuckySpinAdmin() {
                         return (
                           <tr key={rec.id} style={{ borderBottom: '1px solid var(--border)' }}>
                             <td style={{ padding: '10px 12px', fontWeight: 600, color: 'var(--text)' }}>{rec.member_username}</td>
-                            <td style={{ padding: '10px 12px', fontSize: 12, color: 'var(--text)' }}>{rec.prize_name_en || rec.prize_name || '—'}</td>
+                            <td style={{ padding: '10px 12px', fontSize: 12, color: 'var(--text)' }}>{rec.prize_snapshot?.name_en || rec.prize_snapshot?.name_zh || '—'}</td>
                             <td style={{ padding: '10px 12px', fontSize: 12, color: 'var(--muted)', fontFamily: 'monospace' }}>{rec.code_used || '—'}</td>
                             <td style={{ padding: '10px 12px' }}>
                               <span style={{ background: sc.bg, color: sc.color, borderRadius: 5, padding: '2px 8px', fontSize: 11, fontWeight: 700 }}>{sc.label}</span>
