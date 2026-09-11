@@ -216,6 +216,12 @@ export default function LuckySpinAdmin() {
   const [note, setNote] = useState({})
   const [editNote, setEditNote] = useState(null)
 
+  // Manual Record
+  const [showManualRecord, setShowManualRecord] = useState(false)
+  const [manualRecord, setManualRecord] = useState({ member_username: '', prize_id: '', code_used: '', status: 'pending', note: '' })
+  const [addingRecord, setAddingRecord] = useState(false)
+  const [recordMsg, setRecordMsg] = useState('')
+
   // Campaign tab: active | upcoming | ended
   const [campaignTab, setCampaignTab] = useState('active')
 
@@ -341,6 +347,38 @@ export default function LuckySpinAdmin() {
     const text = note[recordId] || ''
     const { error } = await supabase.from('vip_campaign_records').update({ note: text }).eq('id', recordId)
     if (!error) { setRecords(r => r.map(rec => rec.id === recordId ? { ...rec, note: text } : rec)); setEditNote(null) }
+  }
+
+  async function addManualRecord() {
+    if (!selectedCampaign) return
+    if (!manualRecord.member_username.trim()) { setRecordMsg('❌ Member username is required.'); return }
+    if (!manualRecord.prize_id) { setRecordMsg('❌ Please select a prize.'); return }
+    setAddingRecord(true)
+    setRecordMsg('')
+    const prize = prizes.find(p => p.id === manualRecord.prize_id)
+    const payload = {
+      campaign_id: selectedCampaign.id,
+      member_username: manualRecord.member_username.trim(),
+      prize_id: prize?.id || null,
+      prize_name: prize?.name_en || '',
+      prize_name_en: prize?.name_en || '',
+      prize_type: prize?.prize_type || '',
+      code_used: manualRecord.code_used.trim() || null,
+      status: manualRecord.status,
+      note: manualRecord.note.trim() || null,
+      handler: profile?.full_name || profile?.username || 'admin',
+      created_at: new Date().toISOString(),
+    }
+    const { error } = await supabase.from('vip_campaign_records').insert(payload)
+    if (!error) {
+      setRecordMsg('✅ Record added!')
+      setManualRecord({ member_username: '', prize_id: '', code_used: '', status: 'pending', note: '' })
+      loadRecords()
+      setTimeout(() => { setRecordMsg(''); setShowManualRecord(false) }, 1500)
+    } else {
+      setRecordMsg('❌ ' + error.message)
+    }
+    setAddingRecord(false)
   }
 
   async function generateCode() {
@@ -850,15 +888,60 @@ export default function LuckySpinAdmin() {
           {tab === 'records' && (() => {
             return (
               <div>
-                <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
-                  <input placeholder="Search member…" value={searchMember} onChange={e => setSearchMember(e.target.value)} style={{ ...inp, maxWidth: 220 }} />
-                  {['all','pending','processing','completed','cancelled'].map(s => (
-                    <button key={s} onClick={() => setStatusFilter(s)} style={{ padding: '6px 14px', borderRadius: 20, border: `1px solid ${statusFilter === s ? 'var(--brand)' : 'var(--border)'}`, background: statusFilter === s ? 'rgba(255,107,0,0.12)' : 'transparent', color: statusFilter === s ? 'var(--brand)' : 'var(--muted)', fontSize: 12, fontWeight: statusFilter === s ? 700 : 400, cursor: 'pointer' }}>
-                      {s === 'all' ? `All (${records.length})` : `${s.charAt(0).toUpperCase() + s.slice(1)} (${records.filter(r => r.status === s).length})`}
-                    </button>
-                  ))}
-                  <button onClick={loadRecords} style={{ marginLeft: 'auto', padding: '6px 14px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface2)', color: 'var(--muted)', fontSize: 12, cursor: 'pointer' }}>↺ Refresh</button>
+                <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                    <input placeholder="Search member…" value={searchMember} onChange={e => setSearchMember(e.target.value)} style={{ ...inp, maxWidth: 220 }} />
+                    {['all','pending','processing','completed','cancelled'].map(s => (
+                      <button key={s} onClick={() => setStatusFilter(s)} style={{ padding: '6px 14px', borderRadius: 20, border: `1px solid ${statusFilter === s ? 'var(--brand)' : 'var(--border)'}`, background: statusFilter === s ? 'rgba(255,107,0,0.12)' : 'transparent', color: statusFilter === s ? 'var(--brand)' : 'var(--muted)', fontSize: 12, fontWeight: statusFilter === s ? 700 : 400, cursor: 'pointer' }}>
+                        {s === 'all' ? `All (${records.length})` : `${s.charAt(0).toUpperCase() + s.slice(1)} (${records.filter(r => r.status === s).length})`}
+                      </button>
+                    ))}
+                    <button onClick={loadRecords} style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface2)', color: 'var(--muted)', fontSize: 12, cursor: 'pointer' }}>↺ Refresh</button>
+                  </div>
+                  <button onClick={() => { setShowManualRecord(true); setRecordMsg('') }} style={{ padding: '7px 16px', borderRadius: 8, border: 'none', background: 'linear-gradient(135deg,#FF6B00,#FF8C00)', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                    + Manual Record
+                  </button>
                 </div>
+
+                {/* ── Manual Record Modal ── */}
+                {showManualRecord && (
+                  <Modal title="✍️ Add Manual Spin Record" onClose={() => setShowManualRecord(false)}>
+                    <Field label="Member Username *">
+                      <input style={inp} placeholder="e.g. player123" value={manualRecord.member_username} onChange={e => setManualRecord(r => ({ ...r, member_username: e.target.value }))} />
+                    </Field>
+                    <Field label="Prize *">
+                      <select style={inp} value={manualRecord.prize_id} onChange={e => setManualRecord(r => ({ ...r, prize_id: e.target.value }))}>
+                        <option value="">— Select prize —</option>
+                        {prizes.filter(p => p.is_active).map(p => (
+                          <option key={p.id} value={p.id}>{p.name_en} ({p.prize_type})</option>
+                        ))}
+                      </select>
+                    </Field>
+                    <Field label="Code Used" hint="The code the player used (optional)">
+                      <input style={inp} placeholder="e.g. VIP-ABC123" value={manualRecord.code_used} onChange={e => setManualRecord(r => ({ ...r, code_used: e.target.value.toUpperCase() }))} />
+                    </Field>
+                    <Field label="Status">
+                      <select style={inp} value={manualRecord.status} onChange={e => setManualRecord(r => ({ ...r, status: e.target.value }))}>
+                        <option value="pending">Pending</option>
+                        <option value="processing">Processing</option>
+                        <option value="completed">Completed</option>
+                      </select>
+                    </Field>
+                    <Field label="Note (optional)">
+                      <input style={inp} placeholder="e.g. Manually recorded — spun on external platform" value={manualRecord.note} onChange={e => setManualRecord(r => ({ ...r, note: e.target.value }))} />
+                    </Field>
+                    {recordMsg && (
+                      <div style={{ marginBottom: 12, fontSize: 13, fontWeight: 600, color: recordMsg.startsWith('✅') ? '#22C55E' : '#EF4444' }}>{recordMsg}</div>
+                    )}
+                    <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                      <button onClick={() => setShowManualRecord(false)} style={{ padding: '10px 20px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface2)', color: 'var(--muted)', fontSize: 13, cursor: 'pointer' }}>Cancel</button>
+                      <button onClick={addManualRecord} disabled={addingRecord} style={{ padding: '10px 24px', borderRadius: 8, border: 'none', background: 'linear-gradient(135deg,#FF6B00,#FF8C00)', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+                        {addingRecord ? 'Saving…' : 'Add Record'}
+                      </button>
+                    </div>
+                  </Modal>
+                )}
+
                 <div style={{ overflowX: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                     <thead>
@@ -876,7 +959,7 @@ export default function LuckySpinAdmin() {
                         return (
                           <tr key={rec.id} style={{ borderBottom: '1px solid var(--border)' }}>
                             <td style={{ padding: '10px 12px', fontWeight: 600, color: 'var(--text)' }}>{rec.member_username}</td>
-                            <td style={{ padding: '10px 12px', fontSize: 12, color: 'var(--text)' }}>{rec.prize_name_en || rec.prize_id}</td>
+                            <td style={{ padding: '10px 12px', fontSize: 12, color: 'var(--text)' }}>{rec.prize_name_en || rec.prize_name || '—'}</td>
                             <td style={{ padding: '10px 12px', fontSize: 12, color: 'var(--muted)', fontFamily: 'monospace' }}>{rec.code_used || '—'}</td>
                             <td style={{ padding: '10px 12px' }}>
                               <span style={{ background: sc.bg, color: sc.color, borderRadius: 5, padding: '2px 8px', fontSize: 11, fontWeight: 700 }}>{sc.label}</span>
