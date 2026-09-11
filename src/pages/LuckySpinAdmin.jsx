@@ -208,7 +208,11 @@ export default function LuckySpinAdmin() {
   const [searchMember, setSearchMember] = useState('')
   const [updatingId, setUpdatingId] = useState(null)
   const [newCodeMember, setNewCodeMember] = useState('')
+  const [newCodeMaxUses, setNewCodeMaxUses] = useState(1)
+  const [codeMode, setCodeMode] = useState('auto')   // 'auto' | 'manual'
+  const [manualCode, setManualCode] = useState('')
   const [generatingCode, setGeneratingCode] = useState(false)
+  const [codeMsg, setCodeMsg] = useState('')
   const [note, setNote] = useState({})
   const [editNote, setEditNote] = useState(null)
 
@@ -342,9 +346,47 @@ export default function LuckySpinAdmin() {
   async function generateCode() {
     if (!selectedCampaign) return
     setGeneratingCode(true)
-    const code = 'SPIN-' + Math.random().toString(36).substring(2, 8).toUpperCase()
-    const { error } = await supabase.from('vip_campaign_codes').insert({ campaign_id: selectedCampaign.id, code, member_username: newCodeMember || null, max_uses: 1, created_by: profile?.full_name || 'admin' })
-    if (!error) { setNewCodeMember(''); loadCodes() }
+    setCodeMsg('')
+
+    // Determine code string
+    let code
+    if (codeMode === 'manual') {
+      code = manualCode.trim().toUpperCase()
+      if (!code) { setCodeMsg('❌ Please enter a code.'); setGeneratingCode(false); return }
+    } else {
+      code = 'SPIN-' + Math.random().toString(36).substring(2, 8).toUpperCase()
+    }
+
+    // Check duplicate
+    const { data: existing } = await supabase
+      .from('vip_campaign_codes')
+      .select('id')
+      .eq('campaign_id', selectedCampaign.id)
+      .eq('code', code)
+    if (existing && existing.length > 0) {
+      setCodeMsg(`❌ Code "${code}" already exists in this campaign.`)
+      setGeneratingCode(false)
+      return
+    }
+
+    const { error } = await supabase.from('vip_campaign_codes').insert({
+      campaign_id: selectedCampaign.id,
+      code,
+      member_username: newCodeMember.trim() || null,
+      max_uses: Number(newCodeMaxUses) || 1,
+      created_by: profile?.full_name || 'admin',
+    })
+
+    if (!error) {
+      setCodeMsg(`✅ Code "${code}" added!`)
+      setNewCodeMember('')
+      setManualCode('')
+      setNewCodeMaxUses(1)
+      loadCodes()
+      setTimeout(() => setCodeMsg(''), 4000)
+    } else {
+      setCodeMsg('❌ ' + error.message)
+    }
     setGeneratingCode(false)
   }
 
@@ -870,14 +912,77 @@ export default function LuckySpinAdmin() {
           {/* CODES TAB */}
           {tab === 'codes' && (
             <div>
-              <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'flex-end' }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginBottom: 5, textTransform: 'uppercase' }}>Member Username (optional)</div>
-                  <input placeholder="Leave blank for open code" value={newCodeMember} onChange={e => setNewCodeMember(e.target.value)} style={{ ...inp, maxWidth: 280 }} />
+              {/* ── Mode toggle ── */}
+              <div style={{ display: 'flex', gap: 0, marginBottom: 16, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, padding: 4, width: 'fit-content' }}>
+                {[['auto','🎲 Auto Generate'],['manual','✏️ Enter Code']].map(([mode, label]) => (
+                  <button key={mode} onClick={() => { setCodeMode(mode); setCodeMsg('') }}
+                    style={{ padding: '7px 18px', borderRadius: 7, border: 'none', background: codeMode === mode ? 'var(--brand)' : 'transparent', color: codeMode === mode ? '#fff' : 'var(--muted)', fontWeight: codeMode === mode ? 700 : 400, fontSize: 13, cursor: 'pointer' }}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              {/* ── Input fields ── */}
+              <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: '16px 20px', marginBottom: 16 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: codeMode === 'manual' ? '1fr 1fr 100px auto' : '1fr 100px auto', gap: 12, alignItems: 'flex-end' }}>
+
+                  {/* Manual code input — only visible in manual mode */}
+                  {codeMode === 'manual' && (
+                    <div>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginBottom: 5, textTransform: 'uppercase' }}>Code *</div>
+                      <input
+                        placeholder="e.g. VIP-ABC123"
+                        value={manualCode}
+                        onChange={e => setManualCode(e.target.value.toUpperCase())}
+                        style={{ ...inp, fontFamily: 'monospace', fontWeight: 700, letterSpacing: 1 }}
+                      />
+                    </div>
+                  )}
+
+                  {/* Member username */}
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginBottom: 5, textTransform: 'uppercase' }}>Member Username</div>
+                    <input
+                      placeholder="Leave blank = open code"
+                      value={newCodeMember}
+                      onChange={e => setNewCodeMember(e.target.value)}
+                      style={inp}
+                    />
+                  </div>
+
+                  {/* Max uses (spins) */}
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginBottom: 5, textTransform: 'uppercase' }}>Spins</div>
+                    <input
+                      type="number" min="1" max="10"
+                      value={newCodeMaxUses}
+                      onChange={e => setNewCodeMaxUses(e.target.value)}
+                      style={{ ...inp, width: 90 }}
+                    />
+                  </div>
+
+                  {/* Submit button */}
+                  <div>
+                    <button onClick={generateCode} disabled={generatingCode}
+                      style={{ padding: '10px 20px', borderRadius: 8, border: 'none', background: 'linear-gradient(135deg,#FF6B00,#FF8C00)', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap', height: 40 }}>
+                      {generatingCode ? '…' : codeMode === 'manual' ? '+ Add Code' : '+ Generate'}
+                    </button>
+                  </div>
                 </div>
-                <button onClick={generateCode} disabled={generatingCode} style={{ padding: '10px 20px', borderRadius: 8, border: 'none', background: 'linear-gradient(135deg,#FF6B00,#FF8C00)', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
-                  {generatingCode ? 'Generating…' : '+ Generate Code'}
-                </button>
+
+                {/* Feedback message */}
+                {codeMsg && (
+                  <div style={{ marginTop: 10, fontSize: 13, color: codeMsg.startsWith('✅') ? '#22C55E' : '#EF4444', fontWeight: 600 }}>
+                    {codeMsg}
+                  </div>
+                )}
+
+                {/* Hint */}
+                <div style={{ marginTop: 8, fontSize: 11, color: 'var(--muted)' }}>
+                  {codeMode === 'manual'
+                    ? '✏️ Enter any code string (e.g. from an external system). Duplicate codes in the same campaign are rejected.'
+                    : '🎲 A random SPIN-XXXXXX code will be generated automatically.'}
+                </div>
               </div>
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
