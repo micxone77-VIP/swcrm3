@@ -83,6 +83,7 @@ export default function VIP360() {
     const n = new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}`
   })
   const [calData, setCalData] = useState([])
+  const [calBaseline, setCalBaseline] = useState(0) // total_deposit from last snapshot before month start
   const [calLoading, setCalLoading] = useState(false)
 
   const load = useCallback(async () => {
@@ -140,12 +141,24 @@ export default function VIP360() {
     const start = `${calMonth}-01`
     const daysInMonth = new Date(y, m, 0).getDate()
     const end = `${calMonth}-${String(daysInMonth).padStart(2,'0')}`
-    supabase.from('vip_daily_snapshots')
-      .select('snapshot_date,total_deposit,total_withdrawal,monthly_valid_bet,bet_count')
-      .eq('vip_id', id)
-      .gte('snapshot_date', start)
-      .lte('snapshot_date', end)
-      .then(({ data }) => { setCalData(data || []); setCalLoading(false) })
+    Promise.all([
+      supabase.from('vip_daily_snapshots')
+        .select('snapshot_date,total_deposit,total_withdrawal,monthly_valid_bet,bet_count')
+        .eq('vip_id', id)
+        .gte('snapshot_date', start)
+        .lte('snapshot_date', end),
+      // Fetch last snapshot before month start to compute delta on day 1
+      supabase.from('vip_daily_snapshots')
+        .select('total_deposit')
+        .eq('vip_id', id)
+        .lt('snapshot_date', start)
+        .order('snapshot_date', { ascending: false })
+        .limit(1),
+    ]).then(([{ data: rows }, { data: baseline }]) => {
+      setCalData(rows || [])
+      setCalBaseline(baseline && baseline[0] ? Number(baseline[0].total_deposit || 0) : 0)
+      setCalLoading(false)
+    })
   }, [tab, calMonth, id])
 
   // Period-filtered monthly data
@@ -535,16 +548,32 @@ export default function VIP360() {
             const firstDow = new Date(y, m - 1, 1).getDay() // 0=Sun
             const byDay = {}
             calData.forEach(r => { byDay[r.snapshot_date] = r })
+            // Build daily deposit delta map: delta = today.total_deposit - yesterday.total_deposit
+            // total_deposit is cumulative lifetime, so we must diff consecutive rows to get real daily deposit
+            const sortedRows = [...calData].sort((a,b) => a.snapshot_date < b.snapshot_date ? -1 : 1)
+            const dailyDepositDelta = {} // key -> daily deposit amount
+            const dailyWdDelta = {}     // key -> daily withdrawal amount
+            let prevDep = calBaseline
+            let prevWd = 0
+            // Seed prevWd from baseline if needed (fetch not done; use 0 since withdrawal display is secondary)
+            sortedRows.forEach(r => {
+              const dep = Number(r.total_deposit || 0)
+              const wd = Number(r.total_withdrawal || 0)
+              dailyDepositDelta[r.snapshot_date] = Math.max(0, dep - prevDep)
+              dailyWdDelta[r.snapshot_date] = Math.max(0, wd - prevWd)
+              prevDep = dep
+              prevWd = wd
+            })
             let depositDays = 0, turnoverOnlyDays = 0, absentDays = 0
             let totalDeposit = 0, totalBet = 0, totalWithdrawal = 0, withdrawalDays = 0
             for (let d = 1; d <= daysInMonth; d++) {
               const key = `${calMonth}-${String(d).padStart(2,'0')}`
               const row = byDay[key]
               if (!row) { absentDays++; continue }
-              const dep = Number(row.total_deposit || 0)
+              const dep = dailyDepositDelta[key] || 0  // real daily deposit delta
               const bet = Number(row.monthly_valid_bet || 0)
               const bc = Number(row.bet_count || 0)
-              const wd = Number(row.total_withdrawal || 0)
+              const wd = dailyWdDelta[key] || 0
               totalDeposit += dep; totalBet += bet
               if (wd > 0) { totalWithdrawal += wd; withdrawalDays++ }
               if (dep > 0) depositDays++
@@ -612,7 +641,7 @@ export default function VIP360() {
                         const d = i + 1
                         const key = `${calMonth}-${String(d).padStart(2,'0')}`
                         const row = byDay[key]
-                        const dep = row ? Number(row.total_deposit || 0) : 0
+                        const dep = row ? (dailyDepositDelta[key] || 0) : 0  // daily delta, not cumulative
                         const bc = row ? Number(row.bet_count || 0) : 0
                         const bet = row ? Number(row.monthly_valid_bet || 0) : 0
                         const isDeposit = dep > 0
