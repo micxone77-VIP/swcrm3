@@ -375,9 +375,26 @@ export default function LuckySpinAdmin() {
     }
     const { error } = await supabase.from('vip_campaign_records').insert(payload)
     if (!error) {
+      // If a code was provided and spin is not cancelled → increment used_count on that code
+      const codeStr = manualRecord.code_used.trim().toUpperCase()
+      if (codeStr && manualRecord.status !== 'cancelled') {
+        const { data: codeRow } = await supabase
+          .from('vip_campaign_codes')
+          .select('id, used_count')
+          .eq('campaign_id', selectedCampaign.id)
+          .eq('code', codeStr)
+          .maybeSingle()
+        if (codeRow) {
+          await supabase
+            .from('vip_campaign_codes')
+            .update({ used_count: (codeRow.used_count || 0) + 1 })
+            .eq('id', codeRow.id)
+        }
+      }
       setRecordMsg('✅ Record added!')
       setManualRecord({ member_username: '', prize_id: '', code_used: '', status: 'pending', note: '' })
       loadRecords()
+      loadCodes()
       setTimeout(() => { setRecordMsg(''); setShowManualRecord(false) }, 1500)
     } else {
       setRecordMsg('❌ ' + error.message)
