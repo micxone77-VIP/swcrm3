@@ -577,7 +577,7 @@ export default function VIP360() {
               totalDeposit += dep; totalBet += bet
               if (wd > 0) { totalWithdrawal += wd; withdrawalDays++ }
               if (dep > 0) depositDays++
-              else if (bc > 0) turnoverOnlyDays++
+              else if (bet > 0) turnoverOnlyDays++
               else absentDays++
             }
             const activeDays = depositDays + turnoverOnlyDays
@@ -645,7 +645,7 @@ export default function VIP360() {
                         const bc = row ? Number(row.bet_count || 0) : 0
                         const bet = row ? Number(row.monthly_valid_bet || 0) : 0
                         const isDeposit = dep > 0
-                        const isTurnover = !isDeposit && bc > 0
+                        const isTurnover = !isDeposit && bet > 0
                         const bg = isDeposit ? 'rgba(34,197,94,.82)' : isTurnover ? 'rgba(201,169,97,.82)' : 'transparent'
                         const textColor = (isDeposit || isTurnover) ? '#fff' : 'var(--muted)'
                         const today = new Date()
