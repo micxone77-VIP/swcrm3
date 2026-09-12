@@ -222,6 +222,25 @@ export default function LuckySpinAdmin() {
   const [addingRecord, setAddingRecord] = useState(false)
   const [recordMsg, setRecordMsg] = useState('')
 
+  // Chase List / Members
+  const [members, setMembers] = useState([])
+  const [deposits, setDeposits] = useState([])   // all deposits for this campaign
+  const [memberSearch, setMemberSearch] = useState('')
+  const [newMemberUsername, setNewMemberUsername] = useState('')
+  const [addingMember, setAddingMember] = useState(false)
+  const [memberMsg, setMemberMsg] = useState('')
+  const [expandedMember, setExpandedMember] = useState(null)   // username of expanded row
+  const [depositForm, setDepositForm] = useState({ date: new Date().toISOString().slice(0,10), amount: '', note: '' })
+  const [addingDeposit, setAddingDeposit] = useState(false)
+  const SPIN_TIERS = [
+    { min: 40000, spins: 4 },
+    { min: 25000, spins: 3 },
+    { min: 15000, spins: 2 },
+    { min: 5000,  spins: 1 },
+    { min: 0,     spins: 0 },
+  ]
+  const getEarnedSpins = (total) => (SPIN_TIERS.find(t => total >= t.min) || { spins: 0 }).spins
+
   // Campaign tab: active | upcoming | ended
   const [campaignTab, setCampaignTab] = useState('active')
 
@@ -331,10 +350,22 @@ export default function LuckySpinAdmin() {
     setPrizes(data || [])
   }, [selectedCampaign])
 
+  const loadMembers = useCallback(async () => {
+    if (!selectedCampaign) return
+    const { data } = await supabase.from('vip_campaign_members').select('*').eq('campaign_id', selectedCampaign.id).order('enrolled_at', { ascending: false })
+    setMembers(data || [])
+  }, [selectedCampaign])
+
+  const loadDeposits = useCallback(async () => {
+    if (!selectedCampaign) return
+    const { data } = await supabase.from('vip_campaign_deposits').select('*').eq('campaign_id', selectedCampaign.id).order('deposit_date', { ascending: false })
+    setDeposits(data || [])
+  }, [selectedCampaign])
+
   useEffect(() => {
     if (!selectedCampaign) return
-    loadRecords(); loadCodes(); loadPrizes()
-  }, [selectedCampaign, loadRecords, loadCodes, loadPrizes])
+    loadRecords(); loadCodes(); loadPrizes(); loadMembers(); loadDeposits()
+  }, [selectedCampaign, loadRecords, loadCodes, loadPrizes, loadMembers, loadDeposits])
 
   async function updateStatus(recordId, newStatus) {
     setUpdatingId(recordId)
@@ -897,6 +928,7 @@ export default function LuckySpinAdmin() {
       {selectedCampaign && (
         <>
           <div style={{ display: 'flex', gap: 4, marginBottom: 16, borderBottom: '1px solid var(--border)', paddingBottom: 4 }}>
+            {TAB_BTN('members',    '👥 Members')}
             {TAB_BTN('records',    '📋 Records')}
             {TAB_BTN('codes',      '🔑 Codes')}
             {TAB_BTN('prizes',     '🏆 Prizes')}
@@ -904,6 +936,270 @@ export default function LuckySpinAdmin() {
             {TAB_BTN('roi',        '📊 ROI')}
             {TAB_BTN('wheel',      '🎡 Wheel Settings')}
           </div>
+
+          {/* MEMBERS / CHASE LIST TAB */}
+          {tab === 'members' && (() => {
+            const filtered = members.filter(m =>
+              !memberSearch || m.member_username.toLowerCase().includes(memberSearch.toLowerCase())
+            )
+
+            // Helper: given sorted deposits, calculate which rows cross a new milestone tier
+            // Returns array of { ...deposit, runningTotal, spinsUnlockedHere, spinsUnlockedSoFar }
+            const annotateDeposits = (deps) => {
+              const sorted = [...deps].sort((a, b) => a.deposit_date.localeCompare(b.deposit_date))
+              let running = 0
+              let prevSpins = 0
+              return sorted.map(d => {
+                running += Number(d.deposit_amount)
+                const currentSpins = getEarnedSpins(running)
+                const unlocked = currentSpins - prevSpins  // new spins this deposit unlocked (0 or more)
+                prevSpins = currentSpins
+                return { ...d, runningTotal: running, spinsUnlockedHere: unlocked, spinsUnlockedSoFar: currentSpins }
+              })
+            }
+
+            return (
+              <div>
+                {/* Enroll new member */}
+                <div style={{ display: 'flex', gap: 10, marginBottom: 18, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                  <div style={{ flex: 1, minWidth: 200 }}>
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>MEMBER USERNAME</div>
+                    <input style={inp} placeholder="e.g. august719" value={newMemberUsername} onChange={e => setNewMemberUsername(e.target.value)} />
+                  </div>
+                  <button disabled={addingMember} onClick={async () => {
+                    if (!newMemberUsername.trim()) return
+                    setAddingMember(true); setMemberMsg('')
+                    const { error } = await supabase.from('vip_campaign_members').insert({
+                      campaign_id: selectedCampaign.id,
+                      member_username: newMemberUsername.trim(),
+                      created_by: profile?.full_name || profile?.username || 'admin',
+                    })
+                    if (!error) { setNewMemberUsername(''); loadMembers(); setMemberMsg('✅ Member enrolled!') }
+                    else setMemberMsg(error.code === '23505' ? '⚠️ Already enrolled.' : '❌ ' + error.message)
+                    setAddingMember(false)
+                    setTimeout(() => setMemberMsg(''), 3000)
+                  }} style={{ padding: '9px 20px', borderRadius: 8, border: 'none', background: 'linear-gradient(135deg,#FF6B00,#FF8C00)', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                    + Enroll Member
+                  </button>
+                  <input style={{ ...inp, maxWidth: 200 }} placeholder="Search member…" value={memberSearch} onChange={e => setMemberSearch(e.target.value)} />
+                  {memberMsg && <span style={{ fontSize: 13, fontWeight: 600, color: memberMsg.startsWith('✅') ? '#22C55E' : memberMsg.startsWith('⚠️') ? '#FF8C00' : '#EF4444' }}>{memberMsg}</span>}
+                </div>
+
+                {/* Tier legend */}
+                <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
+                  {[['RM 5K', '1 spin','#FF8C00'],['RM 15K','2 spins','#3B82F6'],['RM 25K','3 spins','#8B5CF6'],['RM 40K','4 spins','#22C55E']].map(([dep,sp,col]) => (
+                    <div key={dep} style={{ padding: '4px 12px', borderRadius: 20, border: `1px solid ${col}44`, background: `${col}15`, fontSize: 11, color: col, fontWeight: 600 }}>
+                      {dep} → {sp}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Members list */}
+                {filtered.length === 0 ? (
+                  <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>No members enrolled yet. Add a member above to start tracking.</div>
+                ) : filtered.map(m => {
+                  const rawDeps = deposits.filter(d => d.member_username === m.member_username)
+                  const annotated = annotateDeposits(rawDeps)
+                  const totalDeposit = annotated.length ? annotated[annotated.length - 1].runningTotal : 0
+                  const earnedSpins = getEarnedSpins(totalDeposit)
+                  const issuedCodes = codes.filter(c => c.member_username === m.member_username)
+                  const issuedSpins = issuedCodes.reduce((s, c) => s + (c.max_uses || 1), 0)
+                  const remainingSpins = Math.max(0, earnedSpins - issuedSpins)
+                  const pct = Math.min(100, totalDeposit >= 40000 ? 100 : totalDeposit / 400)
+                  const nextTier = SPIN_TIERS.slice().reverse().find(t => totalDeposit < t.min)
+                  const isExpanded = expandedMember === m.member_username
+                  const tierColor = earnedSpins === 4 ? '#22C55E' : earnedSpins === 3 ? '#8B5CF6' : earnedSpins === 2 ? '#3B82F6' : earnedSpins === 1 ? '#FF8C00' : 'var(--muted)'
+
+                  // Claim summary: how many eligible rows are pending vs claimed
+                  const eligibleRows = annotated.filter(d => d.spinsUnlockedHere > 0)
+                  const pendingClaims = eligibleRows.filter(d => d.claim_status === 'pending').length
+                  const claimedCount = eligibleRows.filter(d => d.claim_status === 'claimed').length
+
+                  return (
+                    <div key={m.id} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, marginBottom: 10, overflow: 'hidden' }}>
+                      {/* Member summary row */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '12px 16px', flexWrap: 'wrap' }}>
+                        <div style={{ fontWeight: 700, color: 'var(--text)', minWidth: 110 }}>{m.member_username}</div>
+                        {/* Progress bar */}
+                        <div style={{ flex: 1, minWidth: 140 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--muted)', marginBottom: 3 }}>
+                            <span>RM {totalDeposit.toLocaleString()}</span>
+                            {nextTier && <span>next: RM {nextTier.min.toLocaleString()}</span>}
+                          </div>
+                          <div style={{ height: 6, background: 'var(--surface2)', borderRadius: 3, overflow: 'hidden' }}>
+                            <div style={{ height: '100%', width: `${pct}%`, background: `linear-gradient(90deg,#FF6B00,${tierColor})`, borderRadius: 3, transition: 'width .4s' }} />
+                          </div>
+                        </div>
+                        {/* Spins earned badge */}
+                        <div style={{ padding: '4px 12px', borderRadius: 20, background: `${tierColor}22`, color: tierColor, fontWeight: 700, fontSize: 13, minWidth: 80, textAlign: 'center', whiteSpace: 'nowrap' }}>
+                          {earnedSpins} spin{earnedSpins !== 1 ? 's' : ''} earned
+                        </div>
+                        {/* Claim status summary */}
+                        {earnedSpins > 0 && (
+                          <div style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
+                            {claimedCount > 0 && <span style={{ background: '#22C55E22', color: '#22C55E', borderRadius: 5, padding: '2px 8px', fontWeight: 700, marginRight: 4 }}>✅ {claimedCount} claimed</span>}
+                            {pendingClaims > 0 && <span style={{ background: '#FF8C0022', color: '#FF8C00', borderRadius: 5, padding: '2px 8px', fontWeight: 700 }}>⏳ {pendingClaims} pending</span>}
+                          </div>
+                        )}
+                        <div style={{ fontSize: 12, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
+                          Issued: <strong style={{ color: 'var(--text)' }}>{issuedSpins}</strong> &nbsp;|&nbsp; Left: <strong style={{ color: remainingSpins > 0 ? '#FF6B00' : 'var(--muted)' }}>{remainingSpins}</strong>
+                        </div>
+                        <div style={{ display: 'flex', gap: 6, marginLeft: 'auto' }}>
+                          <button onClick={() => setExpandedMember(isExpanded ? null : m.member_username)} style={{ padding: '5px 12px', borderRadius: 7, border: '1px solid var(--border)', background: 'transparent', color: 'var(--muted)', fontSize: 12, cursor: 'pointer' }}>
+                            {isExpanded ? '▲ Hide' : '▼ Deposits'}
+                          </button>
+                          <button onClick={async () => { if (!window.confirm(`Remove ${m.member_username} from campaign?`)) return; await supabase.from('vip_campaign_members').delete().eq('id', m.id); loadMembers() }} style={{ padding: '5px 10px', borderRadius: 7, border: '1px solid #EF444444', background: 'transparent', color: '#EF4444', fontSize: 12, cursor: 'pointer' }}>✕</button>
+                        </div>
+                      </div>
+
+                      {/* Deposit + Claim sub-panel */}
+                      {isExpanded && (
+                        <div style={{ borderTop: '1px solid var(--border)', background: 'var(--surface2)', padding: '12px 16px' }}>
+                          {/* Add deposit form */}
+                          <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                            <div>
+                              <div style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 3 }}>DEPOSIT DATE</div>
+                              <input type="date" style={{ ...inp, width: 150 }} value={depositForm.date} onChange={e => setDepositForm(f => ({ ...f, date: e.target.value }))} />
+                            </div>
+                            <div>
+                              <div style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 3 }}>AMOUNT (RM)</div>
+                              <input type="number" style={{ ...inp, width: 130 }} placeholder="e.g. 5000" value={depositForm.amount} onChange={e => setDepositForm(f => ({ ...f, amount: e.target.value }))} />
+                            </div>
+                            <div style={{ flex: 1, minWidth: 120 }}>
+                              <div style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 3 }}>NOTE (optional)</div>
+                              <input style={{ ...inp }} placeholder="e.g. Bank transfer" value={depositForm.note} onChange={e => setDepositForm(f => ({ ...f, note: e.target.value }))} />
+                            </div>
+                            <button disabled={addingDeposit || !depositForm.amount} onClick={async () => {
+                              if (!depositForm.amount || Number(depositForm.amount) <= 0) return
+                              setAddingDeposit(true)
+                              const { error } = await supabase.from('vip_campaign_deposits').insert({
+                                campaign_id: selectedCampaign.id,
+                                member_username: m.member_username,
+                                deposit_date: depositForm.date,
+                                deposit_amount: Number(depositForm.amount),
+                                note: depositForm.note.trim() || null,
+                                created_by: profile?.full_name || profile?.username || 'admin',
+                              })
+                              if (!error) { setDepositForm(f => ({ ...f, amount: '', note: '' })); loadDeposits() }
+                              setAddingDeposit(false)
+                            }} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: 'linear-gradient(135deg,#FF6B00,#FF8C00)', color: '#fff', fontWeight: 700, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                              + Add Deposit
+                            </button>
+                          </div>
+
+                          {/* Deposit + eligibility table */}
+                          {annotated.length === 0 ? (
+                            <div style={{ fontSize: 12, color: 'var(--muted)', padding: '8px 0' }}>No deposits recorded yet.</div>
+                          ) : (
+                            <div style={{ overflowX: 'auto' }}>
+                              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                                <thead>
+                                  <tr style={{ background: 'var(--surface)', color: 'var(--muted)', fontSize: 10, fontWeight: 700, textTransform: 'uppercase' }}>
+                                    <th style={{ textAlign: 'left', padding: '5px 8px' }}>Deposit Date</th>
+                                    <th style={{ textAlign: 'right', padding: '5px 8px' }}>Amount</th>
+                                    <th style={{ textAlign: 'right', padding: '5px 8px' }}>Running Total</th>
+                                    <th style={{ textAlign: 'center', padding: '5px 8px' }}>Eligibility</th>
+                                    <th style={{ textAlign: 'center', padding: '5px 8px' }}>Claim Status</th>
+                                    <th style={{ textAlign: 'left', padding: '5px 8px' }}>Claim Date</th>
+                                    <th style={{ textAlign: 'left', padding: '5px 8px' }}>Note</th>
+                                    <th style={{ padding: '5px 8px' }}></th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {[...annotated].reverse().map(d => {
+                                    const isEligible = d.spinsUnlockedHere > 0
+                                    const isClaimed = d.claim_status === 'claimed'
+                                    const rowBg = isEligible ? (isClaimed ? 'rgba(34,197,94,0.06)' : 'rgba(255,140,0,0.06)') : 'transparent'
+                                    return (
+                                      <tr key={d.id} style={{ borderTop: '1px solid var(--border)', background: rowBg }}>
+                                        {/* Deposit date */}
+                                        <td style={{ padding: '7px 8px', color: 'var(--text)', fontWeight: 600 }}>{d.deposit_date}</td>
+                                        {/* Amount */}
+                                        <td style={{ padding: '7px 8px', textAlign: 'right', color: 'var(--text)', fontWeight: 600 }}>RM {Number(d.deposit_amount).toLocaleString()}</td>
+                                        {/* Running total */}
+                                        <td style={{ padding: '7px 8px', textAlign: 'right', color: 'var(--muted)' }}>RM {d.runningTotal.toLocaleString()}</td>
+                                        {/* Eligibility */}
+                                        <td style={{ padding: '7px 8px', textAlign: 'center' }}>
+                                          {isEligible ? (
+                                            <span style={{ background: '#FF8C0022', color: '#FF8C00', borderRadius: 5, padding: '2px 9px', fontWeight: 700, fontSize: 11, whiteSpace: 'nowrap' }}>
+                                              🎰 +{d.spinsUnlockedHere} spin{d.spinsUnlockedHere > 1 ? 's' : ''} unlocked
+                                            </span>
+                                          ) : (
+                                            <span style={{ color: 'var(--border)', fontSize: 11 }}>—</span>
+                                          )}
+                                        </td>
+                                        {/* Claim status — only shown if eligible */}
+                                        <td style={{ padding: '7px 8px', textAlign: 'center' }}>
+                                          {isEligible ? (
+                                            <select
+                                              value={d.claim_status || 'pending'}
+                                              onChange={async e => {
+                                                const newStatus = e.target.value
+                                                const update = { claim_status: newStatus }
+                                                if (newStatus === 'claimed' && !d.claim_date) {
+                                                  update.claim_date = new Date().toISOString().slice(0,10)
+                                                }
+                                                if (newStatus === 'pending') update.claim_date = null
+                                                await supabase.from('vip_campaign_deposits').update(update).eq('id', d.id)
+                                                loadDeposits()
+                                              }}
+                                              style={{ ...inp, padding: '3px 8px', fontSize: 11, width: 'auto',
+                                                background: isClaimed ? 'rgba(34,197,94,0.12)' : 'rgba(255,140,0,0.12)',
+                                                color: isClaimed ? '#22C55E' : '#FF8C00',
+                                                border: `1px solid ${isClaimed ? '#22C55E44' : '#FF8C0044'}`,
+                                                fontWeight: 700
+                                              }}
+                                            >
+                                              <option value="pending">⏳ Pending</option>
+                                              <option value="claimed">✅ Claimed & Paid</option>
+                                            </select>
+                                          ) : (
+                                            <span style={{ color: 'var(--border)', fontSize: 11 }}>—</span>
+                                          )}
+                                        </td>
+                                        {/* Claim date — editable */}
+                                        <td style={{ padding: '7px 8px' }}>
+                                          {isEligible ? (
+                                            <input
+                                              type="date"
+                                              value={d.claim_date || ''}
+                                              onChange={async e => {
+                                                await supabase.from('vip_campaign_deposits').update({ claim_date: e.target.value || null }).eq('id', d.id)
+                                                loadDeposits()
+                                              }}
+                                              style={{ ...inp, width: 140, padding: '3px 8px', fontSize: 11 }}
+                                            />
+                                          ) : (
+                                            <span style={{ color: 'var(--border)', fontSize: 11 }}>—</span>
+                                          )}
+                                        </td>
+                                        {/* Note */}
+                                        <td style={{ padding: '7px 8px', color: 'var(--muted)', maxWidth: 120 }}>{d.note || <span style={{ color: 'var(--border)' }}>—</span>}</td>
+                                        {/* Delete */}
+                                        <td style={{ padding: '7px 8px', textAlign: 'right' }}>
+                                          <button onClick={async () => { if (!window.confirm('Delete this deposit entry?')) return; await supabase.from('vip_campaign_deposits').delete().eq('id', d.id); loadDeposits() }} style={{ background: 'none', border: 'none', color: '#EF4444', cursor: 'pointer', fontSize: 12 }}>✕</button>
+                                        </td>
+                                      </tr>
+                                    )
+                                  })}
+                                  {/* Total row */}
+                                  <tr style={{ borderTop: '2px solid var(--border)', fontWeight: 700 }}>
+                                    <td style={{ padding: '7px 8px', color: 'var(--muted)' }}>TOTAL</td>
+                                    <td style={{ padding: '7px 8px', textAlign: 'right', color: tierColor }}>RM {totalDeposit.toLocaleString()}</td>
+                                    <td colSpan={6} />
+                                  </tr>
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )
+          })()}
 
           {/* RECORDS TAB */}
           {tab === 'records' && (() => {
