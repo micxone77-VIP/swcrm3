@@ -942,19 +942,35 @@ export default function LuckySpinAdmin() {
             const filtered = members.filter(m =>
               !memberSearch || m.member_username.toLowerCase().includes(memberSearch.toLowerCase())
             )
+            const todayStr = new Date().toISOString().slice(0, 10)
 
-            // Helper: given sorted deposits, calculate which rows cross a new milestone tier
-            // Returns array of { ...deposit, runningTotal, spinsUnlockedHere, spinsUnlockedSoFar }
-            const annotateDeposits = (deps) => {
-              const sorted = [...deps].sort((a, b) => a.deposit_date.localeCompare(b.deposit_date))
-              let running = 0
-              let prevSpins = 0
-              return sorted.map(d => {
-                running += Number(d.deposit_amount)
-                const currentSpins = getEarnedSpins(running)
-                const unlocked = currentSpins - prevSpins  // new spins this deposit unlocked (0 or more)
-                prevSpins = currentSpins
-                return { ...d, runningTotal: running, spinsUnlockedHere: unlocked, spinsUnlockedSoFar: currentSpins }
+            // Group deposit rows by date → per-day totals + eligibility
+            const getDayGroups = (deps) => {
+              const byDate = {}
+              deps.forEach(d => {
+                if (!byDate[d.deposit_date]) byDate[d.deposit_date] = []
+                byDate[d.deposit_date].push(d)
+              })
+              return Object.keys(byDate).sort().map(date => {
+                const rows = byDate[date]
+                const dayTotal = rows.reduce((s, r) => s + Number(r.deposit_amount), 0)
+                const earnedSpins = getEarnedSpins(dayTotal)
+                const isEligible = earnedSpins > 0
+                // A day is "claimed" only when ALL its deposit rows are marked claimed
+                const isClaimed = isEligible && rows.every(r => r.claim_status === 'claimed')
+                const claimDate = rows.find(r => r.claim_date)?.claim_date || null
+                const notes = rows.map(r => r.note).filter(Boolean).join('; ')
+                return {
+                  date,
+                  dayTotal,
+                  earnedSpins,
+                  isEligible,
+                  isClaimed,
+                  claim_status: isClaimed ? 'claimed' : 'pending',
+                  claim_date: claimDate,
+                  rowIds: rows.map(r => r.id),
+                  notes,
+                }
               })
             }
 
@@ -987,6 +1003,7 @@ export default function LuckySpinAdmin() {
 
                 {/* Tier legend */}
                 <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 11, color: 'var(--muted)', alignSelf: 'center', marginRight: 4 }}>Daily target:</span>
                   {[['RM 5K', '1 spin','#FF8C00'],['RM 15K','2 spins','#3B82F6'],['RM 25K','3 spins','#8B5CF6'],['RM 40K','4 spins','#22C55E']].map(([dep,sp,col]) => (
                     <div key={dep} style={{ padding: '4px 12px', borderRadius: 20, border: `1px solid ${col}44`, background: `${col}15`, fontSize: 11, color: col, fontWeight: 600 }}>
                       {dep} → {sp}
@@ -999,56 +1016,71 @@ export default function LuckySpinAdmin() {
                   <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>No members enrolled yet. Add a member above to start tracking.</div>
                 ) : filtered.map(m => {
                   const rawDeps = deposits.filter(d => d.member_username === m.member_username)
-                  const annotated = annotateDeposits(rawDeps)
-                  const totalDeposit = annotated.length ? annotated[annotated.length - 1].runningTotal : 0
-                  const earnedSpins = getEarnedSpins(totalDeposit)
+                  const dayGroups = getDayGroups(rawDeps)
+
+                  // Today's numbers (progress bar tracks TODAY)
+                  const todayGroup = dayGroups.find(g => g.date === todayStr)
+                  const todayTotal = todayGroup?.dayTotal || 0
+                  const todaySpins = todayGroup?.earnedSpins || 0
+                  const pct = Math.min(100, todayTotal >= 40000 ? 100 : todayTotal / 400)
+                  const nextTier = SPIN_TIERS.slice().reverse().find(t => todayTotal < t.min)
+                  const tierColor = todaySpins === 4 ? '#22C55E' : todaySpins === 3 ? '#8B5CF6' : todaySpins === 2 ? '#3B82F6' : todaySpins === 1 ? '#FF8C00' : 'var(--muted)'
+
+                  // All-time totals (across all days)
+                  const totalEarnedSpins = dayGroups.reduce((s, g) => s + g.earnedSpins, 0)
+                  const eligibleDays = dayGroups.filter(g => g.isEligible)
+                  const pendingDays = eligibleDays.filter(g => !g.isClaimed).length
+                  const claimedDays = eligibleDays.filter(g => g.isClaimed).length
                   const issuedCodes = codes.filter(c => c.member_username === m.member_username)
                   const issuedSpins = issuedCodes.reduce((s, c) => s + (c.max_uses || 1), 0)
-                  const remainingSpins = Math.max(0, earnedSpins - issuedSpins)
-                  const pct = Math.min(100, totalDeposit >= 40000 ? 100 : totalDeposit / 400)
-                  const nextTier = SPIN_TIERS.slice().reverse().find(t => totalDeposit < t.min)
-                  const isExpanded = expandedMember === m.member_username
-                  const tierColor = earnedSpins === 4 ? '#22C55E' : earnedSpins === 3 ? '#8B5CF6' : earnedSpins === 2 ? '#3B82F6' : earnedSpins === 1 ? '#FF8C00' : 'var(--muted)'
+                  const remainingSpins = Math.max(0, totalEarnedSpins - issuedSpins)
 
-                  // Claim summary: how many eligible rows are pending vs claimed
-                  const eligibleRows = annotated.filter(d => d.spinsUnlockedHere > 0)
-                  const pendingClaims = eligibleRows.filter(d => d.claim_status === 'pending').length
-                  const claimedCount = eligibleRows.filter(d => d.claim_status === 'claimed').length
+                  const isExpanded = expandedMember === m.member_username
 
                   return (
                     <div key={m.id} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, marginBottom: 10, overflow: 'hidden' }}>
                       {/* Member summary row */}
                       <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '12px 16px', flexWrap: 'wrap' }}>
                         <div style={{ fontWeight: 700, color: 'var(--text)', minWidth: 110 }}>{m.member_username}</div>
-                        {/* Progress bar */}
-                        <div style={{ flex: 1, minWidth: 140 }}>
+
+                        {/* TODAY's progress bar */}
+                        <div style={{ flex: 1, minWidth: 150 }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--muted)', marginBottom: 3 }}>
-                            <span>RM {totalDeposit.toLocaleString()}</span>
-                            {nextTier && <span>next: RM {nextTier.min.toLocaleString()}</span>}
+                            <span style={{ fontWeight: 600, color: todayTotal > 0 ? 'var(--text)' : 'var(--muted)' }}>
+                              Today: RM {todayTotal.toLocaleString()}
+                            </span>
+                            {nextTier
+                              ? <span>need RM {(nextTier.min - todayTotal).toLocaleString()} more</span>
+                              : todaySpins > 0 ? <span style={{ color: '#22C55E' }}>Max tier reached!</span> : null
+                            }
                           </div>
                           <div style={{ height: 6, background: 'var(--surface2)', borderRadius: 3, overflow: 'hidden' }}>
                             <div style={{ height: '100%', width: `${pct}%`, background: `linear-gradient(90deg,#FF6B00,${tierColor})`, borderRadius: 3, transition: 'width .4s' }} />
                           </div>
                         </div>
-                        {/* Spins earned badge */}
-                        <div style={{ padding: '4px 12px', borderRadius: 20, background: `${tierColor}22`, color: tierColor, fontWeight: 700, fontSize: 13, minWidth: 80, textAlign: 'center', whiteSpace: 'nowrap' }}>
-                          {earnedSpins} spin{earnedSpins !== 1 ? 's' : ''} earned
+
+                        {/* Today's spin badge */}
+                        <div style={{ padding: '4px 12px', borderRadius: 20, background: todaySpins > 0 ? `${tierColor}22` : 'var(--surface2)', color: todaySpins > 0 ? tierColor : 'var(--muted)', fontWeight: 700, fontSize: 12, whiteSpace: 'nowrap', border: `1px solid ${todaySpins > 0 ? tierColor+'44' : 'var(--border)'}` }}>
+                          {todaySpins > 0 ? `🎰 ${todaySpins} spin${todaySpins > 1 ? 's' : ''} today` : '📅 No spins today'}
                         </div>
-                        {/* Claim status summary */}
-                        {earnedSpins > 0 && (
-                          <div style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
-                            {claimedCount > 0 && <span style={{ background: '#22C55E22', color: '#22C55E', borderRadius: 5, padding: '2px 8px', fontWeight: 700, marginRight: 4 }}>✅ {claimedCount} claimed</span>}
-                            {pendingClaims > 0 && <span style={{ background: '#FF8C0022', color: '#FF8C00', borderRadius: 5, padding: '2px 8px', fontWeight: 700 }}>⏳ {pendingClaims} pending</span>}
+
+                        {/* All-time claim summary */}
+                        {totalEarnedSpins > 0 && (
+                          <div style={{ fontSize: 11, display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                            {claimedDays > 0 && <span style={{ background: '#22C55E22', color: '#22C55E', borderRadius: 5, padding: '2px 8px', fontWeight: 700 }}>✅ {claimedDays}d claimed</span>}
+                            {pendingDays > 0 && <span style={{ background: '#FF8C0022', color: '#FF8C00', borderRadius: 5, padding: '2px 8px', fontWeight: 700 }}>⏳ {pendingDays}d pending</span>}
                           </div>
                         )}
+
                         <div style={{ fontSize: 12, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
                           Issued: <strong style={{ color: 'var(--text)' }}>{issuedSpins}</strong> &nbsp;|&nbsp; Left: <strong style={{ color: remainingSpins > 0 ? '#FF6B00' : 'var(--muted)' }}>{remainingSpins}</strong>
                         </div>
+
                         <div style={{ display: 'flex', gap: 6, marginLeft: 'auto' }}>
                           <button onClick={() => setExpandedMember(isExpanded ? null : m.member_username)} style={{ padding: '5px 12px', borderRadius: 7, border: '1px solid var(--border)', background: 'transparent', color: 'var(--muted)', fontSize: 12, cursor: 'pointer' }}>
                             {isExpanded ? '▲ Hide' : '▼ Deposits'}
                           </button>
-                          <button onClick={async () => { if (!window.confirm(`Remove ${m.member_username} from campaign?`)) return; await supabase.from('vip_campaign_members').delete().eq('id', m.id); loadMembers() }} style={{ padding: '5px 10px', borderRadius: 7, border: '1px solid #EF444444', background: 'transparent', color: '#EF4444', fontSize: 12, cursor: 'pointer' }}>✕</button>
+                          <button onClick={async () => { if (!window.confirm(`Remove ${m.member_username}?`)) return; await supabase.from('vip_campaign_members').delete().eq('id', m.id); loadMembers() }} style={{ padding: '5px 10px', borderRadius: 7, border: '1px solid #EF444444', background: 'transparent', color: '#EF4444', fontSize: 12, cursor: 'pointer' }}>✕</button>
                         </div>
                       </div>
 
@@ -1087,66 +1119,73 @@ export default function LuckySpinAdmin() {
                             </button>
                           </div>
 
-                          {/* Deposit + eligibility table */}
-                          {annotated.length === 0 ? (
+                          {/* Per-day table */}
+                          {dayGroups.length === 0 ? (
                             <div style={{ fontSize: 12, color: 'var(--muted)', padding: '8px 0' }}>No deposits recorded yet.</div>
                           ) : (
                             <div style={{ overflowX: 'auto' }}>
                               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                                 <thead>
                                   <tr style={{ background: 'var(--surface)', color: 'var(--muted)', fontSize: 10, fontWeight: 700, textTransform: 'uppercase' }}>
-                                    <th style={{ textAlign: 'left', padding: '5px 8px' }}>Deposit Date</th>
-                                    <th style={{ textAlign: 'right', padding: '5px 8px' }}>Amount</th>
-                                    <th style={{ textAlign: 'right', padding: '5px 8px' }}>Running Total</th>
-                                    <th style={{ textAlign: 'center', padding: '5px 8px' }}>Eligibility</th>
-                                    <th style={{ textAlign: 'center', padding: '5px 8px' }}>Claim Status</th>
-                                    <th style={{ textAlign: 'left', padding: '5px 8px' }}>Claim Date</th>
-                                    <th style={{ textAlign: 'left', padding: '5px 8px' }}>Note</th>
-                                    <th style={{ padding: '5px 8px' }}></th>
+                                    <th style={{ textAlign: 'left', padding: '5px 10px' }}>Date</th>
+                                    <th style={{ textAlign: 'right', padding: '5px 10px' }}>Day's Deposit</th>
+                                    <th style={{ textAlign: 'center', padding: '5px 10px' }}>Eligibility</th>
+                                    <th style={{ textAlign: 'center', padding: '5px 10px' }}>Claim Status</th>
+                                    <th style={{ textAlign: 'left', padding: '5px 10px' }}>Claim Date</th>
+                                    <th style={{ textAlign: 'left', padding: '5px 10px' }}>Note</th>
+                                    <th style={{ padding: '5px 10px' }}></th>
                                   </tr>
                                 </thead>
                                 <tbody>
-                                  {[...annotated].reverse().map(d => {
-                                    const isEligible = d.spinsUnlockedHere > 0
-                                    const isClaimed = d.claim_status === 'claimed'
-                                    const rowBg = isEligible ? (isClaimed ? 'rgba(34,197,94,0.06)' : 'rgba(255,140,0,0.06)') : 'transparent'
+                                  {[...dayGroups].reverse().map(g => {
+                                    const isToday = g.date === todayStr
+                                    const rowBg = isToday
+                                      ? 'rgba(59,130,246,0.06)'
+                                      : g.isEligible
+                                        ? (g.isClaimed ? 'rgba(34,197,94,0.06)' : 'rgba(255,140,0,0.06)')
+                                        : 'transparent'
                                     return (
-                                      <tr key={d.id} style={{ borderTop: '1px solid var(--border)', background: rowBg }}>
-                                        {/* Deposit date */}
-                                        <td style={{ padding: '7px 8px', color: 'var(--text)', fontWeight: 600 }}>{d.deposit_date}</td>
-                                        {/* Amount */}
-                                        <td style={{ padding: '7px 8px', textAlign: 'right', color: 'var(--text)', fontWeight: 600 }}>RM {Number(d.deposit_amount).toLocaleString()}</td>
-                                        {/* Running total */}
-                                        <td style={{ padding: '7px 8px', textAlign: 'right', color: 'var(--muted)' }}>RM {d.runningTotal.toLocaleString()}</td>
+                                      <tr key={g.date} style={{ borderTop: '1px solid var(--border)', background: rowBg }}>
+                                        {/* Date */}
+                                        <td style={{ padding: '8px 10px', fontWeight: 600, color: isToday ? '#3B82F6' : 'var(--text)', whiteSpace: 'nowrap' }}>
+                                          {g.date}{isToday && <span style={{ marginLeft: 6, fontSize: 10, background: '#3B82F622', color: '#3B82F6', borderRadius: 4, padding: '1px 6px' }}>TODAY</span>}
+                                        </td>
+                                        {/* Daily deposit total */}
+                                        <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: 'var(--text)' }}>
+                                          RM {g.dayTotal.toLocaleString()}
+                                        </td>
                                         {/* Eligibility */}
-                                        <td style={{ padding: '7px 8px', textAlign: 'center' }}>
-                                          {isEligible ? (
+                                        <td style={{ padding: '8px 10px', textAlign: 'center' }}>
+                                          {g.isEligible ? (
                                             <span style={{ background: '#FF8C0022', color: '#FF8C00', borderRadius: 5, padding: '2px 9px', fontWeight: 700, fontSize: 11, whiteSpace: 'nowrap' }}>
-                                              🎰 +{d.spinsUnlockedHere} spin{d.spinsUnlockedHere > 1 ? 's' : ''} unlocked
+                                              🎰 {g.earnedSpins} spin{g.earnedSpins > 1 ? 's' : ''} earned
                                             </span>
                                           ) : (
-                                            <span style={{ color: 'var(--border)', fontSize: 11 }}>—</span>
+                                            <span style={{ color: 'var(--border)', fontSize: 12 }}>—</span>
                                           )}
                                         </td>
-                                        {/* Claim status — only shown if eligible */}
-                                        <td style={{ padding: '7px 8px', textAlign: 'center' }}>
-                                          {isEligible ? (
+                                        {/* Claim status dropdown */}
+                                        <td style={{ padding: '8px 10px', textAlign: 'center' }}>
+                                          {g.isEligible ? (
                                             <select
-                                              value={d.claim_status || 'pending'}
+                                              value={g.claim_status}
                                               onChange={async e => {
                                                 const newStatus = e.target.value
                                                 const update = { claim_status: newStatus }
-                                                if (newStatus === 'claimed' && !d.claim_date) {
-                                                  update.claim_date = new Date().toISOString().slice(0,10)
+                                                if (newStatus === 'claimed' && !g.claim_date) {
+                                                  update.claim_date = todayStr
                                                 }
                                                 if (newStatus === 'pending') update.claim_date = null
-                                                await supabase.from('vip_campaign_deposits').update(update).eq('id', d.id)
+                                                // Update ALL deposit rows for this date
+                                                await Promise.all(g.rowIds.map(id =>
+                                                  supabase.from('vip_campaign_deposits').update(update).eq('id', id)
+                                                ))
                                                 loadDeposits()
                                               }}
                                               style={{ ...inp, padding: '3px 8px', fontSize: 11, width: 'auto',
-                                                background: isClaimed ? 'rgba(34,197,94,0.12)' : 'rgba(255,140,0,0.12)',
-                                                color: isClaimed ? '#22C55E' : '#FF8C00',
-                                                border: `1px solid ${isClaimed ? '#22C55E44' : '#FF8C0044'}`,
+                                                background: g.isClaimed ? 'rgba(34,197,94,0.12)' : 'rgba(255,140,0,0.12)',
+                                                color: g.isClaimed ? '#22C55E' : '#FF8C00',
+                                                border: `1px solid ${g.isClaimed ? '#22C55E44' : '#FF8C0044'}`,
                                                 fontWeight: 700
                                               }}
                                             >
@@ -1154,39 +1193,55 @@ export default function LuckySpinAdmin() {
                                               <option value="claimed">✅ Claimed & Paid</option>
                                             </select>
                                           ) : (
-                                            <span style={{ color: 'var(--border)', fontSize: 11 }}>—</span>
+                                            <span style={{ color: 'var(--border)', fontSize: 12 }}>—</span>
                                           )}
                                         </td>
-                                        {/* Claim date — editable */}
-                                        <td style={{ padding: '7px 8px' }}>
-                                          {isEligible ? (
+                                        {/* Claim date */}
+                                        <td style={{ padding: '8px 10px' }}>
+                                          {g.isEligible ? (
                                             <input
                                               type="date"
-                                              value={d.claim_date || ''}
+                                              value={g.claim_date || ''}
                                               onChange={async e => {
-                                                await supabase.from('vip_campaign_deposits').update({ claim_date: e.target.value || null }).eq('id', d.id)
+                                                const val = e.target.value || null
+                                                await Promise.all(g.rowIds.map(id =>
+                                                  supabase.from('vip_campaign_deposits').update({ claim_date: val }).eq('id', id)
+                                                ))
                                                 loadDeposits()
                                               }}
                                               style={{ ...inp, width: 140, padding: '3px 8px', fontSize: 11 }}
                                             />
                                           ) : (
-                                            <span style={{ color: 'var(--border)', fontSize: 11 }}>—</span>
+                                            <span style={{ color: 'var(--border)', fontSize: 12 }}>—</span>
                                           )}
                                         </td>
-                                        {/* Note */}
-                                        <td style={{ padding: '7px 8px', color: 'var(--muted)', maxWidth: 120 }}>{d.note || <span style={{ color: 'var(--border)' }}>—</span>}</td>
-                                        {/* Delete */}
-                                        <td style={{ padding: '7px 8px', textAlign: 'right' }}>
-                                          <button onClick={async () => { if (!window.confirm('Delete this deposit entry?')) return; await supabase.from('vip_campaign_deposits').delete().eq('id', d.id); loadDeposits() }} style={{ background: 'none', border: 'none', color: '#EF4444', cursor: 'pointer', fontSize: 12 }}>✕</button>
+                                        {/* Notes */}
+                                        <td style={{ padding: '8px 10px', color: 'var(--muted)', maxWidth: 140 }}>{g.notes || <span style={{ color: 'var(--border)' }}>—</span>}</td>
+                                        {/* Delete all rows for this date */}
+                                        <td style={{ padding: '8px 10px', textAlign: 'right' }}>
+                                          <button onClick={async () => {
+                                            if (!window.confirm(`Delete all deposits for ${g.date}?`)) return
+                                            await Promise.all(g.rowIds.map(id =>
+                                              supabase.from('vip_campaign_deposits').delete().eq('id', id)
+                                            ))
+                                            loadDeposits()
+                                          }} style={{ background: 'none', border: 'none', color: '#EF4444', cursor: 'pointer', fontSize: 12, padding: '2px 6px' }}>✕</button>
                                         </td>
                                       </tr>
                                     )
                                   })}
                                   {/* Total row */}
                                   <tr style={{ borderTop: '2px solid var(--border)', fontWeight: 700 }}>
-                                    <td style={{ padding: '7px 8px', color: 'var(--muted)' }}>TOTAL</td>
-                                    <td style={{ padding: '7px 8px', textAlign: 'right', color: tierColor }}>RM {totalDeposit.toLocaleString()}</td>
-                                    <td colSpan={6} />
+                                    <td style={{ padding: '7px 10px', color: 'var(--muted)', fontSize: 11 }}>
+                                      {dayGroups.length} day{dayGroups.length !== 1 ? 's' : ''} · {eligibleDays.length} eligible
+                                    </td>
+                                    <td style={{ padding: '7px 10px', textAlign: 'right', color: 'var(--brand)' }}>
+                                      RM {rawDeps.reduce((s, d) => s + Number(d.deposit_amount), 0).toLocaleString()}
+                                    </td>
+                                    <td style={{ padding: '7px 10px', textAlign: 'center', color: 'var(--brand)', fontWeight: 700 }}>
+                                      {totalEarnedSpins} total spin{totalEarnedSpins !== 1 ? 's' : ''}
+                                    </td>
+                                    <td colSpan={4} />
                                   </tr>
                                 </tbody>
                               </table>
