@@ -778,25 +778,42 @@ export default function LuckySpinAdmin() {
     setSavingExclusions(false)
   }
 
-  // ── ROI Calculations ─────────────────────────────────────────────────────────
+  // ── ROI Calculations (actual data) ───────────────────────────────────────────
   function calcROI() {
-    const totalWeight = prizes.filter(p => p.is_active).reduce((s, p) => s + (p.probability || 0), 0)
-    const totalSpins = records.length
-    const completed = records.filter(r => r.status === 'completed').length
-    const totalCost = prizes.reduce((sum, p) => {
-      if (!p.is_active || p.prize_type !== 'cash') return sum
-      const val = parseFloat(p.prize_value) || 0
-      const prob = totalWeight > 0 ? (p.probability / totalWeight) : 0
-      return sum + (val * prob * completed)
+    // Income = actual deposits from campaign members (deposits are the TRUE investment)
+    const totalDeposits = deposits.reduce((s, d) => s + (parseFloat(d.deposit_amount) || 0), 0)
+
+    // Cost = face value of prizes actually awarded in completed records
+    const completedRecords = records.filter(r => r.status === 'completed')
+    const totalPrizeCost = completedRecords.reduce((s, r) => {
+      const snap = r.prize_snapshot || {}
+      return s + (parseFloat(snap.prize_value) || 0)
     }, 0)
-    const estTurnover = prizes.reduce((sum, p) => {
-      if (!p.is_active) return sum
-      const val = parseFloat(p.prize_value) || 0
-      const prob = totalWeight > 0 ? (p.probability / totalWeight) : 0
-      const tm = p.turnover_multiplier || 0
-      return sum + (val * prob * completed * tm)
-    }, 0)
-    return { totalSpins, completed, totalCost: Math.round(totalCost), estTurnover: Math.round(estTurnover), totalWeight }
+
+    // Prize breakdown by prize name (actual counts & cost from records)
+    const prizeBreakdown = {}
+    completedRecords.forEach(r => {
+      const snap = r.prize_snapshot || {}
+      const name = snap.name_en || snap.name_zh || snap.name_bm || 'Unknown'
+      const val  = parseFloat(snap.prize_value) || 0
+      const type = snap.prize_type || 'cash'
+      if (!prizeBreakdown[name]) prizeBreakdown[name] = { name, type, count: 0, totalCost: 0 }
+      prizeBreakdown[name].count++
+      prizeBreakdown[name].totalCost += val
+    })
+
+    const netReturn = totalDeposits - totalPrizeCost
+    const roiPct    = totalDeposits > 0 ? (netReturn / totalDeposits) * 100 : 0
+
+    return {
+      totalSpins: records.length,
+      completed: completedRecords.length,
+      totalDeposits: Math.round(totalDeposits),
+      totalPrizeCost: Math.round(totalPrizeCost),
+      netReturn: Math.round(netReturn),
+      roiPct: roiPct.toFixed(1),
+      prizeBreakdown: Object.values(prizeBreakdown).sort((a, b) => b.totalCost - a.totalCost),
+    }
   }
 
   // ── Derived data ─────────────────────────────────────────────────────────────
@@ -1548,58 +1565,111 @@ export default function LuckySpinAdmin() {
 
           {/* ROI TAB */}
           {tab === 'roi' && (() => {
-            const { totalSpins, completed, totalCost, estTurnover, totalWeight } = roi
-            const netROI = estTurnover - totalCost
+            const { totalSpins, completed, totalDeposits, totalPrizeCost, netReturn, roiPct, prizeBreakdown } = roi
+            const roiColor = netReturn >= 0 ? '#22C55E' : '#EF4444'
             return (
               <div>
+                {/* ── KPI tiles ── */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginBottom: 20 }}>
                   {[
-                    { label: 'Total Spins',    val: totalSpins,               color: 'var(--brand)',  prefix: '' },
-                    { label: 'Completed',      val: completed,                color: '#22C55E',       prefix: '' },
-                    { label: 'Est. Turnover',  val: `RM ${estTurnover.toLocaleString()}`,  color: '#3B82F6', raw: true },
-                    { label: 'Est. Prize Cost',val: `RM ${totalCost.toLocaleString()}`,    color: '#EF4444', raw: true },
-                  ].map(({ label, val, color, raw }) => (
+                    { label: 'Total Spins',    val: totalSpins,                                          color: 'var(--brand)', sm: false },
+                    { label: 'Completed Spins',val: completed,                                           color: '#22C55E',      sm: false },
+                    { label: 'Total Deposits', val: `RM ${totalDeposits.toLocaleString()}`,              color: '#3B82F6',      sm: true  },
+                    { label: 'Prize Cost Paid',val: `RM ${totalPrizeCost.toLocaleString()}`,             color: '#EF4444',      sm: true  },
+                  ].map(({ label, val, color, sm }) => (
                     <div key={label} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, padding: '16px 18px' }}>
                       <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 6 }}>{label}</div>
-                      <div style={{ fontSize: raw ? 18 : 26, fontWeight: 800, color }}>{val}</div>
+                      <div style={{ fontSize: sm ? 18 : 26, fontWeight: 800, color }}>{val}</div>
                     </div>
                   ))}
                 </div>
-                <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, padding: 16, marginBottom: 16, fontSize: 12, color: 'var(--muted)', lineHeight: 1.7 }}>
-                  <strong style={{ color: 'var(--text)' }}>Methodology:</strong> Prize cost = (probability / totalWeight) × prize value × completed spins, for cash prizes only. Turnover = same formula × turnover multiplier. Estimates only — actual results depend on spin outcomes.
+
+                {/* ── ROI Summary card ── */}
+                <div style={{ background: 'var(--surface)', border: `1px solid ${roiColor}44`, borderRadius: 12, padding: '20px 24px', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 40, flexWrap: 'wrap' }}>
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', marginBottom: 4 }}>Net Return (Income − Cost)</div>
+                    <div style={{ fontSize: 28, fontWeight: 900, color: roiColor }}>
+                      {netReturn >= 0 ? '+' : '−'} RM {Math.abs(netReturn).toLocaleString()}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', marginBottom: 4 }}>ROI %</div>
+                    <div style={{ fontSize: 28, fontWeight: 900, color: roiColor }}>
+                      {roiPct}%
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>Net Return ÷ Total Deposits × 100</div>
+                  </div>
+                  <div style={{ flex: 1, minWidth: 200 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', marginBottom: 8 }}>Deposit Breakdown</div>
+                    {/* Bar: prize cost vs net return */}
+                    {totalDeposits > 0 && (
+                      <div style={{ position: 'relative', height: 24, borderRadius: 8, overflow: 'hidden', background: 'var(--surface2)' }}>
+                        <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', width: `${Math.min(100,(totalPrizeCost/totalDeposits)*100).toFixed(1)}%`, background: '#EF444488', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          {totalPrizeCost > 0 && <span style={{ fontSize: 10, fontWeight: 700, color: '#fff', whiteSpace: 'nowrap', paddingLeft: 6 }}>Cost {((totalPrizeCost/totalDeposits)*100).toFixed(0)}%</span>}
+                        </div>
+                        <div style={{ position: 'absolute', right: 0, top: 0, height: '100%', width: `${Math.min(100,Math.max(0,(netReturn/totalDeposits)*100)).toFixed(1)}%`, background: '#22C55E88', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          {netReturn > 0 && <span style={{ fontSize: 10, fontWeight: 700, color: '#fff', whiteSpace: 'nowrap', paddingRight: 6 }}>Return {((netReturn/totalDeposits)*100).toFixed(0)}%</span>}
+                        </div>
+                      </div>
+                    )}
+                    <div style={{ display: 'flex', gap: 16, marginTop: 6, fontSize: 11, color: 'var(--muted)' }}>
+                      <span>🔴 Prize Cost: RM {totalPrizeCost.toLocaleString()}</span>
+                      <span>🟢 Net: RM {netReturn.toLocaleString()}</span>
+                    </div>
+                  </div>
                 </div>
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                    <thead>
-                      <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                        {['Prize','Type','Count (est.)','Turnover (est.)','Cost (est.)'].map(h => (
-                          <th key={h} style={{ padding: '10px 12px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase' }}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {prizes.filter(p => p.is_active).map(p => {
-                        const tc = PRIZE_TYPE_COLORS[p.prize_type] || PRIZE_TYPE_COLORS.cash
-                        const prob = totalWeight > 0 ? (p.probability / totalWeight) : 0
-                        const count = Math.round(prob * completed)
-                        const val = parseFloat(p.prize_value) || 0
-                        const estT = Math.round(val * prob * completed * (p.turnover_multiplier || 0))
-                        const cost = p.prize_type === 'cash' ? Math.round(val * prob * completed) : 0
-                        return (
-                          <tr key={p.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                            <td style={{ padding: '10px 12px', fontWeight: 600, color: 'var(--text)' }}>{p.name_en}</td>
-                            <td style={{ padding: '10px 12px' }}>
-                              <span style={{ background: tc.bg, color: tc.color, borderRadius: 5, padding: '2px 8px', fontSize: 11, fontWeight: 700 }}>{p.prize_type}</span>
-                            </td>
-                            <td style={{ padding: '10px 12px', fontWeight: 700, color: 'var(--brand)' }}>{count}</td>
-                            <td style={{ padding: '10px 12px', color: '#3B82F6', fontWeight: 600 }}>{estT > 0 ? `RM ${estT.toLocaleString()}` : '—'}</td>
-                            <td style={{ padding: '10px 12px', color: cost > 0 ? '#EF4444' : 'var(--muted)', fontWeight: cost > 0 ? 700 : 400 }}>{cost > 0 ? `RM ${cost.toLocaleString()}` : '—'}</td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
+
+                {/* ── Methodology note ── */}
+                <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 16px', marginBottom: 16, fontSize: 12, color: 'var(--muted)', lineHeight: 1.7 }}>
+                  <strong style={{ color: 'var(--text)' }}>How ROI is calculated:</strong>{' '}
+                  <strong style={{ color: '#3B82F6' }}>Income</strong> = total deposits from enrolled members (actual cash in).{' '}
+                  <strong style={{ color: '#EF4444' }}>Cost</strong> = face value of prizes in completed spin records (actual cash out).{' '}
+                  Turnover is <em>not</em> counted as income — only real deposits matter.
                 </div>
+
+                {/* ── Actual prize breakdown table ── */}
+                <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--text)', marginBottom: 10 }}>Prizes Awarded (Actual)</div>
+                {prizeBreakdown.length === 0 ? (
+                  <div style={{ padding: '32px 0', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
+                    No completed spins yet — prize cost will appear here once records are marked Completed.
+                  </div>
+                ) : (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                          {['Prize','Type','Times Awarded','Total Cost'].map(h => (
+                            <th key={h} style={{ padding: '10px 12px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase' }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {prizeBreakdown.map((p, i) => {
+                          const tc = PRIZE_TYPE_COLORS[p.type] || PRIZE_TYPE_COLORS.cash
+                          return (
+                            <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
+                              <td style={{ padding: '10px 12px', fontWeight: 600, color: 'var(--text)' }}>{p.name}</td>
+                              <td style={{ padding: '10px 12px' }}>
+                                <span style={{ background: tc.bg, color: tc.color, borderRadius: 5, padding: '2px 8px', fontSize: 11, fontWeight: 700 }}>{p.type}</span>
+                              </td>
+                              <td style={{ padding: '10px 12px', fontWeight: 700, color: 'var(--brand)', fontSize: 16 }}>{p.count}</td>
+                              <td style={{ padding: '10px 12px', color: p.totalCost > 0 ? '#EF4444' : 'var(--muted)', fontWeight: p.totalCost > 0 ? 700 : 400 }}>
+                                {p.totalCost > 0 ? `RM ${p.totalCost.toLocaleString()}` : '—'}
+                              </td>
+                            </tr>
+                          )
+                        })}
+                        {/* Totals row */}
+                        <tr style={{ borderTop: '2px solid var(--border)', background: 'var(--surface2)' }}>
+                          <td colSpan={2} style={{ padding: '10px 12px', fontWeight: 800, color: 'var(--text)' }}>TOTAL</td>
+                          <td style={{ padding: '10px 12px', fontWeight: 800, color: 'var(--brand)', fontSize: 16 }}>{prizeBreakdown.reduce((s,p) => s + p.count, 0)}</td>
+                          <td style={{ padding: '10px 12px', fontWeight: 800, color: '#EF4444' }}>RM {totalPrizeCost.toLocaleString()}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
                 {selectedCampaign && (
                   <div style={{ marginTop: 16, fontSize: 12, color: 'var(--muted)' }}>
                     Campaign: <strong style={{ color: 'var(--text)' }}>{selectedCampaign.name}</strong>
