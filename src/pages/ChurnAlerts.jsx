@@ -72,40 +72,7 @@ export default function ChurnAlerts() {
   const vip=vipMap[r.username]||{};const contactedToday=Boolean(latestContact[r.username]?.logged_at&&new Date(latestContact[r.username].logged_at).toISOString().slice(0,10)===todayStr);results.push({id:vip.id||r.username,username:r.username,tier:r.tier||vip.tier,currency:r.currency||vip.currency||'MYR',host:r.host_assigned||vip.host_assigned,phone:vip.phone||null,whatsapp:vip.whatsapp||null,last_deposit_date:vip.last_deposit_date||null,days_since_deposit:Number(vip.days_inactive)||null,decline_pct:-100,net_win_loss_3d:0,reasons:[`Churned: deposited in ${prevM} but zero deposit in ${latestM} — needs reactivation`],urgency_score:4,follow_up_due:true,last_contact:latestContact[r.username]?.logged_at||null,contacted_today:contactedToday})})}}catch(monthlyErr){console.error('loadPriorityContacts monthly churn overlay error',monthlyErr)}
   results.sort((a,b)=>getRetentionTierRank(a.tier)-getRetentionTierRank(b.tier)||Number(b.follow_up_due)-Number(a.follow_up_due)||b.urgency_score-a.urgency_score||String(a.username).localeCompare(String(b.username)));setPriorityList(results)}finally{setPriorityLoading(false)}}
 
-  async function loadAll(){setLoading(true);try{
-    const today=new Date();const todayStr=today.toISOString().slice(0,10)
-    const sixtyAgo=new Date(today);sixtyAgo.setDate(sixtyAgo.getDate()-60);const sixtyAgoStr=sixtyAgo.toISOString().slice(0,10)
-    // Load members + reactivation logs in parallel
-    const [{data:members},{data:logs}]=await Promise.all([
-      supabase.from('vip_members').select('*').eq('is_excluded',false),
-      supabase.from('reactivation_logs').select('*').eq('reactivated_month',monthStr)
-    ])
-    // Cross-ref vip_daily_snapshots for true latest deposit date (last 60 days)
-    // This corrects stale last_deposit_date / days_inactive stored in vip_members
-    let snapRows=[],from=0,PAGE=1000
-    while(true){
-      const{data:page,error:se}=await supabase.from('vip_daily_snapshots')
-        .select('username,snapshot_date,total_deposit')
-        .gte('snapshot_date',sixtyAgoStr).lte('snapshot_date',todayStr)
-        .gt('total_deposit',0).range(from,from+PAGE-1)
-      if(se||!page||page.length===0)break
-      snapRows=snapRows.concat(page)
-      if(page.length<PAGE)break;from+=PAGE
-    }
-    // Build map: username -> latest snapshot_date with a deposit
-    const latestDepMap={}
-    snapRows.forEach(r=>{if(!latestDepMap[r.username]||r.snapshot_date>latestDepMap[r.username])latestDepMap[r.username]=r.snapshot_date})
-    // Enrich each member: override last_deposit_date if snapshot is newer, recalculate days_inactive
-    const enriched=(members||[]).map(m=>{
-      const snapDate=latestDepMap[m.username]
-      const bestDate=snapDate&&(!m.last_deposit_date||snapDate>m.last_deposit_date)?snapDate:m.last_deposit_date
-      const days=bestDate?Math.floor((today-new Date(bestDate))/86400000):(m.days_inactive||0)
-      return{...m,last_deposit_date:bestDate||m.last_deposit_date,days_inactive:days}
-    })
-    const logSet=new Set((logs||[]).map(x=>x.username))
-    setReactivated(logs||[]);setReactivatedSet(logSet);setVips(enriched)
-    setStats({high:enriched.filter(x=>x.risk_level==='HIGH').length,medium:enriched.filter(x=>x.risk_level==='MEDIUM').length,dormant:enriched.filter(x=>(x.days_inactive||0)>=dormantDays).length,atRisk:enriched.filter(x=>(x.risk_level==='HIGH'||x.risk_level==='MEDIUM')&&!logSet.has(x.username)).length})
-  }catch(e){console.error(e)}finally{setLoading(false)}}
+  async function loadAll(){setLoading(true);try{const{data:members}=await supabase.from('vip_members').select('*').eq('is_excluded',false);const{data:logs}=await supabase.from('reactivation_logs').select('*').eq('reactivated_month',monthStr);const logSet=new Set((logs||[]).map(x=>x.username));setReactivated(logs||[]);setReactivatedSet(logSet);setVips(members||[]);setStats({high:(members||[]).filter(x=>x.risk_level==='HIGH').length,medium:(members||[]).filter(x=>x.risk_level==='MEDIUM').length,dormant:(members||[]).filter(x=>(x.days_inactive||0)>=dormantDays).length,atRisk:(members||[]).filter(x=>(x.risk_level==='HIGH'||x.risk_level==='MEDIUM')&&!logSet.has(x.username)).length})}catch(e){console.error(e)}finally{setLoading(false)}}
 
   const visibleVips=vips.filter(v=>(tierF==='ALL'||v.tier===tierF)&&(!mineOnly||v.host_assigned===myName)); const reactRows=reactivated.filter(v=>reactTierF==='ALL'||v.tier===reactTierF)
   return <div style={s.page}><div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-end',marginBottom:18}}><div><div style={s.title}>{t('sidebar.nav.churnAlerts')}</div><div style={s.sub}>{t('churnAlerts.subtitle')}</div></div></div>
