@@ -1020,9 +1020,10 @@ export default function CSVImport() {
   // dateStr: 'YYYY-MM-DD' — defaults to today, but can be backdated to cover missed days
   const saveDailySnapshot = async (dateStr, onProgress) => {
     onProgress(`Saving daily snapshot for ${dateStr}…`)
+    const snapshotMonth = dateStr.slice(0, 7) // 'YYYY-MM'
     const { data: vips, error: fetchErr } = await supabase
       .from('vip_members')
-      .select('username, tier, total_deposit, total_withdrawal, monthly_valid_bet, win_loss, bet_count, bonus_count, bonus_amount, total_rebate, has_promo, currency, host_assigned')
+      .select('username, tier, total_deposit, total_withdrawal, monthly_valid_bet, win_loss, bet_count, bonus_count, bonus_amount, total_rebate, has_promo, currency, host_assigned, valid_bet_month')
       .in('tier', ['GOLD', 'PLATINUM', 'DIAMOND', 'DIAMOND-P', 'BLACK'])
       .eq('is_excluded', false)
 
@@ -1039,22 +1040,28 @@ export default function CSVImport() {
     let saved = 0
     const errors = []
     for (let i = 0; i < vips.length; i += SNAP_BATCH) {
-      const batch = vips.slice(i, i + SNAP_BATCH).map(v => ({
-        username:           v.username,
-        snapshot_date:      dateStr,
-        tier:                v.tier,
-        total_deposit:       v.total_deposit     || 0,
-        total_withdrawal:    v.total_withdrawal  || 0,
-        monthly_valid_bet:   v.monthly_valid_bet || 0,
-        win_loss:            v.win_loss          || 0,
-        bet_count:           v.bet_count         || 0,
-        bonus_count:         v.bonus_count       || 0,
-        bonus_amount:        v.bonus_amount      || 0,
-        total_rebate:        v.total_rebate      || 0,
-        has_promo:           v.has_promo         || false,
-        currency:            v.currency          || 'MYR',
-        host_assigned:       v.host_assigned     || null,
-      }))
+      const batch = vips.slice(i, i + SNAP_BATCH).map(v => {
+        // If this VIP's last import was for a different month than the snapshot date,
+        // their cumulative MTD values are stale from the previous month — zero them out
+        // so the new month starts fresh instead of carrying old data forward.
+        const sameMonth = (v.valid_bet_month || '') === snapshotMonth
+        return {
+          username:           v.username,
+          snapshot_date:      dateStr,
+          tier:               v.tier,
+          total_deposit:      sameMonth ? (v.total_deposit     || 0) : 0,
+          total_withdrawal:   sameMonth ? (v.total_withdrawal  || 0) : 0,
+          monthly_valid_bet:  sameMonth ? (v.monthly_valid_bet || 0) : 0,
+          win_loss:           sameMonth ? (v.win_loss          || 0) : 0,
+          bet_count:          sameMonth ? (v.bet_count         || 0) : 0,
+          bonus_count:        sameMonth ? (v.bonus_count       || 0) : 0,
+          bonus_amount:       sameMonth ? (v.bonus_amount      || 0) : 0,
+          total_rebate:       sameMonth ? (v.total_rebate      || 0) : 0,
+          has_promo:          sameMonth ? (v.has_promo         || false) : false,
+          currency:           v.currency      || 'MYR',
+          host_assigned:      v.host_assigned || null,
+        }
+      })
       const { error } = await supabase
         .from('vip_daily_snapshots')
         .upsert(batch, { onConflict: 'username,snapshot_date' })
