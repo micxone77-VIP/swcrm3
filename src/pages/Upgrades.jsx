@@ -385,27 +385,26 @@ function VIPCandidatesTab() {
 
   useEffect(() => {
     const init = async () => {
-      // Paginate through vip_daily_snapshots to collect all distinct snapshot months.
-      // Can't use a simple .select() because Supabase/PostgREST enforces a hard 1000-row
-      // server cap — for a view like vip_monthly_totals, each row IS a month-player combo,
-      // so we'd only ever see part of the data. Instead, paginate the raw date table.
-      const monthSet = new Set()
-      let from = 0
-      const PAGE = 1000
-      while (true) {
-        const { data: page, error } = await supabase
-          .from('vip_daily_snapshots')
-          .select('snapshot_date')
-          .order('snapshot_date', { ascending: false })
-          .range(from, from + PAGE - 1)
-        if (error || !page || page.length === 0) break
-        page.forEach(r => monthSet.add(r.snapshot_date.slice(0, 7)))
-        if (page.length < PAGE) break
-        from += PAGE
+      // Fetch oldest and newest snapshot dates (2 queries only), then generate all
+      // month labels between them in JS — avoids paginating all 26 000+ rows.
+      const [{ data: oldest }, { data: newest }] = await Promise.all([
+        supabase.from('vip_daily_snapshots').select('snapshot_date').order('snapshot_date', { ascending: true  }).limit(1),
+        supabase.from('vip_daily_snapshots').select('snapshot_date').order('snapshot_date', { ascending: false }).limit(1),
+      ])
+      const months = []
+      if (oldest?.[0] && newest?.[0]) {
+        let cur = new Date(oldest[0].snapshot_date)
+        cur = new Date(cur.getFullYear(), cur.getMonth(), 1)
+        const end = new Date(newest[0].snapshot_date)
+        const endM = new Date(end.getFullYear(), end.getMonth(), 1)
+        while (cur <= endM) {
+          months.push(`${cur.getFullYear()}-${String(cur.getMonth()+1).padStart(2,'0')}`)
+          cur.setMonth(cur.getMonth() + 1)
+        }
+        months.reverse()
       }
-      const unique = [...monthSet].sort().reverse()
-      setAvailableMonths(unique)
-      setSelectedMonth(unique[0] || '')
+      setAvailableMonths(months)
+      setSelectedMonth(months[0] || '')
     }
     init()
   }, [])

@@ -10,6 +10,7 @@ const NAV_GROUPS = [
     { to: '/today', label: 'Today', icon: '🗓', roles: ['admin','host','readonly'] },
     { to: '/tasks', label: 'My Tasks', icon: '✅', roles: ['admin','host'] },
     { to: '/alerts', label: 'Alerts', icon: '🔔', roles: ['admin','host','readonly'] },
+    { to: '/targets', label: 'Daily Targets', icon: '🎯', roles: ['admin','host'] },
   ] },
   { key: 'vip', label: 'VIP Operations', icon: '👑', items: [
     { to: '/vips', label: 'All VIPs', icon: '👥', roles: ['admin','host'] },
@@ -17,6 +18,8 @@ const NAV_GROUPS = [
     { to: '/active-tracker', label: 'Active Tracker', icon: '📡', roles: ['admin','host'] },
     { to: '/follow-up', label: 'Follow Up', icon: '📞', roles: ['admin','host'] },
     { to: '/birthdays', label: 'Birthdays', icon: '🎂', roles: ['admin','host','readonly'] },
+    { to: '/upgrades', label: 'Upgrades', icon: '⬆️', roles: ['admin','host'] },
+    { to: '/transfer', label: 'Transfers', icon: '🔄', roles: ['admin'] },
   ] },
   { key: 'retention', label: 'Retention', icon: '📉', items: [
     { to: '/retention', label: 'Monthly Churn', icon: '📉', roles: ['admin','host','readonly'] },
@@ -29,8 +32,6 @@ const NAV_GROUPS = [
   { key: 'campaigns', label: 'Campaigns', icon: '📢', items: [
     { to: '/campaigns', label: 'Campaigns', icon: '📢', roles: ['admin','host'] },
     { to: '/lucky-spin-admin', label: 'Lucky Spin', icon: '🎰', roles: ['admin','host'] },
-    { to: '/upgrades', label: 'Upgrades', icon: '⬆️', roles: ['admin','host'] },
-    { to: '/transfer', label: 'Transfers', icon: '🔄', roles: ['admin'] },
     { to: '/budget', label: 'Budget', icon: '💰', roles: ['admin'] },
   ] },
   { key: 'intelligence', label: 'Intelligence', icon: '📊', items: [
@@ -38,6 +39,7 @@ const NAV_GROUPS = [
     { to: '/kpi', label: 'KPI', icon: '🏆', roles: ['admin','host','readonly'] },
     { to: '/period-report', label: 'Reports', icon: '📅', roles: ['admin','readonly'] },
     { to: '/profiling', label: 'Player Insights', icon: '🧠', roles: ['admin','readonly'] },
+    { to: '/tier-analytics', label: 'Tier Analytics', icon: '🔬', roles: ['admin','readonly'] },
     { to: '/ask', label: 'Ask Data', icon: '💬', roles: ['admin','host'] },
     { to: '/monthly-report', label: 'Monthly PPT', icon: '📊', roles: ['admin'] },
   ] },
