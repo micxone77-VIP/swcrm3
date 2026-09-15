@@ -14,20 +14,23 @@ const NAV_GROUPS = [
   { key: 'vip', label: 'VIP Operations', icon: '👑', items: [
     { to: '/vips', label: 'All VIPs', icon: '👥', roles: ['admin','host'] },
     { to: '/at-risk', label: 'At Risk', icon: '⚠️', roles: ['admin','host'] },
+    { to: '/active-tracker', label: 'Active Tracker', icon: '📡', roles: ['admin','host'] },
     { to: '/follow-up', label: 'Follow Up', icon: '📞', roles: ['admin','host'] },
     { to: '/birthdays', label: 'Birthdays', icon: '🎂', roles: ['admin','host','readonly'] },
+    { to: '/upgrades', label: 'Upgrades', icon: '⬆️', roles: ['admin','host'] },
+    { to: '/transfer', label: 'Transfers', icon: '🔄', roles: ['admin'] },
   ] },
   { key: 'retention', label: 'Retention', icon: '📉', items: [
     { to: '/retention', label: 'Monthly Churn', icon: '📉', roles: ['admin','host','readonly'] },
     { to: '/retention-queue', label: 'Daily Work Queue', icon: '🎯', roles: ['admin','host','readonly'] },
     { to: '/churn', label: 'Churn Alerts', icon: '🚨', roles: ['admin','host'] },
     { to: '/contacts', label: 'Contact Log', icon: '📝', roles: ['admin','host'] },
+    { to: '/weekly-outcome', label: 'Weekly Outcome', icon: '📋', roles: ['admin','host','readonly'] },
     { to: '/retention-analytics', label: 'Retention Analytics', icon: '📊', roles: ['admin','readonly'] },
   ] },
   { key: 'campaigns', label: 'Campaigns', icon: '📢', items: [
     { to: '/campaigns', label: 'Campaigns', icon: '📢', roles: ['admin','host'] },
-    { to: '/upgrades', label: 'Upgrades', icon: '⬆️', roles: ['admin','host'] },
-    { to: '/transfer', label: 'Transfers', icon: '🔄', roles: ['admin'] },
+    { to: '/lucky-spin-admin', label: 'Lucky Spin', icon: '🎰', roles: ['admin','host'] },
     { to: '/budget', label: 'Budget', icon: '💰', roles: ['admin'] },
   ] },
   { key: 'intelligence', label: 'Intelligence', icon: '📊', items: [
