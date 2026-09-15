@@ -23,6 +23,7 @@ const NAV_GROUPS = [
     { to: '/retention-queue', label: 'Daily Work Queue', icon: '🎯', roles: ['admin','host','readonly'] },
     { to: '/churn', label: 'Churn Alerts', icon: '🚨', roles: ['admin','host'] },
     { to: '/contacts', label: 'Contact Log', icon: '📝', roles: ['admin','host'] },
+    { to: '/weekly-outcome', label: 'Weekly Outcome', icon: '📋', roles: ['admin','host','readonly'] },
     { to: '/retention-analytics', label: 'Retention Analytics', icon: '📊', roles: ['admin','readonly'] },
   ] },
   { key: 'campaigns', label: 'Campaigns', icon: '📢', items: [

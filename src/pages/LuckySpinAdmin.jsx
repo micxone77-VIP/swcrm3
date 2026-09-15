@@ -208,9 +208,38 @@ export default function LuckySpinAdmin() {
   const [searchMember, setSearchMember] = useState('')
   const [updatingId, setUpdatingId] = useState(null)
   const [newCodeMember, setNewCodeMember] = useState('')
+  const [newCodeMaxUses, setNewCodeMaxUses] = useState(1)
+  const [codeMode, setCodeMode] = useState('auto')   // 'auto' | 'manual'
+  const [manualCode, setManualCode] = useState('')
   const [generatingCode, setGeneratingCode] = useState(false)
+  const [codeMsg, setCodeMsg] = useState('')
   const [note, setNote] = useState({})
   const [editNote, setEditNote] = useState(null)
+
+  // Manual Record
+  const [showManualRecord, setShowManualRecord] = useState(false)
+  const [manualRecord, setManualRecord] = useState({ member_username: '', prize_id: '', code_used: '', status: 'pending', note: '' })
+  const [addingRecord, setAddingRecord] = useState(false)
+  const [recordMsg, setRecordMsg] = useState('')
+
+  // Chase List / Members
+  const [members, setMembers] = useState([])
+  const [deposits, setDeposits] = useState([])   // all deposits for this campaign
+  const [memberSearch, setMemberSearch] = useState('')
+  const [newMemberUsername, setNewMemberUsername] = useState('')
+  const [addingMember, setAddingMember] = useState(false)
+  const [memberMsg, setMemberMsg] = useState('')
+  const [expandedMember, setExpandedMember] = useState(null)   // username of expanded row
+  const [depositForm, setDepositForm] = useState({ date: new Date().toISOString().slice(0,10), amount: '', note: '' })
+  const [addingDeposit, setAddingDeposit] = useState(false)
+  const SPIN_TIERS = [
+    { min: 40000, spins: 4 },
+    { min: 25000, spins: 3 },
+    { min: 15000, spins: 2 },
+    { min: 5000,  spins: 1 },
+    { min: 0,     spins: 0 },
+  ]
+  const getEarnedSpins = (total) => (SPIN_TIERS.find(t => total >= t.min) || { spins: 0 }).spins
 
   // Campaign tab: active | upcoming | ended
   const [campaignTab, setCampaignTab] = useState('active')
@@ -242,6 +271,20 @@ export default function LuckySpinAdmin() {
   const [savingWs, setSavingWs] = useState(false)
   const [wsSaveMsg, setWsSaveMsg] = useState('')
 
+  // Deposit Milestones
+  const [milestones, setMilestones] = useState([])
+  const [savingMilestones, setSavingMilestones] = useState(false)
+  const [milestoneSaveMsg, setMilestoneSaveMsg] = useState('')
+  const [milestonePreview, setMilestonePreview] = useState(null)
+  const [loadingPreview, setLoadingPreview] = useState(false)
+  const [generatingCodes, setGeneratingCodes] = useState(false)
+  const [selectedAllocUsernames, setSelectedAllocUsernames] = useState(new Set())
+  // Exclusion list
+  const [excludedUsernames, setExcludedUsernames] = useState([])
+  const [exclusionInput, setExclusionInput] = useState('')
+  const [savingExclusions, setSavingExclusions] = useState(false)
+  const [exclusionSaveMsg, setExclusionSaveMsg] = useState('')
+
   useEffect(() => {
     supabase
       .from('vip_campaigns')
@@ -271,6 +314,24 @@ export default function LuckySpinAdmin() {
     }
   }, [selectedCampaign])
 
+  // Load deposit_milestones when campaign changes
+  useEffect(() => {
+    if (selectedCampaign) {
+      const ms = selectedCampaign.deposit_milestones
+      setMilestones(Array.isArray(ms) && ms.length > 0 ? ms : [
+        { threshold: 5000,  spins: 1 },
+        { threshold: 15000, spins: 1 },
+        { threshold: 25000, spins: 1 },
+        { threshold: 40000, spins: 1 },
+      ])
+      setMilestonePreview(null)
+      const ex = selectedCampaign.excluded_usernames
+      const exArr = Array.isArray(ex) ? ex : []
+      setExcludedUsernames(exArr)
+      setExclusionInput(exArr.join('\n'))
+    }
+  }, [selectedCampaign])
+
   const loadRecords = useCallback(async () => {
     if (!selectedCampaign) return
     const { data } = await supabase.from('vip_campaign_records').select('*').eq('campaign_id', selectedCampaign.id).order('created_at', { ascending: false })
@@ -289,10 +350,22 @@ export default function LuckySpinAdmin() {
     setPrizes(data || [])
   }, [selectedCampaign])
 
+  const loadMembers = useCallback(async () => {
+    if (!selectedCampaign) return
+    const { data } = await supabase.from('vip_campaign_members').select('*').eq('campaign_id', selectedCampaign.id).order('enrolled_at', { ascending: false })
+    setMembers(data || [])
+  }, [selectedCampaign])
+
+  const loadDeposits = useCallback(async () => {
+    if (!selectedCampaign) return
+    const { data } = await supabase.from('vip_campaign_deposits').select('*').eq('campaign_id', selectedCampaign.id).order('deposit_date', { ascending: false })
+    setDeposits(data || [])
+  }, [selectedCampaign])
+
   useEffect(() => {
     if (!selectedCampaign) return
-    loadRecords(); loadCodes(); loadPrizes()
-  }, [selectedCampaign, loadRecords, loadCodes, loadPrizes])
+    loadRecords(); loadCodes(); loadPrizes(); loadMembers(); loadDeposits()
+  }, [selectedCampaign, loadRecords, loadCodes, loadPrizes, loadMembers, loadDeposits])
 
   async function updateStatus(recordId, newStatus) {
     setUpdatingId(recordId)
@@ -307,12 +380,103 @@ export default function LuckySpinAdmin() {
     if (!error) { setRecords(r => r.map(rec => rec.id === recordId ? { ...rec, note: text } : rec)); setEditNote(null) }
   }
 
+  async function addManualRecord() {
+    if (!selectedCampaign) return
+    if (!manualRecord.member_username.trim()) { setRecordMsg('❌ Member username is required.'); return }
+    if (!manualRecord.prize_id) { setRecordMsg('❌ Please select a prize.'); return }
+    setAddingRecord(true)
+    setRecordMsg('')
+    const prize = prizes.find(p => p.id === manualRecord.prize_id)
+    const payload = {
+      campaign_id: selectedCampaign.id,
+      member_username: manualRecord.member_username.trim(),
+      prize_id: prize?.id || null,
+      prize_snapshot: prize ? {
+        name_en: prize.name_en || '',
+        name_zh: prize.name_zh || '',
+        name_bm: prize.name_bm || '',
+        prize_type: prize.prize_type || '',
+        prize_value: prize.prize_value || '',
+      } : null,
+      code_used: manualRecord.code_used.trim() || null,
+      status: manualRecord.status,
+      note: manualRecord.note.trim() || null,
+      handler: profile?.full_name || profile?.username || 'admin',
+      created_at: new Date().toISOString(),
+    }
+    const { error } = await supabase.from('vip_campaign_records').insert(payload)
+    if (!error) {
+      // If a code was provided and spin is not cancelled → increment used_count on that code
+      const codeStr = manualRecord.code_used.trim().toUpperCase()
+      if (codeStr && manualRecord.status !== 'cancelled') {
+        const { data: codeRow } = await supabase
+          .from('vip_campaign_codes')
+          .select('id, used_count')
+          .eq('campaign_id', selectedCampaign.id)
+          .eq('code', codeStr)
+          .maybeSingle()
+        if (codeRow) {
+          await supabase
+            .from('vip_campaign_codes')
+            .update({ used_count: (codeRow.used_count || 0) + 1 })
+            .eq('id', codeRow.id)
+        }
+      }
+      setRecordMsg('✅ Record added!')
+      setManualRecord({ member_username: '', prize_id: '', code_used: '', status: 'pending', note: '' })
+      loadRecords()
+      loadCodes()
+      setTimeout(() => { setRecordMsg(''); setShowManualRecord(false) }, 1500)
+    } else {
+      setRecordMsg('❌ ' + error.message)
+    }
+    setAddingRecord(false)
+  }
+
   async function generateCode() {
     if (!selectedCampaign) return
     setGeneratingCode(true)
-    const code = 'SPIN-' + Math.random().toString(36).substring(2, 8).toUpperCase()
-    const { error } = await supabase.from('vip_campaign_codes').insert({ campaign_id: selectedCampaign.id, code, member_username: newCodeMember || null, max_uses: 1, created_by: profile?.full_name || 'admin' })
-    if (!error) { setNewCodeMember(''); loadCodes() }
+    setCodeMsg('')
+
+    // Determine code string
+    let code
+    if (codeMode === 'manual') {
+      code = manualCode.trim().toUpperCase()
+      if (!code) { setCodeMsg('❌ Please enter a code.'); setGeneratingCode(false); return }
+    } else {
+      code = 'SPIN-' + Math.random().toString(36).substring(2, 8).toUpperCase()
+    }
+
+    // Check duplicate
+    const { data: existing } = await supabase
+      .from('vip_campaign_codes')
+      .select('id')
+      .eq('campaign_id', selectedCampaign.id)
+      .eq('code', code)
+    if (existing && existing.length > 0) {
+      setCodeMsg(`❌ Code "${code}" already exists in this campaign.`)
+      setGeneratingCode(false)
+      return
+    }
+
+    const { error } = await supabase.from('vip_campaign_codes').insert({
+      campaign_id: selectedCampaign.id,
+      code,
+      member_username: newCodeMember.trim() || null,
+      max_uses: Number(newCodeMaxUses) || 1,
+      created_by: profile?.full_name || 'admin',
+    })
+
+    if (!error) {
+      setCodeMsg(`✅ Code "${code}" added!`)
+      setNewCodeMember('')
+      setManualCode('')
+      setNewCodeMaxUses(1)
+      loadCodes()
+      setTimeout(() => setCodeMsg(''), 4000)
+    } else {
+      setCodeMsg('❌ ' + error.message)
+    }
     setGeneratingCode(false)
   }
 
@@ -441,6 +605,17 @@ export default function LuckySpinAdmin() {
     setAddingPrize(false)
   }
 
+  // ── Upload Wheel Image to Supabase Storage ───────────────────────────────────
+  async function uploadWheelImage(field, file) {
+    if (!file || !selectedCampaign) return
+    const ext = file.name.split('.').pop().toLowerCase()
+    const path = `campaigns/${selectedCampaign.id}/${field}_${Date.now()}.${ext}`
+    const { error: upErr } = await supabase.storage.from('lucky-spin-assets').upload(path, file, { upsert: true })
+    if (upErr) { alert('Upload failed: ' + upErr.message); return }
+    const { data } = supabase.storage.from('lucky-spin-assets').getPublicUrl(path)
+    setWs(w => ({ ...w, [field]: data.publicUrl }))
+  }
+
   // ── Save Wheel Settings ──────────────────────────────────────────────────────
   async function saveWheelSettings() {
     if (!selectedCampaign) return
@@ -458,25 +633,187 @@ export default function LuckySpinAdmin() {
     setSavingWs(false)
   }
 
-  // ── ROI Calculations ─────────────────────────────────────────────────────────
+  // ── Deposit Milestone Functions ──────────────────────────────────────────────
+  async function saveMilestones() {
+    if (!selectedCampaign) return
+    setSavingMilestones(true)
+    setMilestoneSaveMsg('')
+    const sorted = [...milestones].sort((a, b) => a.threshold - b.threshold)
+    const { error } = await supabase.from('vip_campaigns').update({ deposit_milestones: sorted }).eq('id', selectedCampaign.id)
+    if (!error) {
+      setCampaigns(c => c.map(x => x.id === selectedCampaign.id ? { ...x, deposit_milestones: sorted } : x))
+      setSelectedCampaign(prev => ({ ...prev, deposit_milestones: sorted }))
+      setMilestones(sorted)
+      setMilestoneSaveMsg('✅ Milestones saved!')
+      setTimeout(() => setMilestoneSaveMsg(''), 3000)
+    } else {
+      setMilestoneSaveMsg('❌ Save failed: ' + error.message)
+    }
+    setSavingMilestones(false)
+  }
+
+  async function runMilestonePreview() {
+    if (!selectedCampaign || milestones.length === 0) return
+    const startDate = toDateInput(selectedCampaign.start_date)
+    const endDate   = toDateInput(selectedCampaign.end_date) || startDate
+    if (!startDate) { alert('Campaign has no start date.'); return }
+    setLoadingPreview(true)
+    setMilestonePreview(null)
+
+    // Fetch all active-day deposit rows for the campaign period
+    const PAGE = 1000
+    let all = [], from = 0
+    while (true) {
+      const { data, error } = await supabase
+        .from('vip_daily_snapshots')
+        .select('username, total_deposit, monthly_valid_bet')
+        .gte('snapshot_date', startDate)
+        .lte('snapshot_date', endDate)
+        .range(from, from + PAGE - 1)
+      if (error) { alert('VIP data fetch failed: ' + error.message); setLoadingPreview(false); return }
+      all = all.concat((data || []).filter(r => (parseFloat(r.monthly_valid_bet) || 0) > 0))
+      if (!data || data.length < PAGE) break
+      from += PAGE
+    }
+
+    // Sum deposits per player
+    const depositMap = {}
+    all.forEach(r => {
+      depositMap[r.username] = (depositMap[r.username] || 0) + (parseFloat(r.total_deposit) || 0)
+    })
+
+    // Tier filter — if campaign has allowed_tiers, fetch player tiers from vip_monthly_totals
+    const allowedTiers = selectedCampaign.allowed_tiers || []
+    let tierMap = {}
+    if (allowedTiers.length > 0) {
+      const monthStr = startDate.slice(0, 7)
+      const { data: tierRows } = await supabase
+        .from('vip_monthly_totals')
+        .select('username, tier')
+        .ilike('snapshot_month', monthStr + '%')
+      ;(tierRows || []).forEach(r => { tierMap[r.username] = r.tier })
+    }
+
+    // Count existing codes per player for this campaign
+    const { data: existingCodes } = await supabase
+      .from('vip_campaign_codes')
+      .select('member_username')
+      .eq('campaign_id', selectedCampaign.id)
+    const codeCountMap = {}
+    ;(existingCodes || []).forEach(c => {
+      if (c.member_username) codeCountMap[c.member_username] = (codeCountMap[c.member_username] || 0) + 1
+    })
+
+    // Build exclusion set (lowercase)
+    const exSet = new Set((selectedCampaign.excluded_usernames || []).map(u => u.toLowerCase()))
+
+    // Calculate spins earned per player based on milestones
+    const sortedMs = [...milestones].sort((a, b) => a.threshold - b.threshold)
+    const preview = Object.entries(depositMap)
+      .map(([username, totalDeposit]) => {
+        const spinsEarned = sortedMs.reduce((sum, m) => totalDeposit >= (m.threshold || 0) ? sum + (m.spins || 1) : sum, 0)
+        const codesExisting = codeCountMap[username] || 0
+        const excluded = exSet.has(username.toLowerCase())
+        const playerTier = tierMap[username] || null
+        const tierBlocked = allowedTiers.length > 0 && (!playerTier || !allowedTiers.includes(playerTier))
+        return { username, totalDeposit, spinsEarned, codesExisting, excluded, tierBlocked, playerTier }
+      })
+      .filter(p => p.spinsEarned > 0)
+      .sort((a, b) => {
+        const aBlocked = a.excluded || a.tierBlocked ? 1 : 0
+        const bBlocked = b.excluded || b.tierBlocked ? 1 : 0
+        if (aBlocked !== bBlocked) return aBlocked - bBlocked
+        return b.totalDeposit - a.totalDeposit
+      })
+
+    setMilestonePreview(preview)
+    // Pre-select players who still need codes (excluding blocked)
+    setSelectedAllocUsernames(new Set(
+      preview.filter(p => !p.excluded && !p.tierBlocked && p.codesExisting < p.spinsEarned).map(p => p.username)
+    ))
+    setLoadingPreview(false)
+  }
+
+  async function generateMilestoneCodes() {
+    if (!selectedCampaign || !milestonePreview) return
+    const toGenerate = milestonePreview.filter(p => selectedAllocUsernames.has(p.username) && !p.excluded && !p.tierBlocked)
+    if (toGenerate.length === 0) { alert('No eligible players selected.'); return }
+    const totalCodes = toGenerate.reduce((s, p) => s + Math.max(0, p.spinsEarned - p.codesExisting), 0)
+    if (!window.confirm(`Generate ${totalCodes} spin code${totalCodes !== 1 ? 's' : ''} for ${toGenerate.length} player${toGenerate.length !== 1 ? 's' : ''}?\n\nPlayers already with enough codes will be skipped.`)) return
+    setGeneratingCodes(true)
+    const inserts = []
+    for (const p of toGenerate) {
+      const needed = Math.max(0, p.spinsEarned - p.codesExisting)
+      for (let i = 0; i < needed; i++) {
+        const code = 'SPIN-' + Math.random().toString(36).substring(2, 8).toUpperCase()
+        inserts.push({ campaign_id: selectedCampaign.id, code, member_username: p.username, max_uses: 1, created_by: profile?.full_name || 'admin' })
+      }
+    }
+    if (inserts.length === 0) { alert('All selected players already have their codes.'); setGeneratingCodes(false); return }
+    const { error } = await supabase.from('vip_campaign_codes').insert(inserts)
+    if (error) { alert('Failed to generate codes: ' + error.message); setGeneratingCodes(false); return }
+    await loadCodes()
+    await runMilestonePreview()
+    setGeneratingCodes(false)
+    alert(`✅ Generated ${inserts.length} spin code${inserts.length !== 1 ? 's' : ''} successfully.`)
+  }
+
+  async function saveExclusions() {
+    if (!selectedCampaign) return
+    setSavingExclusions(true)
+    setExclusionSaveMsg('')
+    const parsed = exclusionInput.split(/[\n,]+/).map(u => u.trim().toLowerCase()).filter(Boolean)
+    const unique  = [...new Set(parsed)]
+    const { error } = await supabase.from('vip_campaigns').update({ excluded_usernames: unique }).eq('id', selectedCampaign.id)
+    if (!error) {
+      setCampaigns(c => c.map(x => x.id === selectedCampaign.id ? { ...x, excluded_usernames: unique } : x))
+      setSelectedCampaign(prev => ({ ...prev, excluded_usernames: unique }))
+      setExcludedUsernames(unique)
+      setExclusionInput(unique.join('\n'))
+      setExclusionSaveMsg('✅ Saved!')
+      setTimeout(() => setExclusionSaveMsg(''), 3000)
+    } else {
+      setExclusionSaveMsg('❌ ' + error.message)
+    }
+    setSavingExclusions(false)
+  }
+
+  // ── ROI Calculations (actual data) ───────────────────────────────────────────
   function calcROI() {
-    const totalWeight = prizes.filter(p => p.is_active).reduce((s, p) => s + (p.probability || 0), 0)
-    const totalSpins = records.length
-    const completed = records.filter(r => r.status === 'completed').length
-    const totalCost = prizes.reduce((sum, p) => {
-      if (!p.is_active || p.prize_type !== 'cash') return sum
-      const val = parseFloat(p.prize_value) || 0
-      const prob = totalWeight > 0 ? (p.probability / totalWeight) : 0
-      return sum + (val * prob * completed)
+    // Income = actual deposits from campaign members (deposits are the TRUE investment)
+    const totalDeposits = deposits.reduce((s, d) => s + (parseFloat(d.deposit_amount) || 0), 0)
+
+    // Cost = face value of prizes actually awarded in completed records
+    const completedRecords = records.filter(r => r.status === 'completed')
+    const totalPrizeCost = completedRecords.reduce((s, r) => {
+      const snap = r.prize_snapshot || {}
+      return s + (parseFloat(snap.prize_value) || 0)
     }, 0)
-    const estTurnover = prizes.reduce((sum, p) => {
-      if (!p.is_active) return sum
-      const val = parseFloat(p.prize_value) || 0
-      const prob = totalWeight > 0 ? (p.probability / totalWeight) : 0
-      const tm = p.turnover_multiplier || 0
-      return sum + (val * prob * completed * tm)
-    }, 0)
-    return { totalSpins, completed, totalCost: Math.round(totalCost), estTurnover: Math.round(estTurnover), totalWeight }
+
+    // Prize breakdown by prize name (actual counts & cost from records)
+    const prizeBreakdown = {}
+    completedRecords.forEach(r => {
+      const snap = r.prize_snapshot || {}
+      const name = snap.name_en || snap.name_zh || snap.name_bm || 'Unknown'
+      const val  = parseFloat(snap.prize_value) || 0
+      const type = snap.prize_type || 'cash'
+      if (!prizeBreakdown[name]) prizeBreakdown[name] = { name, type, count: 0, totalCost: 0 }
+      prizeBreakdown[name].count++
+      prizeBreakdown[name].totalCost += val
+    })
+
+    const netReturn = totalDeposits - totalPrizeCost
+    const roiPct    = totalDeposits > 0 ? (netReturn / totalDeposits) * 100 : 0
+
+    return {
+      totalSpins: records.length,
+      completed: completedRecords.length,
+      totalDeposits: Math.round(totalDeposits),
+      totalPrizeCost: Math.round(totalPrizeCost),
+      netReturn: Math.round(netReturn),
+      roiPct: roiPct.toFixed(1),
+      prizeBreakdown: Object.values(prizeBreakdown).sort((a, b) => b.totalCost - a.totalCost),
+    }
   }
 
   // ── Derived data ─────────────────────────────────────────────────────────────
@@ -608,26 +945,392 @@ export default function LuckySpinAdmin() {
       {selectedCampaign && (
         <>
           <div style={{ display: 'flex', gap: 4, marginBottom: 16, borderBottom: '1px solid var(--border)', paddingBottom: 4 }}>
-            {TAB_BTN('records', '📋 Records')}
-            {TAB_BTN('codes',   '🔑 Codes')}
-            {TAB_BTN('prizes',  '🏆 Prizes')}
-            {TAB_BTN('roi',     '📊 ROI')}
-            {TAB_BTN('wheel',   '🎡 Wheel Settings')}
+            {TAB_BTN('members',    '👥 Members')}
+            {TAB_BTN('records',    '📋 Records')}
+            {TAB_BTN('codes',      '🔑 Codes')}
+            {TAB_BTN('prizes',     '🏆 Prizes')}
+            {TAB_BTN('milestones', '💰 Milestones')}
+            {TAB_BTN('roi',        '📊 ROI')}
+            {TAB_BTN('wheel',      '🎡 Wheel Settings')}
           </div>
+
+          {/* MEMBERS / CHASE LIST TAB */}
+          {tab === 'members' && (() => {
+            const filtered = members.filter(m =>
+              !memberSearch || m.member_username.toLowerCase().includes(memberSearch.toLowerCase())
+            )
+            const todayStr = new Date().toISOString().slice(0, 10)
+
+            // Group deposit rows by date → per-day totals + eligibility
+            const getDayGroups = (deps) => {
+              const byDate = {}
+              deps.forEach(d => {
+                if (!byDate[d.deposit_date]) byDate[d.deposit_date] = []
+                byDate[d.deposit_date].push(d)
+              })
+              return Object.keys(byDate).sort().map(date => {
+                const rows = byDate[date]
+                const dayTotal = rows.reduce((s, r) => s + Number(r.deposit_amount), 0)
+                const earnedSpins = getEarnedSpins(dayTotal)
+                const isEligible = earnedSpins > 0
+                // A day is "claimed" only when ALL its deposit rows are marked claimed
+                const isClaimed = isEligible && rows.every(r => r.claim_status === 'claimed')
+                const claimDate = rows.find(r => r.claim_date)?.claim_date || null
+                const notes = rows.map(r => r.note).filter(Boolean).join('; ')
+                return {
+                  date,
+                  dayTotal,
+                  earnedSpins,
+                  isEligible,
+                  isClaimed,
+                  claim_status: isClaimed ? 'claimed' : 'pending',
+                  claim_date: claimDate,
+                  rowIds: rows.map(r => r.id),
+                  notes,
+                }
+              })
+            }
+
+            return (
+              <div>
+                {/* Enroll new member */}
+                <div style={{ display: 'flex', gap: 10, marginBottom: 18, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                  <div style={{ flex: 1, minWidth: 200 }}>
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>MEMBER USERNAME</div>
+                    <input style={inp} placeholder="e.g. august719" value={newMemberUsername} onChange={e => setNewMemberUsername(e.target.value)} />
+                  </div>
+                  <button disabled={addingMember} onClick={async () => {
+                    if (!newMemberUsername.trim()) return
+                    setAddingMember(true); setMemberMsg('')
+                    const { error } = await supabase.from('vip_campaign_members').insert({
+                      campaign_id: selectedCampaign.id,
+                      member_username: newMemberUsername.trim(),
+                      created_by: profile?.full_name || profile?.username || 'admin',
+                    })
+                    if (!error) { setNewMemberUsername(''); loadMembers(); setMemberMsg('✅ Member enrolled!') }
+                    else setMemberMsg(error.code === '23505' ? '⚠️ Already enrolled.' : '❌ ' + error.message)
+                    setAddingMember(false)
+                    setTimeout(() => setMemberMsg(''), 3000)
+                  }} style={{ padding: '9px 20px', borderRadius: 8, border: 'none', background: 'linear-gradient(135deg,#FF6B00,#FF8C00)', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                    + Enroll Member
+                  </button>
+                  <input style={{ ...inp, maxWidth: 200 }} placeholder="Search member…" value={memberSearch} onChange={e => setMemberSearch(e.target.value)} />
+                  {memberMsg && <span style={{ fontSize: 13, fontWeight: 600, color: memberMsg.startsWith('✅') ? '#22C55E' : memberMsg.startsWith('⚠️') ? '#FF8C00' : '#EF4444' }}>{memberMsg}</span>}
+                </div>
+
+                {/* Tier legend */}
+                <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 11, color: 'var(--muted)', alignSelf: 'center', marginRight: 4 }}>Daily target:</span>
+                  {[['RM 5K', '1 spin','#FF8C00'],['RM 15K','2 spins','#3B82F6'],['RM 25K','3 spins','#8B5CF6'],['RM 40K','4 spins','#22C55E']].map(([dep,sp,col]) => (
+                    <div key={dep} style={{ padding: '4px 12px', borderRadius: 20, border: `1px solid ${col}44`, background: `${col}15`, fontSize: 11, color: col, fontWeight: 600 }}>
+                      {dep} → {sp}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Members list */}
+                {filtered.length === 0 ? (
+                  <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>No members enrolled yet. Add a member above to start tracking.</div>
+                ) : filtered.map(m => {
+                  const rawDeps = deposits.filter(d => d.member_username === m.member_username)
+                  const dayGroups = getDayGroups(rawDeps)
+
+                  // Today's numbers (progress bar tracks TODAY)
+                  const todayGroup = dayGroups.find(g => g.date === todayStr)
+                  const todayTotal = todayGroup?.dayTotal || 0
+                  const todaySpins = todayGroup?.earnedSpins || 0
+                  const pct = Math.min(100, todayTotal >= 40000 ? 100 : todayTotal / 400)
+                  const nextTier = SPIN_TIERS.slice().reverse().find(t => todayTotal < t.min)
+                  const tierColor = todaySpins === 4 ? '#22C55E' : todaySpins === 3 ? '#8B5CF6' : todaySpins === 2 ? '#3B82F6' : todaySpins === 1 ? '#FF8C00' : 'var(--muted)'
+
+                  // All-time totals (across all days)
+                  const totalEarnedSpins = dayGroups.reduce((s, g) => s + g.earnedSpins, 0)
+                  const eligibleDays = dayGroups.filter(g => g.isEligible)
+                  const pendingDays = eligibleDays.filter(g => !g.isClaimed).length
+                  const claimedDays = eligibleDays.filter(g => g.isClaimed).length
+                  const issuedCodes = codes.filter(c => c.member_username === m.member_username)
+                  const issuedSpins = issuedCodes.reduce((s, c) => s + (c.max_uses || 1), 0)
+                  const remainingSpins = Math.max(0, totalEarnedSpins - issuedSpins)
+
+                  const isExpanded = expandedMember === m.member_username
+
+                  return (
+                    <div key={m.id} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, marginBottom: 10, overflow: 'hidden' }}>
+                      {/* Member summary row */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '12px 16px', flexWrap: 'wrap' }}>
+                        <div style={{ fontWeight: 700, color: 'var(--text)', minWidth: 110 }}>{m.member_username}</div>
+
+                        {/* TODAY's progress bar */}
+                        <div style={{ flex: 1, minWidth: 150 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--muted)', marginBottom: 3 }}>
+                            <span style={{ fontWeight: 600, color: todayTotal > 0 ? 'var(--text)' : 'var(--muted)' }}>
+                              Today: RM {todayTotal.toLocaleString()}
+                            </span>
+                            {nextTier
+                              ? <span>need RM {(nextTier.min - todayTotal).toLocaleString()} more</span>
+                              : todaySpins > 0 ? <span style={{ color: '#22C55E' }}>Max tier reached!</span> : null
+                            }
+                          </div>
+                          <div style={{ height: 6, background: 'var(--surface2)', borderRadius: 3, overflow: 'hidden' }}>
+                            <div style={{ height: '100%', width: `${pct}%`, background: `linear-gradient(90deg,#FF6B00,${tierColor})`, borderRadius: 3, transition: 'width .4s' }} />
+                          </div>
+                        </div>
+
+                        {/* Today's spin badge */}
+                        <div style={{ padding: '4px 12px', borderRadius: 20, background: todaySpins > 0 ? `${tierColor}22` : 'var(--surface2)', color: todaySpins > 0 ? tierColor : 'var(--muted)', fontWeight: 700, fontSize: 12, whiteSpace: 'nowrap', border: `1px solid ${todaySpins > 0 ? tierColor+'44' : 'var(--border)'}` }}>
+                          {todaySpins > 0 ? `🎰 ${todaySpins} spin${todaySpins > 1 ? 's' : ''} today` : '📅 No spins today'}
+                        </div>
+
+                        {/* All-time claim summary */}
+                        {totalEarnedSpins > 0 && (
+                          <div style={{ fontSize: 11, display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                            {claimedDays > 0 && <span style={{ background: '#22C55E22', color: '#22C55E', borderRadius: 5, padding: '2px 8px', fontWeight: 700 }}>✅ {claimedDays}d claimed</span>}
+                            {pendingDays > 0 && <span style={{ background: '#FF8C0022', color: '#FF8C00', borderRadius: 5, padding: '2px 8px', fontWeight: 700 }}>⏳ {pendingDays}d pending</span>}
+                          </div>
+                        )}
+
+                        <div style={{ fontSize: 12, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
+                          Issued: <strong style={{ color: 'var(--text)' }}>{issuedSpins}</strong> &nbsp;|&nbsp; Left: <strong style={{ color: remainingSpins > 0 ? '#FF6B00' : 'var(--muted)' }}>{remainingSpins}</strong>
+                        </div>
+
+                        <div style={{ display: 'flex', gap: 6, marginLeft: 'auto' }}>
+                          <button onClick={() => setExpandedMember(isExpanded ? null : m.member_username)} style={{ padding: '5px 12px', borderRadius: 7, border: '1px solid var(--border)', background: 'transparent', color: 'var(--muted)', fontSize: 12, cursor: 'pointer' }}>
+                            {isExpanded ? '▲ Hide' : '▼ Deposits'}
+                          </button>
+                          <button onClick={async () => { if (!window.confirm(`Remove ${m.member_username}?`)) return; await supabase.from('vip_campaign_members').delete().eq('id', m.id); loadMembers() }} style={{ padding: '5px 10px', borderRadius: 7, border: '1px solid #EF444444', background: 'transparent', color: '#EF4444', fontSize: 12, cursor: 'pointer' }}>✕</button>
+                        </div>
+                      </div>
+
+                      {/* Deposit + Claim sub-panel */}
+                      {isExpanded && (
+                        <div style={{ borderTop: '1px solid var(--border)', background: 'var(--surface2)', padding: '12px 16px' }}>
+                          {/* Add deposit form */}
+                          <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                            <div>
+                              <div style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 3 }}>DEPOSIT DATE</div>
+                              <input type="date" style={{ ...inp, width: 150 }} value={depositForm.date} onChange={e => setDepositForm(f => ({ ...f, date: e.target.value }))} />
+                            </div>
+                            <div>
+                              <div style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 3 }}>AMOUNT (RM)</div>
+                              <input type="number" style={{ ...inp, width: 130 }} placeholder="e.g. 5000" value={depositForm.amount} onChange={e => setDepositForm(f => ({ ...f, amount: e.target.value }))} />
+                            </div>
+                            <div style={{ flex: 1, minWidth: 120 }}>
+                              <div style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 3 }}>NOTE (optional)</div>
+                              <input style={{ ...inp }} placeholder="e.g. Bank transfer" value={depositForm.note} onChange={e => setDepositForm(f => ({ ...f, note: e.target.value }))} />
+                            </div>
+                            <button disabled={addingDeposit || !depositForm.amount} onClick={async () => {
+                              if (!depositForm.amount || Number(depositForm.amount) <= 0) return
+                              setAddingDeposit(true)
+                              const { error } = await supabase.from('vip_campaign_deposits').insert({
+                                campaign_id: selectedCampaign.id,
+                                member_username: m.member_username,
+                                deposit_date: depositForm.date,
+                                deposit_amount: Number(depositForm.amount),
+                                note: depositForm.note.trim() || null,
+                                created_by: profile?.full_name || profile?.username || 'admin',
+                              })
+                              if (!error) { setDepositForm(f => ({ ...f, amount: '', note: '' })); loadDeposits() }
+                              setAddingDeposit(false)
+                            }} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: 'linear-gradient(135deg,#FF6B00,#FF8C00)', color: '#fff', fontWeight: 700, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                              + Add Deposit
+                            </button>
+                          </div>
+
+                          {/* Per-day table */}
+                          {dayGroups.length === 0 ? (
+                            <div style={{ fontSize: 12, color: 'var(--muted)', padding: '8px 0' }}>No deposits recorded yet.</div>
+                          ) : (
+                            <div style={{ overflowX: 'auto' }}>
+                              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                                <thead>
+                                  <tr style={{ background: 'var(--surface)', color: 'var(--muted)', fontSize: 10, fontWeight: 700, textTransform: 'uppercase' }}>
+                                    <th style={{ textAlign: 'left', padding: '5px 10px' }}>Date</th>
+                                    <th style={{ textAlign: 'right', padding: '5px 10px' }}>Day's Deposit</th>
+                                    <th style={{ textAlign: 'center', padding: '5px 10px' }}>Eligibility</th>
+                                    <th style={{ textAlign: 'center', padding: '5px 10px' }}>Claim Status</th>
+                                    <th style={{ textAlign: 'left', padding: '5px 10px' }}>Claim Date</th>
+                                    <th style={{ textAlign: 'left', padding: '5px 10px' }}>Note</th>
+                                    <th style={{ padding: '5px 10px' }}></th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {[...dayGroups].reverse().map(g => {
+                                    const isToday = g.date === todayStr
+                                    const rowBg = isToday
+                                      ? 'rgba(59,130,246,0.06)'
+                                      : g.isEligible
+                                        ? (g.isClaimed ? 'rgba(34,197,94,0.06)' : 'rgba(255,140,0,0.06)')
+                                        : 'transparent'
+                                    return (
+                                      <tr key={g.date} style={{ borderTop: '1px solid var(--border)', background: rowBg }}>
+                                        {/* Date */}
+                                        <td style={{ padding: '8px 10px', fontWeight: 600, color: isToday ? '#3B82F6' : 'var(--text)', whiteSpace: 'nowrap' }}>
+                                          {g.date}{isToday && <span style={{ marginLeft: 6, fontSize: 10, background: '#3B82F622', color: '#3B82F6', borderRadius: 4, padding: '1px 6px' }}>TODAY</span>}
+                                        </td>
+                                        {/* Daily deposit total */}
+                                        <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: 'var(--text)' }}>
+                                          RM {g.dayTotal.toLocaleString()}
+                                        </td>
+                                        {/* Eligibility */}
+                                        <td style={{ padding: '8px 10px', textAlign: 'center' }}>
+                                          {g.isEligible ? (
+                                            <span style={{ background: '#FF8C0022', color: '#FF8C00', borderRadius: 5, padding: '2px 9px', fontWeight: 700, fontSize: 11, whiteSpace: 'nowrap' }}>
+                                              🎰 {g.earnedSpins} spin{g.earnedSpins > 1 ? 's' : ''} earned
+                                            </span>
+                                          ) : (
+                                            <span style={{ color: 'var(--border)', fontSize: 12 }}>—</span>
+                                          )}
+                                        </td>
+                                        {/* Claim status dropdown */}
+                                        <td style={{ padding: '8px 10px', textAlign: 'center' }}>
+                                          {g.isEligible ? (
+                                            <select
+                                              value={g.claim_status}
+                                              onChange={async e => {
+                                                const newStatus = e.target.value
+                                                const update = { claim_status: newStatus }
+                                                if (newStatus === 'claimed' && !g.claim_date) {
+                                                  update.claim_date = todayStr
+                                                }
+                                                if (newStatus === 'pending') update.claim_date = null
+                                                // Update ALL deposit rows for this date
+                                                await Promise.all(g.rowIds.map(id =>
+                                                  supabase.from('vip_campaign_deposits').update(update).eq('id', id)
+                                                ))
+                                                loadDeposits()
+                                              }}
+                                              style={{ ...inp, padding: '3px 8px', fontSize: 11, width: 'auto',
+                                                background: g.isClaimed ? 'rgba(34,197,94,0.12)' : 'rgba(255,140,0,0.12)',
+                                                color: g.isClaimed ? '#22C55E' : '#FF8C00',
+                                                border: `1px solid ${g.isClaimed ? '#22C55E44' : '#FF8C0044'}`,
+                                                fontWeight: 700
+                                              }}
+                                            >
+                                              <option value="pending">⏳ Pending</option>
+                                              <option value="claimed">✅ Claimed & Paid</option>
+                                            </select>
+                                          ) : (
+                                            <span style={{ color: 'var(--border)', fontSize: 12 }}>—</span>
+                                          )}
+                                        </td>
+                                        {/* Claim date */}
+                                        <td style={{ padding: '8px 10px' }}>
+                                          {g.isEligible ? (
+                                            <input
+                                              type="date"
+                                              value={g.claim_date || ''}
+                                              onChange={async e => {
+                                                const val = e.target.value || null
+                                                await Promise.all(g.rowIds.map(id =>
+                                                  supabase.from('vip_campaign_deposits').update({ claim_date: val }).eq('id', id)
+                                                ))
+                                                loadDeposits()
+                                              }}
+                                              style={{ ...inp, width: 140, padding: '3px 8px', fontSize: 11 }}
+                                            />
+                                          ) : (
+                                            <span style={{ color: 'var(--border)', fontSize: 12 }}>—</span>
+                                          )}
+                                        </td>
+                                        {/* Notes */}
+                                        <td style={{ padding: '8px 10px', color: 'var(--muted)', maxWidth: 140 }}>{g.notes || <span style={{ color: 'var(--border)' }}>—</span>}</td>
+                                        {/* Delete all rows for this date */}
+                                        <td style={{ padding: '8px 10px', textAlign: 'right' }}>
+                                          <button onClick={async () => {
+                                            if (!window.confirm(`Delete all deposits for ${g.date}?`)) return
+                                            await Promise.all(g.rowIds.map(id =>
+                                              supabase.from('vip_campaign_deposits').delete().eq('id', id)
+                                            ))
+                                            loadDeposits()
+                                          }} style={{ background: 'none', border: 'none', color: '#EF4444', cursor: 'pointer', fontSize: 12, padding: '2px 6px' }}>✕</button>
+                                        </td>
+                                      </tr>
+                                    )
+                                  })}
+                                  {/* Total row */}
+                                  <tr style={{ borderTop: '2px solid var(--border)', fontWeight: 700 }}>
+                                    <td style={{ padding: '7px 10px', color: 'var(--muted)', fontSize: 11 }}>
+                                      {dayGroups.length} day{dayGroups.length !== 1 ? 's' : ''} · {eligibleDays.length} eligible
+                                    </td>
+                                    <td style={{ padding: '7px 10px', textAlign: 'right', color: 'var(--brand)' }}>
+                                      RM {rawDeps.reduce((s, d) => s + Number(d.deposit_amount), 0).toLocaleString()}
+                                    </td>
+                                    <td style={{ padding: '7px 10px', textAlign: 'center', color: 'var(--brand)', fontWeight: 700 }}>
+                                      {totalEarnedSpins} total spin{totalEarnedSpins !== 1 ? 's' : ''}
+                                    </td>
+                                    <td colSpan={4} />
+                                  </tr>
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )
+          })()}
 
           {/* RECORDS TAB */}
           {tab === 'records' && (() => {
             return (
               <div>
-                <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
-                  <input placeholder="Search member…" value={searchMember} onChange={e => setSearchMember(e.target.value)} style={{ ...inp, maxWidth: 220 }} />
-                  {['all','pending','processing','completed','cancelled'].map(s => (
-                    <button key={s} onClick={() => setStatusFilter(s)} style={{ padding: '6px 14px', borderRadius: 20, border: `1px solid ${statusFilter === s ? 'var(--brand)' : 'var(--border)'}`, background: statusFilter === s ? 'rgba(255,107,0,0.12)' : 'transparent', color: statusFilter === s ? 'var(--brand)' : 'var(--muted)', fontSize: 12, fontWeight: statusFilter === s ? 700 : 400, cursor: 'pointer' }}>
-                      {s === 'all' ? `All (${records.length})` : `${s.charAt(0).toUpperCase() + s.slice(1)} (${records.filter(r => r.status === s).length})`}
-                    </button>
-                  ))}
-                  <button onClick={loadRecords} style={{ marginLeft: 'auto', padding: '6px 14px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface2)', color: 'var(--muted)', fontSize: 12, cursor: 'pointer' }}>↺ Refresh</button>
+                <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                    <input placeholder="Search member…" value={searchMember} onChange={e => setSearchMember(e.target.value)} style={{ ...inp, maxWidth: 220 }} />
+                    {['all','pending','processing','completed','cancelled'].map(s => (
+                      <button key={s} onClick={() => setStatusFilter(s)} style={{ padding: '6px 14px', borderRadius: 20, border: `1px solid ${statusFilter === s ? 'var(--brand)' : 'var(--border)'}`, background: statusFilter === s ? 'rgba(255,107,0,0.12)' : 'transparent', color: statusFilter === s ? 'var(--brand)' : 'var(--muted)', fontSize: 12, fontWeight: statusFilter === s ? 700 : 400, cursor: 'pointer' }}>
+                        {s === 'all' ? `All (${records.length})` : `${s.charAt(0).toUpperCase() + s.slice(1)} (${records.filter(r => r.status === s).length})`}
+                      </button>
+                    ))}
+                    <button onClick={loadRecords} style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface2)', color: 'var(--muted)', fontSize: 12, cursor: 'pointer' }}>↺ Refresh</button>
+                  </div>
+                  <button onClick={() => { setShowManualRecord(true); setRecordMsg('') }} style={{ padding: '7px 16px', borderRadius: 8, border: 'none', background: 'linear-gradient(135deg,#FF6B00,#FF8C00)', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                    + Manual Record
+                  </button>
                 </div>
+
+                {/* ── Manual Record Modal ── */}
+                {showManualRecord && (
+                  <Modal title="✍️ Add Manual Spin Record" onClose={() => setShowManualRecord(false)}>
+                    <Field label="Member Username *">
+                      <input style={inp} placeholder="e.g. player123" value={manualRecord.member_username} onChange={e => setManualRecord(r => ({ ...r, member_username: e.target.value }))} />
+                    </Field>
+                    <Field label="Prize *">
+                      <select style={inp} value={manualRecord.prize_id} onChange={e => setManualRecord(r => ({ ...r, prize_id: e.target.value }))}>
+                        <option value="">— Select prize —</option>
+                        {prizes.filter(p => p.is_active).map(p => (
+                          <option key={p.id} value={p.id}>{p.name_en} ({p.prize_type})</option>
+                        ))}
+                      </select>
+                    </Field>
+                    <Field label="Code Used" hint="The code the player used (optional)">
+                      <input style={inp} placeholder="e.g. VIP-ABC123" value={manualRecord.code_used} onChange={e => setManualRecord(r => ({ ...r, code_used: e.target.value.toUpperCase() }))} />
+                    </Field>
+                    <Field label="Status">
+                      <select style={inp} value={manualRecord.status} onChange={e => setManualRecord(r => ({ ...r, status: e.target.value }))}>
+                        <option value="pending">Pending</option>
+                        <option value="processing">Processing</option>
+                        <option value="completed">Completed</option>
+                      </select>
+                    </Field>
+                    <Field label="Note (optional)">
+                      <input style={inp} placeholder="e.g. Manually recorded — spun on external platform" value={manualRecord.note} onChange={e => setManualRecord(r => ({ ...r, note: e.target.value }))} />
+                    </Field>
+                    {recordMsg && (
+                      <div style={{ marginBottom: 12, fontSize: 13, fontWeight: 600, color: recordMsg.startsWith('✅') ? '#22C55E' : '#EF4444' }}>{recordMsg}</div>
+                    )}
+                    <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                      <button onClick={() => setShowManualRecord(false)} style={{ padding: '10px 20px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface2)', color: 'var(--muted)', fontSize: 13, cursor: 'pointer' }}>Cancel</button>
+                      <button onClick={addManualRecord} disabled={addingRecord} style={{ padding: '10px 24px', borderRadius: 8, border: 'none', background: 'linear-gradient(135deg,#FF6B00,#FF8C00)', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+                        {addingRecord ? 'Saving…' : 'Add Record'}
+                      </button>
+                    </div>
+                  </Modal>
+                )}
+
                 <div style={{ overflowX: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                     <thead>
@@ -645,7 +1348,7 @@ export default function LuckySpinAdmin() {
                         return (
                           <tr key={rec.id} style={{ borderBottom: '1px solid var(--border)' }}>
                             <td style={{ padding: '10px 12px', fontWeight: 600, color: 'var(--text)' }}>{rec.member_username}</td>
-                            <td style={{ padding: '10px 12px', fontSize: 12, color: 'var(--text)' }}>{rec.prize_name_en || rec.prize_id}</td>
+                            <td style={{ padding: '10px 12px', fontSize: 12, color: 'var(--text)' }}>{rec.prize_snapshot?.name_en || rec.prize_snapshot?.name_zh || '—'}</td>
                             <td style={{ padding: '10px 12px', fontSize: 12, color: 'var(--muted)', fontFamily: 'monospace' }}>{rec.code_used || '—'}</td>
                             <td style={{ padding: '10px 12px' }}>
                               <span style={{ background: sc.bg, color: sc.color, borderRadius: 5, padding: '2px 8px', fontSize: 11, fontWeight: 700 }}>{sc.label}</span>
@@ -681,14 +1384,77 @@ export default function LuckySpinAdmin() {
           {/* CODES TAB */}
           {tab === 'codes' && (
             <div>
-              <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'flex-end' }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginBottom: 5, textTransform: 'uppercase' }}>Member Username (optional)</div>
-                  <input placeholder="Leave blank for open code" value={newCodeMember} onChange={e => setNewCodeMember(e.target.value)} style={{ ...inp, maxWidth: 280 }} />
+              {/* ── Mode toggle ── */}
+              <div style={{ display: 'flex', gap: 0, marginBottom: 16, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, padding: 4, width: 'fit-content' }}>
+                {[['auto','🎲 Auto Generate'],['manual','✏️ Enter Code']].map(([mode, label]) => (
+                  <button key={mode} onClick={() => { setCodeMode(mode); setCodeMsg('') }}
+                    style={{ padding: '7px 18px', borderRadius: 7, border: 'none', background: codeMode === mode ? 'var(--brand)' : 'transparent', color: codeMode === mode ? '#fff' : 'var(--muted)', fontWeight: codeMode === mode ? 700 : 400, fontSize: 13, cursor: 'pointer' }}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              {/* ── Input fields ── */}
+              <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: '16px 20px', marginBottom: 16 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: codeMode === 'manual' ? '1fr 1fr 100px auto' : '1fr 100px auto', gap: 12, alignItems: 'flex-end' }}>
+
+                  {/* Manual code input — only visible in manual mode */}
+                  {codeMode === 'manual' && (
+                    <div>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginBottom: 5, textTransform: 'uppercase' }}>Code *</div>
+                      <input
+                        placeholder="e.g. VIP-ABC123"
+                        value={manualCode}
+                        onChange={e => setManualCode(e.target.value.toUpperCase())}
+                        style={{ ...inp, fontFamily: 'monospace', fontWeight: 700, letterSpacing: 1 }}
+                      />
+                    </div>
+                  )}
+
+                  {/* Member username */}
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginBottom: 5, textTransform: 'uppercase' }}>Member Username</div>
+                    <input
+                      placeholder="Leave blank = open code"
+                      value={newCodeMember}
+                      onChange={e => setNewCodeMember(e.target.value)}
+                      style={inp}
+                    />
+                  </div>
+
+                  {/* Max uses (spins) */}
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginBottom: 5, textTransform: 'uppercase' }}>Spins</div>
+                    <input
+                      type="number" min="1" max="10"
+                      value={newCodeMaxUses}
+                      onChange={e => setNewCodeMaxUses(e.target.value)}
+                      style={{ ...inp, width: 90 }}
+                    />
+                  </div>
+
+                  {/* Submit button */}
+                  <div>
+                    <button onClick={generateCode} disabled={generatingCode}
+                      style={{ padding: '10px 20px', borderRadius: 8, border: 'none', background: 'linear-gradient(135deg,#FF6B00,#FF8C00)', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap', height: 40 }}>
+                      {generatingCode ? '…' : codeMode === 'manual' ? '+ Add Code' : '+ Generate'}
+                    </button>
+                  </div>
                 </div>
-                <button onClick={generateCode} disabled={generatingCode} style={{ padding: '10px 20px', borderRadius: 8, border: 'none', background: 'linear-gradient(135deg,#FF6B00,#FF8C00)', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
-                  {generatingCode ? 'Generating…' : '+ Generate Code'}
-                </button>
+
+                {/* Feedback message */}
+                {codeMsg && (
+                  <div style={{ marginTop: 10, fontSize: 13, color: codeMsg.startsWith('✅') ? '#22C55E' : '#EF4444', fontWeight: 600 }}>
+                    {codeMsg}
+                  </div>
+                )}
+
+                {/* Hint */}
+                <div style={{ marginTop: 8, fontSize: 11, color: 'var(--muted)' }}>
+                  {codeMode === 'manual'
+                    ? '✏️ Enter any code string (e.g. from an external system). Duplicate codes in the same campaign are rejected.'
+                    : '🎲 A random SPIN-XXXXXX code will be generated automatically.'}
+                </div>
               </div>
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -799,58 +1565,111 @@ export default function LuckySpinAdmin() {
 
           {/* ROI TAB */}
           {tab === 'roi' && (() => {
-            const { totalSpins, completed, totalCost, estTurnover, totalWeight } = roi
-            const netROI = estTurnover - totalCost
+            const { totalSpins, completed, totalDeposits, totalPrizeCost, netReturn, roiPct, prizeBreakdown } = roi
+            const roiColor = netReturn >= 0 ? '#22C55E' : '#EF4444'
             return (
               <div>
+                {/* ── KPI tiles ── */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginBottom: 20 }}>
                   {[
-                    { label: 'Total Spins',    val: totalSpins,               color: 'var(--brand)',  prefix: '' },
-                    { label: 'Completed',      val: completed,                color: '#22C55E',       prefix: '' },
-                    { label: 'Est. Turnover',  val: `RM ${estTurnover.toLocaleString()}`,  color: '#3B82F6', raw: true },
-                    { label: 'Est. Prize Cost',val: `RM ${totalCost.toLocaleString()}`,    color: '#EF4444', raw: true },
-                  ].map(({ label, val, color, raw }) => (
+                    { label: 'Total Spins',    val: totalSpins,                                          color: 'var(--brand)', sm: false },
+                    { label: 'Completed Spins',val: completed,                                           color: '#22C55E',      sm: false },
+                    { label: 'Total Deposits', val: `RM ${totalDeposits.toLocaleString()}`,              color: '#3B82F6',      sm: true  },
+                    { label: 'Prize Cost Paid',val: `RM ${totalPrizeCost.toLocaleString()}`,             color: '#EF4444',      sm: true  },
+                  ].map(({ label, val, color, sm }) => (
                     <div key={label} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, padding: '16px 18px' }}>
                       <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 6 }}>{label}</div>
-                      <div style={{ fontSize: raw ? 18 : 26, fontWeight: 800, color }}>{val}</div>
+                      <div style={{ fontSize: sm ? 18 : 26, fontWeight: 800, color }}>{val}</div>
                     </div>
                   ))}
                 </div>
-                <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, padding: 16, marginBottom: 16, fontSize: 12, color: 'var(--muted)', lineHeight: 1.7 }}>
-                  <strong style={{ color: 'var(--text)' }}>Methodology:</strong> Prize cost = (probability / totalWeight) × prize value × completed spins, for cash prizes only. Turnover = same formula × turnover multiplier. Estimates only — actual results depend on spin outcomes.
+
+                {/* ── ROI Summary card ── */}
+                <div style={{ background: 'var(--surface)', border: `1px solid ${roiColor}44`, borderRadius: 12, padding: '20px 24px', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 40, flexWrap: 'wrap' }}>
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', marginBottom: 4 }}>Net Return (Income − Cost)</div>
+                    <div style={{ fontSize: 28, fontWeight: 900, color: roiColor }}>
+                      {netReturn >= 0 ? '+' : '−'} RM {Math.abs(netReturn).toLocaleString()}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', marginBottom: 4 }}>ROI %</div>
+                    <div style={{ fontSize: 28, fontWeight: 900, color: roiColor }}>
+                      {roiPct}%
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>Net Return ÷ Total Deposits × 100</div>
+                  </div>
+                  <div style={{ flex: 1, minWidth: 200 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', marginBottom: 8 }}>Deposit Breakdown</div>
+                    {/* Bar: prize cost vs net return */}
+                    {totalDeposits > 0 && (
+                      <div style={{ position: 'relative', height: 24, borderRadius: 8, overflow: 'hidden', background: 'var(--surface2)' }}>
+                        <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', width: `${Math.min(100,(totalPrizeCost/totalDeposits)*100).toFixed(1)}%`, background: '#EF444488', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          {totalPrizeCost > 0 && <span style={{ fontSize: 10, fontWeight: 700, color: '#fff', whiteSpace: 'nowrap', paddingLeft: 6 }}>Cost {((totalPrizeCost/totalDeposits)*100).toFixed(0)}%</span>}
+                        </div>
+                        <div style={{ position: 'absolute', right: 0, top: 0, height: '100%', width: `${Math.min(100,Math.max(0,(netReturn/totalDeposits)*100)).toFixed(1)}%`, background: '#22C55E88', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          {netReturn > 0 && <span style={{ fontSize: 10, fontWeight: 700, color: '#fff', whiteSpace: 'nowrap', paddingRight: 6 }}>Return {((netReturn/totalDeposits)*100).toFixed(0)}%</span>}
+                        </div>
+                      </div>
+                    )}
+                    <div style={{ display: 'flex', gap: 16, marginTop: 6, fontSize: 11, color: 'var(--muted)' }}>
+                      <span>🔴 Prize Cost: RM {totalPrizeCost.toLocaleString()}</span>
+                      <span>🟢 Net: RM {netReturn.toLocaleString()}</span>
+                    </div>
+                  </div>
                 </div>
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                    <thead>
-                      <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                        {['Prize','Type','Count (est.)','Turnover (est.)','Cost (est.)'].map(h => (
-                          <th key={h} style={{ padding: '10px 12px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase' }}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {prizes.filter(p => p.is_active).map(p => {
-                        const tc = PRIZE_TYPE_COLORS[p.prize_type] || PRIZE_TYPE_COLORS.cash
-                        const prob = totalWeight > 0 ? (p.probability / totalWeight) : 0
-                        const count = Math.round(prob * completed)
-                        const val = parseFloat(p.prize_value) || 0
-                        const estT = Math.round(val * prob * completed * (p.turnover_multiplier || 0))
-                        const cost = p.prize_type === 'cash' ? Math.round(val * prob * completed) : 0
-                        return (
-                          <tr key={p.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                            <td style={{ padding: '10px 12px', fontWeight: 600, color: 'var(--text)' }}>{p.name_en}</td>
-                            <td style={{ padding: '10px 12px' }}>
-                              <span style={{ background: tc.bg, color: tc.color, borderRadius: 5, padding: '2px 8px', fontSize: 11, fontWeight: 700 }}>{p.prize_type}</span>
-                            </td>
-                            <td style={{ padding: '10px 12px', fontWeight: 700, color: 'var(--brand)' }}>{count}</td>
-                            <td style={{ padding: '10px 12px', color: '#3B82F6', fontWeight: 600 }}>{estT > 0 ? `RM ${estT.toLocaleString()}` : '—'}</td>
-                            <td style={{ padding: '10px 12px', color: cost > 0 ? '#EF4444' : 'var(--muted)', fontWeight: cost > 0 ? 700 : 400 }}>{cost > 0 ? `RM ${cost.toLocaleString()}` : '—'}</td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
+
+                {/* ── Methodology note ── */}
+                <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 16px', marginBottom: 16, fontSize: 12, color: 'var(--muted)', lineHeight: 1.7 }}>
+                  <strong style={{ color: 'var(--text)' }}>How ROI is calculated:</strong>{' '}
+                  <strong style={{ color: '#3B82F6' }}>Income</strong> = total deposits from enrolled members (actual cash in).{' '}
+                  <strong style={{ color: '#EF4444' }}>Cost</strong> = face value of prizes in completed spin records (actual cash out).{' '}
+                  Turnover is <em>not</em> counted as income — only real deposits matter.
                 </div>
+
+                {/* ── Actual prize breakdown table ── */}
+                <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--text)', marginBottom: 10 }}>Prizes Awarded (Actual)</div>
+                {prizeBreakdown.length === 0 ? (
+                  <div style={{ padding: '32px 0', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
+                    No completed spins yet — prize cost will appear here once records are marked Completed.
+                  </div>
+                ) : (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                          {['Prize','Type','Times Awarded','Total Cost'].map(h => (
+                            <th key={h} style={{ padding: '10px 12px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase' }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {prizeBreakdown.map((p, i) => {
+                          const tc = PRIZE_TYPE_COLORS[p.type] || PRIZE_TYPE_COLORS.cash
+                          return (
+                            <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
+                              <td style={{ padding: '10px 12px', fontWeight: 600, color: 'var(--text)' }}>{p.name}</td>
+                              <td style={{ padding: '10px 12px' }}>
+                                <span style={{ background: tc.bg, color: tc.color, borderRadius: 5, padding: '2px 8px', fontSize: 11, fontWeight: 700 }}>{p.type}</span>
+                              </td>
+                              <td style={{ padding: '10px 12px', fontWeight: 700, color: 'var(--brand)', fontSize: 16 }}>{p.count}</td>
+                              <td style={{ padding: '10px 12px', color: p.totalCost > 0 ? '#EF4444' : 'var(--muted)', fontWeight: p.totalCost > 0 ? 700 : 400 }}>
+                                {p.totalCost > 0 ? `RM ${p.totalCost.toLocaleString()}` : '—'}
+                              </td>
+                            </tr>
+                          )
+                        })}
+                        {/* Totals row */}
+                        <tr style={{ borderTop: '2px solid var(--border)', background: 'var(--surface2)' }}>
+                          <td colSpan={2} style={{ padding: '10px 12px', fontWeight: 800, color: 'var(--text)' }}>TOTAL</td>
+                          <td style={{ padding: '10px 12px', fontWeight: 800, color: 'var(--brand)', fontSize: 16 }}>{prizeBreakdown.reduce((s,p) => s + p.count, 0)}</td>
+                          <td style={{ padding: '10px 12px', fontWeight: 800, color: '#EF4444' }}>RM {totalPrizeCost.toLocaleString()}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
                 {selectedCampaign && (
                   <div style={{ marginTop: 16, fontSize: 12, color: 'var(--muted)' }}>
                     Campaign: <strong style={{ color: 'var(--text)' }}>{selectedCampaign.name}</strong>
@@ -943,26 +1762,43 @@ export default function LuckySpinAdmin() {
 
               {/* SECTION 3: Images */}
               <WSection title="Images" emoji="🖼️">
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                  <Field label="Background Image URL" hint="Full background of the spin page">
-                    <input style={inp} placeholder="https://cdn.example.com/bg.jpg" value={ws.bg_image} onChange={e => setWs(w => ({ ...w, bg_image: e.target.value }))} />
-                    {ws.bg_image && <img src={ws.bg_image} alt="bg preview" style={{ marginTop: 6, maxHeight: 60, borderRadius: 6, objectFit: 'cover', width: '100%' }} onError={e => e.target.style.display='none'} />}
-                  </Field>
-                  <Field label="Wheel Frame URL" hint="Outer ring / frame that overlays the wheel segments">
-                    <input style={inp} placeholder="https://cdn.example.com/frame.png" value={ws.wheel_frame} onChange={e => setWs(w => ({ ...w, wheel_frame: e.target.value }))} />
-                    {ws.wheel_frame && <img src={ws.wheel_frame} alt="frame preview" style={{ marginTop: 6, maxHeight: 60, borderRadius: 6, objectFit: 'contain', width: '100%' }} onError={e => e.target.style.display='none'} />}
-                  </Field>
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                  <Field label="Win Banner URL" hint="Top banner shown on the win result page">
-                    <input style={inp} placeholder="https://cdn.example.com/win-banner.png" value={ws.win_banner} onChange={e => setWs(w => ({ ...w, win_banner: e.target.value }))} />
-                    {ws.win_banner && <img src={ws.win_banner} alt="win banner preview" style={{ marginTop: 6, maxHeight: 60, borderRadius: 6, objectFit: 'contain', width: '100%' }} onError={e => e.target.style.display='none'} />}
-                  </Field>
-                  <Field label="Win Background URL" hint="Full background of the win result page">
-                    <input style={inp} placeholder="https://cdn.example.com/win-bg.png" value={ws.win_bg} onChange={e => setWs(w => ({ ...w, win_bg: e.target.value }))} />
-                    {ws.win_bg && <img src={ws.win_bg} alt="win bg preview" style={{ marginTop: 6, maxHeight: 60, borderRadius: 6, objectFit: 'cover', width: '100%' }} onError={e => e.target.style.display='none'} />}
-                  </Field>
-                </div>
+                {(() => {
+                  const imgFields = [
+                    { key: 'bg_image',    label: '背景图 / Background',        hint: 'Full background of the spin page',           fit: 'cover'   },
+                    { key: 'wheel_frame', label: '转盘外框 / Wheel Frame',      hint: 'Outer ring overlaid on wheel (transparent PNG recommended)', fit: 'contain' },
+                    { key: 'win_banner',  label: '横幅 / Win Banner',           hint: 'Top banner shown on the win result page',     fit: 'contain' },
+                    { key: 'win_bg',      label: '开奖背景 / Win Background',   hint: 'Full background of the win result page',      fit: 'cover'   },
+                  ]
+                  return (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                      {imgFields.map(({ key, label, hint, fit }) => (
+                        <div key={key}>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)', marginBottom: 2 }}>{label}</div>
+                          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8 }}>{hint}</div>
+                          {/* Thumbnail */}
+                          {ws[key]
+                            ? <img src={ws[key]} alt={label} style={{ display: 'block', width: '100%', height: 80, objectFit: fit, borderRadius: 8, border: '1px solid var(--border)', marginBottom: 8, background: '#000' }} onError={e => { e.target.style.display='none' }} />
+                            : <div style={{ width: '100%', height: 80, borderRadius: 8, border: '1px dashed var(--border)', marginBottom: 8, background: 'var(--surface2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <span style={{ fontSize: 11, color: 'var(--muted)' }}>No image</span>
+                              </div>
+                          }
+                          {/* Buttons */}
+                          <div style={{ display: 'flex', gap: 8 }}>
+                            <label style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '7px 0', borderRadius: 7, background: 'linear-gradient(135deg,#7c3aed,#9333ea)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                              📤 上传图片
+                              <input type="file" accept="image/*" style={{ display: 'none' }} onChange={e => { if (e.target.files[0]) uploadWheelImage(key, e.target.files[0]); e.target.value = '' }} />
+                            </label>
+                            {ws[key] && (
+                              <button onClick={() => setWs(w => ({ ...w, [key]: '' }))} style={{ padding: '7px 14px', borderRadius: 7, border: '1px solid #EF4444', background: '#EF444415', color: '#EF4444', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                                移除
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )
+                })()}
               </WSection>
 
               {/* SECTION 4: Layout & Positioning */}
@@ -1145,6 +1981,194 @@ export default function LuckySpinAdmin() {
                 <button onClick={saveWheelSettings} disabled={savingWs} style={{ padding: '10px 28px', borderRadius: 9, border: 'none', background: 'linear-gradient(135deg,#FF6B00,#FF8C00)', color: '#fff', fontWeight: 700, fontSize: 14, cursor: savingWs ? 'not-allowed' : 'pointer', opacity: savingWs ? 0.7 : 1 }}>
                   {savingWs ? 'Saving…' : '💾 Save Wheel Settings'}
                 </button>
+              </div>
+            </div>
+          )}
+
+          {/* ── MILESTONES TAB ── */}
+          {tab === 'milestones' && (
+            <div>
+              {/* Milestone Configurator */}
+              <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: 20, marginBottom: 20 }}>
+                <div style={{ fontWeight: 800, fontSize: 14, color: 'var(--text)', marginBottom: 4 }}>💰 Deposit Milestone Config</div>
+                <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 16 }}>
+                  Each milestone grants the player additional spin codes when their total campaign-period deposit reaches the threshold.
+                  Milestones are cumulative — a player who deposits RM 40,000 earns all 4 tiers of spins.
+                </div>
+                <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 14 }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                      {['#', 'Deposit Threshold (RM)', 'Spins Granted', ''].map(h => (
+                        <th key={h} style={{ padding: '8px 10px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {milestones.map((m, i) => (
+                      <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
+                        <td style={{ padding: '8px 10px', fontSize: 12, color: 'var(--muted)', fontWeight: 700 }}>Tier {i + 1}</td>
+                        <td style={{ padding: '8px 10px' }}>
+                          <input
+                            type="number" min="0" value={m.threshold}
+                            onChange={e => setMilestones(ms => ms.map((x, j) => j === i ? { ...x, threshold: parseFloat(e.target.value) || 0 } : x))}
+                            style={{ background: 'var(--surface2)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 10px', fontSize: 13, width: 160 }}
+                          />
+                        </td>
+                        <td style={{ padding: '8px 10px' }}>
+                          <input
+                            type="number" min="1" value={m.spins}
+                            onChange={e => setMilestones(ms => ms.map((x, j) => j === i ? { ...x, spins: parseInt(e.target.value) || 1 } : x))}
+                            style={{ background: 'var(--surface2)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 10px', fontSize: 13, width: 80 }}
+                          />
+                        </td>
+                        <td style={{ padding: '8px 10px' }}>
+                          <button onClick={() => setMilestones(ms => ms.filter((_, j) => j !== i))} style={{ background: '#EF444415', color: '#EF4444', border: '1px solid #EF444440', borderRadius: 6, padding: '4px 10px', fontSize: 12, cursor: 'pointer', fontWeight: 700 }}>✕ Remove</button>
+                        </td>
+                      </tr>
+                    ))}
+                    {milestones.length === 0 && (
+                      <tr><td colSpan={4} style={{ padding: 16, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>No milestones configured. Add one below.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+                <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                  <button
+                    onClick={() => setMilestones(ms => [...ms, { threshold: 0, spins: 1 }])}
+                    style={{ padding: '8px 16px', borderRadius: 8, border: '1px dashed var(--border)', background: 'transparent', color: 'var(--muted)', fontSize: 13, cursor: 'pointer', fontWeight: 600 }}
+                  >+ Add Milestone</button>
+                  <div style={{ flex: 1 }} />
+                  {milestoneSaveMsg && <span style={{ fontSize: 13, color: milestoneSaveMsg.startsWith('✅') ? '#22C55E' : '#EF4444', fontWeight: 600 }}>{milestoneSaveMsg}</span>}
+                  <button onClick={saveMilestones} disabled={savingMilestones} style={{ padding: '9px 22px', borderRadius: 8, border: 'none', background: 'linear-gradient(135deg,#FF6B00,#FF8C00)', color: '#fff', fontWeight: 700, fontSize: 13, cursor: savingMilestones ? 'not-allowed' : 'pointer', opacity: savingMilestones ? 0.7 : 1 }}>
+                    {savingMilestones ? 'Saving…' : '💾 Save Milestones'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Excluded Players */}
+              <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: 20, marginBottom: 20 }}>
+                <div style={{ fontWeight: 800, fontSize: 14, color: 'var(--text)', marginBottom: 4 }}>🚫 Excluded Players</div>
+                <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>
+                  Usernames listed here will appear in the preview but will be blocked from receiving spin codes.
+                  Enter one username per line (or comma-separated). Case-insensitive.
+                </div>
+                <textarea
+                  value={exclusionInput}
+                  onChange={e => setExclusionInput(e.target.value)}
+                  placeholder="e.g.&#10;player123&#10;vip_user&#10;john88"
+                  rows={5}
+                  style={{ width: '100%', boxSizing: 'border-box', background: 'var(--surface2)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px', fontSize: 13, fontFamily: 'monospace', resize: 'vertical' }}
+                />
+                <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 10 }}>
+                  <span style={{ fontSize: 12, color: 'var(--muted)' }}>
+                    {excludedUsernames.length > 0 ? `${excludedUsernames.length} username${excludedUsernames.length !== 1 ? 's' : ''} excluded` : 'No exclusions set'}
+                  </span>
+                  <div style={{ flex: 1 }} />
+                  {exclusionSaveMsg && <span style={{ fontSize: 13, color: exclusionSaveMsg.startsWith('✅') ? '#22C55E' : '#EF4444', fontWeight: 600 }}>{exclusionSaveMsg}</span>}
+                  <button onClick={saveExclusions} disabled={savingExclusions} style={{ padding: '9px 22px', borderRadius: 8, border: 'none', background: 'linear-gradient(135deg,#FF6B00,#FF8C00)', color: '#fff', fontWeight: 700, fontSize: 13, cursor: savingExclusions ? 'not-allowed' : 'pointer', opacity: savingExclusions ? 0.7 : 1 }}>
+                    {savingExclusions ? 'Saving…' : '💾 Save Exclusions'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Allocate Spins */}
+              <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: 20 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
+                  <div>
+                    <div style={{ fontWeight: 800, fontSize: 14, color: 'var(--text)', marginBottom: 4 }}>🎰 Allocate Spin Codes</div>
+                    <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+                      Preview which players qualify and auto-generate spin codes based on their campaign-period deposits.
+                    </div>
+                  </div>
+                  <button onClick={runMilestonePreview} disabled={loadingPreview || milestones.length === 0} style={{ padding: '9px 20px', borderRadius: 8, border: '1px solid rgba(14,165,233,.3)', background: 'rgba(14,165,233,.12)', color: '#0ea5e9', fontWeight: 700, fontSize: 13, cursor: (loadingPreview || milestones.length === 0) ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                    {loadingPreview ? '⏳ Loading…' : '📊 Preview Allocations'}
+                  </button>
+                </div>
+
+                {milestonePreview === null && !loadingPreview && (
+                  <div style={{ padding: '24px 0', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
+                    Click "Preview Allocations" to fetch VIP data for{' '}
+                    <strong style={{ color: 'var(--text)' }}>
+                      {toDateInput(selectedCampaign.start_date)} → {toDateInput(selectedCampaign.end_date) || toDateInput(selectedCampaign.start_date)}
+                    </strong>{' '}
+                    and calculate how many spins each player has earned.
+                  </div>
+                )}
+
+                {milestonePreview !== null && (
+                  <>
+                    {/* Summary bar */}
+                    <div style={{ display: 'flex', gap: 16, marginBottom: 14, padding: '10px 14px', background: 'rgba(255,107,0,0.06)', borderRadius: 9, border: '1px solid rgba(255,107,0,0.15)', fontSize: 12, color: 'var(--muted)', flexWrap: 'wrap' }}>
+                      <span><strong style={{ color: 'var(--text)' }}>{milestonePreview.length}</strong> qualifying players</span>
+                      <span><strong style={{ color: 'var(--text)' }}>{milestonePreview.reduce((s, p) => s + p.spinsEarned, 0)}</strong> total spins earned</span>
+                      <span><strong style={{ color: '#22C55E' }}>{milestonePreview.filter(p => p.codesExisting >= p.spinsEarned).length}</strong> already have codes</span>
+                      <span><strong style={{ color: '#FF8C00' }}>{milestonePreview.filter(p => p.codesExisting < p.spinsEarned).length}</strong> need new codes</span>
+                      <button onClick={runMilestonePreview} disabled={loadingPreview} style={{ marginLeft: 'auto', background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 12 }}>↺ Refresh</button>
+                    </div>
+
+                    {/* Select all / none */}
+                    <div style={{ display: 'flex', gap: 10, marginBottom: 10, alignItems: 'center' }}>
+                      <button onClick={() => setSelectedAllocUsernames(new Set(milestonePreview.filter(p => p.codesExisting < p.spinsEarned).map(p => p.username)))} style={{ fontSize: 12, padding: '4px 12px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface2)', color: 'var(--muted)', cursor: 'pointer' }}>Select Needs Code</button>
+                      <button onClick={() => setSelectedAllocUsernames(new Set(milestonePreview.map(p => p.username)))} style={{ fontSize: 12, padding: '4px 12px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface2)', color: 'var(--muted)', cursor: 'pointer' }}>Select All</button>
+                      <button onClick={() => setSelectedAllocUsernames(new Set())} style={{ fontSize: 12, padding: '4px 12px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface2)', color: 'var(--muted)', cursor: 'pointer' }}>Deselect All</button>
+                      <span style={{ fontSize: 12, color: 'var(--muted)' }}>{selectedAllocUsernames.size} selected</span>
+                    </div>
+
+                    {/* Player table */}
+                    <div style={{ overflowX: 'auto', marginBottom: 14 }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                        <thead>
+                          <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                            <th style={{ padding: '8px 10px', width: 32 }}></th>
+                            {['Username', 'Period Deposit', 'Spins Earned', 'Codes Existing', 'Codes Needed', 'Status'].map(h => (
+                              <th key={h} style={{ padding: '8px 10px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase' }}>{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {milestonePreview.map(p => {
+                            const needed = Math.max(0, p.spinsEarned - p.codesExisting)
+                            const done = p.codesExisting >= p.spinsEarned
+                            const sel = selectedAllocUsernames.has(p.username)
+                            return (
+                              <tr key={p.username} style={{ borderBottom: '1px solid var(--border)', opacity: (p.excluded || p.tierBlocked) ? 0.45 : done ? 0.6 : 1 }}>
+                                <td style={{ padding: '8px 10px' }}>
+                                  <input type="checkbox" checked={sel && !p.excluded && !p.tierBlocked} disabled={p.excluded || p.tierBlocked} onChange={e => {
+                                    if (p.excluded || p.tierBlocked) return
+                                    const next = new Set(selectedAllocUsernames)
+                                    e.target.checked ? next.add(p.username) : next.delete(p.username)
+                                    setSelectedAllocUsernames(next)
+                                  }} />
+                                </td>
+                                <td style={{ padding: '8px 10px', fontWeight: 600, color: 'var(--text)', fontSize: 13 }}>{p.username}</td>
+                                <td style={{ padding: '8px 10px', fontSize: 13, color: 'var(--text)' }}>RM {p.totalDeposit.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                <td style={{ padding: '8px 10px', fontSize: 13, fontWeight: 700, color: 'var(--brand)' }}>{p.spinsEarned}</td>
+                                <td style={{ padding: '8px 10px', fontSize: 13, color: 'var(--muted)' }}>{p.codesExisting}</td>
+                                <td style={{ padding: '8px 10px', fontSize: 13, fontWeight: 700, color: needed > 0 ? '#FF8C00' : '#22C55E' }}>{needed > 0 ? `+${needed}` : '—'}</td>
+                                <td style={{ padding: '8px 10px' }}>
+                                  {p.excluded
+                                    ? <span style={{ background: '#EF444422', color: '#EF4444', borderRadius: 5, padding: '2px 8px', fontSize: 11, fontWeight: 700 }}>🚫 Excluded</span>
+                                    : p.tierBlocked
+                                    ? <span style={{ background: 'rgba(150,150,150,0.15)', color: '#888', borderRadius: 5, padding: '2px 8px', fontSize: 11, fontWeight: 700 }}>⛔ Wrong Tier{p.playerTier ? ` (${p.playerTier})` : ''}</span>
+                                    : done
+                                    ? <span style={{ background: '#22C55E22', color: '#22C55E', borderRadius: 5, padding: '2px 8px', fontSize: 11, fontWeight: 700 }}>✅ Done</span>
+                                    : <span style={{ background: '#FF8C0022', color: '#FF8C00', borderRadius: 5, padding: '2px 8px', fontSize: 11, fontWeight: 700 }}>⏳ Needs Code</span>
+                                  }
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Generate button */}
+                    <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                      <button onClick={generateMilestoneCodes} disabled={generatingCodes || selectedAllocUsernames.size === 0} style={{ padding: '10px 28px', borderRadius: 9, border: 'none', background: generatingCodes || selectedAllocUsernames.size === 0 ? 'var(--border)' : 'linear-gradient(135deg,#FF6B00,#FF8C00)', color: generatingCodes || selectedAllocUsernames.size === 0 ? 'var(--muted)' : '#fff', fontWeight: 700, fontSize: 14, cursor: generatingCodes || selectedAllocUsernames.size === 0 ? 'not-allowed' : 'pointer' }}>
+                        {generatingCodes ? '⏳ Generating…' : `🎰 Generate Codes for ${selectedAllocUsernames.size} Player${selectedAllocUsernames.size !== 1 ? 's' : ''}`}
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           )}
