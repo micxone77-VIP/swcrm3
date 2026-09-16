@@ -54,7 +54,8 @@ export default function ActiveTracker() {
         .select('username, snapshot_date')
         .or(ACTIVE_FILTER)
         .gte('snapshot_date', fmt(pad(90)))
-        .order('snapshot_date', { ascending: false }),
+        .order('snapshot_date', { ascending: false })
+        .limit(10000),
     ])
 
     const activeThisWeek  = new Set((thisSnap  || []).map(r => r.username))
@@ -229,10 +230,9 @@ function Section({ title, subtitle, color, players, activeThisWeek, activeLastWe
                   const wasLW = activeLastWeek.has(p.username)
                   const activeMo = activeThisMonth.has(p.username)
                   const lastActiveDate = lastActiveDateMap?.[p.username]
-                  const snapDays = lastActiveDate
+                  const daysVal = lastActiveDate
                     ? Math.floor((Date.now() - new Date(lastActiveDate).getTime()) / 86400000)
                     : null
-                  const daysVal = snapDays !== null ? snapDays : null
                   const daysLabel = daysVal === null ? 'No data' : daysVal === 0 ? 'Today' : daysVal === 1 ? '1 day' : `${daysVal} days`
                   const daysColor = daysVal === null ? 'var(--muted)' : daysVal >= 14 ? '#f85149' : daysVal >= 7 ? '#d29922' : '#3fb950'
                   return (
