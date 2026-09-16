@@ -52,8 +52,8 @@ export default function ActiveTracker() {
         .or(ACTIVE_FILTER),
       supabase.from('vip_daily_snapshots')
         .select('username, snapshot_date')
-        .or(ACTIVE_FILTER)
         .gte('snapshot_date', fmt(pad(90)))
+        .or(ACTIVE_FILTER)
         .order('snapshot_date', { ascending: false })
         .limit(10000),
     ])
