@@ -79,7 +79,7 @@ export default function Today() {
       const [
         { data: ySnaps },
         { data: dbSnaps },
-        { data: depositedYday },
+        { data: depositSnaps },
         { data: churners },
       ] = await Promise.all([
         // Active yesterday (valid bet)
@@ -92,11 +92,11 @@ export default function Today() {
           .select('username')
           .eq('snapshot_date', dayBefore)
           .gt('monthly_valid_bet', 0),
-        // Deposited yesterday — reliable via last_deposit_date
-        supabase.from('vip_members')
-          .select('username, full_name, tier, total_deposit, currency, id')
-          .eq('last_deposit_date', yesterday)
-          .eq('is_excluded', false)
+        // Deposited yesterday — use snapshots for accurate daily deposit amount
+        supabase.from('vip_daily_snapshots')
+          .select('username, total_deposit')
+          .eq('snapshot_date', yesterday)
+          .gt('total_deposit', 0)
           .order('total_deposit', { ascending: false })
           .limit(10),
         // Diamond/Platinum with high inactivity
@@ -108,6 +108,20 @@ export default function Today() {
           .order('days_inactive', { ascending: false })
           .limit(8),
       ])
+
+      // Look up member details for yesterday's depositors
+      let depositedYday = []
+      if (depositSnaps && depositSnaps.length > 0) {
+        const { data: memberRows } = await supabase.from('vip_members')
+          .select('username, full_name, tier, currency, id')
+          .in('username', depositSnaps.map(r => r.username))
+          .eq('is_excluded', false)
+        const mMap = {}
+        ;(memberRows || []).forEach(m => { mMap[m.username] = m })
+        depositedYday = depositSnaps
+          .map(s => ({ ...mMap[s.username], username: s.username, total_deposit: s.total_deposit }))
+          .filter(d => d.id)
+      }
 
       const ydaySet = new Set((ySnaps || []).map(r => r.username))
       const dbSet   = new Set((dbSnaps || []).map(r => r.username))
