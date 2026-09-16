@@ -15,6 +15,12 @@ const MAX_TOKENS   = 1800
 
 export async function onRequestPost({ request, env }) {
   try {
+    // Env-var guard — fail fast with a clear message
+    if (!env.SUPABASE_URL)       return err('Server config error: SUPABASE_URL missing', 500)
+    if (!env.SUPABASE_ANON_KEY)  return err('Server config error: SUPABASE_ANON_KEY missing', 500)
+    if (!env.SUPABASE_SERVICE_KEY) return err('Server config error: SUPABASE_SERVICE_KEY missing', 500)
+    if (!env.OPENAI_API_KEY)     return err('Server config error: OPENAI_API_KEY missing', 500)
+
     const token = extractToken(request)
     if (!token) return err('Unauthorized', 401)
 
@@ -45,6 +51,12 @@ export async function onRequestPost({ request, env }) {
       return err('Failed to build prompt: ' + (promptErr?.message || 'unknown'), 500)
     }
 
+    // Guard: cap prompt at 80,000 chars to avoid OpenAI context errors
+    if (systemPrompt.length > 80000) {
+      console.warn(`[/api/chat] prompt truncated: ${systemPrompt.length} chars`)
+      systemPrompt = systemPrompt.slice(0, 80000) + '\n\n[... data truncated for length ...]'
+    }
+
     const messages = [
       { role: 'system', content: systemPrompt },
       ...history.slice(-6).map(m => ({ role: m.role, content: String(m.content) })),
@@ -55,8 +67,9 @@ export async function onRequestPost({ request, env }) {
     return ok({ answer })
 
   } catch (e) {
-    console.error('[/api/chat] unhandled error:', e?.message || e)
-    return err('Internal server error', 500)
+    const msg = e?.message || String(e) || 'unknown'
+    console.error('[/api/chat] unhandled error:', msg)
+    return err(`Server error: ${msg}`, 500)
   }
 }
 
