@@ -6,8 +6,8 @@
 //   • VIP360 Smart Analysis tab      — per-player AI insights
 //
 // Required Cloudflare Pages env vars (Settings → Environment variables):
-//   SUPABASE_URL          e.g. https://utopskwciorvooronpwg.supabase.co
-//   SUPABASE_ANON_KEY     your project's anon/public key
+//   VITE_SUPABASE_URL     e.g. https://utopskwciorvooronpwg.supabase.co
+//   VITE_SUPABASE_ANON_KEY your project's anon/public key
 //   SUPABASE_SERVICE_KEY  your project's service-role key (secret)
 //   OPENAI_API_KEY        your OpenAI API key (secret)
 
@@ -63,10 +63,10 @@ function extractToken(request) {
 
 async function verifySupabaseToken(token, env) {
   // Ask Supabase to validate the JWT; expired or tampered tokens return 401.
-  const res = await fetch(`${env.SUPABASE_URL}/auth/v1/user`, {
+  const res = await fetch(`${env.VITE_SUPABASE_URL}/auth/v1/user`, {
     headers: {
       Authorization: `Bearer ${token}`,
-      apikey: env.SUPABASE_ANON_KEY,
+      apikey: env.VITE_SUPABASE_ANON_KEY,
     },
   })
   return res.ok
@@ -75,7 +75,7 @@ async function verifySupabaseToken(token, env) {
 // ─── Supabase REST helper ─────────────────────────────────────────────────────
 
 async function sbFetch(env, path) {
-  const res = await fetch(`${env.SUPABASE_URL}/rest/v1/${path}`, {
+  const res = await fetch(`${env.VITE_SUPABASE_URL}/rest/v1/${path}`, {
     headers: {
       apikey:        env.SUPABASE_SERVICE_KEY,
       Authorization: `Bearer ${env.SUPABASE_SERVICE_KEY}`,
