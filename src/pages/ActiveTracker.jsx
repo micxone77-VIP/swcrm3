@@ -32,9 +32,10 @@ export default function ActiveTracker() {
       { data: thisSnap },
       { data: lastSnap },
       { data: monthSnap },
+      { data: lastActiveSnap },
     ] = await Promise.all([
       supabase.from('vip_members')
-        .select('id, username, full_name, tier, host_assigned, days_inactive')
+        .select('id, username, full_name, tier, host_assigned')
         .eq('is_excluded', false)
         .order('username'),
       supabase.from('vip_daily_snapshots')
@@ -49,11 +50,22 @@ export default function ActiveTracker() {
         .select('username, total_deposit, monthly_valid_bet')
         .gte('snapshot_date', monthStart).lte('snapshot_date', thisEnd)
         .or(ACTIVE_FILTER),
+      supabase.from('vip_daily_snapshots')
+        .select('username, snapshot_date')
+        .or(ACTIVE_FILTER)
+        .gte('snapshot_date', fmt(pad(90)))
+        .order('snapshot_date', { ascending: false }),
     ])
 
     const activeThisWeek  = new Set((thisSnap  || []).map(r => r.username))
     const activeLastWeek  = new Set((lastSnap  || []).map(r => r.username))
     const activeThisMonth = new Set((monthSnap || []).map(r => r.username))
+
+    // Build last-active-date map from snapshots (deposit or valid bet activity only)
+    const lastActiveDateMap = {}
+    ;(lastActiveSnap || []).forEach(r => {
+      if (!lastActiveDateMap[r.username]) lastActiveDateMap[r.username] = r.snapshot_date
+    })
 
     // normalise tier casing
     const norm = t => (t || '').toUpperCase()
@@ -64,7 +76,7 @@ export default function ActiveTracker() {
       const dropped   = members_t.filter(m => activeLastWeek.has(m.username) && !activeThisWeek.has(m.username))
       const activeNow = members_t.filter(m => activeThisWeek.has(m.username))
       const inactiveMonth = members_t.filter(m => !activeThisMonth.has(m.username))
-      result[t] = { members: members_t, dropped, activeNow, inactiveMonth, activeThisWeek, activeLastWeek, activeThisMonth }
+      result[t] = { members: members_t, dropped, activeNow, inactiveMonth, activeThisWeek, activeLastWeek, activeThisMonth, lastActiveDateMap }
     }
 
     setData({ result, thisStart, thisEnd, lastStart, lastEnd, monthStart })
@@ -136,6 +148,7 @@ export default function ActiveTracker() {
         activeThisWeek={d.activeThisWeek}
         activeLastWeek={d.activeLastWeek}
         activeThisMonth={d.activeThisMonth}
+        lastActiveDateMap={d.lastActiveDateMap}
         navigate={navigate}
         emptyMsg="No players dropped off — great retention this week!"
         tierColor={color}
@@ -150,6 +163,7 @@ export default function ActiveTracker() {
         activeThisWeek={d.activeThisWeek}
         activeLastWeek={d.activeLastWeek}
         activeThisMonth={d.activeThisMonth}
+        lastActiveDateMap={d.lastActiveDateMap}
         navigate={navigate}
         emptyMsg="All members have had activity this month!"
         tierColor={color}
@@ -164,6 +178,7 @@ export default function ActiveTracker() {
         activeThisWeek={d.activeThisWeek}
         activeLastWeek={d.activeLastWeek}
         activeThisMonth={d.activeThisMonth}
+        lastActiveDateMap={d.lastActiveDateMap}
         navigate={navigate}
         emptyMsg="No active players this week yet."
         tierColor={color}
@@ -173,7 +188,7 @@ export default function ActiveTracker() {
   )
 }
 
-function Section({ title, subtitle, color, players, activeThisWeek, activeLastWeek, activeThisMonth, navigate, emptyMsg, tierColor, defaultCollapsed = false }) {
+function Section({ title, subtitle, color, players, activeThisWeek, activeLastWeek, activeThisMonth, lastActiveDateMap, navigate, emptyMsg, tierColor, defaultCollapsed = false }) {
   const [open, setOpen] = useState(!defaultCollapsed)
 
   return (
@@ -213,6 +228,13 @@ function Section({ title, subtitle, color, players, activeThisWeek, activeLastWe
                 {players.map(p => {
                   const wasLW = activeLastWeek.has(p.username)
                   const activeMo = activeThisMonth.has(p.username)
+                  const lastActiveDate = lastActiveDateMap?.[p.username]
+                  const snapDays = lastActiveDate
+                    ? Math.floor((Date.now() - new Date(lastActiveDate).getTime()) / 86400000)
+                    : null
+                  const daysVal = snapDays !== null ? snapDays : null
+                  const daysLabel = daysVal === null ? 'No data' : daysVal === 0 ? 'Today' : daysVal === 1 ? '1 day' : `${daysVal} days`
+                  const daysColor = daysVal === null ? 'var(--muted)' : daysVal >= 14 ? '#f85149' : daysVal >= 7 ? '#d29922' : '#3fb950'
                   return (
                     <tr key={p.id}
                       onMouseEnter={e => e.currentTarget.style.background = 'var(--surface2)'}
@@ -228,11 +250,8 @@ function Section({ title, subtitle, color, players, activeThisWeek, activeLastWe
                         {p.host_assigned || '—'}
                       </td>
                       <td style={{ padding:'10px 16px', borderBottom:'1px solid var(--border)' }}>
-                        <span style={{
-                          fontSize:12, fontWeight:600,
-                          color: (p.days_inactive||0) >= 14 ? '#f85149' : (p.days_inactive||0) >= 7 ? '#d29922' : '#3fb950',
-                        }}>
-                          {p.days_inactive === 0 ? 'Today' : p.days_inactive === 1 ? '1 day' : `${p.days_inactive ?? '?'} days`}
+                        <span style={{ fontSize:12, fontWeight:600, color: daysColor }}>
+                          {daysLabel}
                         </span>
                       </td>
                       <td style={{ padding:'10px 16px', borderBottom:'1px solid var(--border)' }}>
