@@ -60,6 +60,11 @@ export default function AllVIPs() {
   const [activationNotice, setActivationNotice] = useState(null)
   const [assigningVip, setAssigningVip] = useState(null)
   const [assignBusy, setAssignBusy] = useState(null)
+  // ── bulk select state ────────────────────────────────────────────────────────
+  const [selectedIds, setSelectedIds] = useState(new Set())
+  const [bulkBusy, setBulkBusy]       = useState(false)
+  const [bulkTarget, setBulkTarget]   = useState('')
+  const [bulkNotice, setBulkNotice]   = useState(null)
   const searchRef = useRef(null)
 
   const TIER_ORDER = { BLACK:0, DIAMOND:1, PLATINUM:2, GOLD:3, SILVER:4, BRONZE:5 }
@@ -133,9 +138,64 @@ export default function AllVIPs() {
     }
   }
 
+  // ── bulk operations ──────────────────────────────────────────────────────────
+  const toggleSelect = (id, e) => {
+    e.stopPropagation()
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const toggleSelectPage = () => {
+    const pageIds = paged.map(v => v.id)
+    const allSelected = pageIds.every(id => selectedIds.has(id))
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (allSelected) pageIds.forEach(id => next.delete(id))
+      else pageIds.forEach(id => next.add(id))
+      return next
+    })
+  }
+
+  const selectAllFiltered = () => {
+    setSelectedIds(new Set(sorted.map(v => v.id)))
+  }
+
+  const clearSelection = () => {
+    setSelectedIds(new Set())
+    setBulkTarget('')
+    setBulkNotice(null)
+  }
+
+  const bulkAssign = async (hostName) => {
+    if (selectedIds.size === 0 || bulkBusy) return
+    setBulkBusy(true)
+    setBulkNotice(null)
+    try {
+      const ids = [...selectedIds]
+      const { error: updErr } = await supabase.from('vip_members')
+        .update({ host_assigned: hostName || null })
+        .in('id', ids)
+      if (updErr) throw updErr
+      setVips(prev => prev.map(v => selectedIds.has(v.id) ? { ...v, host_assigned: hostName || null } : v))
+      const action = hostName ? `Assigned to ${hostName}` : 'Unassigned'
+      setBulkNotice({ ok: true, text: `✓ ${action}: ${ids.length} VIP${ids.length !== 1 ? 's' : ''} updated.` })
+      setSelectedIds(new Set())
+      setBulkTarget('')
+    } catch (e) {
+      console.error('bulkAssign error:', e)
+      setBulkNotice({ ok: false, text: `Error: ${e.message || 'Update failed.'}` })
+    } finally {
+      setBulkBusy(false)
+    }
+  }
+
   // Saved views shortcuts
   const applyView = v => {
-    setView(v); setPage(1)
+    setView(v); setPage(1); clearSelection()
     if (v === 'all')      { setTier('ALL'); setStatus('ALL') }
     if (v === 'risk')     { setTier('ALL'); setStatus('At Risk') }
     if (v === 'active')   { setTier('ALL'); setStatus('Active') }
@@ -200,6 +260,12 @@ export default function AllVIPs() {
     { value: 'noctact',  label: '🔔 Not Contacted This Month' },
   ]
 
+  const isAdmin = profile?.role === 'admin'
+  const pageIds = paged.map(v => v.id)
+  const allPageSelected = pageIds.length > 0 && pageIds.every(id => selectedIds.has(id))
+  const somePageSelected = pageIds.some(id => selectedIds.has(id))
+  const hostOptions = hosts.filter(h => h !== 'ALL' && h !== '__unassigned__')
+
   return (
     <div style={{ padding: '24px 28px' }}>
       <PageHeader
@@ -253,27 +319,121 @@ export default function AllVIPs() {
 
       {/* Filters */}
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 16, alignItems: 'center' }}>
-        <input ref={searchRef} value={search} onChange={e => { setSearch(e.target.value); setPage(1) }}
+        <input ref={searchRef} value={search} onChange={e => { setSearch(e.target.value); setPage(1); clearSelection() }}
           placeholder={t('allVips.searchPlaceholder')}
           style={{ background:'var(--surface)', border:'1px solid var(--border)', color:'var(--text)', padding:'8px 14px', borderRadius:8, fontSize:13, width:240, outline:'none' }} />
-        <Select value={tier} onChange={e => { setTier(e.target.value); setPage(1) }} style={{ minWidth: 120 }}>
+        <Select value={tier} onChange={e => { setTier(e.target.value); setPage(1); clearSelection() }} style={{ minWidth: 120 }}>
           {TIERS.map(tv => <option key={tv} value={tv}>{tv === 'ALL' ? t('allVips.allTiers') : tv}</option>)}
         </Select>
-        <Select value={status} onChange={e => { setStatus(e.target.value); setPage(1) }} style={{ minWidth: 120 }}>
+        <Select value={status} onChange={e => { setStatus(e.target.value); setPage(1); clearSelection() }} style={{ minWidth: 120 }}>
           {STATUSES.map(s => <option key={s} value={s}>{s === 'ALL' ? t('allVips.allStatus') : s}</option>)}
         </Select>
-        <Select value={region} onChange={e => { setRegion(e.target.value); setPage(1) }} style={{ minWidth: 130 }}>
+        <Select value={region} onChange={e => { setRegion(e.target.value); setPage(1); clearSelection() }} style={{ minWidth: 130 }}>
           {REGIONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
         </Select>
-        <Select value={host} onChange={e => { setHost(e.target.value); setPage(1) }} style={{ minWidth: 130 }}>
+        <Select value={host} onChange={e => { setHost(e.target.value); setPage(1); clearSelection() }} style={{ minWidth: 130 }}>
           {hosts.map(h => <option key={h} value={h}>{h === 'ALL' ? t('allVips.allHosts') : h === '__unassigned__' ? '⚠️ Unassigned' : h}</option>)}
         </Select>
         {(search || tier !== 'ALL' || status !== 'ALL' || region !== 'ALL' || host !== 'ALL') && (
-          <Btn size="sm" variant="ghost" onClick={() => { setSearch(''); setTier('ALL'); setStatus('ALL'); setRegion('ALL'); setHost('ALL'); setPage(1) }}>
+          <Btn size="sm" variant="ghost" onClick={() => { setSearch(''); setTier('ALL'); setStatus('ALL'); setRegion('ALL'); setHost('ALL'); setPage(1); clearSelection() }}>
             {t('allVips.clearFilters')}
           </Btn>
         )}
       </div>
+
+      {/* ── Bulk Action Bar (admin only, shown when items selected) ─────────── */}
+      {isAdmin && selectedIds.size > 0 && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+          marginBottom: 14,
+          padding: '10px 16px',
+          borderRadius: 8,
+          background: 'rgba(255,107,0,.08)',
+          border: '1px solid rgba(255,107,0,.3)',
+        }}>
+          <span style={{ fontWeight: 700, color: 'var(--brand)', fontSize: 13, whiteSpace: 'nowrap' }}>
+            {selectedIds.size} selected
+          </span>
+
+          {/* Assign To */}
+          <div style={{ display:'flex', gap:6, alignItems:'center' }}>
+            <select
+              value={bulkTarget}
+              onChange={e => setBulkTarget(e.target.value)}
+              disabled={bulkBusy}
+              style={{ background:'var(--surface)', border:'1px solid var(--border)', color:'var(--text)', padding:'5px 8px', borderRadius:6, fontSize:12, cursor:'pointer' }}
+            >
+              <option value="">Assign to…</option>
+              {hostOptions.map(h => <option key={h} value={h}>{h}</option>)}
+            </select>
+            <button
+              onClick={() => { if (bulkTarget) bulkAssign(bulkTarget) }}
+              disabled={!bulkTarget || bulkBusy}
+              style={{
+                background: bulkTarget && !bulkBusy ? 'var(--brand)' : 'var(--surface)',
+                border: '1px solid var(--brand)',
+                color: bulkTarget && !bulkBusy ? '#fff' : 'var(--muted)',
+                padding: '5px 14px', borderRadius: 6, fontSize: 12,
+                cursor: bulkTarget && !bulkBusy ? 'pointer' : 'not-allowed',
+                fontWeight: 600, whiteSpace: 'nowrap',
+              }}
+            >
+              {bulkBusy ? 'Saving…' : 'Assign'}
+            </button>
+          </div>
+
+          {/* Separator */}
+          <span style={{ color:'var(--border)', fontSize:16 }}>|</span>
+
+          {/* Unassign */}
+          <button
+            onClick={() => bulkAssign(null)}
+            disabled={bulkBusy}
+            style={{
+              background: 'rgba(248,81,73,.1)',
+              border: '1px solid rgba(248,81,73,.4)',
+              color: 'var(--danger)',
+              padding: '5px 14px', borderRadius: 6, fontSize: 12,
+              cursor: bulkBusy ? 'not-allowed' : 'pointer',
+              fontWeight: 600, whiteSpace: 'nowrap',
+            }}
+          >
+            Unassign
+          </button>
+
+          {/* Select all filtered */}
+          {selectedIds.size < sorted.length && (
+            <button
+              onClick={selectAllFiltered}
+              style={{ background:'none', border:'none', color:'var(--brand)', fontSize:12, cursor:'pointer', textDecoration:'underline', padding:'2px 0', whiteSpace:'nowrap' }}
+            >
+              Select all {sorted.length} filtered
+            </button>
+          )}
+
+          {/* Clear */}
+          <button
+            onClick={clearSelection}
+            style={{ background:'none', border:'none', color:'var(--muted)', fontSize:12, cursor:'pointer', marginLeft:'auto', padding:'2px 6px' }}
+          >
+            ✕ Clear
+          </button>
+        </div>
+      )}
+
+      {/* Bulk notice */}
+      {bulkNotice && (
+        <div style={{
+          marginBottom: 12, padding:'8px 14px', borderRadius:7, fontSize:12,
+          background: bulkNotice.ok ? 'rgba(63,185,80,.10)' : 'rgba(248,81,73,.10)',
+          border: `1px solid ${bulkNotice.ok ? 'rgba(63,185,80,.35)' : 'rgba(248,81,73,.35)'}`,
+          color: bulkNotice.ok ? 'var(--success)' : 'var(--danger)',
+          display:'flex', justifyContent:'space-between', alignItems:'center',
+        }}>
+          <span style={{ fontWeight:600 }}>{bulkNotice.text}</span>
+          <button onClick={() => setBulkNotice(null)} style={{ background:'none', border:'none', color:'var(--muted)', cursor:'pointer', fontSize:13 }}>✕</button>
+        </div>
+      )}
 
       {/* Table */}
       {loading ? <LoadingState /> : error ? <ErrorState message={error} onRetry={load} /> : (
@@ -282,6 +442,22 @@ export default function AllVIPs() {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
                 <tr>
+                  {/* Checkbox column header — admin only */}
+                  {isAdmin && (
+                    <th style={{
+                      padding: '9px 10px', width: 36,
+                      background: 'var(--surface)', borderBottom: '1px solid var(--border)',
+                    }}>
+                      <input
+                        type="checkbox"
+                        checked={allPageSelected}
+                        ref={el => { if (el) el.indeterminate = somePageSelected && !allPageSelected }}
+                        onChange={toggleSelectPage}
+                        title="Select all on this page"
+                        style={{ cursor:'pointer', accentColor:'var(--brand)', width:14, height:14 }}
+                      />
+                    </th>
+                  )}
                   {[
                     { key:'name', label:t('allVips.colVip'), sortable:true },
                     { key:'tier', label:t('common.tier'), sortable:true },
@@ -312,19 +488,36 @@ export default function AllVIPs() {
               </thead>
               <tbody>
                 {paged.length === 0 ? (
-                  <tr><td colSpan={10} style={{ textAlign:'center', padding:'32px', color:'var(--muted)' }}>
+                  <tr><td colSpan={isAdmin ? 11 : 10} style={{ textAlign:'center', padding:'32px', color:'var(--muted)' }}>
                     No VIPs match the current filters.
                   </td></tr>
                 ) : paged.map(v => {
                   const lastContact = v.last_contacted || v.last_contact_date
                   const wl = v.win_loss
+                  const isSelected = selectedIds.has(v.id)
                   return (
                     <tr key={v.id}
                       onClick={() => navigate(`/vips/${v.id}`)}
-                      onMouseEnter={e => e.currentTarget.style.background = 'var(--surface2)'}
-                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                      style={{ cursor:'pointer', transition:'background .1s' }}
+                      onMouseEnter={e => e.currentTarget.style.background = isSelected ? 'rgba(255,107,0,.08)' : 'var(--surface2)'}
+                      onMouseLeave={e => e.currentTarget.style.background = isSelected ? 'rgba(255,107,0,.06)' : 'transparent'}
+                      style={{
+                        cursor:'pointer',
+                        transition:'background .1s',
+                        background: isSelected ? 'rgba(255,107,0,.06)' : 'transparent',
+                      }}
                     >
+                      {/* Checkbox cell — admin only */}
+                      {isAdmin && (
+                        <td style={{ padding:'9px 10px', borderBottom:'1px solid var(--border)', width:36 }}
+                          onClick={e => toggleSelect(v.id, e)}>
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => {}}
+                            style={{ cursor:'pointer', accentColor:'var(--brand)', width:14, height:14 }}
+                          />
+                        </td>
+                      )}
                       <td style={{ padding:'9px 12px', borderBottom:'1px solid var(--border)' }}>
                         <div style={{ fontWeight:600, color:'var(--text)' }}>{v.username}</div>
                         <div style={{ fontSize:11, color:'var(--muted)' }}>{v.full_name || ''}</div>
