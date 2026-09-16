@@ -50,23 +50,17 @@ export default function ActiveTracker() {
         .select('username, total_deposit, monthly_valid_bet')
         .gte('snapshot_date', monthStart).lte('snapshot_date', thisEnd)
         .or(ACTIVE_FILTER),
-      supabase.from('vip_daily_snapshots')
-        .select('username, snapshot_date, monthly_valid_bet, total_deposit')
-        .gte('snapshot_date', fmt(pad(90)))
-        .order('snapshot_date', { ascending: false })
-        .limit(10000),
+      supabase.rpc('get_last_active_dates', { days_back: 90 }),
     ])
 
     const activeThisWeek  = new Set((thisSnap  || []).map(r => r.username))
     const activeLastWeek  = new Set((lastSnap  || []).map(r => r.username))
     const activeThisMonth = new Set((monthSnap || []).map(r => r.username))
 
-    // Build last-active-date map — client-side filter avoids .or() PostgREST quirks
+    // Build last-active-date map from RPC result (computed in SQL, always accurate)
     const lastActiveDateMap = {}
     ;(lastActiveSnap || []).forEach(r => {
-      if ((+r.monthly_valid_bet > 0 || +r.total_deposit > 0) && !lastActiveDateMap[r.username]) {
-        lastActiveDateMap[r.username] = r.snapshot_date
-      }
+      lastActiveDateMap[r.username] = r.last_active_date
     })
 
     // normalise tier casing
