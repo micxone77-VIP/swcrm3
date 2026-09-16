@@ -382,9 +382,19 @@ function VIPCandidatesTab() {
   const [contactModal, setContactModal] = useState(null)
   const [selectedMonth, setSelectedMonth] = useUrlParam('vMonth', '')
   const [availableMonths, setAvailableMonths] = useState([])
+  const [hosts, setHosts] = useState([])
+  const [hostF, setHostF] = useUrlParam('vHost', 'ALL')
 
   useEffect(() => {
     const init = async () => {
+      // Load hosts list for the filter dropdown
+      const { data: hostRows } = await supabase
+        .from('profiles')
+        .select('full_name')
+        .not('full_name', 'is', null)
+        .order('full_name')
+      setHosts((hostRows || []).map(r => r.full_name))
+
       // Fetch oldest and newest snapshot dates (2 queries only), then generate all
       // month labels between them in JS — avoids paginating all 26 000+ rows.
       const [{ data: oldest }, { data: newest }] = await Promise.all([
@@ -468,6 +478,8 @@ function VIPCandidatesTab() {
 
   const filtered = vips.filter(v => {
     if (tierF !== 'ALL' && v.tier !== tierF) return false
+    if (hostF === 'UNASSIGNED' && v.host_assigned) return false
+    if (hostF !== 'ALL' && hostF !== 'UNASSIGNED' && v.host_assigned !== hostF) return false
     if (search && !v.username.toLowerCase().includes(search.toLowerCase())) return false
     if (upgradeF === 'QUALIFIES') return v.upgrade !== null
     if (upgradeF === 'SKIP') return v.upgrade && TIER_ORDER.indexOf(v.upgrade.tier) - TIER_ORDER.indexOf(v.tier) > 1
@@ -522,6 +534,11 @@ function VIPCandidatesTab() {
             <option key={m} value={m}>{m}</option>
           ))}
         </select>
+        <select value={hostF} onChange={e => setHostF(e.target.value)} style={s.select}>
+          <option value="ALL">All Hosts</option>
+          <option value="UNASSIGNED">— Unassigned —</option>
+          {hosts.map(h => <option key={h} value={h}>{h}</option>)}
+        </select>
         <span style={{ fontSize: 12, color: 'var(--muted)', marginLeft: 'auto' }}>
           {filtered.length} members shown
         </span>
@@ -555,7 +572,16 @@ function VIPCandidatesTab() {
                       onMouseLeave={() => setHovered(null)}
                       onClick={() => navigate(`/vips/${v.id}`)}
                     >
-                      <td style={s.td}><strong>{v.username}</strong></td>
+                      <td style={s.td}>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                          <strong>{v.username}</strong>
+                          <button
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px 4px', color: 'var(--muted)', fontSize: 11, borderRadius: 3, lineHeight: 1, opacity: 0.6 }}
+                            onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(v.username) }}
+                            title="Copy username"
+                          >⧉</button>
+                        </span>
+                      </td>
                       <td style={s.td}><span style={s.tierBadge(v.tier)}>{v.tier}</span></td>
                       <td style={s.td}>{fmt(v.monthly_valid_bet, v.currency)}</td>
                       <td style={s.td}>
@@ -832,7 +858,16 @@ function PotentialsTab() {
                         onMouseEnter={() => setHovered(p.id)}
                         onMouseLeave={() => setHovered(null)}
                       >
-                        <td style={s.td}><strong>{p.username}</strong></td>
+                        <td style={s.td}>
+                          <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                            <strong>{p.username}</strong>
+                            <button
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px 4px', color: 'var(--muted)', fontSize: 11, borderRadius: 3, lineHeight: 1, opacity: 0.6 }}
+                              onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(p.username) }}
+                              title="Copy username"
+                            >⧉</button>
+                          </span>
+                        </td>
                         <td style={s.td}><span style={s.tierBadge(p.tier)}>{p.tier}</span></td>
                         <td style={s.td}>{fmt(p.monthly_valid_bet, p.currency)}</td>
                         <td style={{ ...s.td, minWidth: 100 }}>
@@ -1001,7 +1036,16 @@ function GraduatedTab() {
                     onMouseEnter={() => setHovered(p.id)}
                     onMouseLeave={() => setHovered(null)}
                   >
-                    <td style={s.td}><strong>{p.username}</strong></td>
+                    <td style={s.td}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                        <strong>{p.username}</strong>
+                        <button
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px 4px', color: 'var(--muted)', fontSize: 11, borderRadius: 3, lineHeight: 1, opacity: 0.6 }}
+                          onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(p.username) }}
+                          title="Copy username"
+                        >⧉</button>
+                      </span>
+                    </td>
                     <td style={s.td}><span style={s.tierBadge(p.tier)}>{p.tier}</span></td>
                     <td style={s.td}>
                       <span style={s.tierBadge(p.upgraded_to_tier || 'GOLD')}>
