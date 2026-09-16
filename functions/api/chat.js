@@ -38,7 +38,9 @@ export async function onRequestPost({ request, env }) {
     const callerProfile = await fetchCallerProfile(env, user.id)
     const callerName = (callerProfile?.full_name && callerProfile.full_name !== '(Name)')
       ? callerProfile.full_name
-      : (callerProfile?.username || '')
+      : ''
+
+    console.log(`[/api/chat] caller: "${callerName}" | role: ${callerProfile?.role || '?'} | uid: ${user.id?.slice(0,8)}`)
 
     // Fetch full CRM context in parallel
     const context = await fetchCRMContext(env, callerName)
@@ -112,7 +114,7 @@ async function sbFetch(env, path) {
 async function fetchCallerProfile(env, userId) {
   if (!userId) return {}
   const rows = await sbFetch(env,
-    `profiles?select=id,username,full_name,role,team&id=eq.${userId}&limit=1`
+    `profiles?select=id,email,full_name,role&id=eq.${userId}&limit=1`
   )
   return rows[0] || {}
 }
