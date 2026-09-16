@@ -206,8 +206,8 @@ async function getAIInsight() {
 setAiLoading(true)
 try {
 const summary = `VIP: ${vip.full_name||vip.username}, Tier: ${vip.tier}, Risk: ${vip.churn_risk}, Days inactive: ${daysInactive}, Total deposit: ${formatMoney(vip.total_deposit, vip.currency)}. Last 3 months deposits: ${periodMonthly.slice(0,3).map(m=>formatMoney(m.total_deposit,vip.currency)).join(', ')}.`
-const result = await callAI(`Analyze this VIP player and provide a brief insight with recommended action: ${summary}`)
-setAiInsight(result)
+const result = await callAI('chat', { question: `Analyze this VIP player and provide a brief insight with recommended action: ${summary}`, history: [] })
+setAiInsight(result.answer || 'No insight generated.')
 } catch(e) { toast(t('vip360.aiUnavailable'), 'error') }
 setAiLoading(false)
 }
