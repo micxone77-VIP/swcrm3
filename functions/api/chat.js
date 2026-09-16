@@ -109,7 +109,7 @@ async function fetchCRMContext(env) {
       'vip_members?select=id,vip_id,username,full_name,tier,churn_risk,activity_status,' +
       'total_deposit,currency,last_deposit_date,days_inactive,' +
       'last_contacted,last_contact_date,host_assigned,host_assigned_id' +
-      '&order=total_deposit.desc&limit=200'
+      '&order=total_deposit.desc&limit=600'
     ),
     // contact_logs — correct column names
     sbFetch(env,
@@ -140,9 +140,9 @@ function buildSystemPrompt({ vips, contacts, snapshots, today, currentMonth }, c
   const byStatus = groupCount(vips, v => v.activity_status || 'Unknown')
 
   // High risk & inactive
-  const highRisk   = vips.filter(v => (v.churn_risk || '').toLowerCase() === 'high')
+  const highRisk   = vips.filter(v => (v.churn_risk || '').toUpperCase() === 'HIGH')
   const inactive14 = vips.filter(v =>
-    v.activity_status !== 'active' && (v.days_inactive || 0) >= 14
+    v.activity_status?.toUpperCase() !== 'ACTIVE' && (v.days_inactive || 0) >= 14
   )
 
   // VIPs with follow-up due today or earlier
