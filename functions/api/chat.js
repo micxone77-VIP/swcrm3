@@ -214,8 +214,18 @@ MY VIPs BY RISK:
 ${Object.entries(groupCount(myVIPs, v => v.churn_risk || 'Unknown')).map(([k, n]) => `  ${k}: ${n}`).join('\n') || '  (none)'}
 MY VIPs BY STATUS:
 ${Object.entries(groupCount(myVIPs, v => v.activity_status || 'Unknown')).map(([k, n]) => `  ${k}: ${n}`).join('\n') || '  (none)'}
-MY VIPs LIST (top 30 by deposit):
-${listVIPs(myVIPs, 30)}
+MY VIPs FULL LIST (compact, grouped by tier):
+${['GOLD','DIAMOND','PLATINUM','BLACK'].map(t => {
+  const grp = myVIPs.filter(v => (v.tier||'').toUpperCase() === t)
+  if (!grp.length) return ''
+  return t + ' (' + grp.length + '):\n' + grp.map(v =>
+    '  - ' + ((v.full_name && v.full_name !== '(Name)') ? v.full_name : v.username) +
+    ' | dep: ' + fmt(v.total_deposit) + ' ' + (v.currency||'') +
+    ' | status: ' + (v.activity_status||'-') +
+    ' | risk: ' + (v.churn_risk||'-') +
+    ' | inactive: ' + (v.days_inactive != null ? v.days_inactive + 'd' : '-')
+  ).join('\n')
+}).filter(Boolean).join('\n')}
 
 THIS MONTH (${currentMonth}):
   Total Deposits : ${fmt(monthlyDeposit)}
