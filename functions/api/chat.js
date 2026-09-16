@@ -37,7 +37,14 @@ export async function onRequestPost({ request, env }) {
     // Fetch full CRM context in parallel
     const context = await fetchCRMContext(env, callerName)
 
-    const systemPrompt = buildSystemPrompt(context, callerProfile, callerName, language)
+    let systemPrompt
+    try {
+      systemPrompt = buildSystemPrompt(context, callerProfile, callerName, language)
+    } catch (promptErr) {
+      console.error('[/api/chat] buildSystemPrompt error:', promptErr?.message || promptErr)
+      return err('Failed to build prompt: ' + (promptErr?.message || 'unknown'), 500)
+    }
+
     const messages = [
       { role: 'system', content: systemPrompt },
       ...history.slice(-6).map(m => ({ role: m.role, content: String(m.content) })),
@@ -339,7 +346,7 @@ function buildSystemPrompt(
     ? campaigns.map(c =>
         `  [${c.status || '?'}] ${c.campaign_name || '-'} (${c.campaign_type || '-'})` +
         ` | ${c.start_date || '-'} → ${c.end_date || '-'}` +
-        ` | tiers: ${(c.target_tier || []).join(', ') || 'all'}` +
+        ` | tiers: ${Array.isArray(c.target_tier) ? c.target_tier.join(', ') : (c.target_tier ? String(c.target_tier).replace(/[{}]/g,'') : 'all')}` +
         (c.offer_desc ? ` | ${c.offer_desc.slice(0, 80)}` : '')
       ).join('\n')
     : '  (none)'
