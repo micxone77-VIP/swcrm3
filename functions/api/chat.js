@@ -225,7 +225,7 @@ ${listVIPs(inactive14)}
 
 TOP 10 BY LIFETIME DEPOSIT:
 ${top10.map((v, i) =>
-  `  ${i + 1}. ${v.full_name || v.username} [${v.tier || '?'}]` +
+  `  ${i + 1}. ${(v.full_name && v.full_name !== '(Name)') ? v.full_name : v.username} [${v.tier || '?'}]` +
   ` | ${fmt(v.total_deposit)} ${v.currency || ''}` +
   ` | status: ${v.activity_status || '-'}` +
   ` | risk: ${v.churn_risk || '-'}` +
