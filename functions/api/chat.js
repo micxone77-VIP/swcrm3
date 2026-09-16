@@ -208,6 +208,13 @@ HOST BREAKDOWN:
 ${Object.entries(byHost).map(([k, n]) => `  ${k}: ${n} VIPs`).join('\n')}
 
 MY VIPs (assigned to ${callerName || 'you'}): ${myVIPs.length}
+MY VIPs BY TIER:
+${Object.entries(groupCount(myVIPs, v => v.tier || 'Unknown')).map(([k, n]) => `  ${k}: ${n}`).join('\n') || '  (none)'}
+MY VIPs BY RISK:
+${Object.entries(groupCount(myVIPs, v => v.churn_risk || 'Unknown')).map(([k, n]) => `  ${k}: ${n}`).join('\n') || '  (none)'}
+MY VIPs BY STATUS:
+${Object.entries(groupCount(myVIPs, v => v.activity_status || 'Unknown')).map(([k, n]) => `  ${k}: ${n}`).join('\n') || '  (none)'}
+MY VIPs LIST (top 30 by deposit):
 ${listVIPs(myVIPs, 30)}
 
 THIS MONTH (${currentMonth}):
