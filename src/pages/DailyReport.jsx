@@ -512,6 +512,141 @@ function RetentionCard({ lang, retention, retentionLoading }) {
   )
 }
 
+// ─── Campaign Tracker ─────────────────────────────────────────────
+const STATUS_CONFIG = {
+  active:  { label:'进行中', color:'#22c55e', dot:'🟢' },
+  draft:   { label:'草稿',   color:'#f97316', dot:'🟡' },
+  ended:   { label:'已结束', color:'#6b7280', dot:'⚫' },
+  paused:  { label:'暂停',   color:'#f59e0b', dot:'🟠' },
+}
+
+function CampaignCard({ c, reportDate }) {
+  const today = new Date(reportDate + 'T00:00:00')
+  const start = new Date(c.start_date + 'T00:00:00')
+  const end   = new Date(c.end_date   + 'T00:00:00')
+  const totalDays = Math.max(1, Math.round((end - start) / 86400000) + 1)
+  const elapsed   = Math.max(0, Math.min(totalDays, Math.round((today - start) / 86400000) + 1))
+  const dayPct    = Math.round(elapsed / totalDays * 100)
+  const daysLeft  = Math.max(0, Math.round((end - today) / 86400000))
+
+  const budgetRm    = c.budget_rm || 0
+  const budgetPct   = budgetRm > 0 ? Math.min(100, Math.round(c.rewardsPaid / budgetRm * 100)) : 0
+  const convRate    = c.enrolled > 0 ? Math.round(c.converted / c.enrolled * 100) : 0
+
+  const sc = STATUS_CONFIG[c.status] || STATUS_CONFIG.draft
+  const barColor = budgetPct > 85 ? '#ef4444' : budgetPct > 60 ? '#f97316' : '#22c55e'
+
+  function BarRow({ label, pct, color, leftText, rightText }) {
+    return (
+      <div style={{ marginBottom: 10 }}>
+        <div style={{ display:'flex', justifyContent:'space-between', fontSize:12, color:'var(--muted)', marginBottom:3 }}>
+          <span>{label}</span>
+          <span style={{ fontWeight:700, color:'var(--fg)' }}>{rightText}</span>
+        </div>
+        <div style={{ background:'var(--border)', borderRadius:6, height:8, overflow:'hidden' }}>
+          <div style={{ width:`${pct}%`, height:'100%', background:color, borderRadius:6, transition:'width .4s' }} />
+        </div>
+        <div style={{ fontSize:11, color:'var(--muted)', marginTop:2 }}>{leftText}</div>
+      </div>
+    )
+  }
+
+  const copyName = () => navigator.clipboard.writeText(c.campaign_name).catch(()=>{})
+
+  return (
+    <div style={{
+      background:'var(--surface2)', borderRadius:14, padding:'16px 18px',
+      border:'1px solid var(--border)', position:'relative', overflow:'hidden',
+    }}>
+      {/* Status ribbon */}
+      <div style={{ position:'absolute', top:0, left:0, right:0, height:3, background:sc.color }} />
+
+      {/* Header */}
+      <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:10, marginBottom:12, marginTop:4 }}>
+        <div style={{ flex:1, minWidth:0 }}>
+          <div style={{ fontWeight:800, fontSize:15, lineHeight:1.3, marginBottom:4 }}>{c.campaign_name}</div>
+          <div style={{ display:'flex', gap:6, flexWrap:'wrap', alignItems:'center' }}>
+            <span style={{ fontSize:11, background:`${sc.color}20`, color:sc.color, padding:'2px 8px', borderRadius:8, fontWeight:700 }}>
+              {sc.dot} {sc.label}
+            </span>
+            {c.campaign_type && (
+              <span style={{ fontSize:11, color:'var(--muted)', background:'var(--border)', padding:'2px 7px', borderRadius:8 }}>
+                {c.campaign_type}
+              </span>
+            )}
+            <span style={{ fontSize:11, color:'var(--muted)' }}>{c.start_date} → {c.end_date}</span>
+          </div>
+        </div>
+        <button onClick={copyName} style={{
+          padding:'5px 11px', borderRadius:8, border:'1px solid var(--border)',
+          background:'transparent', color:'var(--muted)', fontSize:11, cursor:'pointer', whiteSpace:'nowrap',
+        }}>📋 复制名称</button>
+      </div>
+
+      {/* Stats row */}
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:10, marginBottom:14 }}>
+        {[
+          { label:'预算', val: budgetRm > 0 ? `RM ${(budgetRm/1000).toFixed(0)}K` : '—' },
+          { label:'参与', val: c.enrolled },
+          { label:'达标', val: `${c.converted} (${convRate}%)` },
+          { label:'总存款', val: c.totalDeposit > 0 ? `RM ${(c.totalDeposit/1000).toFixed(1)}K` : '—' },
+        ].map(s => (
+          <div key={s.label} style={{ textAlign:'center', background:'var(--surface)', borderRadius:9, padding:'8px 4px' }}>
+            <div style={{ fontSize:11, color:'var(--muted)', marginBottom:2 }}>{s.label}</div>
+            <div style={{ fontSize:14, fontWeight:800 }}>{s.val}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Progress bars */}
+      <BarRow
+        label={`📅 活动进度 · 第 ${elapsed}/${totalDays} 天`}
+        pct={dayPct}
+        color='#3b82f6'
+        leftText={c.status === 'ended' ? '已结束' : `还剩 ${daysLeft} 天`}
+        rightText={`${dayPct}%`}
+      />
+      {budgetRm > 0 && (
+        <BarRow
+          label='💸 预算使用'
+          pct={budgetPct}
+          color={barColor}
+          leftText={`已发 RM ${c.rewardsPaid.toLocaleString()} / 预算 RM ${budgetRm.toLocaleString()}`}
+          rightText={`${budgetPct}%`}
+        />
+      )}
+    </div>
+  )
+}
+
+function CampaignTracker({ lang, campaigns, campaignLoading, reportDate }) {
+  const isZh = lang === 'zh'
+  // Sort: active first, then draft, then ended; within active by end_date asc
+  const sorted = [...campaigns].sort((a, b) => {
+    const order = { active: 0, draft: 1, paused: 2, ended: 3 }
+    const diff = (order[a.status] ?? 9) - (order[b.status] ?? 9)
+    if (diff !== 0) return diff
+    return a.end_date < b.end_date ? -1 : 1
+  })
+  return (
+    <Card title={`🎯 ${isZh ? '7日冲刺活动追踪' : 'Campaign Budget Tracker'}`}>
+      {campaignLoading ? (
+        <div style={{ padding:'24px', textAlign:'center', color:'var(--muted)', fontSize:14 }}>⏳ {isZh?'加载中…':'Loading…'}</div>
+      ) : !sorted.length ? (
+        <div style={{ padding:'16px', textAlign:'center', color:'var(--muted)', fontSize:13 }}>
+          {isZh ? '近期暂无活动记录' : 'No recent campaigns found'}
+        </div>
+      ) : (
+        <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+          {sorted.map(c => (
+            <CampaignCard key={c.id} c={c} reportDate={reportDate} />
+          ))}
+        </div>
+      )}
+    </Card>
+  )
+}
+
 // ─── VIP Upgrade Tracker ─────────────────────────────────────────
 const UPGRADE_THRESHOLDS = {
   GOLD:     { target:'PLATINUM', threshold: 2000000, color:'#a855f7', icon:'👑' },
@@ -713,6 +848,10 @@ export default function DailyReport() {
   // ── Upgrade tracker state ─────────────────────────────────────────
   const [upgrades, setUpgrades] = useState([])
   const [upgradeLoading, setUpgradeLoading] = useState(false)
+
+  // ── Campaign tracker state ────────────────────────────────────────
+  const [campaigns, setCampaigns] = useState([])
+  const [campaignLoading, setCampaignLoading] = useState(false)
 
   const effectiveHost = hostFilter === '__mine__' ? (profile?.full_name || null) : (hostFilter || null)
 
@@ -1058,6 +1197,49 @@ export default function DailyReport() {
   }, [reportDate, effectiveHost])
 
   useEffect(() => { if (reportMode === 'single') loadUpgrades() }, [loadUpgrades, reportMode])
+
+  // ── Campaign tracker loader ───────────────────────────────────────
+  const loadCampaigns = useCallback(async () => {
+    setCampaignLoading(true)
+    try {
+      // Fetch recent campaigns (active + ended in last 90 days + upcoming)
+      const cutoff = isoDate(addDays(new Date(reportDate + 'T00:00:00'), -90))
+      const { data: campData, error: campErr } = await supabase
+        .from('campaigns')
+        .select('id, campaign_name, campaign_type, start_date, end_date, budget_rm, status')
+        .gte('end_date', cutoff)
+        .order('start_date', { ascending: false })
+      if (campErr) throw campErr
+      if (!campData?.length) { setCampaigns([]); return }
+
+      // For each campaign, aggregate campaign_players
+      const campIds = campData.map(c => c.id)
+      const { data: playerData, error: playerErr } = await supabase
+        .from('campaign_players')
+        .select('campaign_id, converted, total_deposit, reward_amount, payout_status')
+        .in('campaign_id', campIds)
+      if (playerErr) throw playerErr
+
+      // Aggregate per campaign
+      const agg = {}
+      for (const r of (playerData || [])) {
+        if (!agg[r.campaign_id]) agg[r.campaign_id] = { enrolled: 0, converted: 0, totalDeposit: 0, rewardsPaid: 0 }
+        agg[r.campaign_id].enrolled++
+        if (r.converted) agg[r.campaign_id].converted++
+        agg[r.campaign_id].totalDeposit += (r.total_deposit || 0)
+        if (r.payout_status === 'paid') agg[r.campaign_id].rewardsPaid += (r.reward_amount || 0)
+      }
+
+      const enriched = campData.map(c => ({
+        ...c,
+        ...(agg[c.id] || { enrolled: 0, converted: 0, totalDeposit: 0, rewardsPaid: 0 }),
+      }))
+      setCampaigns(enriched)
+    } catch(e) { console.error('Campaign load error', e) }
+    finally { setCampaignLoading(false) }
+  }, [reportDate])
+
+  useEffect(() => { if (reportMode === 'single') loadCampaigns() }, [loadCampaigns, reportMode])
 
   // ── Range report loader ───────────────────────────────────────────
   const loadRange = useCallback(async () => {
@@ -1503,6 +1685,11 @@ export default function DailyReport() {
         {/* ── Section 10: VIP Upgrade Tracking ── */}
         <div id="upgrade-section">
           <UpgradeCard lang={lang} upgrades={upgrades} upgradeLoading={upgradeLoading} />
+        </div>
+
+        {/* ── Section 11: Campaign Budget Tracker ── */}
+        <div id="campaign-section">
+          <CampaignTracker lang={lang} campaigns={campaigns} campaignLoading={campaignLoading} reportDate={reportDate} />
         </div>
 
         {/* ── Section 3 & 4: vs 7-Day Avg ── */}
