@@ -1,9 +1,25 @@
 import { Navigate, Outlet } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
+import { useState, useEffect } from 'react'
 import Sidebar from './Sidebar'
+import GlobalSearch from './GlobalSearch'
+import ContextualAI from './ContextualAI'
 
 export default function Layout() {
   const { user, loading } = useAuth()
+  const [searchOpen, setSearchOpen] = useState(false)
+
+  // Cmd+K / Ctrl+K global keyboard shortcut
+  useEffect(() => {
+    function onKey(e) {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault()
+        setSearchOpen(o => !o)
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [])
 
   if (loading) return (
     <div style={{
@@ -21,10 +37,16 @@ export default function Layout() {
 
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
-      <Sidebar />
+      <Sidebar onSearch={() => setSearchOpen(true)} />
       <main style={{ flex: 1, overflowY: 'auto', background: 'var(--bg)' }}>
         <Outlet />
       </main>
+
+      {/* Global Cmd+K search overlay */}
+      <GlobalSearch open={searchOpen} onClose={() => setSearchOpen(false)} />
+
+      {/* Floating contextual AI panel */}
+      <ContextualAI />
     </div>
   )
 }
