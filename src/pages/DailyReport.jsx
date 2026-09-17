@@ -242,7 +242,7 @@ export default function DailyReport() {
       // ── 1. Build same-day query helper ──
       async function snapQuery(dateStr, tierFilter) {
         let q = supabase.from('vip_daily_snapshots')
-          .select('tier, total_deposit, total_withdrawal, win_loss, player_id, snapshot_date')
+          .select('tier, total_deposit, total_withdrawal, win_loss, vip_id, snapshot_date')
           .eq('snapshot_date', dateStr)
         if (tierFilter) q = q.eq('tier', tierFilter)
         if (effectiveHost) q = q.eq('host_assigned', effectiveHost)
@@ -268,8 +268,8 @@ export default function DailyReport() {
           depositors,
         }
       }
-      const platRows  = todaySnap.filter(r => r.tier === 'Platinum')
-      const diamRows  = todaySnap.filter(r => r.tier === 'Diamond')
+      const platRows  = todaySnap.filter(r => r.tier === 'PLATINUM')
+      const diamRows  = todaySnap.filter(r => r.tier === 'DIAMOND')
       setNumbers({
         Platinum: rollup(platRows),
         Diamond:  rollup(diamRows),
@@ -287,8 +287,8 @@ export default function DailyReport() {
       const dowData = []
       for (const ds of sameDays) {
         const rows = await snapQuery(ds, null)
-        const platR = rows.filter(r => r.tier === 'Platinum')
-        const diamR = rows.filter(r => r.tier === 'Diamond')
+        const platR = rows.filter(r => r.tier === 'PLATINUM')
+        const diamR = rows.filter(r => r.tier === 'DIAMOND')
         const p = rollup(platR), di = rollup(diamR), tot = rollup(rows)
         dowData.push({ date: ds, Platinum: p, Diamond: di, Total: tot })
       }
@@ -326,7 +326,7 @@ export default function DailyReport() {
 
       // ── 5. Top movers ──
       let mvQ = supabase.from('vip_daily_snapshots')
-        .select('player_id, win_loss, total_deposit, tier, vip_members(username, full_name, phone)')
+        .select('vip_id, win_loss, total_deposit, tier, vip_members(username, full_name, phone)')
         .eq('snapshot_date', reportDate)
         .order('win_loss', { ascending: false })
         .limit(20)
@@ -336,15 +336,15 @@ export default function DailyReport() {
 
       // ── 6. Priority call list: deposited in last 7 days but NOT today ──
       // Get IDs who deposited today
-      const todayDeps = new Set(todaySnap.filter(r => (r.total_deposit||0) > 0).map(r => r.player_id))
+      const todayDeps = new Set(todaySnap.filter(r => (r.total_deposit||0) > 0).map(r => r.vip_id))
       // Get IDs who deposited in last 7 days with amounts
       const playerDep7 = {}
       for (const { date, rows } of last7snaps) {
         for (const r of rows) {
           if ((r.total_deposit || 0) > 0) {
-            if (!playerDep7[r.player_id]) playerDep7[r.player_id] = { total: 0, lastDate: date }
-            playerDep7[r.player_id].total += r.total_deposit
-            if (date > playerDep7[r.player_id].lastDate) playerDep7[r.player_id].lastDate = date
+            if (!playerDep7[r.vip_id]) playerDep7[r.vip_id] = { total: 0, lastDate: date }
+            playerDep7[r.vip_id].total += r.total_deposit
+            if (date > playerDep7[r.vip_id].lastDate) playerDep7[r.vip_id].lastDate = date
           }
         }
       }
@@ -392,14 +392,14 @@ export default function DailyReport() {
       const dep3 = new Set()
       for (const ds of last3dates) {
         const rows = await snapQuery(ds, null)
-        rows.filter(r => (r.total_deposit||0) > 0).forEach(r => dep3.add(r.player_id))
+        rows.filter(r => (r.total_deposit||0) > 0).forEach(r => dep3.add(r.vip_id))
       }
       // Active base: who had ANY activity in last 14 days
       const dep14 = new Set()
       for (let i = 1; i <= 14; i++) {
         const ds = isoDate(addDays(d, -i))
         const rows = await snapQuery(ds, null)
-        rows.filter(r => (r.total_deposit||0) > 0).forEach(r => dep14.add(r.player_id))
+        rows.filter(r => (r.total_deposit||0) > 0).forEach(r => dep14.add(r.vip_id))
       }
       const atRisk = [...dep14].filter(id => !dep3.has(id) && !todayDeps.has(id))
       setAtRiskCount(atRisk.length)
@@ -442,7 +442,7 @@ export default function DailyReport() {
         const won = (p.win_loss||0) > 0
         const label = lang==='zh' ? (won ? `会员赢 ${fmt(p.win_loss)}` : `会员输 ${fmt(Math.abs(p.win_loss))}`) : (won ? `Member Won ${fmt(p.win_loss)}` : `Member Lost ${fmt(Math.abs(p.win_loss))}`)
         const m = p.vip_members || {}
-        lines.push(`${m.username||p.player_id} ${m.full_name||''} — ${label}`)
+        lines.push(`${m.username||p.vip_id} ${m.full_name||''} — ${label}`)
       })
       lines.push('')
     }
@@ -687,10 +687,10 @@ export default function DailyReport() {
                       ? `${lang==='zh'?'会员赢':t.memberWon} ${fmt(p.win_loss)}`
                       : `${lang==='zh'?'会员输':t.memberLost} ${fmt(Math.abs(p.win_loss))}`
                     return (
-                      <tr key={p.player_id || i} style={{borderBottom:'1px solid var(--border)',cursor:'pointer'}}
-                        onClick={() => navigate(`/vips/${p.player_id}`)}>
+                      <tr key={p.vip_id || i} style={{borderBottom:'1px solid var(--border)',cursor:'pointer'}}
+                        onClick={() => navigate(`/vips/${p.vip_id}`)}>
                         <td style={{padding:'7px 12px',fontSize:12,color:MUTED}}>{i+1}</td>
-                        <td style={{padding:'7px 12px',fontSize:13,fontWeight:600,color:'var(--brand)'}}>{m.username || p.player_id}</td>
+                        <td style={{padding:'7px 12px',fontSize:13,fontWeight:600,color:'var(--brand)'}}>{m.username || p.vip_id}</td>
                         <td style={{padding:'7px 12px',fontSize:12,color:MUTED}}>{m.full_name || '—'}</td>
                         <td style={{padding:'7px 12px',textAlign:'right',fontSize:12}}>{fmt(p.total_deposit)}</td>
                         <td style={{padding:'7px 12px',textAlign:'right',fontSize:13,fontWeight:700,color:won?RED:GREEN}}>{label}</td>
