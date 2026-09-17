@@ -38,6 +38,7 @@ import WeeklyOutcome         from './pages/WeeklyOutcome'
 import MonthlyReportExport   from './pages/MonthlyReportExport'
 import LuckySpinAdmin        from './pages/LuckySpinAdmin'
 import ActiveTracker         from './pages/ActiveTracker'
+import DailyReport           from './pages/DailyReport'
 import './pages/RetentionAnalytics.css'
 
 export default function App() {
@@ -79,6 +80,7 @@ export default function App() {
       <Route path="monthly-report" element={<RequireRole roles={['admin']}><MonthlyReportExport /></RequireRole>} />
       <Route path="lucky-spin-admin" element={<RequireRole roles={['admin','host']}><LuckySpinAdmin /></RequireRole>} />
       <Route path="active-tracker" element={<RequireRole roles={['admin','host']}><ActiveTracker /></RequireRole>} />
+      <Route path="daily-report" element={<RequireRole roles={['admin','host']}><DailyReport /></RequireRole>} />
     </Route>
     <Route path="*" element={<Navigate to="/today" replace />} />
   </Routes></BrowserRouter></LanguageProvider></AuthProvider>

@@ -42,6 +42,7 @@ const NAV_GROUPS = [
     { to: '/tier-analytics', label: 'Tier Analytics', icon: '🔬', roles: ['admin','readonly'] },
     { to: '/ask', label: 'Ask Data', icon: '💬', roles: ['admin','host'] },
     { to: '/monthly-report', label: 'Monthly PPT', icon: '📊', roles: ['admin'] },
+    { to: '/daily-report', label: 'Daily Report', icon: '📋', roles: ['admin','host'] },
   ] },
   { key: 'system', label: 'System', icon: '⚙️', items: [
     { to: '/users', label: 'Users', icon: '👥', roles: ['admin'] },
