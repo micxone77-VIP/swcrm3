@@ -512,6 +512,81 @@ function RetentionCard({ lang, retention, retentionLoading }) {
   )
 }
 
+// ─── VIP Upgrade Tracker ─────────────────────────────────────────
+const UPGRADE_THRESHOLDS = {
+  GOLD:     { target:'PLATINUM', threshold: 2000000, color:'#a855f7', icon:'👑' },
+  PLATINUM: { target:'DIAMOND',  threshold: 6000000, color:'#3b82f6', icon:'💎' },
+}
+
+function UpgradeCard({ lang, upgrades, upgradeLoading }) {
+  const isZh = lang === 'zh'
+  return (
+    <Card title={`🏆 ${isZh?'VIP 升级追踪·本月接近升级':'VIP Upgrade Tracking · Close This Month'}`}>
+      {upgradeLoading ? (
+        <div style={{padding:'24px',textAlign:'center',color:MUTED,fontSize:14}}>⏳ {isZh?'加载中…':'Loading…'}</div>
+      ) : !upgrades?.length ? (
+        <div style={{padding:'16px',textAlign:'center',color:MUTED,fontSize:13}}>
+          {isZh?'本月暂无接近升级的会员':'No members close to upgrading this month'}
+        </div>
+      ) : (
+        <div>
+          {/* count badge */}
+          <div style={{fontSize:12,color:MUTED,marginBottom:14,textAlign:'right'}}>
+            {upgrades.length} {isZh?'位候选':'candidates'}
+          </div>
+          {upgrades.map((p, i) => {
+            const cfg = UPGRADE_THRESHOLDS[p.tier] || {}
+            const pct = Math.min(100, Math.round((p.monthly_valid_bet / cfg.threshold) * 100))
+            const gap = Math.max(0, cfg.threshold - p.monthly_valid_bet)
+            const col = cfg.color || BLUE
+            return (
+              <div key={p.vip_id} style={{
+                marginBottom: i < upgrades.length-1 ? 16 : 0,
+                paddingBottom: i < upgrades.length-1 ? 16 : 0,
+                borderBottom: i < upgrades.length-1 ? '1px solid var(--border)' : 'none',
+              }}>
+                {/* row header */}
+                <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:6}}>
+                  <div style={{display:'flex',alignItems:'center',gap:10}}>
+                    <span style={{fontSize:15,fontWeight:800,color:'var(--text)'}}>{p.username}</span>
+                    <span style={{fontSize:12,color:MUTED}}>{p.real_name && p.real_name !== 'Name' ? p.real_name : ''}</span>
+                  </div>
+                  <div style={{display:'flex',alignItems:'center',gap:8}}>
+                    <span style={{fontSize:13,color:col,fontWeight:700,background:`${col}18`,padding:'2px 10px',borderRadius:12}}>
+                      → {cfg.target} {cfg.icon}
+                    </span>
+                    <button style={{
+                      fontSize:12,padding:'4px 12px',borderRadius:8,
+                      border:`1px solid ${col}`,background:`${col}15`,
+                      color:col,cursor:'pointer',fontWeight:600,whiteSpace:'nowrap'
+                    }}>
+                      {isZh?'建议联系':'Contact ↗'}
+                    </button>
+                  </div>
+                </div>
+                {/* progress bar */}
+                <div style={{position:'relative',height:10,background:'var(--surface2)',borderRadius:6,overflow:'hidden',marginBottom:6}}>
+                  <div style={{position:'absolute',left:0,top:0,height:'100%',width:`${pct}%`,background:col,borderRadius:6,transition:'width .4s'}}/>
+                </div>
+                {/* stats row */}
+                <div style={{display:'flex',justifyContent:'space-between',fontSize:13}}>
+                  <span style={{color:col,fontWeight:700}}>{pct}%</span>
+                  <span style={{color:MUTED}}>
+                    {isZh?'还差':'Gap'} <span style={{fontWeight:700,color:'var(--text)'}}>RM {Math.round(gap).toLocaleString()}</span>
+                  </span>
+                  <span style={{color:MUTED}}>
+                    {isZh?'本月流水':'Valid bet'}: <span style={{fontWeight:600,color:'var(--text)'}}>RM {Math.round(p.monthly_valid_bet).toLocaleString()}</span>
+                  </span>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </Card>
+  )
+}
+
 // ─── Main component ──────────────────────────────────────────────
 export default function DailyReport() {
   const { profile } = useAuth()
@@ -552,6 +627,10 @@ export default function DailyReport() {
   // ── Retention rate state ──────────────────────────────────────────
   const [retention, setRetention] = useState(null)   // { day:{overall,diamond,platinum}, week:{...}, month:{...} }
   const [retentionLoading, setRetentionLoading] = useState(false)
+
+  // ── Upgrade tracker state ─────────────────────────────────────────
+  const [upgrades, setUpgrades] = useState([])
+  const [upgradeLoading, setUpgradeLoading] = useState(false)
 
   const effectiveHost = hostFilter === '__mine__' ? (profile?.full_name || null) : (hostFilter || null)
 
@@ -842,6 +921,52 @@ export default function DailyReport() {
   }, [reportDate, effectiveHost])
 
   useEffect(() => { if (reportMode === 'single') loadRetention() }, [loadRetention, reportMode])
+
+  // ── Upgrade tracker loader ────────────────────────────────────────
+  const loadUpgrades = useCallback(async () => {
+    if (!reportDate) return
+    setUpgradeLoading(true)
+    try {
+      const monthStart = reportDate.slice(0,7) + '-01'
+      // Get latest monthly_valid_bet per player for this month (GOLD and PLATINUM only)
+      let from = 0
+      const playerMap = {}
+      while (true) {
+        let q = supabase.from('vip_daily_snapshots')
+          .select('vip_id,username,tier,host_assigned,monthly_valid_bet,snapshot_date')
+          .gte('snapshot_date', monthStart)
+          .lte('snapshot_date', reportDate)
+          .in('tier', ['GOLD','PLATINUM'])
+          .range(from, from + 999)
+        if (effectiveHost) q = q.eq('host_assigned', effectiveHost)
+        const { data, error } = await q
+        if (error) throw error
+        for (const r of (data || [])) {
+          const existing = playerMap[r.vip_id]
+          if (!existing || r.snapshot_date > existing.snapshot_date) {
+            playerMap[r.vip_id] = r
+          }
+        }
+        if ((data || []).length < 1000) break
+        from += 1000
+      }
+      // Filter to players who have some progress (>15% of threshold) and sort by pct desc
+      const rows = Object.values(playerMap)
+        .map(p => {
+          const cfg = UPGRADE_THRESHOLDS[p.tier]
+          if (!cfg) return null
+          const pct = p.monthly_valid_bet / cfg.threshold * 100
+          return { ...p, pct }
+        })
+        .filter(p => p && p.pct >= 15)
+        .sort((a, b) => b.pct - a.pct)
+        .slice(0, 10)
+      setUpgrades(rows)
+    } catch(e) { console.error('Upgrade load error', e) }
+    finally { setUpgradeLoading(false) }
+  }, [reportDate, effectiveHost])
+
+  useEffect(() => { if (reportMode === 'single') loadUpgrades() }, [loadUpgrades, reportMode])
 
   // ── Range report loader ───────────────────────────────────────────
   const loadRange = useCallback(async () => {
@@ -1201,6 +1326,9 @@ export default function DailyReport() {
 
         {/* ── Section 9: Retention Rate Tracking ── */}
         <RetentionCard lang={lang} retention={retention} retentionLoading={retentionLoading} />
+
+        {/* ── Section 10: VIP Upgrade Tracking ── */}
+        <UpgradeCard lang={lang} upgrades={upgrades} upgradeLoading={upgradeLoading} />
 
         {/* ── Section 3 & 4: vs 7-Day Avg ── */}
         {countComp && (
