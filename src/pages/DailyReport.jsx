@@ -587,6 +587,45 @@ function UpgradeCard({ lang, upgrades, upgradeLoading }) {
   )
 }
 
+// ─── KPI Tile (upgraded) ─────────────────────────────────────────
+function KpiTile({ icon, label, value, color, changePct, sub, subColor }) {
+  const hasChange = changePct != null && !isNaN(changePct)
+  const up = changePct > 0
+  const badgeColor = up ? GREEN : RED
+  return (
+    <div style={{
+      background: 'var(--surface2)', borderRadius: 12, padding: '14px 16px',
+      flex: 1, minWidth: 130, position: 'relative', overflow: 'hidden',
+      borderTop: `3px solid ${color}`,
+    }}>
+      {/* header row */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+        <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600, letterSpacing: 0.3 }}>
+          {icon}&nbsp; {label}
+        </div>
+        {hasChange && (
+          <div style={{
+            fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 8,
+            background: `${badgeColor}20`, color: badgeColor, whiteSpace: 'nowrap',
+          }}>
+            {up ? '▲' : '▼'} {Math.abs(changePct).toFixed(1)}%
+          </div>
+        )}
+      </div>
+      {/* big value */}
+      <div style={{ fontSize: 28, fontWeight: 900, color, lineHeight: 1.1, marginBottom: 6 }}>
+        {value}
+      </div>
+      {/* sub line */}
+      {sub && (
+        <div style={{ fontSize: 12, color: subColor || 'var(--muted)', marginTop: 2, lineHeight: 1.4 }}>
+          {sub}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Watchpoint Row ──────────────────────────────────────────────
 function WatchpointRow({ icon, label, detail, badge, color, actions }) {
   return (
@@ -1335,6 +1374,73 @@ export default function DailyReport() {
 
         {/* ── Section 1: Numbers table ── */}
         <Card title={`📊 ${lang==='zh'?'今日数据汇总':'Today\'s Summary'} — ${reportDate} (${wdLabel})`} accent="var(--brand)">
+          {/* ── KPI Tiles Row ── */}
+          {(() => {
+            const isZh = lang === 'zh'
+            const tot  = numbers.Total || {}
+            const dep  = tot.total_deposit    || 0
+            const wd   = tot.total_withdrawal || 0
+            const cw   = tot.company_win      ?? 0
+            const deps = tot.depositors       || 0
+            const act  = tot.active           || 0
+
+            const wdRatio  = dep > 0 ? (wd / dep * 100) : 0
+            const holdRate = dep > 0 ? (cw / dep * 100) : 0
+
+            const depAvg    = countComp?.deposit?.avg    || 0
+            const cwAvg     = countComp?.companyWin?.avg || 0
+            const depsAvg   = countComp?.depositors?.avg || 0
+
+            const depChgPct  = depAvg  > 0 ? ((dep  - depAvg)  / depAvg  * 100) : null
+            const cwChgPct   = cwAvg !== 0  ? ((cw   - cwAvg)  / Math.abs(cwAvg) * 100) : null
+            const depsChgPct = depsAvg > 0 ? ((deps - depsAvg) / depsAvg * 100) : null
+
+            const wdColor    = wdRatio > 100 ? RED : wdRatio > 85 ? ORANGE : GREEN
+            const holdColor  = holdRate >= 5 ? GREEN : holdRate >= 0 ? ORANGE : RED
+
+            return (
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 20 }}>
+                <KpiTile
+                  icon="📥" label={isZh ? '总存款' : 'Total Deposit'}
+                  value={fmtK(dep)} color={BLUE}
+                  changePct={depChgPct}
+                  sub={depAvg > 0 ? (isZh ? `7日均 ${fmtK(depAvg)}` : `7D avg ${fmtK(depAvg)}`) : null}
+                />
+                <KpiTile
+                  icon="🏦" label={isZh ? '公司盈亏' : 'Company P&L'}
+                  value={fmt(cw)} color={cw >= 0 ? GREEN : RED}
+                  changePct={cwChgPct}
+                  sub={isZh ? (cw >= 0 ? '公司赢钱 ✓' : '公司输钱 ✗') : (cw >= 0 ? 'House Won ✓' : 'House Lost ✗')}
+                  subColor={cw >= 0 ? GREEN : RED}
+                />
+                <KpiTile
+                  icon="💱" label={isZh ? 'W/D 比率' : 'W/D Ratio'}
+                  value={`${wdRatio.toFixed(1)}%`}
+                  color={wdColor}
+                  sub={isZh
+                    ? `提款 ${fmtK(wd)}｜${wdRatio > 100 ? '⚠️ 超100%' : wdRatio > 85 ? '偏高' : '正常'}`
+                    : `Withdrawal ${fmtK(wd)}｜${wdRatio > 100 ? '⚠️ Over 100%' : wdRatio > 85 ? 'High' : 'Normal'}`}
+                  subColor={wdColor}
+                />
+                <KpiTile
+                  icon="🎯" label={isZh ? 'Hold 率' : 'Hold Rate'}
+                  value={`${holdRate.toFixed(1)}%`}
+                  color={holdColor}
+                  sub={isZh
+                    ? (holdRate >= 5 ? '盈利良好' : holdRate >= 0 ? '盈利偏低' : '净亏损')
+                    : (holdRate >= 5 ? 'Good margin' : holdRate >= 0 ? 'Low margin' : 'Net loss')}
+                  subColor={holdColor}
+                />
+                <KpiTile
+                  icon="👥" label={isZh ? '存款人数' : 'Depositors'}
+                  value={deps} color={ORANGE}
+                  changePct={depsChgPct}
+                  sub={isZh ? `活跃 ${act} 人` : `Active: ${act}`}
+                />
+              </div>
+            )
+          })()}
+
           <div style={{overflowX:'auto'}}>
             <table style={{width:'100%',borderCollapse:'collapse'}}>
               <thead>
