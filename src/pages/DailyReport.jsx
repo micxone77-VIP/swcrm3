@@ -736,7 +736,7 @@ export default function DailyReport() {
       // ── 1. Build same-day query helper ──
       async function snapQuery(dateStr, tierFilter) {
         let q = supabase.from('vip_daily_snapshots')
-          .select('tier, total_deposit, total_withdrawal, win_loss, vip_id, snapshot_date')
+          .select('tier, total_deposit, total_withdrawal, win_loss, vip_id, snapshot_date, bonus_amount, total_rebate')
           .eq('snapshot_date', dateStr)
         if (tierFilter) q = q.eq('tier', tierFilter)
         if (effectiveHost) q = q.eq('host_assigned', effectiveHost)
@@ -748,16 +748,22 @@ export default function DailyReport() {
       // ── 1. Today numbers ──
       const todaySnap = await snapQuery(reportDate, null)
       function rollup(rows) {
-        const dep = rows.reduce((s, r) => s + (r.total_deposit || 0), 0)
-        const wd  = rows.reduce((s, r) => s + (r.total_withdrawal || 0), 0)
-        const wl  = rows.reduce((s, r) => s + (r.win_loss || 0), 0)
-        const active = rows.filter(r => (r.total_deposit || 0) > 0 || Math.abs(r.win_loss || 0) > 0).length
+        const dep    = rows.reduce((s, r) => s + (r.total_deposit    || 0), 0)
+        const wd     = rows.reduce((s, r) => s + (r.total_withdrawal || 0), 0)
+        const wl     = rows.reduce((s, r) => s + (r.win_loss         || 0), 0)
+        const bonus  = rows.reduce((s, r) => s + (r.bonus_amount     || 0), 0)
+        const rebate = rows.reduce((s, r) => s + (r.total_rebate     || 0), 0)
+        const active     = rows.filter(r => (r.total_deposit || 0) > 0 || Math.abs(r.win_loss || 0) > 0).length
         const depositors = rows.filter(r => (r.total_deposit || 0) > 0).length
+        const company_win = -wl
         return {
           total_deposit: dep,
           total_withdrawal: wd,
           net_dep: dep - wd,
-          company_win: -wl,
+          company_win,
+          bonus_amount: bonus,
+          total_rebate: rebate,
+          net_pnl: company_win - bonus - rebate,
           active,
           depositors,
         }
@@ -816,6 +822,7 @@ export default function DailyReport() {
         deposit:    { today: todayRollup.total_deposit, avg: avg7('total_deposit') },
         companyWin: { today: todayRollup.company_win, avg: avg7('company_win') },
         netDep:     { today: todayRollup.net_dep,    avg: avg7('net_dep') },
+        netPnl:     { today: todayRollup.net_pnl,    avg: avg7('net_pnl') },
       })
 
       // ── 5. Top movers ──
@@ -1387,16 +1394,22 @@ export default function DailyReport() {
             const wdRatio  = dep > 0 ? (wd / dep * 100) : 0
             const holdRate = dep > 0 ? (cw / dep * 100) : 0
 
+            const bonus  = tot.bonus_amount || 0
+            const rebate = tot.total_rebate || 0
+            const netPnl = tot.net_pnl ?? (cw - bonus - rebate)
+
             const depAvg    = countComp?.deposit?.avg    || 0
             const cwAvg     = countComp?.companyWin?.avg || 0
             const depsAvg   = countComp?.depositors?.avg || 0
+            const netPnlAvg = countComp?.netPnl?.avg     || 0
 
-            const depChgPct  = depAvg  > 0 ? ((dep  - depAvg)  / depAvg  * 100) : null
-            const cwChgPct   = cwAvg !== 0  ? ((cw   - cwAvg)  / Math.abs(cwAvg) * 100) : null
-            const depsChgPct = depsAvg > 0 ? ((deps - depsAvg) / depsAvg * 100) : null
+            const depChgPct    = depAvg    > 0 ? ((dep    - depAvg)    / depAvg    * 100) : null
+            const cwChgPct     = cwAvg    !== 0 ? ((cw     - cwAvg)    / Math.abs(cwAvg)    * 100) : null
+            const depsChgPct   = depsAvg   > 0 ? ((deps   - depsAvg)   / depsAvg   * 100) : null
+            const netPnlChgPct = netPnlAvg !== 0 ? ((netPnl - netPnlAvg) / Math.abs(netPnlAvg) * 100) : null
 
-            const wdColor    = wdRatio > 100 ? RED : wdRatio > 85 ? ORANGE : GREEN
-            const holdColor  = holdRate >= 5 ? GREEN : holdRate >= 0 ? ORANGE : RED
+            const wdColor   = wdRatio > 100 ? RED : wdRatio > 85 ? ORANGE : GREEN
+            const holdColor = holdRate >= 5 ? GREEN : holdRate >= 0 ? ORANGE : RED
 
             return (
               <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 20 }}>
@@ -1412,6 +1425,15 @@ export default function DailyReport() {
                   changePct={cwChgPct}
                   sub={isZh ? (cw >= 0 ? '公司赢钱 ✓' : '公司输钱 ✗') : (cw >= 0 ? 'House Won ✓' : 'House Lost ✗')}
                   subColor={cw >= 0 ? GREEN : RED}
+                />
+                <KpiTile
+                  icon="💰" label={isZh ? '净利润' : 'Net P&L'}
+                  value={fmt(netPnl)} color={netPnl >= 0 ? GREEN : RED}
+                  changePct={netPnlChgPct}
+                  sub={isZh
+                    ? `扣奖金 ${fmtK(bonus)} + 返水 ${fmtK(rebate)}`
+                    : `Bonus ${fmtK(bonus)} + Rebate ${fmtK(rebate)}`}
+                  subColor={netPnl >= 0 ? GREEN : RED}
                 />
                 <KpiTile
                   icon="💱" label={isZh ? 'W/D 比率' : 'W/D Ratio'}
