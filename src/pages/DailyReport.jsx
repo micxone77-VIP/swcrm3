@@ -208,7 +208,7 @@ function Sparkline({ rate, color }) {
     Math.max(0, Math.min(100, seed - 3  + (seed % 9))),
     seed,
   ]
-  const W = 72, H = 28, pad = 2
+  const W = 90, H = 36, pad = 3
   const minV = Math.min(...pts), maxV = Math.max(...pts)
   const range = maxV - minV || 1
   const toX = (i) => pad + (i / (pts.length - 1)) * (W - pad * 2)
@@ -216,9 +216,9 @@ function Sparkline({ rate, color }) {
   const d = pts.map((v, i) => `${i === 0 ? 'M' : 'L'}${toX(i).toFixed(1)},${toY(v).toFixed(1)}`).join(' ')
   const lastX = toX(pts.length - 1), lastY = toY(pts[pts.length - 1])
   return (
-    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{display:'block',margin:'4px auto 0'}}>
-      <path d={d} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" opacity="0.7"/>
-      <circle cx={lastX} cy={lastY} r="2.5" fill={color}/>
+    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{display:'block',margin:'6px auto 0'}}>
+      <path d={d} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" opacity="0.7"/>
+      <circle cx={lastX} cy={lastY} r="3.5" fill={color}/>
     </svg>
   )
 }
@@ -227,10 +227,10 @@ function Sparkline({ rate, color }) {
 function RetentionMiniCard({ label, icon, data, target, isZh }) {
   if (!data || data.base === 0) {
     return (
-      <div style={{flex:1,minWidth:0,background:'var(--surface2)',borderRadius:10,padding:'14px 12px',textAlign:'center',border:'1px solid var(--border)'}}>
-        <div style={{fontSize:11,color:MUTED,marginBottom:6,fontWeight:600}}>{icon} {label}</div>
-        <div style={{fontSize:22,fontWeight:800,color:MUTED}}>—</div>
-        <div style={{fontSize:10,color:MUTED,marginTop:4}}>{isZh?'无数据':'No data'}</div>
+      <div style={{flex:1,minWidth:0,background:'var(--surface2)',borderRadius:12,padding:'20px 16px',textAlign:'center',border:'1px solid var(--border)'}}>
+        <div style={{fontSize:15,color:MUTED,marginBottom:8,fontWeight:700}}>{icon} {label}</div>
+        <div style={{fontSize:36,fontWeight:800,color:MUTED}}>—</div>
+        <div style={{fontSize:13,color:MUTED,marginTop:6}}>{isZh?'无数据':'No data'}</div>
       </div>
     )
   }
@@ -238,15 +238,15 @@ function RetentionMiniCard({ label, icon, data, target, isZh }) {
   const col = pct >= target ? GREEN : pct >= target * 0.75 ? ORANGE : RED
   const hitTarget = pct >= target
   return (
-    <div style={{flex:1,minWidth:0,background:'var(--surface2)',borderRadius:10,padding:'14px 12px',textAlign:'center',border:`1px solid ${col}33`,position:'relative',overflow:'hidden'}}>
+    <div style={{flex:1,minWidth:0,background:'var(--surface2)',borderRadius:12,padding:'20px 16px',textAlign:'center',border:`1px solid ${col}33`,position:'relative',overflow:'hidden'}}>
       {/* glow strip at top */}
-      <div style={{position:'absolute',top:0,left:0,right:0,height:3,background:col,borderRadius:'10px 10px 0 0'}}/>
-      <div style={{fontSize:11,color:MUTED,marginBottom:8,fontWeight:600}}>{icon} {label}</div>
-      <div style={{fontSize:28,fontWeight:900,color:col,lineHeight:1}}>{pct}<span style={{fontSize:16}}>%</span></div>
-      <div style={{fontSize:10,color:hitTarget?GREEN:RED,marginTop:5,fontWeight:700}}>
+      <div style={{position:'absolute',top:0,left:0,right:0,height:4,background:col,borderRadius:'12px 12px 0 0'}}/>
+      <div style={{fontSize:15,color:MUTED,marginBottom:10,fontWeight:700}}>{icon} {label}</div>
+      <div style={{fontSize:44,fontWeight:900,color:col,lineHeight:1}}>{pct}<span style={{fontSize:24}}>%</span></div>
+      <div style={{fontSize:13,color:hitTarget?GREEN:RED,marginTop:8,fontWeight:700}}>
         {hitTarget ? '✓' : '✗'} {isZh?`目标 ≥${target}%`:`Target ≥${target}%`}
       </div>
-      <div style={{fontSize:10,color:MUTED,marginTop:3}}>{data.returned.toLocaleString()} / {data.base.toLocaleString()}</div>
+      <div style={{fontSize:13,color:MUTED,marginTop:5}}>{data.returned.toLocaleString()} / {data.base.toLocaleString()}</div>
       <Sparkline rate={pct} color={col}/>
     </div>
   )
@@ -293,15 +293,15 @@ function RetentionCard({ lang, retention, retentionLoading }) {
       ) : (
         <>
           {/* Period tab switcher */}
-          <div style={{display:'flex',gap:6,marginBottom:14}}>
+          <div style={{display:'flex',gap:8,marginBottom:16}}>
             {periods.map(p => {
               const active = p.key === activePeriod
               const pCol = active ? (p.key==='day'?BLUE:p.key==='week'?GREEN:ORANGE) : 'transparent'
               return (
                 <button key={p.key} onClick={() => setActivePeriod(p.key)}
-                  style={{flex:1,padding:'6px 4px',borderRadius:8,border:`1px solid ${active?pCol:'var(--border)'}`,
+                  style={{flex:1,padding:'10px 6px',borderRadius:10,border:`1px solid ${active?pCol:'var(--border)'}`,
                     background:active?`${pCol}22`:'transparent',cursor:'pointer',
-                    color:active?pCol:'var(--muted)',fontWeight:active?700:500,fontSize:13,
+                    color:active?pCol:'var(--muted)',fontWeight:active?700:500,fontSize:15,
                     transition:'all .15s'}}>
                   {p.icon} {p.label}
                 </button>
@@ -310,7 +310,7 @@ function RetentionCard({ lang, retention, retentionLoading }) {
           </div>
 
           {/* Period subtitle */}
-          <div style={{fontSize:12,color:MUTED,marginBottom:12,textAlign:'center',fontStyle:'italic'}}>
+          <div style={{fontSize:14,color:MUTED,marginBottom:14,textAlign:'center',fontStyle:'italic'}}>
             {cur?.sub}
           </div>
 
@@ -328,7 +328,7 @@ function RetentionCard({ lang, retention, retentionLoading }) {
 
           {/* Summary text */}
           {summaryLine() && (
-            <div style={{marginTop:12,padding:'8px 12px',background:'var(--surface2)',borderRadius:8,fontSize:12,color:MUTED,textAlign:'center'}}>
+            <div style={{marginTop:14,padding:'10px 16px',background:'var(--surface2)',borderRadius:10,fontSize:14,color:MUTED,textAlign:'center'}}>
               📊 {summaryLine()}
             </div>
           )}
