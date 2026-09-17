@@ -587,6 +587,49 @@ function UpgradeCard({ lang, upgrades, upgradeLoading }) {
   )
 }
 
+// ─── Watchpoint Row ──────────────────────────────────────────────
+function WatchpointRow({ icon, label, detail, badge, color, actions }) {
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      padding: '11px 14px', borderRadius: 10,
+      background: `${color}10`, border: `1px solid ${color}35`, gap: 12,
+    }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 16 }}>{icon}</span>
+          <span style={{ fontWeight: 700, fontSize: 14, color }}>{label}</span>
+          {badge != null && (
+            <span style={{
+              background: color, color: '#fff', fontSize: 11, fontWeight: 800,
+              padding: '1px 8px', borderRadius: 10,
+            }}>{badge}</span>
+          )}
+        </div>
+        {detail && (
+          <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4, marginLeft: 24, lineHeight: 1.4 }}>
+            {detail}
+          </div>
+        )}
+      </div>
+      {actions?.length > 0 && (
+        <div style={{ display: 'flex', gap: 7, flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          {actions.map((a, i) => (
+            <button key={i} onClick={a.onClick} style={{
+              padding: '5px 12px', borderRadius: 7,
+              border: `1px solid ${color}60`,
+              background: i === 0 ? `${color}18` : 'transparent',
+              color, fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap',
+            }}>
+              {a.label} ↗
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Main component ──────────────────────────────────────────────
 export default function DailyReport() {
   const { profile } = useAuth()
@@ -943,7 +986,9 @@ export default function DailyReport() {
         if (error) throw error
         for (const r of (data || [])) {
           const existing = playerMap[r.vip_id]
-          if (!existing || r.snapshot_date > existing.snapshot_date) {
+          const rVal = Number(r.monthly_valid_bet) || 0
+          const exVal = existing ? (Number(existing.monthly_valid_bet) || 0) : -1
+          if (!existing || rVal > exVal) {
             playerMap[r.vip_id] = r
           }
         }
@@ -958,7 +1003,7 @@ export default function DailyReport() {
           const pct = p.monthly_valid_bet / cfg.threshold * 100
           return { ...p, pct }
         })
-        .filter(p => p && p.pct >= 15)
+        .filter(p => p && p.pct >= 10)
         .sort((a, b) => b.pct - a.pct)
         .slice(0, 10)
       setUpgrades(rows)
@@ -1328,7 +1373,9 @@ export default function DailyReport() {
         <RetentionCard lang={lang} retention={retention} retentionLoading={retentionLoading} />
 
         {/* ── Section 10: VIP Upgrade Tracking ── */}
-        <UpgradeCard lang={lang} upgrades={upgrades} upgradeLoading={upgradeLoading} />
+        <div id="upgrade-section">
+          <UpgradeCard lang={lang} upgrades={upgrades} upgradeLoading={upgradeLoading} />
+        </div>
 
         {/* ── Section 3 & 4: vs 7-Day Avg ── */}
         {countComp && (
@@ -1515,43 +1562,175 @@ export default function DailyReport() {
 
         {/* ── Section 8: Tomorrow watchpoints ── */}
         <Card title={`🔭 ${t.s8title}`}>
-          <div style={{display:'flex',flexDirection:'column',gap:12}}>
-            <div style={{padding:'10px 14px',borderRadius:8,background:'rgba(239,68,68,0.08)',border:'1px solid rgba(239,68,68,0.2)'}}>
-              <span style={{fontWeight:700,color:RED}}>{t.watchHigh}:</span>{' '}
-              <span style={{fontSize:15,fontWeight:800,color:RED}}>{atRiskCount}</span>
-              <span style={{fontSize:12,color:MUTED,marginLeft:6}}>{lang==='zh'?'位会员':'members'}</span>
-              {atRiskCount > 0 && (
-                <button onClick={() => navigate('/at-risk')}
-                  style={{marginLeft:12,padding:'2px 10px',borderRadius:5,border:'1px solid '+RED,background:'transparent',color:RED,fontSize:11,cursor:'pointer'}}>
-                  {lang==='zh'?'查看名单':'View List'} ↗
-                </button>
-              )}
-            </div>
-            <div style={{padding:'10px 14px',borderRadius:8,background:'rgba(34,197,94,0.08)',border:'1px solid rgba(34,197,94,0.2)'}}>
-              <span style={{fontWeight:700,color:GREEN}}>{t.watchBday}:</span>{' '}
-              {birthdays.length === 0 ? (
-                <span style={{fontSize:13,color:MUTED}}>{t.noBirthdays}</span>
-              ) : (
-                <span style={{fontSize:13,color:'var(--text)',fontWeight:600}}>
-                  {birthdays.map(b => `${b.username}${b.full_name ? ' ('+b.full_name+')' : ''}`).join(', ')}
-                </span>
-              )}
-              {birthdays.length > 0 && (
-                <button onClick={() => navigate('/birthdays')}
-                  style={{marginLeft:12,padding:'2px 10px',borderRadius:5,border:'1px solid '+GREEN,background:'transparent',color:GREEN,fontSize:11,cursor:'pointer'}}>
-                  {lang==='zh'?'查看生日':'View Birthdays'} ↗
-                </button>
-              )}
-            </div>
-            {callList.length > 0 && (
-              <div style={{padding:'10px 14px',borderRadius:8,background:'rgba(249,115,22,0.08)',border:'1px solid rgba(249,115,22,0.2)'}}>
-                <span style={{fontWeight:700,color:ORANGE}}>{lang==='zh'?'📞 跟进提醒':'📞 Follow-up Reminder'}:</span>{' '}
-                <span style={{fontSize:13,color:'var(--text)',fontWeight:600}}>
-                  {callList.length} {lang==='zh'?'位会员待跟进':'members pending follow-up'}
-                </span>
+          {(() => {
+            const isZh = lang === 'zh'
+            const totDep  = numbers?.Total?.total_deposit || 0
+            const compWin = numbers?.Total?.company_win
+            const avg7Dep = countComp?.deposit?.avg || 0
+            const depGapPct = avg7Dep > 0 ? ((totDep - avg7Dep) / avg7Dep * 100) : 0
+
+            const wps = []
+
+            // 1. High-risk members
+            if (atRiskCount > 0) {
+              const riskNames = (callList || []).filter(p => (p.days_since_deposit || 0) >= 3).slice(0, 5).map(p => p.username).join('、')
+              wps.push({
+                icon: '⚠️', color: RED,
+                label: isZh ? '高风险会员（3天以上未存款）' : 'High-Risk (3+ Days No Deposit)',
+                badge: atRiskCount,
+                detail: riskNames ? (isZh ? `包括：${riskNames}` : `Incl: ${riskNames}`) : null,
+                actions: [
+                  { label: isZh ? '查看名单' : 'View List', onClick: () => navigate('/at-risk') },
+                  { label: isZh ? '复制分派' : 'Copy & Assign', onClick: () => {
+                    const txt = `【高风险跟进 ${reportDate}】\n共 ${atRiskCount} 位会员 3 天以上未存款\n${(callList||[]).filter(p=>(p.days_since_deposit||0)>=3).map(p=>`• ${p.username}（已 ${p.days_since_deposit} 天未存款）`).join('\n')}`
+                    navigator.clipboard.writeText(txt)
+                  }},
+                ],
+              })
+            }
+
+            // 2. Birthdays
+            if (birthdays.length > 0) {
+              const bdayNames = birthdays.map(b => b.username).join('、')
+              wps.push({
+                icon: '🎂', color: GREEN,
+                label: isZh ? '明日生日会员' : "Tomorrow's Birthdays",
+                badge: birthdays.length,
+                detail: bdayNames,
+                actions: [
+                  { label: isZh ? '查看名单' : 'View List', onClick: () => navigate('/birthdays') },
+                  { label: isZh ? '发送祝福' : 'Send Greetings', onClick: () => {
+                    const msgs = birthdays.map(b => `🎂 亲爱的 ${b.username}，祝您生日快乐！感谢您一直以来对我们的支持，愿今天充满欢乐与惊喜！🎉`).join('\n\n')
+                    navigator.clipboard.writeText(msgs)
+                  }},
+                ],
+              })
+            }
+
+            // 3. Priority call list
+            if (callList.length > 0) {
+              const callNames = callList.slice(0, 5).map(p => p.username).join('、')
+              wps.push({
+                icon: '📞', color: ORANGE,
+                label: isZh ? '今日待跟进会员' : 'Members Pending Follow-up',
+                badge: callList.length,
+                detail: callNames ? (isZh ? `重点：${callNames}` : `Priority: ${callNames}`) : null,
+                actions: [
+                  { label: isZh ? '查看名单' : 'View List', onClick: () => navigate('/call-list') },
+                  { label: isZh ? '复制名单' : 'Copy List', onClick: () => {
+                    const txt = `【跟进名单 ${reportDate}】\n共 ${callList.length} 位\n${callList.map(p=>`• ${p.username}（最近7日存款：RM ${Math.round(p.last7d_deposit||0).toLocaleString()}，${p.days_since_deposit||0} 天未存款）`).join('\n')}`
+                    navigator.clipboard.writeText(txt)
+                  }},
+                ],
+              })
+            }
+
+            // 4. Deposit vs 7-day avg
+            if (avg7Dep > 0 && Math.abs(depGapPct) >= 15) {
+              const isDown = depGapPct < 0
+              wps.push({
+                icon: isDown ? '📉' : '📈',
+                color: isDown ? (depGapPct <= -30 ? RED : ORANGE) : GREEN,
+                label: isDown
+                  ? (isZh ? '存款低于7日均值' : 'Deposits Below 7D Avg')
+                  : (isZh ? '存款高于7日均值' : 'Deposits Above 7D Avg'),
+                detail: isZh
+                  ? `今日 RM ${Math.round(totDep).toLocaleString()} vs 均值 RM ${Math.round(avg7Dep).toLocaleString()}（${depGapPct > 0 ? '+' : ''}${depGapPct.toFixed(1)}%）`
+                  : `Today RM ${Math.round(totDep).toLocaleString()} vs avg RM ${Math.round(avg7Dep).toLocaleString()} (${depGapPct > 0 ? '+' : ''}${depGapPct.toFixed(1)}%)`,
+                actions: [
+                  { label: isZh ? '复制预警' : 'Copy Alert', onClick: () => {
+                    const txt = isDown
+                      ? `【存款预警 ${reportDate}】今日存款 RM ${Math.round(totDep).toLocaleString()}，低于7日均值 ${Math.abs(depGapPct).toFixed(1)}%，建议明日加强跟进`
+                      : `【存款佳绩 ${reportDate}】今日存款 RM ${Math.round(totDep).toLocaleString()}，超7日均值 +${depGapPct.toFixed(1)}%，表现良好！`
+                    navigator.clipboard.writeText(txt)
+                  }},
+                  isDown ? { label: isZh ? '调整策略' : 'Adjust Strategy', onClick: () => {
+                    const txt = `明日行动计划（${reportDate}）：\n1. 重点跟进 ${callList.length} 位待跟进会员\n2. 高风险会员 ${atRiskCount} 位，需立即联系\n3. 目标：存款回升至 RM ${Math.round(avg7Dep).toLocaleString()}`
+                    navigator.clipboard.writeText(txt)
+                  }} : null,
+                ].filter(Boolean),
+              })
+            }
+
+            // 5. Company win/loss
+            if (compWin != null) {
+              if (compWin < 0) {
+                wps.push({
+                  icon: '💸', color: RED,
+                  label: isZh ? '公司今日亏损' : 'Company Net Loss Today',
+                  detail: isZh
+                    ? `亏损 RM ${Math.round(Math.abs(compWin)).toLocaleString()}，明日加强监控`
+                    : `Loss RM ${Math.round(Math.abs(compWin)).toLocaleString()} — monitor tomorrow`,
+                  actions: [
+                    { label: isZh ? '发送报告' : 'Send Report', onClick: () => {
+                      const txt = `【日报摘要 ${reportDate}】\n存款：RM ${Math.round(totDep).toLocaleString()}\n公司盈亏：-RM ${Math.round(Math.abs(compWin)).toLocaleString()}\n风险会员：${atRiskCount} 位\n跟进名单：${callList.length} 位`
+                      navigator.clipboard.writeText(txt)
+                    }},
+                    { label: isZh ? '跟踪记录' : 'Track', onClick: () => {
+                      const txt = `⚠️ ${reportDate} 公司亏损 RM ${Math.round(Math.abs(compWin)).toLocaleString()}，请关注`
+                      navigator.clipboard.writeText(txt)
+                    }},
+                  ],
+                })
+              } else if (compWin > 0) {
+                wps.push({
+                  icon: '✅', color: GREEN,
+                  label: isZh ? '公司今日盈利' : 'Company Profit Today',
+                  detail: isZh
+                    ? `盈利 RM ${Math.round(compWin).toLocaleString()}`
+                    : `Profit RM ${Math.round(compWin).toLocaleString()}`,
+                  actions: [
+                    { label: isZh ? '发送报告' : 'Send Report', onClick: () => {
+                      const txt = `【日报摘要 ${reportDate}】\n存款：RM ${Math.round(totDep).toLocaleString()}\n公司盈利：RM ${Math.round(compWin).toLocaleString()}\n表现良好 ✅`
+                      navigator.clipboard.writeText(txt)
+                    }},
+                  ],
+                })
+              }
+            }
+
+            // 6. Upgrade candidates
+            if (upgrades?.length > 0) {
+              const top = upgrades[0]
+              const cfg = UPGRADE_THRESHOLDS[top?.tier] || {}
+              wps.push({
+                icon: '🚀', color: BLUE,
+                label: isZh ? 'VIP 升级候选' : 'VIP Upgrade Candidates',
+                badge: upgrades.length,
+                detail: top
+                  ? (isZh
+                    ? `最接近：${top.username}（${Math.round(Math.min(100, top.pct))}% → ${cfg.target || ''}）`
+                    : `Closest: ${top.username} (${Math.round(Math.min(100, top.pct))}% → ${cfg.target || ''})`)
+                  : null,
+                actions: [
+                  { label: isZh ? '查看进度' : 'View Progress', onClick: () => {
+                    document.getElementById('upgrade-section')?.scrollIntoView({ behavior: 'smooth' })
+                  }},
+                  { label: isZh ? '复制名单' : 'Copy List', onClick: () => {
+                    const txt = upgrades.map(p => {
+                      const c = UPGRADE_THRESHOLDS[p.tier] || {}
+                      return `• ${p.username} (${p.tier}→${c.target||'?'}) ${Math.round(Math.min(100,p.pct))}%，还差 RM ${Math.round(Math.max(0,(c.threshold||0)-p.monthly_valid_bet)).toLocaleString()}`
+                    }).join('\n')
+                    navigator.clipboard.writeText(`【升级候选 ${reportDate}】\n${txt}`)
+                  }},
+                ],
+              })
+            }
+
+            if (wps.length === 0) {
+              return (
+                <div style={{ padding: '16px', textAlign: 'center', color: MUTED, fontSize: 13 }}>
+                  {isZh ? '暂无特别关注事项 ✓' : 'No special watchpoints today ✓'}
+                </div>
+              )
+            }
+
+            return (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {wps.map((wp, i) => <WatchpointRow key={i} {...wp} />)}
               </div>
-            )}
-          </div>
+            )
+          })()}
         </Card>
 
 
