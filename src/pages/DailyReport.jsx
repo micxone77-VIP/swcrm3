@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
+import * as XLSX from 'xlsx'
 
 // ─── i18n strings ────────────────────────────────────────────────
 const T = {
@@ -220,6 +221,17 @@ export default function DailyReport() {
   const [copied, setCopied] = useState(false)
   const [scriptCopied, setScriptCopied] = useState(false)
 
+  // ── Range mode state ──────────────────────────────────────────────
+  const [reportMode, setReportMode] = useState('single') // 'single' | 'range'
+  const [dateFrom, setDateFrom] = useState(isoDate(addDays(new Date(), -6)))
+  const [dateTo, setDateTo] = useState(yesterday)
+  const [rangeLoading, setRangeLoading] = useState(false)
+  const [rangeGenerated, setRangeGenerated] = useState(false)
+  const [rangeDates, setRangeDates] = useState([])
+  const [rangeDailySummary, setRangeDailySummary] = useState([])
+  const [rangePlayerGrid, setRangePlayerGrid] = useState([])
+  const [rangePlayNoDep, setRangePlayNoDep] = useState([])
+
   const effectiveHost = hostFilter === '__mine__' ? (profile?.full_name || null) : (hostFilter || null)
 
   // ── load hosts ──
@@ -413,6 +425,144 @@ export default function DailyReport() {
 
   useEffect(() => { load() }, [load])
 
+  // ── Range report loader ───────────────────────────────────────────
+  const loadRange = useCallback(async () => {
+    if (!dateFrom || !dateTo || dateFrom > dateTo) return
+    setRangeLoading(true)
+    setRangeGenerated(false)
+    try {
+      // Build dates array
+      const dates = []
+      let ptr = new Date(dateFrom + 'T00:00:00')
+      const end = new Date(dateTo + 'T00:00:00')
+      while (ptr <= end) { dates.push(isoDate(ptr)); ptr = addDays(ptr, 1) }
+      setRangeDates(dates)
+
+      // Fetch snapshots in range (paginated to handle large datasets)
+      let allSnaps = [], from = 0
+      while (true) {
+        let q = supabase.from('vip_daily_snapshots')
+          .select('vip_id,username,tier,total_deposit,win_loss,snapshot_date')
+          .gte('snapshot_date', dateFrom).lte('snapshot_date', dateTo)
+          .range(from, from + 999)
+        if (effectiveHost) q = q.eq('host_assigned', effectiveHost)
+        const { data, error } = await q
+        if (error) throw error
+        allSnaps = allSnaps.concat(data || [])
+        if ((data || []).length < 1000) break
+        from += 1000
+      }
+
+      // Fetch VIP member info
+      const { data: members } = await supabase.from('vip_members')
+        .select('id,username,full_name,tier,phone').eq('is_excluded', false)
+      const memberByUsername = Object.fromEntries((members || []).map(m => [m.username, m]))
+      const totalVips = (members || []).length
+
+      // Build per-player data and daily stats
+      const playerMap = {}
+      const dailyStats = {}
+      dates.forEach(d => { dailyStats[d] = { depositors:0, playNoDep:0, loginNoPlay:0, totalCame:0, deposit:0 } })
+
+      for (const snap of allSnaps) {
+        const { username, tier, total_deposit, win_loss, snapshot_date } = snap
+        if (!username || !dailyStats[snapshot_date]) continue
+        const dep = parseFloat(total_deposit) || 0
+        const wl  = parseFloat(win_loss) || 0
+        const status = dep > 0 ? '存' : Math.abs(wl) > 0 ? '玩' : '登'
+
+        if (!playerMap[username]) {
+          const m = memberByUsername[username] || {}
+          playerMap[username] = { username, tier, fullName: m.full_name||'', phone: m.phone||'', days: {}, totalDepAmt: 0 }
+        }
+        playerMap[username].days[snapshot_date] = status
+        if (dep > 0) playerMap[username].totalDepAmt += dep
+
+        dailyStats[snapshot_date].totalCame++
+        dailyStats[snapshot_date].deposit += dep
+        if (status === '存') dailyStats[snapshot_date].depositors++
+        else if (status === '玩') dailyStats[snapshot_date].playNoDep++
+        else dailyStats[snapshot_date].loginNoPlay++
+      }
+
+      // Daily summary array
+      setRangeDailySummary(dates.map(d => {
+        const s = dailyStats[d]
+        const dowIdx = new Date(d + 'T00:00:00').getDay()
+        return { date: d, dow: WEEKDAYS_ZH[dowIdx], dowEn: WEEKDAYS_EN[dowIdx].slice(0,3), ...s, absent: totalVips - s.totalCame }
+      }))
+
+      // Player grid array
+      const TIER_ORDER = { BLACK:0, DIAMOND:1, PLATINUM:2, GOLD:3, SILVER:4, BRONZE:5 }
+      const playerArr = Object.values(playerMap).map(p => {
+        let depCount=0, playCount=0, loginCount=0, lastDate=null
+        dates.forEach(d => {
+          const s = p.days[d]
+          if (!s) return
+          if (s==='存') depCount++; else if (s==='玩') playCount++; else loginCount++
+          if (!lastDate || d > lastDate) lastDate = d
+        })
+        return { ...p, depCount, playCount, loginCount, lastDate, absentCount: dates.length - depCount - playCount - loginCount }
+      }).sort((a,b) => (TIER_ORDER[a.tier]??9)-(TIER_ORDER[b.tier]??9) || a.username.localeCompare(b.username))
+
+      setRangePlayerGrid(playerArr)
+      setRangePlayNoDep(playerArr.filter(p => p.playCount > 0).sort((a,b) => b.playCount - a.playCount))
+      setRangeGenerated(true)
+    } catch(e) { console.error('Range report error', e) }
+    finally { setRangeLoading(false) }
+  }, [dateFrom, dateTo, effectiveHost])
+
+  // ── Export range to Excel (3 sheets) ─────────────────────────────
+  function exportRangeToExcel() {
+    if (!rangeGenerated) return
+    const isZh = lang === 'zh'
+    const wb = XLSX.utils.book_new()
+
+    // Sheet 1: Daily Summary
+    const s1h = isZh
+      ? ['日期','星期','有存款人数','有玩没存人数','有记录没玩没存','当天来的人数','没来人数','存款金额']
+      : ['Date','Day','Depositors','Play No Dep','Login No Play','Total Came','Absent','Deposit Amount']
+    const s1rows = rangeDailySummary.map(r => [r.date, isZh?r.dow:r.dowEn, r.depositors, r.playNoDep, r.loginNoPlay, r.totalCame, r.absent, r.deposit])
+    // Totals row
+    s1rows.push([
+      isZh?'合计':'TOTAL', '',
+      rangeDailySummary.reduce((s,r)=>s+r.depositors,0),
+      rangeDailySummary.reduce((s,r)=>s+r.playNoDep,0),
+      rangeDailySummary.reduce((s,r)=>s+r.loginNoPlay,0),
+      '', '',
+      rangeDailySummary.reduce((s,r)=>s+r.deposit,0),
+    ])
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([s1h,...s1rows]), isZh?'每日汇总':'Daily Summary')
+
+    // Sheet 2: Player Status Grid
+    const legend = isZh ? '图例：存=有存款  玩=有下注但没存款  登=有记录但没下注没存款  空白=当天没来' : 'Legend: DEP=Deposited  PLAY=Played no dep  IN=Logged no play  blank=Absent'
+    const s2h = ['Username', isZh?'等级':'Tier', isZh?'电话':'Phone',
+      ...rangeDates,
+      isZh?'有存天数':'Dep Days', isZh?'有玩没存天数':'Play Days', isZh?'有记录没玩没存':'Login Days', isZh?'没来天数':'Absent Days', isZh?'最后来的日期':'Last Visit',
+    ]
+    const s2rows = rangePlayerGrid.map(p => [
+      p.username, p.tier, p.phone,
+      ...rangeDates.map(d => {
+        const s = p.days[d]
+        if (!s) return ''
+        if (!isZh) return s==='存'?'DEP':s==='玩'?'PLAY':'IN'
+        return s
+      }),
+      p.depCount, p.playCount, p.loginCount, p.absentCount, p.lastDate||'',
+    ])
+    const ws2 = XLSX.utils.aoa_to_sheet([[legend], [], s2h, ...s2rows])
+    XLSX.utils.book_append_sheet(wb, ws2, isZh?'每日状态':'Player Status')
+
+    // Sheet 3: Play Without Deposit
+    const s3h = isZh
+      ? ['Username','等级','电话','有玩没存天数','最后来访日','期间总存款']
+      : ['Username','Tier','Phone','Play-No-Dep Days','Last Visit','Period Deposit']
+    const s3rows = rangePlayNoDep.map(p => [p.username, p.tier, p.phone, p.playCount, p.lastDate||'', p.totalDepAmt||0])
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([s3h,...s3rows]), isZh?'有玩没存名单':'Play No Dep')
+
+    XLSX.writeFile(wb, `VIP_Report_${dateFrom}_to_${dateTo}.xlsx`)
+  }
+
   // ── copy full report ──
   function buildReportText() {
     if (!numbers) return ''
@@ -502,10 +652,12 @@ export default function DailyReport() {
     <div style={{maxWidth:1100,margin:'0 auto',padding:'20px 20px 60px'}}>
 
       {/* ── Header bar ── */}
-      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:10,marginBottom:20}}>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:10,marginBottom:12}}>
         <div>
           <h1 style={{margin:0,fontSize:22,fontWeight:800,color:'var(--text)'}}>{t.title}</h1>
-          <div style={{fontSize:12,color:MUTED,marginTop:3}}>{reportDate} · {wdLabel}</div>
+          <div style={{fontSize:12,color:MUTED,marginTop:3}}>
+            {reportMode==='single' ? `${reportDate} · ${wdLabel}` : `${dateFrom} → ${dateTo}`}
+          </div>
         </div>
         <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
           {/* Lang toggle */}
@@ -517,9 +669,15 @@ export default function DailyReport() {
               </button>
             ))}
           </div>
-          {/* Date picker */}
-          <input type="date" value={reportDate} onChange={e => setReportDate(e.target.value)}
-            style={{padding:'5px 10px',borderRadius:6,border:'1px solid var(--border)',background:'var(--surface2)',color:'var(--text)',fontSize:12}} />
+          {/* Mode toggle */}
+          <div style={{display:'flex',gap:2,borderRadius:7,border:'1px solid var(--border)',overflow:'hidden'}}>
+            {[['single', lang==='zh'?'单日':'Single Day'],['range', lang==='zh'?'日期范围':'Date Range']].map(([m,label]) => (
+              <button key={m} onClick={() => setReportMode(m)}
+                style={{padding:'5px 12px',border:'none',background:reportMode===m?'var(--brand)':'var(--surface2)',color:reportMode===m?'#fff':'var(--muted)',fontWeight:700,fontSize:12,cursor:'pointer',whiteSpace:'nowrap'}}>
+                {label}
+              </button>
+            ))}
+          </div>
           {/* Host filter */}
           <select value={hostFilter} onChange={e => setHostFilter(e.target.value)}
             style={{padding:'5px 10px',borderRadius:6,border:'1px solid var(--border)',background:'var(--surface2)',color:'var(--text)',fontSize:12}}>
@@ -529,16 +687,49 @@ export default function DailyReport() {
               <option key={h} value={h}>{h}</option>
             ))}
           </select>
-          {/* Refresh */}
-          <button onClick={load} style={{padding:'5px 14px',borderRadius:6,border:'1px solid var(--border)',background:'var(--surface2)',color:'var(--text)',fontSize:12,cursor:'pointer',fontWeight:600}}>
-            🔄 {t.refresh}
-          </button>
-          {/* Copy report */}
-          <button onClick={handleCopy} style={{padding:'5px 14px',borderRadius:6,border:'1px solid var(--brand)',background:'var(--brand)',color:'#fff',fontSize:12,cursor:'pointer',fontWeight:600}}>
-            {copied ? t.copied : `📋 ${t.copy}`}
-          </button>
+          {/* Single date picker */}
+          {reportMode === 'single' && <>
+            <input type="date" value={reportDate} onChange={e => setReportDate(e.target.value)}
+              style={{padding:'5px 10px',borderRadius:6,border:'1px solid var(--border)',background:'var(--surface2)',color:'var(--text)',fontSize:12}} />
+            <button onClick={load} style={{padding:'5px 14px',borderRadius:6,border:'1px solid var(--border)',background:'var(--surface2)',color:'var(--text)',fontSize:12,cursor:'pointer',fontWeight:600}}>
+              🔄 {t.refresh}
+            </button>
+            <button onClick={handleCopy} style={{padding:'5px 14px',borderRadius:6,border:'1px solid var(--brand)',background:'var(--brand)',color:'#fff',fontSize:12,cursor:'pointer',fontWeight:600}}>
+              {copied ? t.copied : `📋 ${t.copy}`}
+            </button>
+          </>}
         </div>
       </div>
+
+      {/* ── Range mode controls ── */}
+      {reportMode === 'range' && (
+        <div style={{display:'flex',gap:10,alignItems:'center',flexWrap:'wrap',marginBottom:20,padding:'14px 18px',borderRadius:10,background:'var(--surface)',border:'1px solid var(--border)'}}>
+          <span style={{fontSize:13,fontWeight:700,color:'var(--text)',whiteSpace:'nowrap'}}>{lang==='zh'?'📅 选择日期范围':'📅 Date Range'}</span>
+          <div style={{display:'flex',gap:6,alignItems:'center'}}>
+            <span style={{fontSize:12,color:MUTED}}>{lang==='zh'?'从':'From'}</span>
+            <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
+              style={{padding:'5px 10px',borderRadius:6,border:'1px solid var(--border)',background:'var(--surface2)',color:'var(--text)',fontSize:12}} />
+            <span style={{fontSize:12,color:MUTED}}>{lang==='zh'?'到':'To'}</span>
+            <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
+              style={{padding:'5px 10px',borderRadius:6,border:'1px solid var(--border)',background:'var(--surface2)',color:'var(--text)',fontSize:12}} />
+          </div>
+          <button onClick={loadRange} disabled={rangeLoading}
+            style={{padding:'6px 18px',borderRadius:6,border:'none',background:'var(--brand)',color:'#fff',fontWeight:700,fontSize:13,cursor:rangeLoading?'wait':'pointer',opacity:rangeLoading?0.7:1}}>
+            {rangeLoading ? (lang==='zh'?'生成中…':'Generating…') : (lang==='zh'?'📊 生成报告':'📊 Generate Report')}
+          </button>
+          {rangeGenerated && (
+            <button onClick={exportRangeToExcel}
+              style={{padding:'6px 18px',borderRadius:6,border:'1px solid #22c55e',background:'transparent',color:'#22c55e',fontWeight:700,fontSize:13,cursor:'pointer'}}>
+              ⬇️ {lang==='zh'?'导出 Excel':'Export Excel'}
+            </button>
+          )}
+          {rangeGenerated && (
+            <span style={{fontSize:12,color:MUTED}}>
+              {rangePlayerGrid.length} {lang==='zh'?'位会员':'VIPs'} · {rangeDates.length} {lang==='zh'?'天':'days'}
+            </span>
+          )}
+        </div>
+      )}
 
       {loading && <div style={{textAlign:'center',padding:40,color:MUTED,fontSize:14}}>{t.loading}</div>}
 
@@ -807,6 +998,192 @@ export default function DailyReport() {
         </Card>
 
       </>}
+
+      {/* ══════════════════════════════════════════════════════
+          RANGE REPORT SECTIONS
+          Only rendered when reportMode === 'range' && rangeGenerated
+      ══════════════════════════════════════════════════════ */}
+      {reportMode === 'range' && rangeGenerated && (() => {
+        const isZh = lang === 'zh'
+
+        // ── Summary stats for top tiles ──
+        const totalDep    = rangeDailySummary.reduce((s,r) => s+r.deposit, 0)
+        const totalDeps   = rangeDailySummary.reduce((s,r) => s+r.depositors, 0)
+        const totalPlayed = rangeDailySummary.reduce((s,r) => s+r.playNoDep, 0)
+        const avgDep      = rangeDates.length ? (totalDep / rangeDates.length) : 0
+        const avgDeps     = rangeDates.length ? (totalDeps / rangeDates.length) : 0
+
+        return (<>
+          {/* ── Range summary tiles ── */}
+          <div style={{display:'flex',gap:10,flexWrap:'wrap',marginBottom:18}}>
+            <Tile label={isZh?'总存款':'Total Deposit'}   value={fmtK(totalDep)}          color={GREEN} />
+            <Tile label={isZh?'日均存款':'Avg Daily Dep'} value={fmtK(avgDep)}             color={BLUE}  />
+            <Tile label={isZh?'总存款人次':'Total Dep Visits'} value={totalDeps}           />
+            <Tile label={isZh?'日均存款人数':'Avg Depositors'} value={avgDeps.toFixed(1)}  />
+            <Tile label={isZh?'有玩没存人次':'Play-No-Dep'}    value={totalPlayed}         color={ORANGE}/>
+            <Tile label={isZh?'参与会员数':'VIPs Seen'}   value={rangePlayerGrid.length}   />
+          </div>
+
+          {/* ── Sheet 1: Daily Summary table ── */}
+          <Card title={`📅 ${isZh?'每日汇总':'Daily Summary'} (${dateFrom} → ${dateTo})`} accent={BLUE}>
+            <div style={{overflowX:'auto'}}>
+              <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+                <thead>
+                  <tr style={{borderBottom:'2px solid var(--border)'}}>
+                    <th style={thL}>{isZh?'日期':'Date'}</th>
+                    <th style={thL}>{isZh?'星期':'Day'}</th>
+                    <th style={th}>{isZh?'有存款人数':'Depositors'}</th>
+                    <th style={th}>{isZh?'有玩没存':'Play No Dep'}</th>
+                    <th style={th}>{isZh?'有记录没玩':'Login No Play'}</th>
+                    <th style={th}>{isZh?'当天来访':'Total Came'}</th>
+                    <th style={th}>{isZh?'没来':'Absent'}</th>
+                    <th style={th}>{isZh?'存款金额':'Deposit Amt'}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rangeDailySummary.map((r, i) => {
+                    const isWeekend = r.dowEn === 'Sat' || r.dowEn === 'Sun'
+                    return (
+                      <tr key={r.date} style={{borderBottom:'1px solid var(--border)',background:isWeekend?'rgba(59,130,246,0.05)':'transparent'}}>
+                        <td style={{padding:'6px 12px',fontWeight:600,color:isWeekend?BLUE:'var(--text)'}}>{r.date}</td>
+                        <td style={{padding:'6px 12px',color:isWeekend?BLUE:MUTED,fontWeight:isWeekend?700:400}}>{isZh?r.dow:r.dowEn}</td>
+                        <td style={{padding:'6px 12px',textAlign:'right',fontWeight:700,color:GREEN}}>{r.depositors}</td>
+                        <td style={{padding:'6px 12px',textAlign:'right',color:ORANGE}}>{r.playNoDep||0}</td>
+                        <td style={{padding:'6px 12px',textAlign:'right',color:MUTED}}>{r.loginNoPlay||0}</td>
+                        <td style={{padding:'6px 12px',textAlign:'right',fontWeight:600}}>{r.totalCame}</td>
+                        <td style={{padding:'6px 12px',textAlign:'right',color:MUTED}}>{r.absent}</td>
+                        <td style={{padding:'6px 12px',textAlign:'right',fontWeight:700,color:'var(--text)'}}>{fmt(r.deposit)}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr style={{borderTop:'2px solid var(--brand)',background:'var(--surface2)',fontWeight:800}}>
+                    <td style={{padding:'8px 12px',fontWeight:800}} colSpan={2}>{isZh?'合计':'TOTAL'}</td>
+                    <td style={{padding:'8px 12px',textAlign:'right',color:GREEN,fontWeight:800}}>{totalDeps}</td>
+                    <td style={{padding:'8px 12px',textAlign:'right',color:ORANGE,fontWeight:800}}>{totalPlayed}</td>
+                    <td style={{padding:'8px 12px',textAlign:'right'}}>{rangeDailySummary.reduce((s,r)=>s+r.loginNoPlay,0)}</td>
+                    <td style={{padding:'8px 12px',textAlign:'right'}}></td>
+                    <td style={{padding:'8px 12px',textAlign:'right'}}></td>
+                    <td style={{padding:'8px 12px',textAlign:'right',fontWeight:800,color:GREEN}}>{fmt(totalDep)}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </Card>
+
+          {/* ── Sheet 2: Player Status Grid ── */}
+          <Card title={`📋 ${isZh?'每日状态 (存/玩/登)':'Player Status Grid (DEP/PLAY/IN)'}`}>
+            <div style={{fontSize:11,color:MUTED,marginBottom:8}}>
+              {isZh
+                ? '图例：🟩 存=有存款  🟧 玩=有下注但没存款  ▪ 登=有记录但没下注没存款  空白=当天没来'
+                : 'Legend: 🟩 DEP=Deposited  🟧 PLAY=Played no dep  ▪ IN=Logged no play  blank=Absent'}
+            </div>
+            <div style={{overflowX:'auto',maxHeight:560,overflowY:'auto'}}>
+              <table style={{borderCollapse:'collapse',fontSize:11,whiteSpace:'nowrap'}}>
+                <thead style={{position:'sticky',top:0,zIndex:2}}>
+                  <tr style={{borderBottom:'2px solid var(--border)',background:'var(--surface2)'}}>
+                    <th style={{...thL,position:'sticky',left:0,zIndex:3,background:'var(--surface2)',minWidth:90,padding:'6px 10px'}}>{isZh?'用户名':'Username'}</th>
+                    <th style={{...thL,position:'sticky',left:90,zIndex:3,background:'var(--surface2)',minWidth:70,padding:'6px 8px'}}>{isZh?'等级':'Tier'}</th>
+                    <th style={{...thL,position:'sticky',left:160,zIndex:3,background:'var(--surface2)',minWidth:100,padding:'6px 8px'}}>{isZh?'电话':'Phone'}</th>
+                    {rangeDates.map(d => {
+                      const dt = new Date(d+'T00:00:00')
+                      const isWe = dt.getDay()===0||dt.getDay()===6
+                      return (
+                        <th key={d} style={{...th,minWidth:36,padding:'4px 2px',color:isWe?BLUE:MUTED,background:isWe?'rgba(59,130,246,0.08)':'var(--surface2)'}}>
+                          {d.slice(5)}
+                        </th>
+                      )
+                    })}
+                    <th style={th}>{isZh?'存':'Dep'}</th>
+                    <th style={th}>{isZh?'玩':'Play'}</th>
+                    <th style={th}>{isZh?'登':'In'}</th>
+                    <th style={th}>{isZh?'无':'Out'}</th>
+                    <th style={{...th,minWidth:80}}>{isZh?'最后来':'Last'}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rangePlayerGrid.map((p, i) => {
+                    const tierColor = p.tier==='DIAMOND'?'#60a5fa':p.tier==='PLATINUM'?'#a78bfa':p.tier==='GOLD'?'#facc15':MUTED
+                    return (
+                      <tr key={p.username} style={{borderBottom:'1px solid var(--border)',background:i%2===0?'transparent':'rgba(255,255,255,0.02)'}}>
+                        <td style={{padding:'5px 10px',fontWeight:600,color:'var(--brand)',position:'sticky',left:0,background:i%2===0?'var(--surface)':'var(--surface2)',zIndex:1,fontSize:12}}>{p.username}</td>
+                        <td style={{padding:'5px 8px',color:tierColor,fontWeight:700,position:'sticky',left:90,background:i%2===0?'var(--surface)':'var(--surface2)',zIndex:1,fontSize:11}}>{p.tier?.slice(0,4)}</td>
+                        <td style={{padding:'5px 8px',color:MUTED,position:'sticky',left:160,background:i%2===0?'var(--surface)':'var(--surface2)',zIndex:1,fontSize:11}}>{p.phone||'—'}</td>
+                        {rangeDates.map(d => {
+                          const s = p.days[d]
+                          const dt = new Date(d+'T00:00:00')
+                          const isWe = dt.getDay()===0||dt.getDay()===6
+                          let bg = 'transparent', color = MUTED, fw = 400, displayChar = ''
+                          if (s === '存') { bg='rgba(34,197,94,0.18)'; color=GREEN; fw=700; displayChar=isZh?'存':'D' }
+                          else if (s === '玩') { bg='rgba(249,115,22,0.18)'; color=ORANGE; fw=600; displayChar=isZh?'玩':'P' }
+                          else if (s === '登') { color='#94a3b8'; displayChar=isZh?'▪':'·' }
+                          if (isWe && !s) bg='rgba(59,130,246,0.04)'
+                          return (
+                            <td key={d} style={{padding:'4px 2px',textAlign:'center',background:bg,color,fontWeight:fw,fontSize:11}}>{displayChar}</td>
+                          )
+                        })}
+                        <td style={{padding:'5px 6px',textAlign:'right',fontWeight:700,color:GREEN,fontSize:11}}>{p.depCount||0}</td>
+                        <td style={{padding:'5px 6px',textAlign:'right',color:ORANGE,fontSize:11}}>{p.playCount||0}</td>
+                        <td style={{padding:'5px 6px',textAlign:'right',color:MUTED,fontSize:11}}>{p.loginCount||0}</td>
+                        <td style={{padding:'5px 6px',textAlign:'right',color:RED,fontSize:11}}>{p.absentCount||0}</td>
+                        <td style={{padding:'5px 6px',textAlign:'right',color:MUTED,fontSize:10}}>{p.lastDate?.slice(5)||'—'}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+
+          {/* ── Sheet 3: Play Without Deposit list ── */}
+          {rangePlayNoDep.length > 0 && (
+            <Card title={`🎰 ${isZh?'有玩没存名单':'Play Without Deposit'} (${rangePlayNoDep.length})`} accent={ORANGE}>
+              <div style={{fontSize:11,color:MUTED,marginBottom:10}}>
+                {isZh?'在选定日期范围内，有下注记录但期间从未存款的会员':'Members who played in the date range but never deposited during it'}
+              </div>
+              <div style={{overflowX:'auto'}}>
+                <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+                  <thead>
+                    <tr style={{borderBottom:'2px solid var(--border)'}}>
+                      <th style={{...thL,width:30}}>#</th>
+                      <th style={thL}>{isZh?'用户名':'Username'}</th>
+                      <th style={thL}>{isZh?'等级':'Tier'}</th>
+                      <th style={thL}>{isZh?'电话':'Phone'}</th>
+                      <th style={th}>{isZh?'有玩没存天数':'Play Days'}</th>
+                      <th style={th}>{isZh?'有存天数':'Dep Days'}</th>
+                      <th style={th}>{isZh?'最后来访':'Last Visit'}</th>
+                      <th style={th}>{isZh?'期间总存款':'Period Deposit'}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rangePlayNoDep.map((p, i) => {
+                      const tierColor = p.tier==='DIAMOND'?'#60a5fa':p.tier==='PLATINUM'?'#a78bfa':p.tier==='GOLD'?'#facc15':MUTED
+                      return (
+                        <tr key={p.username} style={{borderBottom:'1px solid var(--border)'}}>
+                          <td style={{padding:'7px 12px',color:MUTED}}>{i+1}</td>
+                          <td style={{padding:'7px 12px',fontWeight:700,color:'var(--brand)'}}>{p.username}</td>
+                          <td style={{padding:'7px 12px',color:tierColor,fontWeight:700,fontSize:11}}>{p.tier}</td>
+                          <td style={{padding:'7px 12px',color:'var(--text)'}}>
+                            {p.phone
+                              ? <a href={`tel:${p.phone}`} style={{color:'var(--brand)',textDecoration:'none'}}>📱 {p.phone}</a>
+                              : '—'}
+                          </td>
+                          <td style={{padding:'7px 12px',textAlign:'right',fontWeight:800,color:ORANGE,fontSize:14}}>{p.playCount}</td>
+                          <td style={{padding:'7px 12px',textAlign:'right',color:p.depCount>0?GREEN:MUTED}}>{p.depCount}</td>
+                          <td style={{padding:'7px 12px',textAlign:'right',color:MUTED,fontSize:11}}>{p.lastDate||'—'}</td>
+                          <td style={{padding:'7px 12px',textAlign:'right',fontWeight:600,color:p.totalDepAmt>0?GREEN:MUTED}}>{p.totalDepAmt>0?fmt(p.totalDepAmt):'—'}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          )}
+        </>)
+      })()}
+
     </div>
   )
 }
