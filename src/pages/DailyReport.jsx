@@ -233,6 +233,10 @@ export default function DailyReport() {
   const [rangePlayNoDep, setRangePlayNoDep] = useState([])
   const [rangeActiveSheet, setRangeActiveSheet] = useState('grid') // 'summary' | 'grid' | 'playnodep'
 
+  // ── Retention rate state ──────────────────────────────────────────
+  const [retention, setRetention] = useState(null)   // { day:{overall,diamond,platinum}, week:{...}, month:{...} }
+  const [retentionLoading, setRetentionLoading] = useState(false)
+
   const effectiveHost = hostFilter === '__mine__' ? (profile?.full_name || null) : (hostFilter || null)
 
   // ── load hosts ──
@@ -425,6 +429,103 @@ export default function DailyReport() {
   }, [reportDate, effectiveHost])
 
   useEffect(() => { load() }, [load])
+
+  // ── Retention rate loader ─────────────────────────────────────────
+  const loadRetention = useCallback(async () => {
+    if (!reportDate) return
+    setRetentionLoading(true)
+    try {
+      const today = new Date(reportDate + 'T00:00:00')
+
+      // Helper: get active VIP IDs for a date range, optionally filtered by tier
+      async function getActiveIds(fromDate, toDate, tier) {
+        const ids = new Set()
+        let from = 0
+        while (true) {
+          let q = supabase.from('vip_daily_snapshots')
+            .select('vip_id,tier,total_deposit,win_loss')
+            .gte('snapshot_date', fromDate).lte('snapshot_date', toDate)
+            .range(from, from + 999)
+          if (effectiveHost) q = q.eq('host_assigned', effectiveHost)
+          if (tier) q = q.eq('tier', tier)
+          const { data, error } = await q
+          if (error) throw error
+          for (const r of (data||[])) {
+            if ((r.total_deposit||0) > 0 || Math.abs(r.win_loss||0) > 0) ids.add(r.vip_id)
+          }
+          if ((data||[]).length < 1000) break
+          from += 1000
+        }
+        return ids
+      }
+
+      // Helper: calculate return rate
+      function calcRate(baseIds, returnIds) {
+        if (!baseIds.size) return { rate: null, base: 0, returned: 0 }
+        let count = 0
+        baseIds.forEach(id => { if (returnIds.has(id)) count++ })
+        return { rate: Math.round(count / baseIds.size * 100), base: baseIds.size, returned: count }
+      }
+
+      // Period definitions
+      // DAY: yesterday active → today return
+      const yesterday   = isoDate(addDays(today, -1))
+      const todayStr    = reportDate
+
+      // WEEK: last week Mon-Sun → this week Mon-today
+      const todayDow    = today.getDay() === 0 ? 6 : today.getDay() - 1  // Mon=0
+      const thisWeekMon = isoDate(addDays(today, -todayDow))
+      const lastWeekMon = isoDate(addDays(today, -todayDow - 7))
+      const lastWeekSun = isoDate(addDays(today, -todayDow - 1))
+
+      // MONTH: last month → this month up to today
+      const thisMonthStart = isoDate(new Date(today.getFullYear(), today.getMonth(), 1))
+      const lastMonthStart = isoDate(new Date(today.getFullYear(), today.getMonth() - 1, 1))
+      const lastMonthEnd   = isoDate(new Date(today.getFullYear(), today.getMonth(), 0))
+
+      // Fetch all periods in parallel for each tier
+      const tiers = [null, 'DIAMOND', 'PLATINUM']
+      const [
+        [yestOverall, yestDiam, yestPlat],
+        [todayOverall, todayDiam, todayPlat],
+        [lwOverall, lwDiam, lwPlat],
+        [twOverall, twDiam, twPlat],
+        [lmOverall, lmDiam, lmPlat],
+        [tmOverall, tmDiam, tmPlat],
+      ] = await Promise.all([
+        Promise.all(tiers.map(t => getActiveIds(yesterday, yesterday, t))),
+        Promise.all(tiers.map(t => getActiveIds(todayStr, todayStr, t))),
+        Promise.all(tiers.map(t => getActiveIds(lastWeekMon, lastWeekSun, t))),
+        Promise.all(tiers.map(t => getActiveIds(thisWeekMon, todayStr, t))),
+        Promise.all(tiers.map(t => getActiveIds(lastMonthStart, lastMonthEnd, t))),
+        Promise.all(tiers.map(t => getActiveIds(thisMonthStart, todayStr, t))),
+      ])
+
+      setRetention({
+        day: {
+          overall:  calcRate(yestOverall, todayOverall),
+          diamond:  calcRate(yestDiam,    todayDiam),
+          platinum: calcRate(yestPlat,    todayPlat),
+        },
+        week: {
+          overall:  calcRate(lwOverall, twOverall),
+          diamond:  calcRate(lwDiam,    twDiam),
+          platinum: calcRate(lwPlat,    twPlat),
+        },
+        month: {
+          overall:  calcRate(lmOverall, tmOverall),
+          diamond:  calcRate(lmDiam,    tmDiam),
+          platinum: calcRate(lmPlat,    tmPlat),
+        },
+      })
+    } catch(e) {
+      console.error('Retention load error', e)
+    } finally {
+      setRetentionLoading(false)
+    }
+  }, [reportDate, effectiveHost])
+
+  useEffect(() => { if (reportMode === 'single') loadRetention() }, [loadRetention, reportMode])
 
   // ── Range report loader ───────────────────────────────────────────
   const loadRange = useCallback(async () => {
@@ -997,6 +1098,88 @@ export default function DailyReport() {
             )}
           </div>
         </Card>
+
+        {/* ── Section 9: Retention Rate Tracking ── */}
+        {(() => {
+          const isZh = lang === 'zh'
+          const rows = [
+            { key:'day',   label: isZh?'昨日活跃 → 今日回访':'Yesterday → Today',   icon:'📅', color: BLUE   },
+            { key:'week',  label: isZh?'上周活跃 → 本周回访':'Last Week → This Week',icon:'📆', color: '#8b5cf6' },
+            { key:'month', label: isZh?'上月活跃 → 本月回访':'Last Month → This Month',icon:'🗓️', color: ORANGE },
+          ]
+          function RateBadge({ data }) {
+            if (!data || data.base === 0) {
+              return <span style={{fontSize:12,color:MUTED}}>{isZh?'无数据':'No data'}</span>
+            }
+            const pct = data.rate
+            const bg = pct >= 70 ? 'rgba(34,197,94,0.12)' : pct >= 50 ? 'rgba(249,115,22,0.12)' : 'rgba(239,68,68,0.12)'
+            const col = pct >= 70 ? GREEN : pct >= 50 ? ORANGE : RED
+            return (
+              <div style={{display:'inline-flex',flexDirection:'column',alignItems:'center',gap:2}}>
+                <div style={{padding:'4px 12px',borderRadius:20,background:bg,border:`1px solid ${col}22`,minWidth:64,textAlign:'center'}}>
+                  <span style={{fontSize:17,fontWeight:800,color:col}}>{pct}%</span>
+                </div>
+                <span style={{fontSize:10,color:MUTED}}>{data.returned}/{data.base}</span>
+              </div>
+            )
+          }
+          return (
+            <Card title={`📊 ${isZh?'留存率追踪':'Retention Rate Tracking'}`}>
+              {retentionLoading ? (
+                <div style={{padding:'20px',textAlign:'center',color:MUTED,fontSize:13}}>
+                  {isZh?'计算中…':'Calculating…'}
+                </div>
+              ) : (
+                <div style={{overflowX:'auto'}}>
+                  <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
+                    <thead>
+                      <tr style={{borderBottom:'2px solid var(--border)'}}>
+                        <th style={{padding:'8px 12px',textAlign:'left',fontSize:11,fontWeight:700,color:MUTED,background:'var(--surface2)',whiteSpace:'nowrap'}}>
+                          {isZh?'周期':'Period'}
+                        </th>
+                        {['DIAMOND','PLATINUM',isZh?'综合':'Overall'].map(h => (
+                          <th key={h} style={{padding:'8px 16px',textAlign:'center',fontSize:11,fontWeight:700,color:MUTED,background:'var(--surface2)',whiteSpace:'nowrap'}}>
+                            {h==='DIAMOND' ? '💎 Diamond' : h==='PLATINUM' ? '🥈 Platinum' : `📈 ${h}`}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map((row, i) => {
+                        const d = retention?.[row.key]
+                        return (
+                          <tr key={row.key} style={{borderBottom:'1px solid var(--border)',background:i%2===0?'transparent':'var(--surface2)'}}>
+                            <td style={{padding:'12px 12px',whiteSpace:'nowrap'}}>
+                              <div style={{display:'flex',alignItems:'center',gap:8}}>
+                                <span style={{fontSize:16}}>{row.icon}</span>
+                                <div>
+                                  <div style={{fontWeight:700,fontSize:13,color:'var(--text)'}}>{row.label}</div>
+                                </div>
+                              </div>
+                            </td>
+                            <td style={{padding:'12px 16px',textAlign:'center'}}><RateBadge data={d?.diamond} /></td>
+                            <td style={{padding:'12px 16px',textAlign:'center'}}><RateBadge data={d?.platinum} /></td>
+                            <td style={{padding:'12px 16px',textAlign:'center'}}><RateBadge data={d?.overall} /></td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                  {!retention && !retentionLoading && (
+                    <div style={{padding:'16px',textAlign:'center',color:MUTED,fontSize:12}}>
+                      {isZh?'暂无数据':'No data available'}
+                    </div>
+                  )}
+                  <div style={{marginTop:10,padding:'6px 12px',fontSize:11,color:MUTED,display:'flex',gap:16,flexWrap:'wrap'}}>
+                    <span><span style={{display:'inline-block',width:10,height:10,borderRadius:'50%',background:GREEN,marginRight:4}}></span>{isZh?'≥70% 良好':'≥70% Good'}</span>
+                    <span><span style={{display:'inline-block',width:10,height:10,borderRadius:'50%',background:ORANGE,marginRight:4}}></span>{isZh?'50-69% 一般':'50-69% Fair'}</span>
+                    <span><span style={{display:'inline-block',width:10,height:10,borderRadius:'50%',background:RED,marginRight:4}}></span>{isZh?'<50% 需关注':'<50% Needs Attention'}</span>
+                  </div>
+                </div>
+              )}
+            </Card>
+          )
+        })()}
 
       </>}
 
