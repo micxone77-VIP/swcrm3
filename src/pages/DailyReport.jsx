@@ -1,7 +1,7 @@
 // src/pages/DailyReport.jsx — Daily Analytics Report (Platinum / Diamond)
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { supabase } from '../supabaseClient'
+import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 
 // ─── i18n strings ────────────────────────────────────────────────
