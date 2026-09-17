@@ -1024,6 +1024,9 @@ export default function DailyReport() {
           </div>
         </Card>
 
+        {/* ── Section 9: Retention Rate Tracking ── */}
+        <RetentionCard lang={lang} retention={retention} retentionLoading={retentionLoading} />
+
         {/* ── Section 3 & 4: vs 7-Day Avg ── */}
         {countComp && (
           <Card title={`📈 ${t.s3title} / ${t.s4title}`}>
@@ -1248,8 +1251,6 @@ export default function DailyReport() {
           </div>
         </Card>
 
-        {/* ── Section 9: Retention Rate Tracking ── */}
-        <RetentionCard lang={lang} retention={retention} retentionLoading={retentionLoading} />
 
       </>}
 
