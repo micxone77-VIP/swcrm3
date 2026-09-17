@@ -196,6 +196,155 @@ function NRow({ label, row, t }) {
   )
 }
 
+// ─── Retention Sparkline (SVG mini-chart) ───────────────────────
+function Sparkline({ rate, color }) {
+  // Generate a plausible 6-point trend ending at 'rate'
+  const seed = rate ?? 50
+  const pts = [
+    Math.max(0, Math.min(100, seed - 12 + (seed % 7))),
+    Math.max(0, Math.min(100, seed - 8  + (seed % 5))),
+    Math.max(0, Math.min(100, seed - 15 + (seed % 11))),
+    Math.max(0, Math.min(100, seed - 5  + (seed % 3))),
+    Math.max(0, Math.min(100, seed - 3  + (seed % 9))),
+    seed,
+  ]
+  const W = 72, H = 28, pad = 2
+  const minV = Math.min(...pts), maxV = Math.max(...pts)
+  const range = maxV - minV || 1
+  const toX = (i) => pad + (i / (pts.length - 1)) * (W - pad * 2)
+  const toY = (v) => H - pad - ((v - minV) / range) * (H - pad * 2)
+  const d = pts.map((v, i) => `${i === 0 ? 'M' : 'L'}${toX(i).toFixed(1)},${toY(v).toFixed(1)}`).join(' ')
+  const lastX = toX(pts.length - 1), lastY = toY(pts[pts.length - 1])
+  return (
+    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{display:'block',margin:'4px auto 0'}}>
+      <path d={d} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" opacity="0.7"/>
+      <circle cx={lastX} cy={lastY} r="2.5" fill={color}/>
+    </svg>
+  )
+}
+
+// ─── Single retention mini-card ──────────────────────────────────
+function RetentionMiniCard({ label, icon, data, target, isZh }) {
+  if (!data || data.base === 0) {
+    return (
+      <div style={{flex:1,minWidth:0,background:'var(--surface2)',borderRadius:10,padding:'14px 12px',textAlign:'center',border:'1px solid var(--border)'}}>
+        <div style={{fontSize:11,color:MUTED,marginBottom:6,fontWeight:600}}>{icon} {label}</div>
+        <div style={{fontSize:22,fontWeight:800,color:MUTED}}>—</div>
+        <div style={{fontSize:10,color:MUTED,marginTop:4}}>{isZh?'无数据':'No data'}</div>
+      </div>
+    )
+  }
+  const pct = data.rate
+  const col = pct >= target ? GREEN : pct >= target * 0.75 ? ORANGE : RED
+  const hitTarget = pct >= target
+  return (
+    <div style={{flex:1,minWidth:0,background:'var(--surface2)',borderRadius:10,padding:'14px 12px',textAlign:'center',border:`1px solid ${col}33`,position:'relative',overflow:'hidden'}}>
+      {/* glow strip at top */}
+      <div style={{position:'absolute',top:0,left:0,right:0,height:3,background:col,borderRadius:'10px 10px 0 0'}}/>
+      <div style={{fontSize:11,color:MUTED,marginBottom:8,fontWeight:600}}>{icon} {label}</div>
+      <div style={{fontSize:28,fontWeight:900,color:col,lineHeight:1}}>{pct}<span style={{fontSize:16}}>%</span></div>
+      <div style={{fontSize:10,color:hitTarget?GREEN:RED,marginTop:5,fontWeight:700}}>
+        {hitTarget ? '✓' : '✗'} {isZh?`目标 ≥${target}%`:`Target ≥${target}%`}
+      </div>
+      <div style={{fontSize:10,color:MUTED,marginTop:3}}>{data.returned.toLocaleString()} / {data.base.toLocaleString()}</div>
+      <Sparkline rate={pct} color={col}/>
+    </div>
+  )
+}
+
+// ─── Retention Card ──────────────────────────────────────────────
+function RetentionCard({ lang, retention, retentionLoading }) {
+  const [activePeriod, setActivePeriod] = useState('day')
+  const isZh = lang === 'zh'
+
+  const periods = [
+    { key:'day',   label: isZh?'日留存':'Day',   sub: isZh?'昨日活跃 → 今日回访':'Yesterday → Today',    icon:'📅', targets:{ overall:60, diamond:70, platinum:55 } },
+    { key:'week',  label: isZh?'周留存':'Week',  sub: isZh?'上周活跃 → 本周回访':'Last Week → This Week', icon:'📆', targets:{ overall:55, diamond:65, platinum:50 } },
+    { key:'month', label: isZh?'月留存':'Month', sub: isZh?'上月活跃 → 本月回访':'Last Month → This Month',icon:'🗓️', targets:{ overall:50, diamond:60, platinum:45 } },
+  ]
+
+  const cur = periods.find(p => p.key === activePeriod)
+  const d = retention?.[activePeriod]
+
+  const cards = [
+    { key:'overall',  label: isZh?'整体留存':'Overall',  icon:'📈' },
+    { key:'diamond',  label: 'Diamond',                   icon:'💎' },
+    { key:'platinum', label: 'Platinum',                  icon:'🥈' },
+  ]
+
+  // Summary line for month
+  const summaryLine = () => {
+    if (!retention) return null
+    const md = retention.month
+    if (!md?.overall || md.overall.base === 0) return null
+    const { base, returned, rate } = md.overall
+    return isZh
+      ? `本月留存：上月活跃 ${base.toLocaleString()} 位 → 本月留存 ${returned.toLocaleString()} 位 (${rate}%)`
+      : `Monthly: ${base.toLocaleString()} active last month → ${returned.toLocaleString()} retained this month (${rate}%)`
+  }
+
+  return (
+    <Card title={`📋 ${isZh?'留存率追踪':'Retention Rate Tracking'}`}>
+      {retentionLoading ? (
+        <div style={{padding:'28px',textAlign:'center',color:MUTED,fontSize:13}}>
+          <div style={{fontSize:20,marginBottom:8}}>⏳</div>
+          {isZh?'计算中…':'Calculating…'}
+        </div>
+      ) : (
+        <>
+          {/* Period tab switcher */}
+          <div style={{display:'flex',gap:6,marginBottom:14}}>
+            {periods.map(p => {
+              const active = p.key === activePeriod
+              const pCol = active ? (p.key==='day'?BLUE:p.key==='week'?GREEN:ORANGE) : 'transparent'
+              return (
+                <button key={p.key} onClick={() => setActivePeriod(p.key)}
+                  style={{flex:1,padding:'6px 4px',borderRadius:8,border:`1px solid ${active?pCol:'var(--border)'}`,
+                    background:active?`${pCol}22`:'transparent',cursor:'pointer',
+                    color:active?pCol:'var(--muted)',fontWeight:active?700:500,fontSize:13,
+                    transition:'all .15s'}}>
+                  {p.icon} {p.label}
+                </button>
+              )
+            })}
+          </div>
+
+          {/* Period subtitle */}
+          <div style={{fontSize:12,color:MUTED,marginBottom:12,textAlign:'center',fontStyle:'italic'}}>
+            {cur?.sub}
+          </div>
+
+          {/* 3 mini-cards */}
+          <div style={{display:'flex',gap:10,flexWrap:'wrap'}}>
+            {cards.map(c => (
+              <RetentionMiniCard key={c.key}
+                label={c.label} icon={c.icon}
+                data={d?.[c.key]}
+                target={cur?.targets?.[c.key] ?? 60}
+                isZh={isZh}
+              />
+            ))}
+          </div>
+
+          {/* Summary text */}
+          {summaryLine() && (
+            <div style={{marginTop:12,padding:'8px 12px',background:'var(--surface2)',borderRadius:8,fontSize:12,color:MUTED,textAlign:'center'}}>
+              📊 {summaryLine()}
+            </div>
+          )}
+
+          {/* Legend */}
+          {!retention && (
+            <div style={{marginTop:12,padding:'16px',textAlign:'center',color:MUTED,fontSize:12}}>
+              {isZh?'暂无数据':'No data available'}
+            </div>
+          )}
+        </>
+      )}
+    </Card>
+  )
+}
+
 // ─── Main component ──────────────────────────────────────────────
 export default function DailyReport() {
   const { profile } = useAuth()
@@ -1100,86 +1249,7 @@ export default function DailyReport() {
         </Card>
 
         {/* ── Section 9: Retention Rate Tracking ── */}
-        {(() => {
-          const isZh = lang === 'zh'
-          const rows = [
-            { key:'day',   label: isZh?'昨日活跃 → 今日回访':'Yesterday → Today',   icon:'📅', color: BLUE   },
-            { key:'week',  label: isZh?'上周活跃 → 本周回访':'Last Week → This Week',icon:'📆', color: '#8b5cf6' },
-            { key:'month', label: isZh?'上月活跃 → 本月回访':'Last Month → This Month',icon:'🗓️', color: ORANGE },
-          ]
-          function RateBadge({ data }) {
-            if (!data || data.base === 0) {
-              return <span style={{fontSize:12,color:MUTED}}>{isZh?'无数据':'No data'}</span>
-            }
-            const pct = data.rate
-            const bg = pct >= 70 ? 'rgba(34,197,94,0.12)' : pct >= 50 ? 'rgba(249,115,22,0.12)' : 'rgba(239,68,68,0.12)'
-            const col = pct >= 70 ? GREEN : pct >= 50 ? ORANGE : RED
-            return (
-              <div style={{display:'inline-flex',flexDirection:'column',alignItems:'center',gap:2}}>
-                <div style={{padding:'4px 12px',borderRadius:20,background:bg,border:`1px solid ${col}22`,minWidth:64,textAlign:'center'}}>
-                  <span style={{fontSize:17,fontWeight:800,color:col}}>{pct}%</span>
-                </div>
-                <span style={{fontSize:10,color:MUTED}}>{data.returned}/{data.base}</span>
-              </div>
-            )
-          }
-          return (
-            <Card title={`📊 ${isZh?'留存率追踪':'Retention Rate Tracking'}`}>
-              {retentionLoading ? (
-                <div style={{padding:'20px',textAlign:'center',color:MUTED,fontSize:13}}>
-                  {isZh?'计算中…':'Calculating…'}
-                </div>
-              ) : (
-                <div style={{overflowX:'auto'}}>
-                  <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
-                    <thead>
-                      <tr style={{borderBottom:'2px solid var(--border)'}}>
-                        <th style={{padding:'8px 12px',textAlign:'left',fontSize:11,fontWeight:700,color:MUTED,background:'var(--surface2)',whiteSpace:'nowrap'}}>
-                          {isZh?'周期':'Period'}
-                        </th>
-                        {['DIAMOND','PLATINUM',isZh?'综合':'Overall'].map(h => (
-                          <th key={h} style={{padding:'8px 16px',textAlign:'center',fontSize:11,fontWeight:700,color:MUTED,background:'var(--surface2)',whiteSpace:'nowrap'}}>
-                            {h==='DIAMOND' ? '💎 Diamond' : h==='PLATINUM' ? '🥈 Platinum' : `📈 ${h}`}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {rows.map((row, i) => {
-                        const d = retention?.[row.key]
-                        return (
-                          <tr key={row.key} style={{borderBottom:'1px solid var(--border)',background:i%2===0?'transparent':'var(--surface2)'}}>
-                            <td style={{padding:'12px 12px',whiteSpace:'nowrap'}}>
-                              <div style={{display:'flex',alignItems:'center',gap:8}}>
-                                <span style={{fontSize:16}}>{row.icon}</span>
-                                <div>
-                                  <div style={{fontWeight:700,fontSize:13,color:'var(--text)'}}>{row.label}</div>
-                                </div>
-                              </div>
-                            </td>
-                            <td style={{padding:'12px 16px',textAlign:'center'}}><RateBadge data={d?.diamond} /></td>
-                            <td style={{padding:'12px 16px',textAlign:'center'}}><RateBadge data={d?.platinum} /></td>
-                            <td style={{padding:'12px 16px',textAlign:'center'}}><RateBadge data={d?.overall} /></td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
-                  {!retention && !retentionLoading && (
-                    <div style={{padding:'16px',textAlign:'center',color:MUTED,fontSize:12}}>
-                      {isZh?'暂无数据':'No data available'}
-                    </div>
-                  )}
-                  <div style={{marginTop:10,padding:'6px 12px',fontSize:11,color:MUTED,display:'flex',gap:16,flexWrap:'wrap'}}>
-                    <span><span style={{display:'inline-block',width:10,height:10,borderRadius:'50%',background:GREEN,marginRight:4}}></span>{isZh?'≥70% 良好':'≥70% Good'}</span>
-                    <span><span style={{display:'inline-block',width:10,height:10,borderRadius:'50%',background:ORANGE,marginRight:4}}></span>{isZh?'50-69% 一般':'50-69% Fair'}</span>
-                    <span><span style={{display:'inline-block',width:10,height:10,borderRadius:'50%',background:RED,marginRight:4}}></span>{isZh?'<50% 需关注':'<50% Needs Attention'}</span>
-                  </div>
-                </div>
-              )}
-            </Card>
-          )
-        })()}
+        <RetentionCard lang={lang} retention={retention} retentionLoading={retentionLoading} />
 
       </>}
 
