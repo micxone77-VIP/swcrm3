@@ -213,13 +213,8 @@ export default function AllVIPs() {
     if (host === '__unassigned__') { if (v.host_assigned) return false }
     else if (host !== 'ALL' && v.host_assigned !== host) return false
     if (view === 'noctact') {
-      // Only Diamond & Platinum need monthly service
-      const t = (v.tier || '').toUpperCase()
-      if (t !== 'DIAMOND' && t !== 'PLATINUM') return false
-      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
-      const lastC = v.last_contact_date || v.last_contacted
-      // Keep VIP in list if never contacted OR last contact was before this month
-      if (lastC && new Date(lastC) >= startOfMonth) return false
+      const lastC = v.last_contacted || v.last_contact_date
+      if (lastC && Math.floor((now - new Date(lastC)) / 86400000) < 7) return false
     }
     if (search.trim()) {
       const s = search.trim().toLowerCase()
@@ -257,7 +252,7 @@ export default function AllVIPs() {
     { value: 'risk',     label: t('common.atRisk') },
     { value: 'diamond',  label: 'Diamond' },
     { value: 'platinum', label: 'Platinum' },
-    { value: 'noctact',  label: '🔔 Not Contacted This Month' },
+    { value: 'noctact',  label: 'No Contact 7d+' },
   ]
 
   const isAdmin = profile?.role === 'admin'
