@@ -14,7 +14,7 @@ import { TierBadge, StatusBadge, RiskBadge } from '../components/ui'
 import { callAI } from '../lib/aiApi'
 import { useLanguage } from '../contexts/LanguageContext'
 
-const TIERS = ['BRONZE','SILVER','GOLD','PLATINUM','DIAMOND','BLACK']
+const TIERS = ['Bronze', 'Silver', 'Gold', 'Platinum', 'Diamond', 'Black']
 const PERIODS = [
 { value: '30', label: '30D' },
 { value: 'mtd', label: 'MTD' },
@@ -119,7 +119,7 @@ supabase.from('profiles').select('full_name').in('role',['admin','host']).order(
 ])
 if (vipRes.error) throw vipRes.error
 setVip(vipRes.data)
-setEditForm({ host_assigned: vipRes.data.host_assigned||'', tier: vipRes.data.tier||'', activity_status: vipRes.data.activity_status||'', phone: vipRes.data.phone||'', whatsapp: vipRes.data.whatsapp||'', email: vipRes.data.email||'', churn_risk: vipRes.data.churn_risk||'', notes: vipRes.data.notes||'' })
+setEditForm({ host_assigned: vipRes.data.host_assigned||'', tier: vipRes.data.tier||'', activity_status: vipRes.data.activity_status||'', phone: vipRes.data.phone||'', whatsapp: vipRes.data.whatsapp||'', email: vipRes.data.email||'', telegram: vipRes.data.telegram||'', address: vipRes.data.address||'', special_requests: vipRes.data.special_requests||'', churn_risk: vipRes.data.churn_risk||'' })
 setMonthly(montRes.data || [])
 setDaily(dailyRes.data || [])
 setContacts(contRes.data || [])
@@ -206,8 +206,8 @@ async function getAIInsight() {
 setAiLoading(true)
 try {
 const summary = `VIP: ${vip.full_name||vip.username}, Tier: ${vip.tier}, Risk: ${vip.churn_risk}, Days inactive: ${daysInactive}, Total deposit: ${formatMoney(vip.total_deposit, vip.currency)}. Last 3 months deposits: ${periodMonthly.slice(0,3).map(m=>formatMoney(m.total_deposit,vip.currency)).join(', ')}.`
-const result = await callAI(`Analyze this VIP player and provide a brief insight with recommended action: ${summary}`)
-setAiInsight(result)
+const result = await callAI('chat', { question: `Analyze this VIP player and provide a brief insight with recommended action: ${summary}`, history: [] })
+setAiInsight(result.answer || 'No insight generated.')
 } catch(e) { toast(t('vip360.aiUnavailable'), 'error') }
 setAiLoading(false)
 }
@@ -788,8 +788,8 @@ AI insights are labeled and separate from confirmed CRM data.
 <Textarea value={editForm.special_requests||''} onChange={e => setEditForm(f=>({...f,special_requests:e.target.value}))} rows={2} />
 </div>
 <div>
-<label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>Internal Notes</label>
-<Textarea value={editForm.notes||''} onChange={e => setEditForm(f=>({...f,notes:e.target.value}))} rows={3} />
+<label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>Remark</label>
+<Textarea value={editForm.special_requests||''} onChange={e => setEditForm(f=>({...f,special_requests:e.target.value}))} rows={3} />
 </div>
 <div style={{ display:'flex', gap:8, justifyContent:'flex-end' }}>
 <Btn variant="ghost" onClick={() => setShowEdit(false)}>Cancel</Btn>
