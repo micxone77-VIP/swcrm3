@@ -72,14 +72,27 @@ export default function AllVIPs() {
   const load = useCallback(async () => {
     setLoading(true); setError(null)
     try {
-      const [vipRes, hostRes] = await Promise.all([
+      const currentMonth = new Date().toISOString().slice(0, 7) // 'YYYY-MM'
+      const [vipRes, hostRes, monthRes] = await Promise.all([
         supabase.from('vip_members')
           .select('id,username,full_name,tier,region,currency,days_inactive,churn_risk,host_assigned,last_deposit_date,total_deposit,win_loss,activity_status,last_contacted,last_contact_date,vip_score,is_excluded,birthday,phone')
           .neq('is_excluded', true),
         supabase.from('profiles').select('full_name').in('role',['admin','host']).order('full_name'),
+        supabase.from('vip_monthly_totals')
+          .select('vip_id,total_deposit,win_loss')
+          .eq('snapshot_month', currentMonth),
       ])
       if (vipRes.error) throw vipRes.error
-      setVips(vipRes.data || [])
+      // Build lookup: vip_id → MTD totals for current month
+      const monthByVipId = {}
+      if (monthRes.data) monthRes.data.forEach(m => { monthByVipId[m.vip_id] = m })
+      // Merge MTD deposit & win_loss (overrides stale vip_members values)
+      const vipsWithMtd = (vipRes.data || []).map(v => ({
+        ...v,
+        total_deposit: monthByVipId[v.id]?.total_deposit ?? v.total_deposit,
+        win_loss: monthByVipId[v.id]?.win_loss ?? v.win_loss,
+      }))
+      setVips(vipsWithMtd)
       const hostNames = ['ALL', '__unassigned__', ...(hostRes.data||[]).map(h => h.full_name).filter(Boolean)]
       setHosts(hostNames)
     } catch(e) { setError(e.message || String(e)) }
