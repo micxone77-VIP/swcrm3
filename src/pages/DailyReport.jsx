@@ -252,6 +252,173 @@ function RetentionMiniCard({ label, icon, data, target, isZh }) {
   )
 }
 
+// ─── Alert Panel ─────────────────────────────────────────────────
+function buildAlerts({ numbers, retention, callList, atRiskCount, countComp, birthdays, isZh }) {
+  const urgent = [], warning = [], normal = []
+  if (!numbers) return { urgent, warning, normal }
+
+  const dia = numbers.Diamond  || {}
+  const plat = numbers.Platinum || {}
+  const tot  = numbers.Total   || {}
+
+  // ── W/D ratio checks ──
+  const diaWD = dia.total_deposit > 0 ? (dia.total_withdrawal / dia.total_deposit * 100) : 0
+  const platWD = plat.total_deposit > 0 ? (plat.total_withdrawal / plat.total_deposit * 100) : 0
+  const totWD  = tot.total_deposit  > 0 ? (tot.total_withdrawal  / tot.total_deposit  * 100) : 0
+
+  if (diaWD > 200) {
+    urgent.push(isZh
+      ? `💎 钻石层 W/D 比 ${Math.round(diaWD)}% — 今日提款 ${fmt(dia.total_withdrawal)} / 存款 ${fmt(dia.total_deposit)}，疑似大户资金外流`
+      : `💎 Diamond W/D ${Math.round(diaWD)}% — Withdrawal ${fmt(dia.total_withdrawal)} vs Deposit ${fmt(dia.total_deposit)}, possible fund outflow`)
+  } else if (diaWD > 100) {
+    warning.push(isZh
+      ? `💎 钻石层 W/D 比 ${Math.round(diaWD)}%，提款超过存款，需关注`
+      : `💎 Diamond W/D ${Math.round(diaWD)}% — withdrawals exceed deposits`)
+  }
+  if (platWD > 150) {
+    urgent.push(isZh
+      ? `👑 白金层 W/D 比 ${Math.round(platWD)}% — 提款 ${fmt(plat.total_withdrawal)} 显著偏高`
+      : `👑 Platinum W/D ${Math.round(platWD)}% — withdrawal unusually high`)
+  } else if (platWD > 100) {
+    warning.push(isZh
+      ? `👑 白金层 W/D 比 ${Math.round(platWD)}%，建议监控`
+      : `👑 Platinum W/D ${Math.round(platWD)}% — monitor closely`)
+  }
+
+  // ── At-risk / call list ──
+  if (atRiskCount >= 20) {
+    urgent.push(isZh
+      ? `${atRiskCount} 位高价值会员超 3 天未存款，7日累计存款量大，优先跟进排榜见下`
+      : `${atRiskCount} high-value members 3+ days no deposit — priority follow-up required`)
+  } else if (atRiskCount >= 10) {
+    warning.push(isZh
+      ? `${atRiskCount} 位会员超 3 天未存款，建议今日跟进`
+      : `${atRiskCount} members 3+ days no deposit — follow up today`)
+  }
+
+  // ── vs 7-day average ──
+  if (countComp) {
+    const depGapPct = countComp.deposit?.avg7 > 0
+      ? ((countComp.deposit.today - countComp.deposit.avg7) / countComp.deposit.avg7 * 100) : 0
+    const activeGapPct = countComp.active?.avg7 > 0
+      ? ((countComp.active.today - countComp.active.avg7) / countComp.active.avg7 * 100) : 0
+
+    if (depGapPct <= -30) {
+      urgent.push(isZh
+        ? `📉 今日存款比 7 日均值低 ${Math.abs(Math.round(depGapPct))}%（${fmt(countComp.deposit.today)} vs 均值 ${fmt(countComp.deposit.avg7)}）`
+        : `📉 Deposit ${Math.abs(Math.round(depGapPct))}% below 7-day avg (${fmt(countComp.deposit.today)} vs avg ${fmt(countComp.deposit.avg7)})`)
+    } else if (depGapPct <= -15) {
+      warning.push(isZh
+        ? `📉 今日存款略低于 7 日均值 ${Math.abs(Math.round(depGapPct))}%`
+        : `📉 Deposit ${Math.abs(Math.round(depGapPct))}% below 7-day average`)
+    } else if (depGapPct >= 10) {
+      normal.push(isZh
+        ? `📈 今日存款比 7 日均值高 +${Math.round(depGapPct)}%（${fmt(countComp.deposit.today)}），表现良好`
+        : `📈 Deposit +${Math.round(depGapPct)}% above 7-day avg (${fmt(countComp.deposit.today)}) — strong day`)
+    }
+
+    if (activeGapPct <= -25) {
+      warning.push(isZh
+        ? `👥 活跃人数 ${countComp.active.today} 人，比 7 日均值低 ${Math.abs(Math.round(activeGapPct))}%`
+        : `👥 Active players ${countComp.active.today}, ${Math.abs(Math.round(activeGapPct))}% below 7-day avg`)
+    }
+  }
+
+  // ── Retention checks ──
+  if (retention) {
+    const dayPlat = retention.day?.platinum
+    const dayDia  = retention.day?.diamond
+    const monOverall = retention.month?.overall
+    if (dayPlat && dayPlat.base > 0 && dayPlat.rate < 55) {
+      warning.push(isZh
+        ? `📋 白金留存 ${dayPlat.rate}%，低于目标 65%，需检查上周活跃老客回访节奏`
+        : `📋 Platinum day-retention ${dayPlat.rate}% below target 65% — review last-week active follow-up`)
+    }
+    if (dayDia && dayDia.base > 0 && dayDia.rate < 60) {
+      warning.push(isZh
+        ? `📋 钻石留存 ${dayDia.rate}%，低于目标 70%`
+        : `📋 Diamond day-retention ${dayDia.rate}% below target 70%`)
+    }
+    if (monOverall && monOverall.base > 0 && monOverall.rate >= 50) {
+      normal.push(isZh
+        ? `📊 本月整体留存 ${monOverall.rate}%（${monOverall.returned.toLocaleString()} / ${monOverall.base.toLocaleString()} 位），达标`
+        : `📊 Monthly retention ${monOverall.rate}% (${monOverall.returned.toLocaleString()}/${monOverall.base.toLocaleString()}) — on target`)
+    }
+  }
+
+  // ── Company win / net deposit ──
+  if (tot.company_win > 0 && tot.net_dep > 0) {
+    normal.push(isZh
+      ? `💰 Net P&L 正向 — 公司毛利 ${fmt(tot.company_win)}，净存款 ${fmt(tot.net_dep)}，整体健康`
+      : `💰 Positive P&L — Company win ${fmt(tot.company_win)}, Net deposit ${fmt(tot.net_dep)} — healthy`)
+  } else if (tot.company_win < 0) {
+    warning.push(isZh
+      ? `⚠️ 公司毛利为负 ${fmt(tot.company_win)}，今日会员赢钱，注意资金流向`
+      : `⚠️ Company win negative ${fmt(tot.company_win)} — members won today, monitor fund flow`)
+  }
+
+  // ── Birthdays ──
+  if (birthdays.length > 0) {
+    normal.push(isZh
+      ? `🎂 明日生日：${birthdays.length} 位会员（${birthdays.map(b=>b.username||b.vip_id).slice(0,3).join('、')}${birthdays.length>3?'…':''}），记得发送祝福`
+      : `🎂 ${birthdays.length} member birthday(s) tomorrow — remember to send greetings`)
+  }
+
+  return { urgent, warning, normal }
+}
+
+function AlertPanel({ numbers, retention, callList, atRiskCount, countComp, birthdays, lang }) {
+  const isZh = lang === 'zh'
+  const { urgent, warning, normal } = buildAlerts({ numbers, retention, callList, atRiskCount, countComp, birthdays, isZh })
+
+  if (!urgent.length && !warning.length && !normal.length) return null
+
+  const levels = [
+    { key:'urgent',  items: urgent,  color:'#ef4444', bg:'rgba(239,68,68,0.08)',  border:'rgba(239,68,68,0.3)',  dot:'🔴', label: isZh?'需要立即关注':'Immediate Action' },
+    { key:'warning', items: warning, color:'#f97316', bg:'rgba(249,115,22,0.08)', border:'rgba(249,115,22,0.3)', dot:'🟡', label: isZh?'雷意':'Watch' },
+    { key:'normal',  items: normal,  color:'#22c55e', bg:'rgba(34,197,94,0.08)',  border:'rgba(34,197,94,0.3)',  dot:'🟢', label: isZh?'正常':'Normal' },
+  ].filter(l => l.items.length > 0)
+
+  return (
+    <div style={{marginBottom:18}}>
+      {levels.map(lv => (
+        <div key={lv.key} style={{
+          background: lv.bg,
+          border: `1px solid ${lv.border}`,
+          borderLeft: `4px solid ${lv.color}`,
+          borderRadius: 10,
+          marginBottom: 8,
+          padding: '12px 16px',
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: 12,
+        }}>
+          {/* left: label + items */}
+          <div style={{flex:1}}>
+            <div style={{fontSize:12,fontWeight:700,color:lv.color,marginBottom:6,textTransform:'uppercase',letterSpacing:'0.05em'}}>
+              {lv.dot} {lv.label}
+            </div>
+            {lv.items.map((msg, i) => (
+              <div key={i} style={{fontSize:14,color:'var(--text)',lineHeight:1.6,marginBottom: i < lv.items.length-1 ? 4 : 0}}>
+                {msg}
+              </div>
+            ))}
+          </div>
+          {/* right: count badge */}
+          <div style={{
+            minWidth: 36, height: 36, borderRadius: '50%',
+            background: lv.color, color:'#fff',
+            display:'flex', alignItems:'center', justifyContent:'center',
+            fontSize:16, fontWeight:900, flexShrink:0,
+          }}>
+            {lv.items.length}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 // ─── Retention Card ──────────────────────────────────────────────
 function RetentionCard({ lang, retention, retentionLoading }) {
   const [activePeriod, setActivePeriod] = useState('day')
@@ -987,6 +1154,14 @@ export default function DailyReport() {
       {!loading && !numbers && <div style={{textAlign:'center',padding:40,color:MUTED,fontSize:14}}>{t.noData}</div>}
 
       {!loading && numbers && <>
+
+        {/* ── Alert Panel ── */}
+        <AlertPanel
+          numbers={numbers} retention={retention}
+          callList={callList} atRiskCount={atRiskCount}
+          countComp={countComp} birthdays={birthdays}
+          lang={lang}
+        />
 
         {/* ── Section 1: Numbers table ── */}
         <Card title={`📊 ${lang==='zh'?'今日数据汇总':'Today\'s Summary'} — ${reportDate} (${wdLabel})`} accent="var(--brand)">
