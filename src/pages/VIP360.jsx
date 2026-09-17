@@ -14,7 +14,7 @@ import { TierBadge, StatusBadge, RiskBadge } from '../components/ui'
 import { callAI } from '../lib/aiApi'
 import { useLanguage } from '../contexts/LanguageContext'
 
-const TIERS = ['Bronze','Silver','Gold','Platinum','Diamond','Black']
+const TIERS = ['BRONZE','SILVER','GOLD','PLATINUM','DIAMOND','BLACK']
 const PERIODS = [
 { value: '30', label: '30D' },
 { value: 'mtd', label: 'MTD' },
@@ -119,7 +119,7 @@ supabase.from('profiles').select('full_name').in('role',['admin','host']).order(
 ])
 if (vipRes.error) throw vipRes.error
 setVip(vipRes.data)
-setEditForm({ host_assigned: vipRes.data.host_assigned||'', tier: vipRes.data.tier||'', activity_status: vipRes.data.activity_status||'', phone: vipRes.data.phone||'', whatsapp: vipRes.data.whatsapp||'', email: vipRes.data.email||'', churn_risk: vipRes.data.churn_risk||'', telegram: vipRes.data.telegram||'', address: vipRes.data.address||'', special_requests: vipRes.data.special_requests||'' })
+setEditForm({ host_assigned: vipRes.data.host_assigned||'', tier: vipRes.data.tier||'', activity_status: vipRes.data.activity_status||'', phone: vipRes.data.phone||'', whatsapp: vipRes.data.whatsapp||'', email: vipRes.data.email||'', telegram: vipRes.data.telegram||'', address: vipRes.data.address||'', special_requests: vipRes.data.special_requests||'', churn_risk: vipRes.data.churn_risk||'' })
 setMonthly(montRes.data || [])
 setDaily(dailyRes.data || [])
 setContacts(contRes.data || [])
@@ -194,6 +194,8 @@ setEditSaving(true)
 const clean = Object.fromEntries(
 Object.entries(editForm).map(([k, v]) => [k, v === '' ? null : v])
 )
+// vip_tier enum requires uppercase — normalise regardless of dropdown display value
+if (clean.tier) clean.tier = clean.tier.toUpperCase()
 const { error: err } = await supabase.from('vip_members').update(clean).eq('id', id)
 setEditSaving(false)
 if (err) { toast('Error: ' + err.message, 'error'); return }
@@ -206,8 +208,8 @@ async function getAIInsight() {
 setAiLoading(true)
 try {
 const summary = `VIP: ${vip.full_name||vip.username}, Tier: ${vip.tier}, Risk: ${vip.churn_risk}, Days inactive: ${daysInactive}, Total deposit: ${formatMoney(vip.total_deposit, vip.currency)}. Last 3 months deposits: ${periodMonthly.slice(0,3).map(m=>formatMoney(m.total_deposit,vip.currency)).join(', ')}.`
-const result = await callAI(`Analyze this VIP player and provide a brief insight with recommended action: ${summary}`)
-setAiInsight(result)
+const result = await callAI('chat', { question: `Analyze this VIP player and provide a brief insight with recommended action: ${summary}`, history: [] })
+setAiInsight(result.answer || 'No insight generated.')
 } catch(e) { toast(t('vip360.aiUnavailable'), 'error') }
 setAiLoading(false)
 }
@@ -734,7 +736,7 @@ AI insights are labeled and separate from confirmed CRM data.
 <div>
 <label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>Tier</label>
 <Select value={editForm.tier} onChange={e => setEditForm(f=>({...f,tier:e.target.value}))} style={{ width:'100%' }}>
-{TIERS.map(t => <option key={t} value={t}>{t}</option>)}
+{TIERS.map(t => <option key={t} value={t}>{t.charAt(0) + t.slice(1).toLowerCase()}</option>)}
 </Select>
 </div>
 <div>
