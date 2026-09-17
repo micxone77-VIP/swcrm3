@@ -5,6 +5,7 @@ export const EDITABLE_CAMPAIGN_FIELDS = [
   'reward_tiers','min_valid_bet','top_n','rank_rewards','min_deposit_lb',
   'settlement_frequency','campaign_category','is_multi_level','max_levels','requires_period_deposit',
   'enrollment_mode','auto_enroll_tiers','leaderboard_metric','payout_mode',
+  'streak_enabled','streak_days','streak_bonus_type','streak_bonus_pct','streak_bonus_fixed','streak_bonus_cap',
 ]
 
 export const EMPTY_LEVEL = () => ({
@@ -57,6 +58,12 @@ export function normalizeCampaignForEdit(campaign) {
   form.auto_enroll_tiers = Array.isArray(c.auto_enroll_tiers) ? [...c.auto_enroll_tiers] : [...form.target_tier]
   form.leaderboard_metric = ['turnover', 'deposit', 'turnover_deposit'].includes(c.leaderboard_metric) ? c.leaderboard_metric : 'turnover'
   form.payout_mode = c.payout_mode === 'highest_only' ? 'highest_only' : 'all'
+  form.streak_enabled = Boolean(c.streak_enabled)
+  form.streak_days = Number(c.streak_days) || 3
+  form.streak_bonus_type = ['pct', 'fixed'].includes(c.streak_bonus_type) ? c.streak_bonus_type : 'pct'
+  form.streak_bonus_pct = c.streak_bonus_pct != null ? Number(c.streak_bonus_pct) : 1.0
+  form.streak_bonus_fixed = c.streak_bonus_fixed != null ? Number(c.streak_bonus_fixed) : 0
+  form.streak_bonus_cap = c.streak_bonus_cap != null ? Number(c.streak_bonus_cap) : 0
   form.start_date = normalizeDate(c.start_date)
   form.end_date = normalizeDate(c.end_date)
   return form
@@ -141,6 +148,12 @@ export function buildCampaignUpdate(form) {
     max_levels: Boolean(form.is_multi_level) ? Number(form.max_levels) || 1 : 1,
     requires_period_deposit: form.requires_period_deposit !== false,
     payout_mode: form.payout_mode === 'highest_only' ? 'highest_only' : 'all',
+    streak_enabled: Boolean(form.streak_enabled),
+    streak_days: Number(form.streak_days) || 3,
+    streak_bonus_type: ['pct', 'fixed'].includes(form.streak_bonus_type) ? form.streak_bonus_type : 'pct',
+    streak_bonus_pct: form.streak_bonus_pct != null ? Number(form.streak_bonus_pct) : 1.0,
+    streak_bonus_fixed: form.streak_bonus_fixed != null ? Number(form.streak_bonus_fixed) : 0,
+    streak_bonus_cap: form.streak_bonus_cap != null ? Number(form.streak_bonus_cap) : 0,
   }
 }
 

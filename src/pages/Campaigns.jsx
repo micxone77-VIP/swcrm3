@@ -202,6 +202,8 @@ export default function Campaigns() {
   const [campaignLevelsEdit, setCampaignLevelsEdit] = useState([])
   const [campaignLevels, setCampaignLevels] = useState([])
   const [levelsLoading, setLevelsLoading] = useState(false)
+  const [streakBonuses, setStreakBonuses] = useState({})   // map: campaign_player_id → [...rows]
+  const [streakBonusesLoading, setStreakBonusesLoading] = useState(false)
 
   // VIP search
   const [vipSearch,   setVipSearch]   = useState('')
@@ -287,8 +289,11 @@ export default function Campaigns() {
     if (selected?.id) {
       loadPlayers(selected.id)
       loadCampaignLevels(selected.id)
+      if (selected.streak_enabled) loadStreakBonuses(selected.id)
+      else setStreakBonuses({})
     } else {
       setCampaignLevels([])
+      setStreakBonuses({})
     }
   }, [selected?.id])
 
@@ -607,7 +612,7 @@ export default function Campaigns() {
     await loadCampaigns()
   }
 
-  function closeModal() { setModal(null); setSelected(null); setPlayers([]); setCampaignPlayerLevels([]); setCampaignRewards([]); setVipSearch(''); setVipResults([]); setEditingCamp(false); setAiAnalysis(null); setDailyEntries({}); setEntryDate('') }
+  function closeModal() { setModal(null); setSelected(null); setPlayers([]); setCampaignPlayerLevels([]); setCampaignRewards([]); setVipSearch(''); setVipResults([]); setEditingCamp(false); setAiAnalysis(null); setDailyEntries({}); setEntryDate(''); setStreakBonuses({}); setStreakBonusesLoading(false) }
 
   async function loadDailyEntries(campaignId, date) {
     setDailyLoading(true)
@@ -640,6 +645,120 @@ export default function Campaigns() {
       .upsert(payload, { onConflict: 'campaign_id,player_id,entry_date' })
     if (error) { alert('Save failed: ' + error.message); console.error(error); return }
     setDailyEntries(prev => ({ ...prev, [playerId]: payload }))
+    if (selected?.streak_enabled) await checkAndAwardStreak(playerId, entryDate)
+  }
+
+  async function loadStreakBonuses(campaignId) {
+    setStreakBonusesLoading(true)
+    const { data, error } = await supabase
+      .from('campaign_streak_bonuses')
+      .select('*')
+      .eq('campaign_id', campaignId)
+      .order('campaign_player_id').order('streak_number', { ascending: true })
+    if (error) { console.error('loadStreakBonuses error', error); setStreakBonuses({}); setStreakBonusesLoading(false); return }
+    const map = {}
+    for (const r of (data || [])) {
+      if (!map[r.campaign_player_id]) map[r.campaign_player_id] = []
+      map[r.campaign_player_id].push(r)
+    }
+    setStreakBonuses(map)
+    setStreakBonusesLoading(false)
+  }
+
+  async function checkAndAwardStreak(playerId, afterEntryDate) {
+    if (!selected?.streak_enabled || !isDailyMode) return
+    // Minimum qualifying deposit = lowest level threshold, or deposit_target as fallback
+    const sortedLvls = [...campaignLevels].sort((a, b) => (parseFloat(a.deposit_threshold) || 0) - (parseFloat(b.deposit_threshold) || 0))
+    const minThreshold = sortedLvls.length > 0
+      ? (parseFloat(sortedLvls[0].deposit_threshold) || 0)
+      : (parseFloat(selected?.deposit_target) || 5000)
+
+    // Fetch all entries for this player sorted by date
+    const { data: allEntries, error: entriesErr } = await supabase
+      .from('daily_turnover_entries')
+      .select('entry_date, deposit_amount')
+      .eq('campaign_id', selected.id)
+      .eq('player_id', playerId)
+      .order('entry_date', { ascending: true })
+    if (entriesErr || !allEntries?.length) return
+
+    // Keep only qualifying days (deposit >= minThreshold)
+    const qualifyingDates = allEntries
+      .filter(e => (parseFloat(e.deposit_amount) || 0) >= minThreshold)
+      .map(e => e.entry_date)   // 'YYYY-MM-DD' strings, sorted ASC
+    if (!qualifyingDates.length) return
+
+    // Split into consecutive runs (no gaps allowed between calendar days)
+    const runs = []
+    let cur = [qualifyingDates[0]]
+    for (let i = 1; i < qualifyingDates.length; i++) {
+      const prev = new Date(qualifyingDates[i - 1] + 'T00:00:00Z')
+      const next = new Date(qualifyingDates[i] + 'T00:00:00Z')
+      if (Math.round((next - prev) / 86400000) === 1) { cur.push(qualifyingDates[i]) }
+      else { runs.push(cur); cur = [qualifyingDates[i]] }
+    }
+    runs.push(cur)
+
+    // Find the run that contains or most-recently ends before afterEntryDate
+    const activeRun = runs.find(r => r.includes(afterEntryDate))
+      || runs.filter(r => r[r.length - 1] <= afterEntryDate).pop()
+    if (!activeRun) return
+
+    const streakDays = selected.streak_days || 3
+    const totalComplete = Math.floor(activeRun.length / streakDays)
+    if (totalComplete === 0) return
+
+    // Check what's already been awarded
+    const { data: existing, error: existingErr } = await supabase
+      .from('campaign_streak_bonuses')
+      .select('streak_number')
+      .eq('campaign_id', selected.id)
+      .eq('campaign_player_id', playerId)
+    if (existingErr) { console.error('streak bonus fetch error', existingErr); return }
+    const awardedNums = new Set((existing || []).map(r => r.streak_number))
+
+    // Award any missing streaks
+    for (let sn = 1; sn <= totalComplete; sn++) {
+      if (awardedNums.has(sn)) continue
+      const startIdx = (sn - 1) * streakDays
+      const periodDates = activeRun.slice(startIdx, startIdx + streakDays)
+      const periodStart = periodDates[0]
+      const periodEnd = periodDates[periodDates.length - 1]
+      const periodDeposit = allEntries
+        .filter(e => periodDates.includes(e.entry_date))
+        .reduce((s, e) => s + (parseFloat(e.deposit_amount) || 0), 0)
+
+      // Calculate bonus
+      let bonusAmount = 0
+      if ((selected.streak_bonus_type || 'pct') === 'pct') {
+        bonusAmount = periodDeposit * (parseFloat(selected.streak_bonus_pct) || 0) / 100
+      } else {
+        bonusAmount = parseFloat(selected.streak_bonus_fixed) || 0
+      }
+      const cap = parseFloat(selected.streak_bonus_cap) || 0
+      if (cap > 0) bonusAmount = Math.min(bonusAmount, cap)
+      bonusAmount = Math.round(bonusAmount * 100) / 100
+
+      // Payout date = period_end + 1 day
+      const endDt = new Date(periodEnd + 'T00:00:00Z')
+      endDt.setUTCDate(endDt.getUTCDate() + 1)
+      const payoutDate = endDt.toISOString().slice(0, 10)
+
+      const { error: insertErr } = await supabase.from('campaign_streak_bonuses').insert({
+        campaign_id: selected.id,
+        campaign_player_id: playerId,
+        streak_number: sn,
+        period_start: periodStart,
+        period_end: periodEnd,
+        period_deposit: periodDeposit,
+        bonus_amount: bonusAmount,
+        payout_status: 'pending',
+        payout_date: payoutDate,
+      })
+      if (insertErr) console.error('streak bonus insert error', insertErr)
+    }
+
+    await loadStreakBonuses(selected.id)
   }
 
   // ── Import from VIP snapshot data ───────────────────────────────────────────
@@ -1588,6 +1707,60 @@ export default function Campaigns() {
                   </>}
                 </div>
 
+                {/* ── STREAK BONUS CONFIG (daily mode only) ── */}
+                {editCampForm.campaign_type === 'dual_tier' && editCampForm.settlement_frequency === 'daily' && (
+                  <div style={{ borderTop:'1px solid var(--border)', paddingTop:14, marginBottom:14 }}>
+                    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10 }}>
+                      <div>
+                        <div style={{ fontSize:11, fontWeight:800, color:'var(--muted)', letterSpacing:'.5px' }}>🔥 STREAK BONUS</div>
+                        <div style={{ fontSize:10, color:'var(--muted)', marginTop:3 }}>Extra reward when players complete consecutive qualifying days.</div>
+                      </div>
+                      <label style={{ display:'flex', alignItems:'center', gap:8, fontSize:12, cursor:'pointer' }}>
+                        <input type="checkbox" checked={Boolean(editCampForm.streak_enabled)} onChange={e=>setEditCampForm(f=>({...f,streak_enabled:e.target.checked}))} />
+                        Enable streak
+                      </label>
+                    </div>
+                    {editCampForm.streak_enabled && (
+                      <div style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'12px 14px' }}>
+                        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(150px,1fr))', gap:'10px 14px', marginBottom:10 }}>
+                          <div>
+                            <div style={s.flbl}>Streak Length (days)</div>
+                            <input type="number" min="2" max="30" style={s.finput} value={editCampForm.streak_days||3} onChange={e=>setEditCampForm(f=>({...f,streak_days:e.target.value}))} />
+                            <div style={{ fontSize:10, color:'var(--muted)', marginTop:3 }}>Consecutive qualifying days per bonus</div>
+                          </div>
+                          <div>
+                            <div style={s.flbl}>Bonus Mode</div>
+                            <select style={s.fsel} value={editCampForm.streak_bonus_type||'pct'} onChange={e=>setEditCampForm(f=>({...f,streak_bonus_type:e.target.value}))}>
+                              <option value="pct">% of Period Deposit</option>
+                              <option value="fixed">Fixed Amount</option>
+                            </select>
+                          </div>
+                          {(editCampForm.streak_bonus_type||'pct')==='pct' ? (
+                            <div>
+                              <div style={s.flbl}>Bonus %</div>
+                              <input type="number" min="0" step="0.01" style={s.finput} value={editCampForm.streak_bonus_pct??1} onChange={e=>setEditCampForm(f=>({...f,streak_bonus_pct:e.target.value}))} placeholder="e.g. 1" />
+                              <div style={{ fontSize:10, color:'var(--muted)', marginTop:3 }}>% of total deposit in those {editCampForm.streak_days||3} days</div>
+                            </div>
+                          ) : (
+                            <div>
+                              <div style={s.flbl}>Fixed Bonus (RM)</div>
+                              <input type="number" min="0" style={s.finput} value={editCampForm.streak_bonus_fixed??0} onChange={e=>setEditCampForm(f=>({...f,streak_bonus_fixed:e.target.value}))} placeholder="e.g. 100" />
+                            </div>
+                          )}
+                          <div>
+                            <div style={s.flbl}>Max Cap (RM)</div>
+                            <input type="number" min="0" style={s.finput} value={editCampForm.streak_bonus_cap??0} onChange={e=>setEditCampForm(f=>({...f,streak_bonus_cap:e.target.value}))} placeholder="0 = no cap" />
+                            <div style={{ fontSize:10, color:'var(--muted)', marginTop:3 }}>0 = no cap</div>
+                          </div>
+                        </div>
+                        <div style={{ fontSize:11, color:'var(--muted)', padding:'8px 10px', background:'rgba(88,166,255,.06)', borderRadius:6 }}>
+                          <strong>How it works:</strong> Player qualifies for streak when they deposit ≥ Level 1 threshold on a given day. Every {editCampForm.streak_days||3} consecutive qualifying days earns one bonus, paid the next day. Streak resets if any day is missed.
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {editCampForm.campaign_type==='leaderboard' && <div style={{ borderTop:'1px solid var(--border)', paddingTop:14, marginBottom:14 }}><div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:10 }}>
   <div>
     <div style={s.flbl}>Leaderboard Metric</div>
@@ -1862,6 +2035,9 @@ export default function Campaigns() {
                               ? (multiMetric?.qualifiedRewardTotal || 0)
                               : campType==='dual_tier' ? (dualReward.creditAmount + dualReward.wcashAmount) : calcReward(campType, playerDeposit(p), rewardPct, rewardFixed, goldVal, rewardCap, rewardTiers, campaignLevels, selected?.is_multi_level)
                             const qualified = multi ? (multiMetric?.completedCount > 0) : campType==='dual_tier' ? dualReward.tierIndex >= 0 : playerDeposit(p) >= depTarget
+                            const playerStreaks = streakBonuses[p.id] || []
+                            const pendingStreaks = playerStreaks.filter(sb => sb.payout_status !== 'paid')
+                            const paidStreaks = playerStreaks.filter(sb => sb.payout_status === 'paid')
                             return (
                               <tr key={p.id} onMouseEnter={e=>e.currentTarget.style.background='var(--surface2)'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
                                 <td style={{ ...s.td, color:'var(--muted)', fontSize:11 }}>{i+1}</td>
@@ -1875,6 +2051,12 @@ export default function Campaigns() {
                                       {copiedId===p.id ? '✓' : '⎘'}
                                     </button>
                                   </div>
+                                  {selected?.streak_enabled && playerStreaks.length > 0 && (
+                                    <div style={{ marginTop:4, display:'flex', gap:4, flexWrap:'wrap' }}>
+                                      {paidStreaks.length > 0 && <span style={{ fontSize:10, background:'rgba(63,185,80,.15)', color:'#3fb950', borderRadius:4, padding:'1px 5px', fontWeight:600 }}>🔥×{paidStreaks.length} paid</span>}
+                                      {pendingStreaks.map(sb => <span key={sb.streak_number} style={{ fontSize:10, background:'rgba(245,158,11,.15)', color:'#f59e0b', borderRadius:4, padding:'1px 5px', fontWeight:600 }}>🔥#{sb.streak_number} {rmFmt(sb.bonus_amount, campCurrency)}</span>)}
+                                    </div>
+                                  )}
                                 </td>
                                 <td style={{ ...s.td, fontSize:12, color:'var(--muted)' }}>
                                   <input defaultValue={p.whatsapp||''} onBlur={e=>{if(e.target.value!==(p.whatsapp||''))updatePlayer(p.id,{whatsapp:e.target.value})}} style={{ ...s.editInput, width:120 }} placeholder="—" />
@@ -1972,6 +2154,79 @@ export default function Campaigns() {
                     <tbody>{(isDailyMode?dailyAchieved:achieved).map((p,i)=>{const dualReward=isDailyMode?calcDualTierReward(dailyEntries[p.id]?.deposit_amount||0,dailyEntries[p.id]?.turnover_amount||0,rewardTiers):campType==='dual_tier'?calcDualTierReward(playerDeposit(p),p.valid_bet,rewardTiers):null;const reward=campType==='dual_tier'?(dualReward.creditAmount+dualReward.wcashAmount):calcReward(campType,playerDeposit(p),rewardPct,rewardFixed,goldVal,rewardCap,rewardTiers,campaignLevels,selected?.is_multi_level);const paid=p.payout_status==='paid';return <tr key={p.id}><td style={{...s.td,color:'var(--muted)',fontSize:11}}>{i+1}</td><td style={{...s.td,fontWeight:700}}>{p.username}</td><td style={s.td}>{p.tier||'—'}</td><td style={{...s.td,color:'#3fb950',fontWeight:600}}>{isDailyMode&&campType==='dual_tier'?<span>{rmFmt(dailyEntries[p.id]?.deposit_amount||0,campCurrency)}<br/><span style={{fontSize:10,color:'var(--muted)'}}>{rmFmt(dailyEntries[p.id]?.turnover_amount||0,campCurrency)} TO</span></span>:isDailyMode?rmFmt(dailyEntries[p.id]?.turnover_amount||0,campCurrency):rmFmt(playerDeposit(p),campCurrency)}</td><td style={{...s.td,color:typeInfo.color,fontWeight:700}}>{campType==='dual_tier'?<span>{rmFmt(dualReward.creditAmount,campCurrency)} Credit<br/><span style={{fontSize:10,color:'var(--muted)'}}>+ {rmFmt(dualReward.wcashAmount,campCurrency)} WCash</span></span>:rmFmt(reward,campCurrency)}</td><td style={s.td}><button onClick={()=>updatePlayer(p.id,{payout_status:paid?'pending':'paid',payout_date:paid?null:new Date().toISOString()})} style={{...s.tag(paid?'#3fb950':'#f59e0b',paid?'rgba(63,185,80,.15)':'rgba(245,158,11,.15)'),cursor:'pointer'}}>{paid?'✅ Paid':'⏳ Pending'}</button></td><td style={s.td}><input defaultValue={p.notes||''} onBlur={e=>{if(e.target.value!==(p.notes||''))updatePlayer(p.id,{notes:e.target.value})}} style={{...s.editInput,width:140}} placeholder="Add note..."/></td></tr>})}</tbody>
                   </table>
                 )}
+
+                {/* ── STREAK BONUSES PAYOUT SECTION ── */}
+                {selected?.streak_enabled && (() => {
+                  const allStreakRows = Object.entries(streakBonuses).flatMap(([playerId, rows]) => {
+                    const player = players.find(p => p.id === playerId)
+                    return rows.map(sb => ({ ...sb, username: player?.username || playerId, tier: player?.tier }))
+                  }).sort((a, b) => a.username.localeCompare(b.username) || a.streak_number - b.streak_number)
+                  if (!allStreakRows.length && !streakBonusesLoading) return null
+                  return (
+                    <div style={{ borderTop:'2px solid var(--border)', marginTop:8 }}>
+                      <div style={{ padding:'10px 24px', display:'flex', alignItems:'center', gap:10, background:'rgba(245,158,11,.04)' }}>
+                        <span style={{ fontSize:13, fontWeight:800 }}>🔥 Streak Bonuses</span>
+                        {streakBonusesLoading && <span style={{ fontSize:11, color:'var(--muted)' }}>Loading…</span>}
+                        {!streakBonusesLoading && <span style={{ fontSize:11, color:'var(--muted)' }}>{allStreakRows.length} bonus{allStreakRows.length !== 1 ? 'es' : ''} · {allStreakRows.filter(r=>r.payout_status==='paid').length} paid · {rmFmt(allStreakRows.filter(r=>r.payout_status!=='paid').reduce((s,r)=>s+(parseFloat(r.bonus_amount)||0),0), campCurrency)} pending</span>}
+                        <button onClick={()=>loadStreakBonuses(selected.id)} style={{ marginLeft:'auto', background:'var(--surface2)', border:'1px solid var(--border)', color:'var(--muted)', padding:'3px 10px', borderRadius:5, fontSize:11, cursor:'pointer' }}>↺ Refresh</button>
+                      </div>
+                      {allStreakRows.length > 0 && (
+                        <table style={s.tbl}>
+                          <thead><tr>
+                            <th style={s.th}>#</th>
+                            <th style={s.th}>Player</th>
+                            <th style={s.th}>Streak</th>
+                            <th style={s.th}>Period</th>
+                            <th style={s.th}>Period Deposit</th>
+                            <th style={s.th}>Bonus</th>
+                            <th style={s.th}>Pay Date</th>
+                            <th style={s.th}>Status</th>
+                            <th style={s.th}>Notes</th>
+                          </tr></thead>
+                          <tbody>
+                            {allStreakRows.map((sb, i) => {
+                              const paid = sb.payout_status === 'paid'
+                              return (
+                                <tr key={sb.id} style={{ background: paid ? 'rgba(63,185,80,.04)' : 'transparent' }}>
+                                  <td style={{ ...s.td, color:'var(--muted)', fontSize:11 }}>{i+1}</td>
+                                  <td style={{ ...s.td, fontWeight:700 }}>
+                                    {sb.username}
+                                    {sb.tier && <span style={{ ...s.badge, background:TIER_BG[sb.tier]||'transparent', color:TIER_COLOR[sb.tier]||'var(--muted)', fontSize:10, marginLeft:4 }}>{sb.tier}</span>}
+                                  </td>
+                                  <td style={{ ...s.td, color:'#f59e0b', fontWeight:700 }}>🔥 #{sb.streak_number}</td>
+                                  <td style={{ ...s.td, fontSize:11, color:'var(--muted)' }}>{fmtDate(sb.period_start)} → {fmtDate(sb.period_end)}</td>
+                                  <td style={{ ...s.td, color:'#3fb950', fontWeight:600 }}>{rmFmt(sb.period_deposit, campCurrency)}</td>
+                                  <td style={{ ...s.td, color:'#f59e0b', fontWeight:800 }}>{rmFmt(sb.bonus_amount, campCurrency)}</td>
+                                  <td style={{ ...s.td, fontSize:11, color:'var(--muted)' }}>{sb.payout_date ? fmtDate(sb.payout_date) : '—'}</td>
+                                  <td style={s.td}>
+                                    <button onClick={async () => {
+                                      const newStatus = paid ? 'pending' : 'paid'
+                                      const { error } = await supabase.from('campaign_streak_bonuses').update({ payout_status: newStatus, payout_date: newStatus === 'paid' ? new Date().toISOString().slice(0,10) : sb.payout_date }).eq('id', sb.id)
+                                      if (error) { console.error(error); return }
+                                      await loadStreakBonuses(selected.id)
+                                    }} style={{ ...s.tag(paid ? '#3fb950' : '#f59e0b', paid ? 'rgba(63,185,80,.15)' : 'rgba(245,158,11,.15)'), cursor:'pointer', border:`1px solid ${paid ? 'rgba(63,185,80,.3)' : 'rgba(245,158,11,.3)'}` }}>
+                                      {paid ? '✅ Paid' : '⏳ Pending'}
+                                    </button>
+                                  </td>
+                                  <td style={s.td}>
+                                    <input defaultValue={sb.notes||''} onBlur={async e => { const v=e.target.value; if(v!==(sb.notes||'')) { await supabase.from('campaign_streak_bonuses').update({notes:v}).eq('id',sb.id); await loadStreakBonuses(selected.id) }}} style={{ ...s.editInput, width:140 }} placeholder="Add note…" />
+                                  </td>
+                                </tr>
+                              )
+                            })}
+                            <tr style={{ background:'var(--surface2)', fontWeight:700 }}>
+                              <td colSpan={5} style={s.td}>Total streak bonuses</td>
+                              <td style={{ ...s.td, color:'#f59e0b', fontWeight:800 }}>{rmFmt(allStreakRows.reduce((s,r)=>s+(parseFloat(r.bonus_amount)||0),0), campCurrency)}</td>
+                              <td style={s.td} />
+                              <td style={s.td}><span style={{color:'#3fb950'}}>{rmFmt(allStreakRows.filter(r=>r.payout_status==='paid').reduce((s,r)=>s+(parseFloat(r.bonus_amount)||0),0), campCurrency)} paid</span><span style={{color:'#f85149',marginLeft:8}}>{rmFmt(allStreakRows.filter(r=>r.payout_status!=='paid').reduce((s,r)=>s+(parseFloat(r.bonus_amount)||0),0), campCurrency)} pending</span></td>
+                              <td style={s.td} />
+                            </tr>
+                          </tbody>
+                        </table>
+                      )}
+                    </div>
+                  )
+                })()}
               </div>
             )}
 
