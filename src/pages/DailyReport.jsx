@@ -231,6 +231,7 @@ export default function DailyReport() {
   const [rangeDailySummary, setRangeDailySummary] = useState([])
   const [rangePlayerGrid, setRangePlayerGrid] = useState([])
   const [rangePlayNoDep, setRangePlayNoDep] = useState([])
+  const [rangeActiveSheet, setRangeActiveSheet] = useState('grid') // 'summary' | 'grid' | 'playnodep'
 
   const effectiveHost = hostFilter === '__mine__' ? (profile?.full_name || null) : (hostFilter || null)
 
@@ -1000,187 +1001,372 @@ export default function DailyReport() {
       </>}
 
       {/* ══════════════════════════════════════════════════════
-          RANGE REPORT SECTIONS
-          Only rendered when reportMode === 'range' && rangeGenerated
+          RANGE REPORT — Excel-style tabbed view
       ══════════════════════════════════════════════════════ */}
       {reportMode === 'range' && rangeGenerated && (() => {
         const isZh = lang === 'zh'
-
-        // ── Summary stats for top tiles ──
         const totalDep    = rangeDailySummary.reduce((s,r) => s+r.deposit, 0)
         const totalDeps   = rangeDailySummary.reduce((s,r) => s+r.depositors, 0)
         const totalPlayed = rangeDailySummary.reduce((s,r) => s+r.playNoDep, 0)
         const avgDep      = rangeDates.length ? (totalDep / rangeDates.length) : 0
         const avgDeps     = rangeDates.length ? (totalDeps / rangeDates.length) : 0
 
+        // ── Cell colour palette (solid, like Excel) ──
+        const CELL_DEP   = { bg:'#16a34a', color:'#fff',      char: isZh?'存':'D' }
+        const CELL_PLAY  = { bg:'#ea580c', color:'#fff',      char: isZh?'玩':'P' }
+        const CELL_LOGIN = { bg:'#334155', color:'#94a3b8',   char: '·' }
+        const CELL_EMPTY = { bg:'transparent', color:'',      char: '' }
+        const CELL_WE    = { bg:'rgba(59,130,246,0.06)', color:'', char: '' }
+
+        function cellStyle(s, isWe) {
+          if (s==='存') return CELL_DEP
+          if (s==='玩') return CELL_PLAY
+          if (s==='登') return CELL_LOGIN
+          return isWe ? CELL_WE : CELL_EMPTY
+        }
+
+        const SHEETS = [
+          { key:'grid',     label: isZh?'📋 每日状态':'📋 Daily Status' },
+          { key:'summary',  label: isZh?'📅 每日汇总':'📅 Daily Summary' },
+          { key:'playnodep',label: isZh?'🎰 有玩没存':'🎰 Play No Dep' },
+        ]
+
         return (<>
-          {/* ── Range summary tiles ── */}
-          <div style={{display:'flex',gap:10,flexWrap:'wrap',marginBottom:18}}>
-            <Tile label={isZh?'总存款':'Total Deposit'}   value={fmtK(totalDep)}          color={GREEN} />
-            <Tile label={isZh?'日均存款':'Avg Daily Dep'} value={fmtK(avgDep)}             color={BLUE}  />
-            <Tile label={isZh?'总存款人次':'Total Dep Visits'} value={totalDeps}           />
-            <Tile label={isZh?'日均存款人数':'Avg Depositors'} value={avgDeps.toFixed(1)}  />
-            <Tile label={isZh?'有玩没存人次':'Play-No-Dep'}    value={totalPlayed}         color={ORANGE}/>
-            <Tile label={isZh?'参与会员数':'VIPs Seen'}   value={rangePlayerGrid.length}   />
+          {/* ── KPI tiles ── */}
+          <div style={{display:'flex',gap:10,flexWrap:'wrap',marginBottom:16}}>
+            <Tile label={isZh?'期间总存款':'Period Deposit'}  value={fmtK(totalDep)}          color={GREEN}  />
+            <Tile label={isZh?'日均存款':'Daily Avg Dep'}     value={fmtK(avgDep)}             color={BLUE}   />
+            <Tile label={isZh?'总存款人次':'Total Dep Visits'} value={totalDeps}                              />
+            <Tile label={isZh?'日均存款人数':'Avg Depositors'} value={avgDeps.toFixed(1)}                     />
+            <Tile label={isZh?'有玩没存人次':'Play-No-Dep'}   value={totalPlayed}              color={ORANGE} />
+            <Tile label={isZh?'参与会员数':'VIPs Seen'}       value={rangePlayerGrid.length}                 />
           </div>
 
-          {/* ── Sheet 1: Daily Summary table ── */}
-          <Card title={`📅 ${isZh?'每日汇总':'Daily Summary'} (${dateFrom} → ${dateTo})`} accent={BLUE}>
-            <div style={{overflowX:'auto'}}>
-              <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
-                <thead>
-                  <tr style={{borderBottom:'2px solid var(--border)'}}>
-                    <th style={thL}>{isZh?'日期':'Date'}</th>
-                    <th style={thL}>{isZh?'星期':'Day'}</th>
-                    <th style={th}>{isZh?'有存款人数':'Depositors'}</th>
-                    <th style={th}>{isZh?'有玩没存':'Play No Dep'}</th>
-                    <th style={th}>{isZh?'有记录没玩':'Login No Play'}</th>
-                    <th style={th}>{isZh?'当天来访':'Total Came'}</th>
-                    <th style={th}>{isZh?'没来':'Absent'}</th>
-                    <th style={th}>{isZh?'存款金额':'Deposit Amt'}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rangeDailySummary.map((r, i) => {
-                    const isWeekend = r.dowEn === 'Sat' || r.dowEn === 'Sun'
-                    return (
-                      <tr key={r.date} style={{borderBottom:'1px solid var(--border)',background:isWeekend?'rgba(59,130,246,0.05)':'transparent'}}>
-                        <td style={{padding:'6px 12px',fontWeight:600,color:isWeekend?BLUE:'var(--text)'}}>{r.date}</td>
-                        <td style={{padding:'6px 12px',color:isWeekend?BLUE:MUTED,fontWeight:isWeekend?700:400}}>{isZh?r.dow:r.dowEn}</td>
-                        <td style={{padding:'6px 12px',textAlign:'right',fontWeight:700,color:GREEN}}>{r.depositors}</td>
-                        <td style={{padding:'6px 12px',textAlign:'right',color:ORANGE}}>{r.playNoDep||0}</td>
-                        <td style={{padding:'6px 12px',textAlign:'right',color:MUTED}}>{r.loginNoPlay||0}</td>
-                        <td style={{padding:'6px 12px',textAlign:'right',fontWeight:600}}>{r.totalCame}</td>
-                        <td style={{padding:'6px 12px',textAlign:'right',color:MUTED}}>{r.absent}</td>
-                        <td style={{padding:'6px 12px',textAlign:'right',fontWeight:700,color:'var(--text)'}}>{fmt(r.deposit)}</td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-                <tfoot>
-                  <tr style={{borderTop:'2px solid var(--brand)',background:'var(--surface2)',fontWeight:800}}>
-                    <td style={{padding:'8px 12px',fontWeight:800}} colSpan={2}>{isZh?'合计':'TOTAL'}</td>
-                    <td style={{padding:'8px 12px',textAlign:'right',color:GREEN,fontWeight:800}}>{totalDeps}</td>
-                    <td style={{padding:'8px 12px',textAlign:'right',color:ORANGE,fontWeight:800}}>{totalPlayed}</td>
-                    <td style={{padding:'8px 12px',textAlign:'right'}}>{rangeDailySummary.reduce((s,r)=>s+r.loginNoPlay,0)}</td>
-                    <td style={{padding:'8px 12px',textAlign:'right'}}></td>
-                    <td style={{padding:'8px 12px',textAlign:'right'}}></td>
-                    <td style={{padding:'8px 12px',textAlign:'right',fontWeight:800,color:GREEN}}>{fmt(totalDep)}</td>
-                  </tr>
-                </tfoot>
-              </table>
+          {/* ── Excel-style sheet tabs ── */}
+          <div style={{
+            background:'var(--surface)',
+            border:'1px solid var(--border)',
+            borderRadius:10,
+            overflow:'hidden',
+            marginBottom:24,
+          }}>
+            {/* Tab bar */}
+            <div style={{display:'flex',borderBottom:'2px solid var(--border)',background:'var(--surface2)'}}>
+              {SHEETS.map(s => (
+                <button key={s.key} onClick={() => setRangeActiveSheet(s.key)}
+                  style={{
+                    padding:'10px 20px',
+                    border:'none',
+                    borderRight:'1px solid var(--border)',
+                    background: rangeActiveSheet===s.key ? 'var(--surface)' : 'transparent',
+                    color: rangeActiveSheet===s.key ? 'var(--brand)' : MUTED,
+                    fontWeight: rangeActiveSheet===s.key ? 800 : 500,
+                    fontSize:13,
+                    cursor:'pointer',
+                    borderBottom: rangeActiveSheet===s.key ? '2px solid var(--brand)' : '2px solid transparent',
+                    marginBottom:-2,
+                    whiteSpace:'nowrap',
+                  }}>
+                  {s.label}
+                </button>
+              ))}
+              <div style={{flex:1}} />
+              <button onClick={exportRangeToExcel}
+                style={{padding:'8px 18px',border:'none',borderLeft:'1px solid var(--border)',background:'transparent',color:GREEN,fontWeight:700,fontSize:12,cursor:'pointer',whiteSpace:'nowrap'}}>
+                ⬇️ {isZh?'导出 Excel':'Export Excel'}
+              </button>
             </div>
-          </Card>
 
-          {/* ── Sheet 2: Player Status Grid ── */}
-          <Card title={`📋 ${isZh?'每日状态 (存/玩/登)':'Player Status Grid (DEP/PLAY/IN)'}`}>
-            <div style={{fontSize:11,color:MUTED,marginBottom:8}}>
-              {isZh
-                ? '图例：🟩 存=有存款  🟧 玩=有下注但没存款  ▪ 登=有记录但没下注没存款  空白=当天没来'
-                : 'Legend: 🟩 DEP=Deposited  🟧 PLAY=Played no dep  ▪ IN=Logged no play  blank=Absent'}
-            </div>
-            <div style={{overflowX:'auto',maxHeight:560,overflowY:'auto'}}>
-              <table style={{borderCollapse:'collapse',fontSize:11,whiteSpace:'nowrap'}}>
-                <thead style={{position:'sticky',top:0,zIndex:2}}>
-                  <tr style={{borderBottom:'2px solid var(--border)',background:'var(--surface2)'}}>
-                    <th style={{...thL,position:'sticky',left:0,zIndex:3,background:'var(--surface2)',minWidth:90,padding:'6px 10px'}}>{isZh?'用户名':'Username'}</th>
-                    <th style={{...thL,position:'sticky',left:90,zIndex:3,background:'var(--surface2)',minWidth:70,padding:'6px 8px'}}>{isZh?'等级':'Tier'}</th>
-                    <th style={{...thL,position:'sticky',left:160,zIndex:3,background:'var(--surface2)',minWidth:100,padding:'6px 8px'}}>{isZh?'电话':'Phone'}</th>
-                    {rangeDates.map(d => {
-                      const dt = new Date(d+'T00:00:00')
-                      const isWe = dt.getDay()===0||dt.getDay()===6
-                      return (
-                        <th key={d} style={{...th,minWidth:36,padding:'4px 2px',color:isWe?BLUE:MUTED,background:isWe?'rgba(59,130,246,0.08)':'var(--surface2)'}}>
-                          {d.slice(5)}
-                        </th>
-                      )
-                    })}
-                    <th style={th}>{isZh?'存':'Dep'}</th>
-                    <th style={th}>{isZh?'玩':'Play'}</th>
-                    <th style={th}>{isZh?'登':'In'}</th>
-                    <th style={th}>{isZh?'无':'Out'}</th>
-                    <th style={{...th,minWidth:80}}>{isZh?'最后来':'Last'}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rangePlayerGrid.map((p, i) => {
-                    const tierColor = p.tier==='DIAMOND'?'#60a5fa':p.tier==='PLATINUM'?'#a78bfa':p.tier==='GOLD'?'#facc15':MUTED
-                    return (
-                      <tr key={p.username} style={{borderBottom:'1px solid var(--border)',background:i%2===0?'transparent':'rgba(255,255,255,0.02)'}}>
-                        <td style={{padding:'5px 10px',fontWeight:600,color:'var(--brand)',position:'sticky',left:0,background:i%2===0?'var(--surface)':'var(--surface2)',zIndex:1,fontSize:12}}>{p.username}</td>
-                        <td style={{padding:'5px 8px',color:tierColor,fontWeight:700,position:'sticky',left:90,background:i%2===0?'var(--surface)':'var(--surface2)',zIndex:1,fontSize:11}}>{p.tier?.slice(0,4)}</td>
-                        <td style={{padding:'5px 8px',color:MUTED,position:'sticky',left:160,background:i%2===0?'var(--surface)':'var(--surface2)',zIndex:1,fontSize:11}}>{p.phone||'—'}</td>
+            {/* ── TAB: 每日状态 / Player Grid ── */}
+            {rangeActiveSheet === 'grid' && (
+              <div>
+                {/* Legend bar */}
+                <div style={{display:'flex',gap:16,padding:'10px 16px',borderBottom:'1px solid var(--border)',background:'var(--surface2)',flexWrap:'wrap'}}>
+                  {[
+                    [CELL_DEP.bg,  CELL_DEP.color,   isZh?'存  有存款':'DEP  Deposited'],
+                    [CELL_PLAY.bg, CELL_PLAY.color,  isZh?'玩  有下注未存':'PLY  Played no dep'],
+                    [CELL_LOGIN.bg,'#94a3b8',        isZh?'·  有记录未下注':'·   Logged no play'],
+                    ['var(--surface2)','var(--muted)',isZh?'空  未来访':'     Absent'],
+                  ].map(([bg,color,label],i) => (
+                    <div key={i} style={{display:'flex',alignItems:'center',gap:6,fontSize:11}}>
+                      <div style={{width:20,height:20,borderRadius:3,background:bg,border:'1px solid rgba(255,255,255,0.1)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,color,fontWeight:700}}>
+                        {label.split('  ')[0]}
+                      </div>
+                      <span style={{color:MUTED}}>{label.split('  ')[1]}</span>
+                    </div>
+                  ))}
+                </div>
+                {/* Grid */}
+                <div style={{overflowX:'auto',overflowY:'auto',maxHeight:620}}>
+                  <table style={{borderCollapse:'collapse',fontSize:11,whiteSpace:'nowrap',tableLayout:'fixed'}}>
+                    <colgroup>
+                      <col style={{width:100}} />
+                      <col style={{width:60}} />
+                      <col style={{width:110}} />
+                      {rangeDates.map(d => <col key={d} style={{width:30}} />)}
+                      <col style={{width:36}} />
+                      <col style={{width:36}} />
+                      <col style={{width:36}} />
+                      <col style={{width:36}} />
+                      <col style={{width:72}} />
+                    </colgroup>
+                    <thead style={{position:'sticky',top:0,zIndex:2}}>
+                      {/* Month row */}
+                      <tr style={{background:'#0f172a'}}>
+                        <th colSpan={3} style={{padding:'4px 8px',fontSize:10,color:MUTED,textAlign:'left',borderBottom:'1px solid #1e293b'}}>{dateFrom} → {dateTo}</th>
+                        {(() => {
+                          // Group dates by month for spanning header
+                          const groups = []
+                          let cur = null
+                          rangeDates.forEach(d => {
+                            const m = d.slice(0,7)
+                            if (cur && cur.month===m) { cur.count++ }
+                            else { cur={month:m,count:1}; groups.push(cur) }
+                          })
+                          return groups.map(g => (
+                            <th key={g.month} colSpan={g.count}
+                              style={{padding:'4px 0',fontSize:10,textAlign:'center',color:'#94a3b8',borderBottom:'1px solid #1e293b',borderLeft:'1px solid #1e293b'}}>
+                              {g.month.slice(5)}月
+                            </th>
+                          ))
+                        })()}
+                        <th colSpan={5} style={{padding:'4px 0',fontSize:10,color:MUTED,textAlign:'center',borderBottom:'1px solid #1e293b',borderLeft:'1px solid #1e293b'}}>{isZh?'汇总':'Summary'}</th>
+                      </tr>
+                      {/* Date header row */}
+                      <tr style={{background:'#0f172a'}}>
+                        <th style={{padding:'5px 8px',textAlign:'left',fontSize:11,fontWeight:700,color:'#e2e8f0',borderBottom:'2px solid var(--border)',position:'sticky',left:0,zIndex:3,background:'#0f172a'}}>{isZh?'用户名':'Username'}</th>
+                        <th style={{padding:'5px 4px',textAlign:'center',fontSize:10,fontWeight:700,color:'#94a3b8',borderBottom:'2px solid var(--border)',position:'sticky',left:100,zIndex:3,background:'#0f172a'}}>{isZh?'等级':'Tier'}</th>
+                        <th style={{padding:'5px 4px',textAlign:'center',fontSize:10,fontWeight:600,color:'#94a3b8',borderBottom:'2px solid var(--border)',position:'sticky',left:160,zIndex:3,background:'#0f172a'}}>{isZh?'电话':'Phone'}</th>
                         {rangeDates.map(d => {
-                          const s = p.days[d]
                           const dt = new Date(d+'T00:00:00')
                           const isWe = dt.getDay()===0||dt.getDay()===6
-                          let bg = 'transparent', color = MUTED, fw = 400, displayChar = ''
-                          if (s === '存') { bg='rgba(34,197,94,0.18)'; color=GREEN; fw=700; displayChar=isZh?'存':'D' }
-                          else if (s === '玩') { bg='rgba(249,115,22,0.18)'; color=ORANGE; fw=600; displayChar=isZh?'玩':'P' }
-                          else if (s === '登') { color='#94a3b8'; displayChar=isZh?'▪':'·' }
-                          if (isWe && !s) bg='rgba(59,130,246,0.04)'
+                          const dd = d.slice(8)
+                          const dowCh = isZh ? WEEKDAYS_ZH[dt.getDay()].slice(1) : WEEKDAYS_EN[dt.getDay()].slice(0,1)
                           return (
-                            <td key={d} style={{padding:'4px 2px',textAlign:'center',background:bg,color,fontWeight:fw,fontSize:11}}>{displayChar}</td>
+                            <th key={d} style={{
+                              padding:'2px 0',textAlign:'center',fontSize:9,fontWeight:700,
+                              color: isWe?'#60a5fa':'#64748b',
+                              borderBottom:'2px solid var(--border)',
+                              borderLeft:'1px solid rgba(255,255,255,0.04)',
+                              background: isWe?'rgba(59,130,246,0.12)':'#0f172a',
+                              minWidth:30,
+                            }}>
+                              <div>{dd}</div>
+                              <div style={{fontSize:8,opacity:0.7}}>{dowCh}</div>
+                            </th>
                           )
                         })}
-                        <td style={{padding:'5px 6px',textAlign:'right',fontWeight:700,color:GREEN,fontSize:11}}>{p.depCount||0}</td>
-                        <td style={{padding:'5px 6px',textAlign:'right',color:ORANGE,fontSize:11}}>{p.playCount||0}</td>
-                        <td style={{padding:'5px 6px',textAlign:'right',color:MUTED,fontSize:11}}>{p.loginCount||0}</td>
-                        <td style={{padding:'5px 6px',textAlign:'right',color:RED,fontSize:11}}>{p.absentCount||0}</td>
-                        <td style={{padding:'5px 6px',textAlign:'right',color:MUTED,fontSize:10}}>{p.lastDate?.slice(5)||'—'}</td>
+                        {[
+                          [isZh?'存':'Dep',   GREEN],
+                          [isZh?'玩':'Play',  ORANGE],
+                          [isZh?'登':'In',    '#64748b'],
+                          [isZh?'无':'Out',   RED],
+                          [isZh?'最后来':'Last','#94a3b8'],
+                        ].map(([label,color]) => (
+                          <th key={label} style={{padding:'5px 4px',textAlign:'center',fontSize:10,fontWeight:700,color,borderBottom:'2px solid var(--border)',borderLeft:'1px solid rgba(255,255,255,0.08)',background:'#0f172a'}}>{label}</th>
+                        ))}
                       </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </Card>
-
-          {/* ── Sheet 3: Play Without Deposit list ── */}
-          {rangePlayNoDep.length > 0 && (
-            <Card title={`🎰 ${isZh?'有玩没存名单':'Play Without Deposit'} (${rangePlayNoDep.length})`} accent={ORANGE}>
-              <div style={{fontSize:11,color:MUTED,marginBottom:10}}>
-                {isZh?'在选定日期范围内，有下注记录但期间从未存款的会员':'Members who played in the date range but never deposited during it'}
+                    </thead>
+                    <tbody>
+                      {rangePlayerGrid.map((p, i) => {
+                        const tierColor = p.tier==='DIAMOND'?'#60a5fa':p.tier==='PLATINUM'?'#c084fc':p.tier==='GOLD'?'#fbbf24':p.tier==='SILVER'?'#94a3b8':'#a16207'
+                        const rowBg = i%2===0 ? '#0d1b2e' : '#111827'
+                        const stickyBg = rowBg
+                        return (
+                          <tr key={p.username} style={{borderBottom:'1px solid rgba(255,255,255,0.04)'}}>
+                            <td style={{padding:'3px 8px',fontWeight:700,color:'var(--brand)',position:'sticky',left:0,background:stickyBg,zIndex:1,fontSize:12,overflow:'hidden',textOverflow:'ellipsis',maxWidth:100}}>{p.username}</td>
+                            <td style={{padding:'3px 4px',textAlign:'center',color:tierColor,fontWeight:700,position:'sticky',left:100,background:stickyBg,zIndex:1,fontSize:10}}>{p.tier?.slice(0,4)||'—'}</td>
+                            <td style={{padding:'3px 4px',textAlign:'center',color:'#64748b',position:'sticky',left:160,background:stickyBg,zIndex:1,fontSize:10,overflow:'hidden',textOverflow:'ellipsis'}}>{p.phone||'—'}</td>
+                            {rangeDates.map(d => {
+                              const s = p.days[d]
+                              const dt = new Date(d+'T00:00:00')
+                              const isWe = dt.getDay()===0||dt.getDay()===6
+                              const cell = cellStyle(s, isWe)
+                              return (
+                                <td key={d} style={{
+                                  padding:0,textAlign:'center',
+                                  background:cell.bg,
+                                  borderLeft:'1px solid rgba(255,255,255,0.03)',
+                                  borderRight:'1px solid rgba(255,255,255,0.03)',
+                                }}>
+                                  {cell.char && (
+                                    <div style={{
+                                      display:'flex',alignItems:'center',justifyContent:'center',
+                                      height:22,fontSize:10,fontWeight:700,color:cell.color,
+                                    }}>{cell.char}</div>
+                                  )}
+                                  {!cell.char && isWe && <div style={{height:22,background:'rgba(59,130,246,0.06)'}} />}
+                                  {!cell.char && !isWe && <div style={{height:22}} />}
+                                </td>
+                              )
+                            })}
+                            {[
+                              [p.depCount||0,   GREEN,  700],
+                              [p.playCount||0,  ORANGE, 600],
+                              [p.loginCount||0, '#64748b',400],
+                              [p.absentCount||0,RED,    400],
+                            ].map(([v,color,fw],j) => (
+                              <td key={j} style={{padding:'3px 4px',textAlign:'center',fontWeight:fw,color,fontSize:11,borderLeft:'1px solid rgba(255,255,255,0.08)'}}>{v}</td>
+                            ))}
+                            <td style={{padding:'3px 4px',textAlign:'center',color:'#64748b',fontSize:10,borderLeft:'1px solid rgba(255,255,255,0.08)'}}>{p.lastDate?.slice(5)||'—'}</td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                    {/* Footer: daily deposit count per column */}
+                    <tfoot>
+                      <tr style={{background:'#0f172a',borderTop:'2px solid var(--border)'}}>
+                        <td colSpan={3} style={{padding:'5px 8px',fontWeight:800,fontSize:11,color:'#e2e8f0',position:'sticky',left:0,background:'#0f172a',zIndex:1}}>{isZh?'每日存款人数':'Daily Depositors'}</td>
+                        {rangeDates.map(d => {
+                          const stat = rangeDailySummary.find(r=>r.date===d)
+                          const v = stat?.depositors||0
+                          return (
+                            <td key={d} style={{padding:'3px 0',textAlign:'center',fontSize:10,fontWeight:700,color:v>0?GREEN:'#475569',borderLeft:'1px solid rgba(255,255,255,0.04)',background:'#0f172a'}}>{v||''}</td>
+                          )
+                        })}
+                        <td colSpan={5} style={{borderLeft:'1px solid rgba(255,255,255,0.08)',background:'#0f172a'}} />
+                      </tr>
+                      <tr style={{background:'#0a1220'}}>
+                        <td colSpan={3} style={{padding:'5px 8px',fontWeight:800,fontSize:11,color:ORANGE,position:'sticky',left:0,background:'#0a1220',zIndex:1}}>{isZh?'每日有玩没存':'Daily Play-No-Dep'}</td>
+                        {rangeDates.map(d => {
+                          const stat = rangeDailySummary.find(r=>r.date===d)
+                          const v = stat?.playNoDep||0
+                          return (
+                            <td key={d} style={{padding:'3px 0',textAlign:'center',fontSize:10,fontWeight:600,color:v>0?ORANGE:'#475569',borderLeft:'1px solid rgba(255,255,255,0.04)',background:'#0a1220'}}>{v||''}</td>
+                          )
+                        })}
+                        <td colSpan={5} style={{borderLeft:'1px solid rgba(255,255,255,0.08)',background:'#0a1220'}} />
+                      </tr>
+                      <tr style={{background:'#060d18'}}>
+                        <td colSpan={3} style={{padding:'5px 8px',fontWeight:800,fontSize:11,color:GREEN,position:'sticky',left:0,background:'#060d18',zIndex:1}}>{isZh?'每日存款金额':'Daily Deposit Amt'}</td>
+                        {rangeDates.map(d => {
+                          const stat = rangeDailySummary.find(r=>r.date===d)
+                          const v = stat?.deposit||0
+                          return (
+                            <td key={d} style={{padding:'3px 0',textAlign:'center',fontSize:9,fontWeight:600,color:v>0?GREEN:'#475569',borderLeft:'1px solid rgba(255,255,255,0.04)',background:'#060d18'}}>{v>0?fmtK(v):''}</td>
+                          )
+                        })}
+                        <td colSpan={5} style={{borderLeft:'1px solid rgba(255,255,255,0.08)',background:'#060d18'}} />
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
               </div>
-              <div style={{overflowX:'auto'}}>
+            )}
+
+            {/* ── TAB: 每日汇总 / Daily Summary ── */}
+            {rangeActiveSheet === 'summary' && (
+              <div style={{padding:'0'}}>
                 <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
                   <thead>
-                    <tr style={{borderBottom:'2px solid var(--border)'}}>
-                      <th style={{...thL,width:30}}>#</th>
-                      <th style={thL}>{isZh?'用户名':'Username'}</th>
-                      <th style={thL}>{isZh?'等级':'Tier'}</th>
-                      <th style={thL}>{isZh?'电话':'Phone'}</th>
-                      <th style={th}>{isZh?'有玩没存天数':'Play Days'}</th>
-                      <th style={th}>{isZh?'有存天数':'Dep Days'}</th>
-                      <th style={th}>{isZh?'最后来访':'Last Visit'}</th>
-                      <th style={th}>{isZh?'期间总存款':'Period Deposit'}</th>
+                    <tr style={{background:'#0f172a'}}>
+                      {[
+                        [isZh?'日期':'Date',       'left'],
+                        [isZh?'星期':'Day',         'left'],
+                        [isZh?'有存款人数':'Depositors', 'right'],
+                        [isZh?'有玩没存':'Play No Dep', 'right'],
+                        [isZh?'有记录没玩':'Login No Play','right'],
+                        [isZh?'当天来访':'Total Came','right'],
+                        [isZh?'没来':'Absent',      'right'],
+                        [isZh?'存款金额':'Deposit Amt','right'],
+                      ].map(([label, align]) => (
+                        <th key={label} style={{padding:'10px 14px',textAlign:align,fontSize:11,fontWeight:700,color:'#94a3b8',borderBottom:'2px solid var(--border)',whiteSpace:'nowrap'}}>{label}</th>
+                      ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {rangePlayNoDep.map((p, i) => {
-                      const tierColor = p.tier==='DIAMOND'?'#60a5fa':p.tier==='PLATINUM'?'#a78bfa':p.tier==='GOLD'?'#facc15':MUTED
+                    {rangeDailySummary.map((r, i) => {
+                      const isWe = r.dowEn==='Sat'||r.dowEn==='Sun'
+                      const rowBg = isWe ? 'rgba(59,130,246,0.06)' : i%2===0?'transparent':'rgba(255,255,255,0.02)'
                       return (
-                        <tr key={p.username} style={{borderBottom:'1px solid var(--border)'}}>
-                          <td style={{padding:'7px 12px',color:MUTED}}>{i+1}</td>
-                          <td style={{padding:'7px 12px',fontWeight:700,color:'var(--brand)'}}>{p.username}</td>
-                          <td style={{padding:'7px 12px',color:tierColor,fontWeight:700,fontSize:11}}>{p.tier}</td>
-                          <td style={{padding:'7px 12px',color:'var(--text)'}}>
-                            {p.phone
-                              ? <a href={`tel:${p.phone}`} style={{color:'var(--brand)',textDecoration:'none'}}>📱 {p.phone}</a>
-                              : '—'}
+                        <tr key={r.date} style={{borderBottom:'1px solid rgba(255,255,255,0.05)',background:rowBg}}>
+                          <td style={{padding:'8px 14px',fontWeight:700,color:isWe?BLUE:'#e2e8f0',fontSize:12}}>{r.date}</td>
+                          <td style={{padding:'8px 14px',color:isWe?BLUE:'#94a3b8',fontWeight:isWe?700:400}}>{isZh?r.dow:r.dowEn}</td>
+                          <td style={{padding:'8px 14px',textAlign:'right'}}>
+                            <span style={{display:'inline-block',background:r.depositors>0?'rgba(22,163,74,0.15)':'transparent',color:r.depositors>0?GREEN:'#475569',fontWeight:700,borderRadius:4,padding:'2px 8px',minWidth:28,textAlign:'center'}}>{r.depositors}</span>
                           </td>
-                          <td style={{padding:'7px 12px',textAlign:'right',fontWeight:800,color:ORANGE,fontSize:14}}>{p.playCount}</td>
-                          <td style={{padding:'7px 12px',textAlign:'right',color:p.depCount>0?GREEN:MUTED}}>{p.depCount}</td>
-                          <td style={{padding:'7px 12px',textAlign:'right',color:MUTED,fontSize:11}}>{p.lastDate||'—'}</td>
-                          <td style={{padding:'7px 12px',textAlign:'right',fontWeight:600,color:p.totalDepAmt>0?GREEN:MUTED}}>{p.totalDepAmt>0?fmt(p.totalDepAmt):'—'}</td>
+                          <td style={{padding:'8px 14px',textAlign:'right'}}>
+                            <span style={{display:'inline-block',background:r.playNoDep>0?'rgba(234,88,12,0.15)':'transparent',color:r.playNoDep>0?ORANGE:'#475569',fontWeight:r.playNoDep>0?700:400,borderRadius:4,padding:'2px 8px',minWidth:24,textAlign:'center'}}>{r.playNoDep||0}</span>
+                          </td>
+                          <td style={{padding:'8px 14px',textAlign:'right',color:'#64748b'}}>{r.loginNoPlay||0}</td>
+                          <td style={{padding:'8px 14px',textAlign:'right',fontWeight:600,color:'#e2e8f0'}}>{r.totalCame}</td>
+                          <td style={{padding:'8px 14px',textAlign:'right',color:'#475569'}}>{r.absent}</td>
+                          <td style={{padding:'8px 14px',textAlign:'right',fontWeight:700,color:r.deposit>0?GREEN:'#475569'}}>{r.deposit>0?fmt(r.deposit):'—'}</td>
                         </tr>
                       )
                     })}
                   </tbody>
+                  <tfoot>
+                    <tr style={{background:'rgba(255,106,0,0.08)',borderTop:'2px solid var(--brand)'}}>
+                      <td colSpan={2} style={{padding:'10px 14px',fontWeight:800,fontSize:13,color:'var(--brand)'}}>Σ {isZh?'合计':'TOTAL'}</td>
+                      <td style={{padding:'10px 14px',textAlign:'right',fontWeight:800,fontSize:14,color:GREEN}}>{totalDeps}</td>
+                      <td style={{padding:'10px 14px',textAlign:'right',fontWeight:800,fontSize:14,color:ORANGE}}>{totalPlayed}</td>
+                      <td style={{padding:'10px 14px',textAlign:'right',fontWeight:700,color:'#94a3b8'}}>{rangeDailySummary.reduce((s,r)=>s+r.loginNoPlay,0)}</td>
+                      <td style={{padding:'10px 14px',textAlign:'right',fontWeight:700,color:'#e2e8f0'}}></td>
+                      <td style={{padding:'10px 14px',textAlign:'right'}}></td>
+                      <td style={{padding:'10px 14px',textAlign:'right',fontWeight:800,fontSize:14,color:GREEN}}>{fmt(totalDep)}</td>
+                    </tr>
+                  </tfoot>
                 </table>
               </div>
-            </Card>
-          )}
+            )}
+
+            {/* ── TAB: 有玩没存名单 / Play No Dep ── */}
+            {rangeActiveSheet === 'playnodep' && (
+              <div>
+                {rangePlayNoDep.length === 0 ? (
+                  <div style={{padding:40,textAlign:'center',color:MUTED}}>{isZh?'没有符合条件的会员':'No members found'}</div>
+                ) : (
+                  <>
+                    <div style={{padding:'10px 16px',borderBottom:'1px solid var(--border)',background:'rgba(234,88,12,0.06)',fontSize:11,color:ORANGE}}>
+                      ⚠️ {isZh?`${rangePlayNoDep.length} 位会员在此期间有下注但未存款，建议跟进`:`${rangePlayNoDep.length} members played but did not deposit in this period — follow up recommended`}
+                    </div>
+                    <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+                      <thead>
+                        <tr style={{background:'#0f172a'}}>
+                          {[
+                            ['#','center','30px'],
+                            [isZh?'用户名':'Username','left',''],
+                            [isZh?'等级':'Tier','center','60px'],
+                            [isZh?'电话':'Phone','left',''],
+                            [isZh?'有玩没存天数':'Play Days','right',''],
+                            [isZh?'有存天数':'Dep Days','right',''],
+                            [isZh?'最后来访':'Last Visit','right',''],
+                            [isZh?'期间总存款':'Period Deposit','right',''],
+                          ].map(([l,a,w]) => (
+                            <th key={l} style={{padding:'10px 12px',textAlign:a,fontSize:11,fontWeight:700,color:'#94a3b8',borderBottom:'2px solid var(--border)',width:w||'auto',whiteSpace:'nowrap'}}>{l}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {rangePlayNoDep.map((p, i) => {
+                          const tierColor = p.tier==='DIAMOND'?'#60a5fa':p.tier==='PLATINUM'?'#c084fc':p.tier==='GOLD'?'#fbbf24':'#94a3b8'
+                          return (
+                            <tr key={p.username} style={{borderBottom:'1px solid rgba(255,255,255,0.05)',background:i%2===0?'transparent':'rgba(255,255,255,0.02)'}}>
+                              <td style={{padding:'8px 12px',color:'#475569',textAlign:'center',fontSize:11}}>{i+1}</td>
+                              <td style={{padding:'8px 12px',fontWeight:700,color:'var(--brand)',fontSize:13}}>{p.username}</td>
+                              <td style={{padding:'8px 12px',textAlign:'center'}}>
+                                <span style={{display:'inline-block',background:`${tierColor}22`,color:tierColor,fontWeight:700,fontSize:10,borderRadius:4,padding:'2px 6px'}}>{p.tier?.slice(0,4)||'—'}</span>
+                              </td>
+                              <td style={{padding:'8px 12px',color:'#94a3b8'}}>
+                                {p.phone ? <a href={`tel:${p.phone}`} style={{color:'var(--brand)',textDecoration:'none',fontSize:12}}>📱 {p.phone}</a> : '—'}
+                              </td>
+                              <td style={{padding:'8px 12px',textAlign:'right'}}>
+                                <span style={{display:'inline-block',background:'rgba(234,88,12,0.2)',color:ORANGE,fontWeight:800,fontSize:16,borderRadius:6,padding:'2px 10px'}}>{p.playCount}</span>
+                              </td>
+                              <td style={{padding:'8px 12px',textAlign:'right',fontWeight:600,color:p.depCount>0?GREEN:'#475569'}}>{p.depCount}</td>
+                              <td style={{padding:'8px 12px',textAlign:'right',color:'#64748b',fontSize:11}}>{p.lastDate||'—'}</td>
+                              <td style={{padding:'8px 12px',textAlign:'right',fontWeight:600,color:p.totalDepAmt>0?GREEN:'#475569'}}>{p.totalDepAmt>0?fmt(p.totalDepAmt):'—'}</td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
         </>)
       })()}
 
