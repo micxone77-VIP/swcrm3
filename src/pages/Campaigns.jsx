@@ -1812,7 +1812,7 @@ export default function Campaigns() {
                         : filteredChaseList.length === 0
                         ? <tr><td colSpan={9} style={{ ...s.td, textAlign:'center', padding:24, color:'var(--muted)' }}>No players match the search.</td></tr>
                         : filteredChaseList.map((p,i) => {
-                            const multi = selected?.is_multi_level && campType === 'fixed_reward'
+                            const multi = selected?.is_multi_level && campaignLevels.length > 0
                             const multiMetric = multi ? multiMetricsByPlayer[p.id] : null
                             const dailyEntry = dailyEntries[p.id]
                             const dualReward = campType==='dual_tier'
@@ -1820,9 +1820,13 @@ export default function Campaigns() {
                               : null
                             let pr
                             if (multi) {
-                              const target = multiMetric?.nextLevel?.deposit_threshold
-                              if (multiMetric?.allCompleted) pr = { pct:100, color:'#3fb950', bg:'rgba(63,185,80,.15)', label:'✅ ALL LEVELS' }
-                              else if (target) pr = getProgress(playerDeposit(p), Number(target))
+                              // Use daily deposit in daily-settlement mode, total otherwise
+                              const dep = isDailyMode ? (dailyEntry?.deposit_amount || 0) : playerDeposit(p)
+                              const sortedLvls = [...campaignLevels].sort((a,b) => (parseFloat(a.deposit_threshold)||0) - (parseFloat(b.deposit_threshold)||0))
+                              const nextLvl = sortedLvls.find(l => dep < (parseFloat(l.deposit_threshold)||0))
+                              const allDone = sortedLvls.length > 0 && dep >= (parseFloat(sortedLvls[sortedLvls.length-1]?.deposit_threshold)||0)
+                              if (allDone) pr = { pct:100, color:'#3fb950', bg:'rgba(63,185,80,.15)', label:'✅ ALL LEVELS' }
+                              else if (nextLvl) pr = getProgress(dep, parseFloat(nextLvl.deposit_threshold)||0)
                               else pr = { pct:0, color:'#8b949e', bg:'rgba(139,148,158,.15)', label:'IN PROGRESS' }
                             } else if (isDailyMode && campType==='dual_tier') {
                               const currentDeposit = dailyEntry?.deposit_amount || 0
