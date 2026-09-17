@@ -1,6 +1,6 @@
-// ContextualAI.jsx — floating mini-chat panel (bottom-right)
+// ContextualAI.jsx — floating mini-chat panel (draggable)
 // Page-aware: auto-prepends context about current page to every question
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { useLocation } from 'react-router-dom'
 import { callAI } from '../lib/aiApi'
 import { useLanguage } from '../contexts/LanguageContext'
@@ -42,6 +42,56 @@ export default function ContextualAI() {
   const bottomRef = useRef(null)
   const inputRef = useRef(null)
 
+  // ── Drag state ──
+  const [pos, setPos] = useState(() => {
+    try {
+      const saved = localStorage.getItem('ai-btn-pos')
+      return saved ? JSON.parse(saved) : { right: 28, bottom: 28 }
+    } catch { return { right: 28, bottom: 28 } }
+  })
+  const dragging = useRef(false)
+  const dragStart = useRef({ x: 0, y: 0, right: 0, bottom: 0 })
+
+  const onMouseDown = useCallback((e) => {
+    // only drag on the button itself, not when panel is open clicks
+    dragging.current = true
+    dragStart.current = {
+      x: e.clientX, y: e.clientY,
+      right: pos.right, bottom: pos.bottom,
+    }
+    e.preventDefault()
+  }, [pos])
+
+  useEffect(() => {
+    function onMouseMove(e) {
+      if (!dragging.current) return
+      const dx = dragStart.current.x - e.clientX
+      const dy = dragStart.current.y - e.clientY
+      const newRight  = Math.max(10, Math.min(window.innerWidth  - 62, dragStart.current.right  + dx))
+      const newBottom = Math.max(10, Math.min(window.innerHeight - 62, dragStart.current.bottom + dy))
+      setPos({ right: newRight, bottom: newBottom })
+    }
+    function onMouseUp(e) {
+      if (!dragging.current) return
+      const dx = Math.abs(dragStart.current.x - e.clientX)
+      const dy = Math.abs(dragStart.current.y - e.clientY)
+      dragging.current = false
+      if (dx < 5 && dy < 5) setOpen(o => !o) // treat as click if barely moved
+      try { localStorage.setItem('ai-btn-pos', JSON.stringify(pos)) } catch {}
+    }
+    window.addEventListener('mousemove', onMouseMove)
+    window.addEventListener('mouseup', onMouseUp)
+    return () => {
+      window.removeEventListener('mousemove', onMouseMove)
+      window.removeEventListener('mouseup', onMouseUp)
+    }
+  }, [pos])
+
+  // Save pos to localStorage whenever it changes
+  useEffect(() => {
+    try { localStorage.setItem('ai-btn-pos', JSON.stringify(pos)) } catch {}
+  }, [pos])
+
   useEffect(() => {
     if (open) setTimeout(() => inputRef.current?.focus(), 80)
   }, [open])
@@ -80,28 +130,31 @@ export default function ContextualAI() {
 
   return (
     <>
-      {/* Floating toggle button */}
+      {/* Floating toggle button — draggable */}
       <button
-        onClick={() => setOpen(o => !o)}
-        title="Ask AI"
+        onMouseDown={onMouseDown}
+        title="Ask AI (drag to move)"
         style={{
-          position: 'fixed', bottom: 28, right: 28, zIndex: 9000,
+          position: 'fixed', bottom: pos.bottom, right: pos.right, zIndex: 9000,
           width: 52, height: 52, borderRadius: '50%',
           background: open ? 'var(--brand)' : 'linear-gradient(135deg,#6366f1,#8b5cf6)',
-          border: 'none', cursor: 'pointer',
+          border: 'none', cursor: 'grab',
           boxShadow: '0 4px 20px rgba(99,102,241,.45)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 22, transition: 'transform .15s, background .2s',
-          transform: open ? 'rotate(45deg) scale(1.1)' : 'scale(1)',
+          fontSize: 22, transition: 'background .2s',
+          userSelect: 'none',
         }}
       >
         {open ? '✕' : '✨'}
       </button>
 
-      {/* Panel */}
+      {/* Panel — anchored near the button */}
       {open && (
         <div style={{
-          position: 'fixed', bottom: 92, right: 28, zIndex: 8999,
+          position: 'fixed',
+          bottom: pos.bottom + 64,
+          right: pos.right,
+          zIndex: 8999,
           width: 360, maxHeight: 520,
           background: 'var(--bg)', border: '1px solid var(--border)',
           borderRadius: 16, boxShadow: '0 8px 40px rgba(0,0,0,.35)',
