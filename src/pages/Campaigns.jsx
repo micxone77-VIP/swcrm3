@@ -2051,10 +2051,15 @@ export default function Campaigns() {
                                       {copiedId===p.id ? '✓' : '⎘'}
                                     </button>
                                   </div>
-                                  {selected?.streak_enabled && playerStreaks.length > 0 && (
+                                  {selected?.streak_enabled && (
                                     <div style={{ marginTop:4, display:'flex', gap:4, flexWrap:'wrap' }}>
-                                      {paidStreaks.length > 0 && <span style={{ fontSize:10, background:'rgba(63,185,80,.15)', color:'#3fb950', borderRadius:4, padding:'1px 5px', fontWeight:600 }}>🔥×{paidStreaks.length} paid</span>}
-                                      {pendingStreaks.map(sb => <span key={sb.streak_number} style={{ fontSize:10, background:'rgba(245,158,11,.15)', color:'#f59e0b', borderRadius:4, padding:'1px 5px', fontWeight:600 }}>🔥#{sb.streak_number} {rmFmt(sb.bonus_amount, campCurrency)}</span>)}
+                                      {playerStreaks.length === 0
+                                        ? <span style={{ fontSize:10, background:'rgba(255,165,0,.1)', color:'#f59e0b', borderRadius:4, padding:'1px 5px', fontWeight:600 }}>🔥 Streak ON</span>
+                                        : <>
+                                            {paidStreaks.length > 0 && <span style={{ fontSize:10, background:'rgba(63,185,80,.15)', color:'#3fb950', borderRadius:4, padding:'1px 5px', fontWeight:600 }}>🔥×{paidStreaks.length} paid</span>}
+                                            {pendingStreaks.map(sb => <span key={sb.streak_number} style={{ fontSize:10, background:'rgba(245,158,11,.15)', color:'#f59e0b', borderRadius:4, padding:'1px 5px', fontWeight:600 }}>🔥#{sb.streak_number} {rmFmt(sb.bonus_amount, campCurrency)}</span>)}
+                                          </>
+                                      }
                                     </div>
                                   )}
                                 </td>
@@ -2161,7 +2166,15 @@ export default function Campaigns() {
                     const player = players.find(p => p.id === playerId)
                     return rows.map(sb => ({ ...sb, username: player?.username || playerId, tier: player?.tier }))
                   }).sort((a, b) => a.username.localeCompare(b.username) || a.streak_number - b.streak_number)
-                  if (!allStreakRows.length && !streakBonusesLoading) return null
+                  if (!allStreakRows.length && !streakBonusesLoading) return (
+                    <div style={{ borderTop:'2px solid var(--border)', marginTop:8, padding:'12px 24px', background:'rgba(245,158,11,.04)' }}>
+                      <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:4 }}>
+                        <span style={{ fontSize:13, fontWeight:800 }}>🔥 Streak Bonuses</span>
+                        <span style={{ fontSize:11, background:'rgba(245,158,11,.15)', color:'#f59e0b', borderRadius:4, padding:'1px 8px', fontWeight:600 }}>Enabled</span>
+                      </div>
+                      <div style={{ fontSize:12, color:'var(--muted)' }}>No streak bonuses awarded yet. Bonuses are triggered automatically after {selected.streak_days} consecutive qualifying days.</div>
+                    </div>
+                  )
                   return (
                     <div style={{ borderTop:'2px solid var(--border)', marginTop:8 }}>
                       <div style={{ padding:'10px 24px', display:'flex', alignItems:'center', gap:10, background:'rgba(245,158,11,.04)' }}>
@@ -2273,6 +2286,7 @@ export default function Campaigns() {
                     <th style={s.th}>Withdrawal (real)</th>
                     <th style={s.th}>{selected?.is_multi_level ? 'Next Level' : 'vs Target'}</th>
                     <th style={s.th}>Reward</th>
+                    {selected?.streak_enabled && <th style={s.th}>Streak 🔥</th>}
                     <th style={s.th}>Status</th>
                     <th style={s.th}>Added</th>
                     <th style={s.th}>✕</th>
@@ -2322,6 +2336,24 @@ export default function Campaigns() {
                               <td style={{ ...s.td, color:typeInfo.color, fontWeight:qualified?700:400 }}>
                                 {qualified ? (multi ? (<span>{rmFmt(reward,campCurrency)} total<br /><span style={{ fontSize:10, color:'var(--muted)' }}>{multiMetric?.completedCount||0}/{campaignLevels.length} levels</span></span>) : rmFmt(reward,campCurrency)) : '—'}
                               </td>
+                              {selected?.streak_enabled && (() => {
+                                const pStreaks = streakBonuses[p.id] || []
+                                const pPaid = pStreaks.filter(sb => sb.payout_status === 'paid')
+                                const pPending = pStreaks.filter(sb => sb.payout_status !== 'paid')
+                                const pTotal = pStreaks.reduce((s,r) => s + (parseFloat(r.bonus_amount)||0), 0)
+                                return (
+                                  <td style={s.td}>
+                                    {pStreaks.length === 0
+                                      ? <span style={{ fontSize:10, color:'var(--muted)' }}>—</span>
+                                      : <div style={{ display:'flex', flexDirection:'column', gap:2 }}>
+                                          {pPaid.length > 0 && <span style={{ fontSize:10, background:'rgba(63,185,80,.15)', color:'#3fb950', borderRadius:4, padding:'1px 5px', fontWeight:600 }}>🔥×{pPaid.length} paid</span>}
+                                          {pPending.length > 0 && <span style={{ fontSize:10, background:'rgba(245,158,11,.15)', color:'#f59e0b', borderRadius:4, padding:'1px 5px', fontWeight:600 }}>🔥×{pPending.length} pending</span>}
+                                          <span style={{ fontSize:10, color:'var(--muted)' }}>{rmFmt(pTotal, campCurrency)}</span>
+                                        </div>
+                                    }
+                                  </td>
+                                )
+                              })()}
                               <td style={s.td}>
                                 <span style={{ ...s.tag(rowStatusColor, rowStatusColor==='var(--muted)' ? 'rgba(139,148,158,.15)' : undefined), fontSize:10 }}>
                                   {rowStatusLabel}
@@ -2367,6 +2399,74 @@ export default function Campaigns() {
                 {realFinancialsLoading ? <div style={{textAlign:'center',padding:24,color:'var(--muted)'}}>Loading real platform financials…</div> : !realFinancials ? <div style={{textAlign:'center',padding:24,color:'var(--muted)'}}>No real platform data available for the selected campaign period.</div> : (()=>{const rewardCost=totalReward;const netPnl=realFinancials.deposit-realFinancials.withdrawal-rewardCost;const roi=calculateCampaignROI(rewardCost,netPnl);const roiLabel=roi===null?'N/A':`${roi.toFixed(1)}%`;return <><div style={{fontSize:13,fontWeight:700,marginBottom:8}}>💼 Campaign P&amp;L — Real Platform Data</div><div style={{display:'grid',gridTemplateColumns:'repeat(6,minmax(0,1fr))',gap:12,marginBottom:10}}>{[['Real Deposit',rmFmt(realFinancials.deposit,campCurrency),'#3fb950'],['Real Withdrawal',rmFmt(realFinancials.withdrawal,campCurrency),'#f85149'],['Real Valid Bet',rmFmt(realFinancials.validBet,campCurrency),'var(--accent)'],['Reward Cost',rewardFmt(rewardCost,campCurrency),'#c9a961'],['Net P&L',rmFmt(netPnl,campCurrency),netPnl>=0?'#3fb950':'#f85149'],['ROI',roiLabel,roi===null?'var(--muted)':roi>=0?'#3fb950':'#f85149']].map(([label,val,color])=><div key={label} style={{background:'var(--bg)',border:'1px solid var(--border)',borderRadius:8,padding:14}}><div style={{fontSize:18,fontWeight:700,color}}>{val}</div><div style={{fontSize:11,color:'var(--muted)',marginTop:2}}>{label}</div></div>)}</div><div style={{fontSize:11,color:'var(--muted)',marginBottom:24}}>Net P&amp;L = Real Deposit − Real Withdrawal − Reward Cost. ROI = Net P&amp;L ÷ Reward Cost × 100%. ROI is N/A when there is no reward cost. Real figures come from platform snapshots for the campaign period; qualification uses the campaign-period deposit tracked above.</div></>})()}
 
                 {isDailyMode && (summaryLoading ? <div style={{textAlign:'center',padding:40,color:'var(--muted)'}}>Loading daily entries…</div> : !summaryData ? <div style={{textAlign:'center',padding:40,color:'var(--muted)'}}>No daily entries yet.</div> : <div><div style={{fontSize:13,fontWeight:700,marginBottom:8}}>📅 Daily Turnover Settlement</div><div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12,marginBottom:18}}>{[['Days with Entries',summaryData.totalEntryDays,'#a78bfa'],['Unique Participants',summaryData.uniqueParticipants,'#3fb950'],['Total Credit Given',rmFmt(summaryData.totalCredit,campCurrency),'#c9a961'],['Total WCash Given',rmFmt(summaryData.totalWcash,campCurrency),'#f59e0b']].map(([label,val,color])=><div key={label} style={{background:'var(--bg)',border:'1px solid var(--border)',borderRadius:8,padding:14}}><div style={{fontSize:20,fontWeight:700,color}}>{val}</div><div style={{fontSize:11,color:'var(--muted)',marginTop:2}}>{label}</div></div>)}</div></div>)}
+
+                {selected?.streak_enabled && (() => {
+                  const allSRows = Object.entries(streakBonuses).flatMap(([pid, rows]) => {
+                    const pl = players.find(p => p.id === pid)
+                    return rows.map(sb => ({ ...sb, username: pl?.username || pid }))
+                  })
+                  const paidSRows = allSRows.filter(r => r.payout_status === 'paid')
+                  const pendingSRows = allSRows.filter(r => r.payout_status !== 'paid')
+                  const totalStreakAmt = allSRows.reduce((s,r) => s + (parseFloat(r.bonus_amount)||0), 0)
+                  const paidStreakAmt = paidSRows.reduce((s,r) => s + (parseFloat(r.bonus_amount)||0), 0)
+                  const pendingStreakAmt = pendingSRows.reduce((s,r) => s + (parseFloat(r.bonus_amount)||0), 0)
+                  const playersWithStreak = new Set(allSRows.map(r => r.username)).size
+                  return (
+                    <div style={{ marginTop:18 }}>
+                      <div style={{ fontSize:13, fontWeight:700, marginBottom:8 }}>🔥 Streak Bonus Summary</div>
+                      {streakBonusesLoading
+                        ? <div style={{ color:'var(--muted)', fontSize:12 }}>Loading streak bonuses…</div>
+                        : allSRows.length === 0
+                          ? <div style={{ background:'rgba(255,165,0,.06)', border:'1px solid rgba(245,158,11,.2)', borderRadius:8, padding:'14px 18px', fontSize:12, color:'#f59e0b' }}>
+                              🔥 Streak bonus is <strong>enabled</strong> for this campaign ({selected.streak_days} days · {selected.streak_bonus_type === 'percentage' ? `${selected.streak_bonus_pct}%` : rmFmt(selected.streak_bonus_fixed, campCurrency)} per streak). No bonuses awarded yet — keep logging daily entries to trigger streak milestones.
+                            </div>
+                          : <>
+                              <div style={{ display:'grid', gridTemplateColumns:'repeat(5,1fr)', gap:12, marginBottom:12 }}>
+                                {[
+                                  ['Streak Days Target', selected.streak_days, '#f59e0b'],
+                                  ['Players with Streak', playersWithStreak, '#a78bfa'],
+                                  ['Total Bonuses', allSRows.length, '#c9a961'],
+                                  ['Paid Amount', rmFmt(paidStreakAmt, campCurrency), '#3fb950'],
+                                  ['Pending Amount', rmFmt(pendingStreakAmt, campCurrency), '#f85149'],
+                                ].map(([label,val,color]) => (
+                                  <div key={label} style={{ background:'var(--bg)', border:'1px solid var(--border)', borderRadius:8, padding:14 }}>
+                                    <div style={{ fontSize:18, fontWeight:700, color }}>{val}</div>
+                                    <div style={{ fontSize:11, color:'var(--muted)', marginTop:2 }}>{label}</div>
+                                  </div>
+                                ))}
+                              </div>
+                              <table style={{ ...s.tbl, marginBottom:8 }}>
+                                <thead><tr>
+                                  <th style={s.th}>Player</th>
+                                  <th style={s.th}>Streak #</th>
+                                  <th style={s.th}>Bonus Amount</th>
+                                  <th style={s.th}>Status</th>
+                                  <th style={s.th}>Awarded At</th>
+                                </tr></thead>
+                                <tbody>
+                                  {allSRows.sort((a,b) => a.username.localeCompare(b.username) || a.streak_number - b.streak_number).map((sb,i) => (
+                                    <tr key={i} onMouseEnter={e=>e.currentTarget.style.background='var(--surface2)'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+                                      <td style={{ ...s.td, fontWeight:700 }}>{sb.username}</td>
+                                      <td style={s.td}><span style={{ fontSize:12, fontWeight:700, color:'#f59e0b' }}>🔥 #{sb.streak_number}</span></td>
+                                      <td style={{ ...s.td, color:'#c9a961', fontWeight:700 }}>{rmFmt(sb.bonus_amount, campCurrency)}</td>
+                                      <td style={s.td}>
+                                        <span style={{ ...s.tag(sb.payout_status==='paid'?'#3fb950':'#f59e0b'), fontSize:10 }}>
+                                          {sb.payout_status==='paid' ? '✓ Paid' : 'Pending'}
+                                        </span>
+                                      </td>
+                                      <td style={{ ...s.td, fontSize:11, color:'var(--muted)' }}>
+                                        {sb.created_at ? new Date(sb.created_at).toLocaleDateString('en-MY',{day:'numeric',month:'short',year:'numeric'}) : '—'}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                              <div style={{ fontSize:11, color:'var(--muted)' }}>Total streak bonus cost: {rmFmt(totalStreakAmt, campCurrency)} ({paidSRows.length} paid · {pendingSRows.length} pending)</div>
+                            </>
+                      }
+                    </div>
+                  )
+                })()}
               </div>
             )}
 
