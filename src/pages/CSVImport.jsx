@@ -12,13 +12,6 @@ const VIP_TIERS       = ['GOLD', 'PLATINUM', 'DIAMOND', 'DIAMOND-P', 'BLACK']
 const POTENTIAL_TIERS = ['BRONZE', 'SILVER']
 const DEFAULT_THRESHOLDS = { BRONZE: 500, SILVER: 3000 }
 
-// Normalize a tier string from CSV: trim whitespace, uppercase, strip trailing
-// punctuation (e.g. "DIAMOND." → "DIAMOND" as seen in Optimove exports).
-function normalizeTier(raw) {
-  if (!raw) return ''
-  return raw.trim().toUpperCase().replace(/[.\s]+$/, '')
-}
-
 // ─── CSV parser ─────────────────────────────────────────────────────────────
 function parseCSV(text, skipRows = 0) {
   const lines = text.split(/\r?\n/).filter(l => l.trim())
@@ -151,8 +144,8 @@ function mergeRows(myRows, sgRows) {
 // ─── IMPORT PROCESSORS ─────────────────────────────────────────────────────
 
 async function processRawData(rows, month, thresholds, onProgress) {
-  const vipRows       = rows.filter(r => VIP_TIERS.includes(normalizeTier(r['Member Group'])))
-  const potentialRows = rows.filter(r => POTENTIAL_TIERS.includes(normalizeTier(r['Member Group'])))
+  const vipRows       = rows.filter(r => VIP_TIERS.includes(r['Member Group']?.toUpperCase()))
+  const potentialRows = rows.filter(r => POTENTIAL_TIERS.includes(r['Member Group']?.toUpperCase()))
 
   let vipUpdated = 0, vipCreated = 0, vipReset = 0, tierChanged = 0, potCreated = 0, potUpdated = 0, flagged = 0, errors = []
 
@@ -179,7 +172,7 @@ async function processRawData(rows, month, thresholds, onProgress) {
     for (const r of batch) {
       const username = r['login']?.trim()
       if (!username) continue
-      const newTier = normalizeTier(r['Member Group'])
+      const newTier = r['Member Group']?.toUpperCase()
       const oldTier = currentTierMap[username]
 
       // Detect tier change and queue log
@@ -248,7 +241,7 @@ async function processRawData(rows, month, thresholds, onProgress) {
   const csvVipMap = {}
   vipRows.forEach(r => {
     const u = r['login']?.trim()
-    if (u) csvVipMap[u.toLowerCase()] = normalizeTier(r['Member Group'])
+    if (u) csvVipMap[u.toLowerCase()] = r['Member Group']?.toUpperCase()
   })
 
   // Fetch all non-graduated potentials
@@ -401,20 +394,14 @@ async function processTierFile(rows, tierLabel, onProgress) {
       if (!username) continue
 
       const lastDepDate = toDate(r['Last Deposit Date'])
-      let daysInactive = null
-      if (lastDepDate) {
-        const diff = Date.now() - new Date(lastDepDate).getTime()
-        daysInactive = Math.floor(diff / (1000 * 60 * 60 * 24))
-      }
-
       const lastDepDateStr = lastDepDate ? lastDepDate.split('T')[0] : null
       const regDateStr = toDate(r['Register Date'])
       const regDateOnly = regDateStr ? regDateStr.split('T')[0] : null
       const currency = r['Currency'] || (r['Region'] === 'Singapore' ? 'SGD' : r['Region'] === 'Cambodia' ? 'KHUSD' : 'MYR')
 
+      // last_deposit_date and days_inactive are now auto-calculated nightly from
+      // vip_daily_snapshots by refresh_days_inactive() — do NOT overwrite them here.
       const updateData = {
-        last_deposit_date: lastDepDateStr,
-        days_inactive:     daysInactive,
         total_turnover:    toNum(r['Total Turnover']),
         total_rebate:      toNum(r['Total Rebate']),
         total_reward:      toNum(r['Total Reward']),
@@ -451,8 +438,7 @@ async function processTierFile(rows, tierLabel, onProgress) {
         total_rebate:       toNum(r['Total Rebate']),
         deposit_count:      toInt(r['Total Deposit Count']),
         total_turnover:     toNum(r['Total Turnover']),
-        last_deposit_date:  lastDepDateStr,
-        days_inactive:      daysInactive,
+        last_deposit_date:  lastDepDateStr,  // seed value for brand-new players only; pg_cron will take over after first daily snapshot
         registration_date:  regDateOnly,
         region:             r['Region'] || null,
         is_excluded:        false,
@@ -484,7 +470,7 @@ async function processRetentionData(rows, onProgress) {
   for (const r of rows) {
     if (!r['Month'] || !r['Tier'] || !r['Metric Type']) continue
     const month = r['Month']?.trim()
-    const tier  = normalizeTier(r['Tier'])
+    const tier  = r['Tier']?.trim().toUpperCase()
     const metricType = r['Metric Type']?.trim()
     if (!month || !tier || !metricType) continue
 
