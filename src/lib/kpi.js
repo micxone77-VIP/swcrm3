@@ -142,7 +142,7 @@ export async function loadKpiAutoData(monthStr) {
     .select('monthly_valid_bet, tier, currency')
     .eq('snapshot_month', monthStr)
     .eq('currency', 'MYR')
-    .in('tier', ['PLATINUM', 'DIAMOND'])
+    .in('tier', ['PLATINUM', 'DIAMOND', 'BLACK'])
   const totalTurnover = (vips || []).reduce((s, v) => s + (parseFloat(v.monthly_valid_bet) || 0), 0)
 
   // VIP-VIP upgrade count this month — Platinum → Diamond only

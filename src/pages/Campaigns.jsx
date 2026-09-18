@@ -204,6 +204,7 @@ export default function Campaigns() {
   const [levelsLoading, setLevelsLoading] = useState(false)
   const [streakBonuses, setStreakBonuses] = useState({})   // map: campaign_player_id → [...rows]
   const [streakBonusesLoading, setStreakBonusesLoading] = useState(false)
+  const [waPopup, setWaPopup] = useState(null)  // { rawNumber, message } — editable before opening WA
 
   // VIP search
   const [vipSearch,   setVipSearch]   = useState('')
@@ -1068,14 +1069,39 @@ export default function Campaigns() {
   }
 
   // Builds a progress-aware WhatsApp message: tells the player exactly how
-  // much more they need (if not qualified yet) or what they've earned (if
-  // qualified), phrased correctly for whichever campaign type this is.
-  function buildCampaignWaLink(p, extra) {
+  // Builds the pre-filled WhatsApp message body for a player.
+  // If the campaign has a whatsapp_template set, that template takes priority
+  // (with {username}, {campaign}, {agent}, {gap} substituted).
+  // Otherwise falls back to the progress-aware smart message.
+  function buildCampaignWaMessage(p, extra) {
     const rawNumber = (p.whatsapp || '').replace(/\D/g, '')
     if (!rawNumber || rawNumber.length < 10) return null
     const campName = selected?.campaign_name || 'this campaign'
     let body
 
+    // ── Campaign-level custom template (overrides smart message) ──────────────
+    if (selected?.whatsapp_template) {
+      // Calculate gap for {gap} variable
+      let gapStr = ''
+      if (campType === 'dual_tier') {
+        const nextTier = (rewardTiers||[]).find(t => playerDeposit(p) < (parseFloat(t.depositThreshold)||0) || (parseFloat(p.valid_bet)||0) < (parseFloat(t.turnoverThreshold)||0))
+        if (nextTier) {
+          const dg = Math.max(0, (parseFloat(nextTier.depositThreshold)||0) - playerDeposit(p))
+          gapStr = `RM${dg.toLocaleString()}`
+        }
+      } else if (campType !== 'leaderboard') {
+        const dep = playerDeposit(p)
+        if (dep < depTarget) gapStr = `RM${(depTarget - dep).toLocaleString()}`
+      }
+      body = selected.whatsapp_template
+        .replace(/\{username\}/g, p.username || '')
+        .replace(/\{campaign\}/g, campName)
+        .replace(/\{agent\}/g, myName)
+        .replace(/\{gap\}/g, gapStr)
+      return { rawNumber, body }
+    }
+
+    // ── Smart progress-aware message ──────────────────────────────────────────
     if (selected?.is_multi_level && campType === 'fixed_reward') {
       const metric = multiMetricsByPlayer[p.id]
       const dep = playerDeposit(p)
@@ -1095,7 +1121,6 @@ export default function Campaigns() {
       if (result.tierIndex >= 0) {
         body = `Hi ${p.username}, great news — you've completed ${campName}! You've qualified for RM${result.creditAmount} Credit + RM${result.wcashAmount} WCash. This is ${myName}, let us know if you have questions.`
       } else {
-        // Find the next tier not yet reached, show both gaps.
         const nextTier = (rewardTiers||[]).find(tier => playerDeposit(p) < (parseFloat(tier.depositThreshold)||0) || (parseFloat(p.valid_bet)||0) < (parseFloat(tier.turnoverThreshold)||0))
         if (nextTier) {
           const depGap = Math.max(0, (parseFloat(nextTier.depositThreshold)||0) - playerDeposit(p))
@@ -1118,7 +1143,6 @@ export default function Campaigns() {
         body = `Hi ${p.username}, checking in on ${campName} — let us know if you need anything. This is ${myName}.`
       }
     } else {
-      // pct_reward / fixed_reward / gold_bar / tiered_reward — single deposit target
       const dep = playerDeposit(p)
       const qualified = dep >= depTarget
       if (qualified) {
@@ -1129,14 +1153,14 @@ export default function Campaigns() {
         body = `Hi ${p.username}, you're close to completing ${campName}! You need RM${gap.toLocaleString()} more in deposits to qualify. This is ${myName}.`
       }
     }
-    return `https://wa.me/${rawNumber}?text=${encodeURIComponent(body)}`
+    return { rawNumber, body }
   }
   function CampaignWaButton({ p, extra }) {
-    const link = buildCampaignWaLink(p, extra)
-    if (!link) return <span style={{ color:'var(--muted)' }}>—</span>
+    const result = buildCampaignWaMessage(p, extra)
+    if (!result) return <span style={{ color:'var(--muted)' }}>—</span>
     return (
-      <a href={link} target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()}
-        style={{ display:'inline-flex', width:26, height:26, borderRadius:13, background:'#25D366', color:'#fff', alignItems:'center', justifyContent:'center', fontSize:13, fontWeight:700, textDecoration:'none' }}>W</a>
+      <button onClick={e=>{e.stopPropagation();setWaPopup({ rawNumber: result.rawNumber, message: result.body })}}
+        style={{ display:'inline-flex', width:26, height:26, borderRadius:13, background:'#25D366', color:'#fff', alignItems:'center', justifyContent:'center', fontSize:13, fontWeight:700, border:'none', cursor:'pointer' }}>W</button>
     )
   }
 
@@ -1788,6 +1812,12 @@ export default function Campaigns() {
                     <textarea style={s.fta} rows={3} value={editCampForm.offer_desc||''} onChange={e=>setEditCampForm(f=>({...f,offer_desc:e.target.value}))} placeholder="Write player-facing How to Join, Rules & Regulations, eligibility, deposit rules, reward conditions, and payout terms. Use line breaks for sections." />
                     <textarea style={s.fta} rows={3} value={editCampForm.notes||''} onChange={e=>setEditCampForm(f=>({...f,notes:e.target.value}))} placeholder="Internal notes" />
                   </div>
+                </div>
+
+                <div style={{ borderTop:'1px solid var(--border)', paddingTop:14, marginBottom:14 }}>
+                  <div style={{ fontSize:11, fontWeight:800, color:'var(--muted)', marginBottom:6, letterSpacing:'.5px' }}>💬 WHATSAPP MESSAGE TEMPLATE</div>
+                  <div style={{ fontSize:11, color:'var(--muted)', marginBottom:8 }}>Optional — overrides the auto-generated message. Variables: <code>{'{username}'}</code> <code>{'{campaign}'}</code> <code>{'{agent}'}</code> <code>{'{gap}'}</code></div>
+                  <textarea style={{ ...s.fta, width:'100%' }} rows={4} value={editCampForm.whatsapp_template||''} onChange={e=>setEditCampForm(f=>({...f,whatsapp_template:e.target.value}))} placeholder={"e.g. Hi {username}, checking in on {campaign}! You need {gap} more to qualify. - {agent}"} />
                 </div>
 
                 <div style={{ display:'flex', gap:8, alignItems:'center' }}>
@@ -2535,6 +2565,19 @@ export default function Campaigns() {
                 </div>
               )
             })()}
+          </div>
+        </div>
+      )}
+      {waPopup && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.6)', zIndex:1000, display:'flex', alignItems:'center', justifyContent:'center' }} onClick={()=>setWaPopup(null)}>
+          <div style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:14, padding:24, width:460, maxWidth:'90vw' }} onClick={e=>e.stopPropagation()}>
+            <div style={{ fontSize:14, fontWeight:700, marginBottom:12 }}>💬 WhatsApp Message</div>
+            <textarea rows={6} style={{ ...s.fta, width:'100%', marginBottom:14 }} value={waPopup.message} onChange={e=>setWaPopup(p=>({...p,message:e.target.value}))} />
+            <div style={{ display:'flex', gap:8 }}>
+              <a href={`https://wa.me/${waPopup.rawNumber}?text=${encodeURIComponent(waPopup.message)}`} target="_blank" rel="noopener noreferrer" onClick={()=>setWaPopup(null)}
+                style={{ ...s.btnG, textDecoration:'none', padding:'8px 18px' }}>Open WhatsApp</a>
+              <button style={s.btnSm} onClick={()=>setWaPopup(null)}>Cancel</button>
+            </div>
           </div>
         </div>
       )}
