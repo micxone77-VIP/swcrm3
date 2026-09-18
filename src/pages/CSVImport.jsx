@@ -1,5 +1,6 @@
-// CSVImport v2 — dual MY+SG upload, raw_imports history, monthly snapshot tracking
+// CSVImport v3 — dual MY+SG upload, single-Excel tier sync, raw_imports history
 import { useState, useRef, useCallback, useEffect } from 'react'
+import * as XLSX from 'xlsx'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { useLanguage } from '../contexts/LanguageContext'
@@ -383,84 +384,101 @@ async function processRawData(rows, month, thresholds, onProgress) {
   return { vipUpdated, vipCreated, vipReset, tierChanged, tierChangeLogs, autoGraduated, potCreated, potUpdated, flagged, errors }
 }
 
-async function processTierFile(rows, tierLabel, onProgress) {
-  let updated = 0, notFound = 0, created = 0, errors = [], notFoundUsernames = []
-  const BATCH = 50
+// ─── IMPORT 2: New single-Excel Tier Sync ───────────────────────────────────
+// New platform export format: one .xlsx with sheets GOLD / PLATINUM / DIAMOND /
+// DIAMOND-P / BLACK. Columns: Login, Member ID, Currency, Group, VIP Level,
+// Status, Register Date (MYT), Last Login (MYT), Days Since Login,
+// Last Deposit (MYT), Days Since Deposit, ...
+//
+// Purpose: TIER SYNC ONLY. days_inactive and last_deposit_date are now
+// auto-calculated nightly from vip_daily_snapshots — we never overwrite them here.
 
-  for (let i = 0; i < rows.length; i += BATCH) {
-    const batch = rows.slice(i, i + BATCH)
-    for (const r of batch) {
-      const username = (r['Member Login'] || '').trim()
-      if (!username) continue
+const TIER_SHEETS = ['GOLD', 'PLATINUM', 'DIAMOND', 'DIAMOND-P', 'BLACK']
 
-      const lastDepDate = toDate(r['Last Deposit Date'])
-      const lastDepDateStr = lastDepDate ? lastDepDate.split('T')[0] : null
-      const regDateStr = toDate(r['Register Date'])
-      const regDateOnly = regDateStr ? regDateStr.split('T')[0] : null
-      const currency = r['Currency'] || (r['Region'] === 'Singapore' ? 'SGD' : r['Region'] === 'Cambodia' ? 'KHUSD' : 'MYR')
+// Parse datetime string from new export e.g. "2026-09-18 17:01" → "2026-09-18"
+function parseDateOnly(str) {
+  if (!str) return null
+  const s = String(str).trim()
+  // Already YYYY-MM-DD or starts with it
+  const m = s.match(/^(\d{4}-\d{2}-\d{2})/)
+  return m ? m[1] : null
+}
 
-      // last_deposit_date and days_inactive are now auto-calculated nightly from
-      // vip_daily_snapshots by refresh_days_inactive() — do NOT overwrite them here.
-      const updateData = {
-        total_turnover:    toNum(r['Total Turnover']),
-        total_rebate:      toNum(r['Total Rebate']),
-        total_reward:      toNum(r['Total Reward']),
-        total_deposit:     toNum(r['Total Deposit Amount']),
-        total_withdrawal:  toNum(r['Total Withdraw Amount']),
-        deposit_count:     toInt(r['Total Deposit Count']),
-        registration_date: regDateOnly,
-        region:            r['Region'] || null,
-        currency,
-        updated_at:        new Date().toISOString(),
+async function processTierExcel(file, onProgress) {
+  let totalUpdated = 0, totalCreated = 0, totalRows = 0
+  const allErrors = [], tierSummary = {}
+
+  // Read workbook
+  const buf = await file.arrayBuffer()
+  const wb  = XLSX.read(buf, { type: 'array', raw: false })
+
+  for (const sheetName of TIER_SHEETS) {
+    if (!wb.SheetNames.includes(sheetName)) continue
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { defval: '' })
+    if (!rows.length) continue
+    totalRows += rows.length
+    let sheetUpdated = 0, sheetCreated = 0
+    const BATCH = 50
+
+    for (let i = 0; i < rows.length; i += BATCH) {
+      const batch = rows.slice(i, i + BATCH)
+      for (const r of batch) {
+        const username = String(r['Login'] || '').trim()
+        if (!username) continue
+
+        const tier     = String(r['Group'] || sheetName).toUpperCase()
+        const currency = String(r['Currency'] || 'MYR').trim()
+        const regDate  = parseDateOnly(r['Register Date (MYT)'])
+        // last_deposit_date is seed-only for brand-new players; pg_cron owns it for existing ones
+        const lastDep  = parseDateOnly(r['Last Deposit (MYT)'])
+
+        // Update existing player — only sync tier + currency + registration_date.
+        // Never touch last_deposit_date / days_inactive (auto-calculated).
+        const updateData = {
+          tier,
+          currency,
+          updated_at: new Date().toISOString(),
+        }
+        if (regDate) updateData.registration_date = regDate
+
+        const { data, error } = await supabase
+          .from('vip_members')
+          .update(updateData)
+          .ilike('username', username)
+          .select('id')
+
+        if (error) { allErrors.push(`${username}: ${error.message}`); continue }
+
+        if (data && data.length > 0) { sheetUpdated++; continue }
+
+        // Brand-new player not yet in system — create with seed last_deposit_date
+        const insertPayload = {
+          username,
+          vip_id:           username,
+          tier,
+          currency,
+          is_excluded:      false,
+          updated_at:       new Date().toISOString(),
+        }
+        if (regDate) insertPayload.registration_date = regDate
+        if (lastDep) insertPayload.last_deposit_date = lastDep  // seed; pg_cron takes over after first daily snapshot
+
+        const { error: ie } = await supabase
+          .from('vip_members')
+          .upsert(insertPayload, { onConflict: 'username' })
+
+        if (ie) allErrors.push(`${username} (new): ${ie.message}`)
+        else    sheetCreated++
       }
-      Object.keys(updateData).forEach(k => { if (updateData[k] === null || updateData[k] === undefined) delete updateData[k] })
-
-      // Case-insensitive match: platform exports and vip_members usernames may differ in case
-      const { data, error } = await supabase
-        .from('vip_members')
-        .update(updateData)
-        .ilike('username', username)
-        .select('id')
-
-      if (error) { errors.push(`${username}: ${error.message}`); continue }
-
-      if (data && data.length > 0) { updated++; continue }
-
-      // Not found by update — player reached this tier but was never created by the daily raw import.
-      // Create them now instead of silently dropping their data.
-      const insertPayload = {
-        username,
-        vip_id:            username,
-        tier:               tierLabel,
-        currency,
-        total_deposit:      toNum(r['Total Deposit Amount']),
-        total_withdrawal:   toNum(r['Total Withdraw Amount']),
-        total_rebate:       toNum(r['Total Rebate']),
-        deposit_count:      toInt(r['Total Deposit Count']),
-        total_turnover:     toNum(r['Total Turnover']),
-        last_deposit_date:  lastDepDateStr,  // seed value for brand-new players only; pg_cron will take over after first daily snapshot
-        registration_date:  regDateOnly,
-        region:             r['Region'] || null,
-        is_excluded:        false,
-        updated_at:         new Date().toISOString(),
-      }
-      Object.keys(insertPayload).forEach(k => { if (insertPayload[k] === null || insertPayload[k] === undefined) delete insertPayload[k] })
-
-      const { error: insertError } = await supabase
-        .from('vip_members')
-        .upsert(insertPayload, { onConflict: 'username' })
-
-      if (insertError) {
-        errors.push(`${username}: could not create — ${insertError.message}`)
-        notFound++; notFoundUsernames.push(username)
-      } else {
-        created++
-      }
+      onProgress(`${sheetName}: ${Math.min(i + BATCH, rows.length)}/${rows.length}`)
     }
-    onProgress(`Updating ${tierLabel} members… ${Math.min(i + BATCH, rows.length)}/${rows.length}`)
+
+    tierSummary[sheetName] = { updated: sheetUpdated, created: sheetCreated, total: rows.length }
+    totalUpdated += sheetUpdated
+    totalCreated += sheetCreated
   }
 
-  return { updated, notFound, created, errors, notFoundUsernames }
+  return { totalUpdated, totalCreated, totalRows, allErrors, tierSummary }
 }
 
 // ─── IMPORT 3: Retention Engagement CSV ─────────────────────────────────────
@@ -928,9 +946,7 @@ export default function CSVImport() {
   const [rawResult,    setRawResult]    = useState(null)
 
   // Tier files
-  const [goldFile,     setGoldFile]     = useState(null)
-  const [platFile,     setPlatFile]     = useState(null)
-  const [diaFile,      setDiaFile]      = useState(null)
+  const [tierExcelFile, setTierExcelFile] = useState(null)
   const [tierLoading,  setTierLoading]  = useState(false)
   const [tierProgress, setTierProgress] = useState('')
   const [tierResult,   setTierResult]   = useState(null)
@@ -1016,7 +1032,7 @@ export default function CSVImport() {
     const snapshotMonth = dateStr.slice(0, 7) // 'YYYY-MM'
     const { data: vips, error: fetchErr } = await supabase
       .from('vip_members')
-      .select('username, tier, total_deposit, total_withdrawal, monthly_valid_bet, win_loss, bet_count, bonus_count, bonus_amount, total_rebate, has_promo, currency, host_assigned, valid_bet_month')
+      .select('username, tier, total_deposit, total_withdrawal, monthly_valid_bet, win_loss, bet_count, deposit_count, bonus_count, bonus_amount, total_rebate, has_promo, currency, host_assigned, valid_bet_month')
       .in('tier', ['GOLD', 'PLATINUM', 'DIAMOND', 'DIAMOND-P', 'BLACK'])
       .eq('is_excluded', false)
 
@@ -1047,6 +1063,7 @@ export default function CSVImport() {
           monthly_valid_bet:  sameMonth ? (v.monthly_valid_bet || 0) : 0,
           win_loss:           sameMonth ? (v.win_loss          || 0) : 0,
           bet_count:          sameMonth ? (v.bet_count         || 0) : 0,
+          deposit_count:      sameMonth ? (v.deposit_count     || 0) : 0,
           bonus_count:        sameMonth ? (v.bonus_count       || 0) : 0,
           bonus_amount:       sameMonth ? (v.bonus_amount      || 0) : 0,
           total_rebate:       sameMonth ? (v.total_rebate      || 0) : 0,
@@ -1270,41 +1287,21 @@ export default function CSVImport() {
     setRawLoading(false)
   }
 
-  // ── IMPORT 2: Tier files ───────────────────────────────────────────────
+  // ── IMPORT 2: Tier Excel sync ─────────────────────────────────────────────
   const handleTierImport = async () => {
-    if (!goldFile && !platFile && !diaFile) return
+    if (!tierExcelFile) return
     setTierLoading(true)
     setTierResult(null)
-
-    let totalUpdated = 0, totalNotFound = 0, allErrors = []
-    const tierJobs = [
-      { file: goldFile, label: 'GOLD' },
-      { file: platFile, label: 'PLATINUM' },
-      { file: diaFile,  label: 'DIAMOND' },
-    ].filter(j => j.file)
-
     try {
-      let totalRows = 0
-      let totalCreated = 0
-      let allNotFoundUsernames = []
-      for (const job of tierJobs) {
-        setTierProgress(`Reading ${job.label} file…`)
-        const text = await readFile(job.file)
-        const rows = parseCSV(text, TIER_FILE_SKIP_ROWS)
-        totalRows += rows.length
-        setTierProgress(`Processing ${job.label} (${rows.length} rows)…`)
-        const res = await processTierFile(rows, job.label, setTierProgress)
-        totalUpdated  += res.updated
-        totalNotFound += res.notFound
-        totalCreated  += res.created
-        allErrors      = [...allErrors, ...res.errors]
-        allNotFoundUsernames = [...allNotFoundUsernames, ...res.notFoundUsernames.map(u => `${u} (${job.label})`)]
-      }
-
-      const tierLabels = tierJobs.map(j => j.label).join('+')
-      await saveImportRecord(importMonth, totalRows, `Tier Files · ${tierLabels}`)
-
-      setTierResult({ updated: totalUpdated, notFound: totalNotFound, created: totalCreated, errors: allErrors, notFoundUsernames: allNotFoundUsernames })
+      setTierProgress('Reading Excel workbook…')
+      const res = await processTierExcel(tierExcelFile, setTierProgress)
+      await saveImportRecord(importMonth, res.totalRows, 'Tier Excel Sync')
+      setTierResult({
+        updated: res.totalUpdated,
+        created: res.totalCreated,
+        errors:  res.allErrors,
+        tierSummary: res.tierSummary,
+      })
       setTierProgress('')
     } catch (err) {
       setTierResult({ error: err.message, errors: [err.message] })
@@ -1504,47 +1501,47 @@ export default function CSVImport() {
 
       <hr style={s.divider} />
 
-      {/* ── IMPORT 2: Tier files ── */}
+      {/* ── IMPORT 2: Tier Excel Sync ── */}
       <div style={s.card}>
         <div style={s.cardHeader}>
           <span style={s.badge('#10b981')}>STEP 2</span>
           <div>
-            <div style={s.cardTitle}>Raw Gold / Platinum / Diamond — Tier Exports</div>
+            <div style={s.cardTitle}>VIP Member List — Tier Sync</div>
             <div style={s.cardDesc}>
-              From your platform's tier export. Updates last deposit date, days inactive, total turnover for Gold+ members.
+              Upload the full BO VIP Member List Excel (.xlsx). Syncs tier for all Gold / Platinum / Diamond / Black members — including dormant players the daily CSV misses.
             </div>
           </div>
         </div>
 
         <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 14 }}>
-          ✓ Updates: last_deposit_date, days_inactive, total_turnover, total_rebate &nbsp;|&nbsp;
-          ✓ Upload all 3 or just the ones you have — each is independent
+          ✓ Updates: tier, currency, registration_date &nbsp;|&nbsp;
+          ✓ days_inactive &amp; last_deposit_date auto-calculated from daily snapshots — not touched here &nbsp;|&nbsp;
+          ✓ Upload monthly (or whenever you suspect tier drift)
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 14 }}>
-          <div>
-            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)', marginBottom: 6 }}>🥇 Raw Gold</div>
-            <Dropzone onFile={setGoldFile} file={goldFile} />
-          </div>
-          <div>
-            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)', marginBottom: 6 }}>🥈 Raw Platinum</div>
-            <Dropzone onFile={setPlatFile} file={platFile} />
-          </div>
-          <div>
-            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)', marginBottom: 6 }}>💎 Raw Diamond</div>
-            <Dropzone onFile={setDiaFile} file={diaFile} />
-          </div>
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)', marginBottom: 6 }}>📋 VIP Member List (.xlsx) — all tiers in one file</div>
+          <Dropzone onFile={setTierExcelFile} file={tierExcelFile} accept=".xlsx" />
         </div>
 
         <button
-          style={s.btn((!goldFile && !platFile && !diaFile) || tierLoading, '#10b981')}
-          disabled={(!goldFile && !platFile && !diaFile) || tierLoading}
+          style={s.btn(!tierExcelFile || tierLoading, '#10b981')}
+          disabled={!tierExcelFile || tierLoading}
           onClick={handleTierImport}
         >
-          {tierLoading ? 'Importing…' : 'Import Tier Files'}
+          {tierLoading ? 'Syncing…' : 'Sync Tiers'}
         </button>
 
         {tierProgress && <div style={s.progress}>⏳ {tierProgress}</div>}
+        {tierResult && !tierResult.error && tierResult.tierSummary && (
+          <div style={{ marginTop: 12, fontSize: 12, color: 'var(--muted)' }}>
+            {Object.entries(tierResult.tierSummary).map(([tier, s]) => (
+              <span key={tier} style={{ marginRight: 16 }}>
+                <strong style={{ color: 'var(--text)' }}>{tier}</strong>: {s.updated} updated, {s.created} new / {s.total} total
+              </span>
+            ))}
+          </div>
+        )}
         <ResultBox result={tierResult} />
       </div>
 
