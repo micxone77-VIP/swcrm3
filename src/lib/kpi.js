@@ -146,8 +146,8 @@ export async function loadKpiAutoData(monthStr) {
   const totalTurnover = (vips || []).reduce((s, v) => s + (parseFloat(v.monthly_valid_bet) || 0), 0)
 
   // VIP-VIP upgrade count this month — Platinum → Diamond only
-  // (NOR-VIP upgrades, i.e. non-VIP → Platinum/Diamond, are tracked manually
-  // because those players have no prior row in vip_members to diff against)
+  // NOR-VIP (non-VIP → Platinum/Diamond) is tracked manually because those
+  // players have no prior row in vip_members to diff against.
   const { count: upgradeCount } = await supabase
     .from('tier_change_logs')
     .select('id', { count: 'exact' })
