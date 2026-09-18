@@ -206,6 +206,7 @@ export default function Campaigns() {
   const [streakBonuses, setStreakBonuses] = useState({})   // map: campaign_player_id → [...rows]
   const [streakBonusesLoading, setStreakBonusesLoading] = useState(false)
   const [waPopup, setWaPopup] = useState(null)  // { rawNumber, message } — editable before opening WA
+  const [waCopied, setWaCopied] = useState(false)
 
   // VIP search
   const [vipSearch,   setVipSearch]   = useState('')
@@ -2642,7 +2643,11 @@ export default function Campaigns() {
             <div style={{ display:'flex', gap:8 }}>
               <a href={`https://wa.me/${waPopup.rawNumber}?text=${encodeURIComponent(waPopup.message)}`} target="_blank" rel="noopener noreferrer" onClick={()=>setWaPopup(null)}
                 style={{ ...s.btnG, textDecoration:'none', padding:'8px 18px' }}>Open WhatsApp</a>
-              <button style={s.btnSm} onClick={()=>setWaPopup(null)}>Cancel</button>
+              <button style={{ ...s.btnSm, background: waCopied ? '#3fb950' : undefined, color: waCopied ? '#fff' : undefined }}
+                onClick={()=>{ navigator.clipboard.writeText(waPopup.message); setWaCopied(true); setTimeout(()=>setWaCopied(false), 2000) }}>
+                {waCopied ? '✅ Copied!' : '📋 Copy'}
+              </button>
+              <button style={s.btnSm} onClick={()=>{ setWaPopup(null); setWaCopied(false) }}>Cancel</button>
             </div>
           </div>
         </div>
