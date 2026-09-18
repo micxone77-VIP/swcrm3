@@ -185,6 +185,7 @@ export default function Campaigns() {
   const [campaignRewards, setCampaignRewards] = useState([])
   const [activeTab,  setActiveTab]  = useState('chase')
   const [chaseFilter, setChaseFilter] = useState('')
+  const [hostFilter, setHostFilter] = useState('all')
   const [copiedId, setCopiedId] = useState(null)
   const [entryDate, setEntryDate] = useState('')
   const [dailyEntries, setDailyEntries] = useState({}) // player_id -> {turnover_amount, tier_achieved, credit_reward, wcash_reward}
@@ -1243,9 +1244,12 @@ export default function Campaigns() {
     : players.filter(p=>p.payout_status==='paid').reduce((s,p)=>s+calcReward(campType,playerDeposit(p),rewardPct,rewardFixed,goldVal,rewardCap,rewardTiers,campaignLevels,selected?.is_multi_level),0)
   const pendingPay = Math.max(0,totalReward-paidOut)
   const chaseList = campType==='leaderboard' ? lbRanked : [...players].sort((a,b)=>playerDeposit(b)-playerDeposit(a))
-  const filteredChaseList = chaseFilter.trim()
-    ? chaseList.filter(p => (p.username||'').toLowerCase().includes(chaseFilter.toLowerCase()) || (p.full_name||'').toLowerCase().includes(chaseFilter.toLowerCase()))
-    : chaseList
+  const chaseHosts = ['all', ...Array.from(new Set(chaseList.map(p => p.host_assigned).filter(Boolean))).sort()]
+  const filteredChaseList = chaseList.filter(p => {
+    const matchesHost = hostFilter === 'all' || p.host_assigned === hostFilter
+    const matchesSearch = !chaseFilter.trim() || (p.username||'').toLowerCase().includes(chaseFilter.toLowerCase()) || (p.full_name||'').toLowerCase().includes(chaseFilter.toLowerCase())
+    return matchesHost && matchesSearch
+  })
   function copyUsername(id, username) {
     navigator.clipboard.writeText(username).catch(()=>{})
     setCopiedId(id)
@@ -1293,7 +1297,7 @@ export default function Campaigns() {
             return (
               <div key={camp.id} style={{ ...s.card, cursor:'pointer', transition:'border-color .15s' }}
                 onClick={async () => {
-                  setSelected(camp); setActiveTab('chase'); setModal('detail')
+                  setSelected(camp); setActiveTab('chase'); setModal('detail'); setChaseFilter(''); setHostFilter('all')
                   const today = new Date().toISOString().slice(0,10)
                   const inRange = camp.start_date && camp.end_date && today >= camp.start_date && today <= camp.end_date
                   setEntryDate(inRange ? today : (camp.start_date || today))
@@ -1912,12 +1916,25 @@ export default function Campaigns() {
                 <div style={{ padding:'8px 24px', fontSize:11, color:'var(--muted)', background:'rgba(88,166,255,.04)', borderBottom:'1px solid var(--border)' }}>
                   Click deposit field to update · reward auto-calculated based on campaign type
                 </div>
+                {/* Chase list host filter */}
+                {chaseHosts.length > 1 && (
+                  <div style={{ padding:'6px 24px', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', gap:6, flexWrap:'wrap' }}>
+                    <span style={{ fontSize:11, color:'var(--muted)', marginRight:2 }}>Host:</span>
+                    {chaseHosts.map(h => (
+                      <button key={h} onClick={() => setHostFilter(h)} style={{
+                        padding:'3px 12px', borderRadius:16, fontSize:12, fontWeight:600, border:'1px solid var(--border)', cursor:'pointer',
+                        background: hostFilter === h ? 'var(--accent)' : 'var(--surface2)',
+                        color: hostFilter === h ? '#fff' : 'var(--muted)',
+                      }}>{h === 'all' ? `All (${chaseList.length})` : `${h} (${chaseList.filter(p=>p.host_assigned===h).length})`}</button>
+                    ))}
+                  </div>
+                )}
                 {/* Chase list search filter */}
                 <div style={{ padding:'8px 24px', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', gap:8 }}>
                   <input
                     value={chaseFilter}
                     onChange={e => setChaseFilter(e.target.value)}
-                    placeholder={`🔍 Filter ${chaseList.length} players by username…`}
+                    placeholder={`🔍 Filter ${filteredChaseList.length} players by username…`}
                     style={{ ...s.smInput, width:280, fontSize:12 }}
                   />
                   {chaseFilter && (
