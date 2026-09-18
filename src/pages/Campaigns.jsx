@@ -2638,7 +2638,7 @@ export default function Campaigns() {
                 </div>
               )}
             </div>
-            <textarea rows={10} style={{ ...s.fta, width:'100%', marginBottom:14 }} value={waPopup.message} onChange={e=>setWaPopup(p=>({...p,message:e.target.value}))} />
+            <textarea rows={10} style={{ ...s.fta, width:'100%', marginBottom:14, fontFamily:"'Segoe UI Emoji','Apple Color Emoji','Noto Color Emoji','Twemoji Mozilla',sans-serif" }} value={waPopup.message} onChange={e=>setWaPopup(p=>({...p,message:e.target.value}))} />
             <div style={{ display:'flex', gap:8 }}>
               <a href={`https://wa.me/${waPopup.rawNumber}?text=${encodeURIComponent(waPopup.message)}`} target="_blank" rel="noopener noreferrer" onClick={()=>setWaPopup(null)}
                 style={{ ...s.btnG, textDecoration:'none', padding:'8px 18px' }}>Open WhatsApp</a>
