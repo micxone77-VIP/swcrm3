@@ -35,23 +35,28 @@ export const KPI_FRAMEWORK = [
     ]
   },
   {
-    category: 'B', label: '业务专属', weight: 25, color: '#f59e0b',
+    category: 'B', label: '业务专属', weight: 45, color: '#f59e0b',
     items: [
       {
         key: 'total_turnover', label: 'VIP 总流水', labelEn: 'Total VIP Turnover',
-        weight: 22, target: 150000000, unit: 'RM', source: 'auto',
+        weight: 20, target: 150000000, unit: 'RM', source: 'auto',
         fmt: (v) => formatMoney(v, 'MYR'),
         icon: '💰', desc: '目标 ≥ RM 1.5亿/月',
       },
       {
         key: 'retention_rate', label: 'VIP 留存率', labelEn: 'VIP Retention Rate',
-        weight: 18, target: 85, unit: '%', source: 'auto',
+        weight: 15, target: 85, unit: '%', source: 'auto',
         fmt: (v) => `${v}%`, icon: '🔄', desc: '目标 ≥ 85%',
       },
       {
-        key: 'upgrade_count', label: 'VIP 升级数', labelEn: 'VIP Upgrades',
+        key: 'upgrade_count', label: 'VIP 升级数(VIP-VIP)', labelEn: 'VIP Upgrades (VIP→VIP)',
         weight: 5, target: 4, unit: '人', source: 'auto',
         fmt: (v) => `${v} 人`, icon: '⬆️', desc: '目标 ≥ 4人/月',
+      },
+      {
+        key: 'nor_vip_upgrade_count', label: 'VIP 升级数(NOR-VIP)', labelEn: 'VIP Upgrades (NOR→VIP)',
+        weight: 5, target: 10, unit: '人', source: 'manual',
+        fmt: (v) => `${v} 人`, icon: '🆕', desc: '目标 ≥ 10人/月',
       },
     ]
   },
