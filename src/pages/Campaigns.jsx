@@ -1079,26 +1079,31 @@ export default function Campaigns() {
     const campName = selected?.campaign_name || 'this campaign'
     let body
 
-    // ── Campaign-level custom template (overrides smart message) ──────────────
-    if (selected?.whatsapp_template) {
-      // Calculate gap for {gap} variable
-      let gapStr = ''
-      if (campType === 'dual_tier') {
-        const nextTier = (rewardTiers||[]).find(t => playerDeposit(p) < (parseFloat(t.depositThreshold)||0) || (parseFloat(p.valid_bet)||0) < (parseFloat(t.turnoverThreshold)||0))
-        if (nextTier) {
-          const dg = Math.max(0, (parseFloat(nextTier.depositThreshold)||0) - playerDeposit(p))
-          gapStr = `RM${dg.toLocaleString()}`
-        }
-      } else if (campType !== 'leaderboard') {
-        const dep = playerDeposit(p)
-        if (dep < depTarget) gapStr = `RM${(depTarget - dep).toLocaleString()}`
+    // ── Calculate gap once (used by both EN and ZH templates) ─────────────────
+    let gapStr = ''
+    if (campType === 'dual_tier') {
+      const nextTier = (rewardTiers||[]).find(t => playerDeposit(p) < (parseFloat(t.depositThreshold)||0) || (parseFloat(p.valid_bet)||0) < (parseFloat(t.turnoverThreshold)||0))
+      if (nextTier) {
+        const dg = Math.max(0, (parseFloat(nextTier.depositThreshold)||0) - playerDeposit(p))
+        gapStr = `RM${dg.toLocaleString()}`
       }
-      body = selected.whatsapp_template
-        .replace(/\{username\}/g, p.username || '')
-        .replace(/\{campaign\}/g, campName)
-        .replace(/\{agent\}/g, myName)
-        .replace(/\{gap\}/g, gapStr)
-      return { rawNumber, body }
+    } else if (campType !== 'leaderboard') {
+      const dep = playerDeposit(p)
+      if (dep < depTarget) gapStr = `RM${(depTarget - dep).toLocaleString()}`
+    }
+    const fillTemplate = (tpl) => tpl
+      .replace(/\{username\}/g, p.username || '')
+      .replace(/\{campaign\}/g, campName)
+      .replace(/\{agent\}/g, myName)
+      .replace(/\{gap\}/g, gapStr)
+
+    // ── Campaign-level custom template (overrides smart message) ──────────────
+    if (selected?.whatsapp_template || selected?.whatsapp_template_zh) {
+      const enBody = selected?.whatsapp_template ? fillTemplate(selected.whatsapp_template) : null
+      const zhBody = selected?.whatsapp_template_zh ? fillTemplate(selected.whatsapp_template_zh) : null
+      // Default: ZH if available, else EN
+      body = zhBody || enBody
+      return { rawNumber, body, enBody, zhBody }
     }
 
     // ── Smart progress-aware message ──────────────────────────────────────────
@@ -1159,7 +1164,7 @@ export default function Campaigns() {
     const result = buildCampaignWaMessage(p, extra)
     if (!result) return <span style={{ color:'var(--muted)' }}>—</span>
     return (
-      <button onClick={e=>{e.stopPropagation();setWaPopup({ rawNumber: result.rawNumber, message: result.body })}}
+      <button onClick={e=>{e.stopPropagation();setWaPopup({ rawNumber: result.rawNumber, message: result.body, enBody: result.enBody||null, zhBody: result.zhBody||null })}}
         style={{ display:'inline-flex', width:26, height:26, borderRadius:13, background:'#25D366', color:'#fff', alignItems:'center', justifyContent:'center', fontSize:13, fontWeight:700, border:'none', cursor:'pointer' }}>W</button>
     )
   }
@@ -1817,7 +1822,16 @@ export default function Campaigns() {
                 <div style={{ borderTop:'1px solid var(--border)', paddingTop:14, marginBottom:14 }}>
                   <div style={{ fontSize:11, fontWeight:800, color:'var(--muted)', marginBottom:6, letterSpacing:'.5px' }}>💬 WHATSAPP MESSAGE TEMPLATE</div>
                   <div style={{ fontSize:11, color:'var(--muted)', marginBottom:8 }}>Optional — overrides the auto-generated message. Variables: <code>{'{username}'}</code> <code>{'{campaign}'}</code> <code>{'{agent}'}</code> <code>{'{gap}'}</code></div>
-                  <textarea style={{ ...s.fta, width:'100%' }} rows={4} value={editCampForm.whatsapp_template||''} onChange={e=>setEditCampForm(f=>({...f,whatsapp_template:e.target.value}))} placeholder={"e.g. Hi {username}, checking in on {campaign}! You need {gap} more to qualify. - {agent}"} />
+                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+                    <div>
+                      <div style={{ fontSize:11, color:'var(--muted)', marginBottom:4, fontWeight:600 }}>🇬🇧 English</div>
+                      <textarea style={{ ...s.fta, width:'100%' }} rows={6} value={editCampForm.whatsapp_template||''} onChange={e=>setEditCampForm(f=>({...f,whatsapp_template:e.target.value}))} placeholder={"e.g. Hi {username}, checking in on {campaign}! You need {gap} more to qualify. - {agent}"} />
+                    </div>
+                    <div>
+                      <div style={{ fontSize:11, color:'var(--muted)', marginBottom:4, fontWeight:600 }}>🇨🇳 中文</div>
+                      <textarea style={{ ...s.fta, width:'100%' }} rows={6} value={editCampForm.whatsapp_template_zh||''} onChange={e=>setEditCampForm(f=>({...f,whatsapp_template_zh:e.target.value}))} placeholder={"e.g. 您好 {username}，我是SureWin VIP 部门的 {agent}。\n\n您参与了 {campaign} 活动，还需 {gap} 即可达标！"} />
+                    </div>
+                  </div>
                 </div>
 
                 <div style={{ display:'flex', gap:8, alignItems:'center' }}>
@@ -2570,9 +2584,27 @@ export default function Campaigns() {
       )}
       {waPopup && (
         <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.6)', zIndex:1000, display:'flex', alignItems:'center', justifyContent:'center' }} onClick={()=>setWaPopup(null)}>
-          <div style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:14, padding:24, width:460, maxWidth:'90vw' }} onClick={e=>e.stopPropagation()}>
-            <div style={{ fontSize:14, fontWeight:700, marginBottom:12 }}>💬 WhatsApp Message</div>
-            <textarea rows={6} style={{ ...s.fta, width:'100%', marginBottom:14 }} value={waPopup.message} onChange={e=>setWaPopup(p=>({...p,message:e.target.value}))} />
+          <div style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:14, padding:24, width:520, maxWidth:'94vw' }} onClick={e=>e.stopPropagation()}>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
+              <div style={{ fontSize:14, fontWeight:700 }}>💬 WhatsApp Message</div>
+              {(waPopup.enBody || waPopup.zhBody) && (
+                <div style={{ display:'flex', gap:4 }}>
+                  {waPopup.enBody && (
+                    <button onClick={()=>setWaPopup(p=>({...p,message:p.enBody}))}
+                      style={{ padding:'3px 10px', borderRadius:6, fontSize:12, fontWeight:600, border:'1px solid var(--border)', cursor:'pointer',
+                        background: waPopup.message===waPopup.enBody ? 'var(--accent)' : 'var(--surface2)',
+                        color: waPopup.message===waPopup.enBody ? '#fff' : 'var(--muted)' }}>🇬🇧 EN</button>
+                  )}
+                  {waPopup.zhBody && (
+                    <button onClick={()=>setWaPopup(p=>({...p,message:p.zhBody}))}
+                      style={{ padding:'3px 10px', borderRadius:6, fontSize:12, fontWeight:600, border:'1px solid var(--border)', cursor:'pointer',
+                        background: waPopup.message===waPopup.zhBody ? 'var(--accent)' : 'var(--surface2)',
+                        color: waPopup.message===waPopup.zhBody ? '#fff' : 'var(--muted)' }}>🇨🇳 中文</button>
+                  )}
+                </div>
+              )}
+            </div>
+            <textarea rows={10} style={{ ...s.fta, width:'100%', marginBottom:14 }} value={waPopup.message} onChange={e=>setWaPopup(p=>({...p,message:e.target.value}))} />
             <div style={{ display:'flex', gap:8 }}>
               <a href={`https://wa.me/${waPopup.rawNumber}?text=${encodeURIComponent(waPopup.message)}`} target="_blank" rel="noopener noreferrer" onClick={()=>setWaPopup(null)}
                 style={{ ...s.btnG, textDecoration:'none', padding:'8px 18px' }}>Open WhatsApp</a>

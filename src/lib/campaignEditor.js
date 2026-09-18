@@ -6,7 +6,7 @@ export const EDITABLE_CAMPAIGN_FIELDS = [
   'settlement_frequency','campaign_category','is_multi_level','max_levels','requires_period_deposit',
   'enrollment_mode','auto_enroll_tiers','leaderboard_metric','payout_mode',
   'streak_enabled','streak_days','streak_bonus_type','streak_bonus_pct','streak_bonus_fixed','streak_bonus_cap',
-  'whatsapp_template',
+  'whatsapp_template','whatsapp_template_zh',
 ]
 
 export const EMPTY_LEVEL = () => ({
@@ -66,6 +66,7 @@ export function normalizeCampaignForEdit(campaign) {
   form.streak_bonus_fixed = c.streak_bonus_fixed != null ? Number(c.streak_bonus_fixed) : 0
   form.streak_bonus_cap = c.streak_bonus_cap != null ? Number(c.streak_bonus_cap) : 0
   form.whatsapp_template = c.whatsapp_template || ''
+  form.whatsapp_template_zh = c.whatsapp_template_zh || ''
   form.start_date = normalizeDate(c.start_date)
   form.end_date = normalizeDate(c.end_date)
   return form
@@ -157,6 +158,7 @@ export function buildCampaignUpdate(form) {
     streak_bonus_fixed: form.streak_bonus_fixed != null ? Number(form.streak_bonus_fixed) : 0,
     streak_bonus_cap: form.streak_bonus_cap != null ? Number(form.streak_bonus_cap) : 0,
     whatsapp_template: form.whatsapp_template || null,
+    whatsapp_template_zh: form.whatsapp_template_zh || null,
   }
 }
 
