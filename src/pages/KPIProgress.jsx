@@ -350,6 +350,38 @@ export default function KPIProgress() {
             </div>
           ))}
 
+          {/* Diamond Coverage Breakdown */}
+          {autoData.diamond_uncovered !== undefined && (
+            <div style={{ ...s.card, border:'1px solid rgba(99,102,241,.3)' }}>
+              <div style={{ padding:'12px 20px', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:8 }}>
+                <div style={{ fontSize:13, fontWeight:700 }}>💎 Diamond 1对1 Breakdown — {MONTHS[month]} {year}</div>
+                <div style={{ display:'flex', gap:12, fontSize:12 }}>
+                  <span style={{ color:'#3fb950', fontWeight:700 }}>✅ Contacted: {autoData.diamond_contacted ?? 0}</span>
+                  <span style={{ color:'#f85149', fontWeight:700 }}>❌ Not yet: {(autoData.diamond_uncovered || []).length}</span>
+                  <span style={{ color:'var(--muted)' }}>Total: {autoData.diamond_total ?? 0}</span>
+                </div>
+              </div>
+              {(autoData.diamond_uncovered || []).length === 0 ? (
+                <div style={{ padding:'20px', textAlign:'center', color:'#3fb950', fontSize:13, fontWeight:600 }}>
+                  🎉 All Diamond players contacted this month!
+                </div>
+              ) : (
+                <div style={{ padding:'14px 20px' }}>
+                  <div style={{ fontSize:11, color:'var(--muted)', marginBottom:10, fontWeight:600 }}>
+                    NOT YET CONTACTED ({(autoData.diamond_uncovered || []).length} players) — contact them to improve your coverage rate
+                  </div>
+                  <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
+                    {(autoData.diamond_uncovered || []).map(d => (
+                      <span key={d.id} style={{ padding:'4px 10px', background:'rgba(248,81,73,.1)', border:'1px solid rgba(248,81,73,.3)', borderRadius:8, fontSize:12, fontWeight:600, color:'#f85149' }}>
+                        {d.username}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Auto data note */}
           <div style={{ padding:'10px 14px', background:'rgba(6,182,212,.06)', border:'1px solid rgba(6,182,212,.2)', borderRadius:8, fontSize:12, color:'#06b6d4', marginTop:4 }}>
             {t('kpi.autoCalculatedNote')}

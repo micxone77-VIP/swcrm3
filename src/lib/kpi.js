@@ -35,28 +35,23 @@ export const KPI_FRAMEWORK = [
     ]
   },
   {
-    category: 'B', label: '业务专属', weight: 45, color: '#f59e0b',
+    category: 'B', label: '业务专属', weight: 25, color: '#f59e0b',
     items: [
       {
         key: 'total_turnover', label: 'VIP 总流水', labelEn: 'Total VIP Turnover',
-        weight: 20, target: 150000000, unit: 'RM', source: 'auto',
+        weight: 22, target: 150000000, unit: 'RM', source: 'auto',
         fmt: (v) => formatMoney(v, 'MYR'),
         icon: '💰', desc: '目标 ≥ RM 1.5亿/月',
       },
       {
         key: 'retention_rate', label: 'VIP 留存率', labelEn: 'VIP Retention Rate',
-        weight: 15, target: 85, unit: '%', source: 'auto',
+        weight: 18, target: 85, unit: '%', source: 'auto',
         fmt: (v) => `${v}%`, icon: '🔄', desc: '目标 ≥ 85%',
       },
       {
-        key: 'upgrade_count', label: 'VIP 升级数(VIP-VIP)', labelEn: 'VIP Upgrades (VIP→VIP)',
+        key: 'upgrade_count', label: 'VIP 升级数', labelEn: 'VIP Upgrades',
         weight: 5, target: 4, unit: '人', source: 'auto',
         fmt: (v) => `${v} 人`, icon: '⬆️', desc: '目标 ≥ 4人/月',
-      },
-      {
-        key: 'nor_vip_upgrade_count', label: 'VIP 升级数(NOR-VIP)', labelEn: 'VIP Upgrades (NOR→VIP)',
-        weight: 5, target: 10, unit: '人', source: 'manual',
-        fmt: (v) => `${v} 人`, icon: '🆕', desc: '目标 ≥ 10人/月',
       },
     ]
   },
@@ -155,21 +150,25 @@ export async function loadKpiAutoData(monthStr) {
     .eq('old_tier', 'PLATINUM')
     .eq('new_tier', 'DIAMOND')
 
-  // Diamond coverage — MY/SG only
+  // Diamond coverage — MY/SG only, excluding is_excluded players
   const { data: diamonds } = await supabase
     .from('vip_members')
     .select('id, username')
     .eq('tier', 'DIAMOND')
     .in('currency', ['MYR', 'SGD'])
-  const diamondUsernames = new Set((diamonds || []).map(d => d.username))
-  const totalDiamonds = diamondUsernames.size
+    .eq('is_excluded', false)
+  const diamondList = diamonds || []
+  const diamondUsernameSet = new Set(diamondList.map(d => d.username))
+  const totalDiamonds = diamondUsernameSet.size
 
   const { data: diamondLogs } = await supabase
     .from('contact_logs')
     .select('username')
     .eq('log_month', monthStr)
     .in('tier', ['DIAMOND'])
-  const contactedDiamonds = new Set((diamondLogs || []).map(l => l.username)).size
+  const contactedDiamondSet = new Set((diamondLogs || []).map(l => l.username))
+  const contactedDiamonds = [...contactedDiamondSet].filter(u => diamondUsernameSet.has(u)).length
+  const uncoveredDiamonds = diamondList.filter(d => !contactedDiamondSet.has(d.username))
   const diamondCoverage = totalDiamonds ? Math.round(contactedDiamonds / totalDiamonds * 100) : 0
 
   // VIP Retention Rate — % of PLATINUM/DIAMOND/BLACK VIPs (any region, excluding
@@ -207,11 +206,14 @@ export async function loadKpiAutoData(monthStr) {
   const reactivationRate = totalPDCount ? Math.round((reactivatedPD || 0) / totalPDCount * 100) : 0
 
   return {
-    total_turnover:    totalTurnover,
-    upgrade_count:     upgradeCount || 0,
-    diamond_coverage:  diamondCoverage,
-    retention_rate:    retentionRate,
-    reactivation_rate: reactivationRate,
+    total_turnover:      totalTurnover,
+    upgrade_count:       upgradeCount || 0,
+    diamond_coverage:    diamondCoverage,
+    diamond_total:       totalDiamonds,
+    diamond_contacted:   contactedDiamonds,
+    diamond_uncovered:   uncoveredDiamonds,  // [{ id, username }] not yet contacted this month
+    retention_rate:      retentionRate,
+    reactivation_rate:   reactivationRate,
   }
 }
 
