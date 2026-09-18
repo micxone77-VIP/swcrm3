@@ -145,11 +145,15 @@ export async function loadKpiAutoData(monthStr) {
     .in('tier', ['PLATINUM', 'DIAMOND'])
   const totalTurnover = (vips || []).reduce((s, v) => s + (parseFloat(v.monthly_valid_bet) || 0), 0)
 
-  // Upgrade count this month
+  // VIP-VIP upgrade count this month — Platinum → Diamond only
+  // (NOR-VIP upgrades, i.e. non-VIP → Platinum/Diamond, are tracked manually
+  // because those players have no prior row in vip_members to diff against)
   const { count: upgradeCount } = await supabase
     .from('tier_change_logs')
     .select('id', { count: 'exact' })
     .eq('import_month', monthStr)
+    .eq('old_tier', 'PLATINUM')
+    .eq('new_tier', 'DIAMOND')
 
   // Diamond coverage — MY/SG only
   const { data: diamonds } = await supabase
