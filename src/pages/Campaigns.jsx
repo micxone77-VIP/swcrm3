@@ -317,14 +317,27 @@ export default function Campaigns() {
     }
 
     const campaignPlayers = playersRes.data || []
-    setPlayers(campaignPlayers)
-    if (campaignPlayers.length === 0) {
+
+    // Enrich each player with host_assigned from vip_members (best-effort; never blocks load)
+    const usernames = [...new Set(campaignPlayers.map(p => p.username).filter(Boolean))]
+    let hostMap = {}
+    if (usernames.length > 0) {
+      const { data: hostRows } = await supabase
+        .from('vip_members')
+        .select('username, host_assigned')
+        .in('username', usernames)
+      ;(hostRows || []).forEach(r => { if (r.host_assigned) hostMap[r.username] = r.host_assigned })
+    }
+    const enriched = campaignPlayers.map(p => ({ ...p, host_assigned: hostMap[p.username] || null }))
+
+    setPlayers(enriched)
+    if (enriched.length === 0) {
       setCampaignPlayerLevels([])
       setCampaignRewards([])
       return
     }
 
-    const playerIds = campaignPlayers.map(p => p.id)
+    const playerIds = enriched.map(p => p.id)
     const [levelsRes, rewardsRes] = await Promise.all([
       supabase.from('campaign_player_levels')
         .select('id,campaign_player_id,campaign_level_id,status,unlocked_at,updated_at')
@@ -1940,6 +1953,7 @@ export default function Campaigns() {
                     <thead><tr>
                       <th style={s.th}>#</th>
                       <th style={s.th}>Player</th>
+                      <th style={s.th}>Host</th>
                       <th style={s.th}>WhatsApp</th>
                       <th style={s.th}>Valid Bet (RM)</th>
                       <th style={s.th}>Deposit (RM)</th>
@@ -1952,7 +1966,7 @@ export default function Campaigns() {
                     </tr></thead>
                     <tbody>
                       {filteredChaseList.length === 0
-                        ? <tr><td colSpan={11} style={{ ...s.td, textAlign:'center', padding:24, color:'var(--muted)' }}>{chaseList.length === 0 ? 'Add players above to start tracking.' : 'No players match the search.'}</td></tr>
+                        ? <tr><td colSpan={12} style={{ ...s.td, textAlign:'center', padding:24, color:'var(--muted)' }}>{chaseList.length === 0 ? 'Add players above to start tracking.' : 'No players match the search.'}</td></tr>
                         : filteredChaseList.map((p,i) => {
                             const rankingTarget = leaderboardMetric === 'deposit' ? minDepLb : minBetTarget
                             const pr = getProgress(p._rankingValue||0, rankingTarget)
@@ -1968,6 +1982,7 @@ export default function Campaigns() {
                                     <button title="Copy username" onClick={()=>copyUsername(p.id, p.username)} style={{ marginLeft:2, background:'none', border:'none', cursor:'pointer', fontSize:11, color: copiedId===p.id ? '#3fb950' : 'var(--muted)', padding:'1px 4px', borderRadius:4 }}>{copiedId===p.id ? '✓' : '⎘'}</button>
                                   </div>
                                 </td>
+                                <td style={{ ...s.td, fontSize:12, color: p.host_assigned ? 'var(--text)' : 'var(--muted)' }}>{p.host_assigned || '—'}</td>
                                 <td style={{ ...s.td, fontSize:12, color:'var(--muted)' }}>
                                   <input defaultValue={p.whatsapp||''} onBlur={e=>{if(e.target.value!==(p.whatsapp||''))updatePlayer(p.id,{whatsapp:e.target.value})}} style={{ ...s.editInput, width:120 }} placeholder="—" />
                                 </td>
@@ -2015,6 +2030,7 @@ export default function Campaigns() {
                     <thead><tr>
                       <th style={s.th}>#</th>
                       <th style={s.th}>Player</th>
+                      <th style={s.th}>Host</th>
                       <th style={s.th}>WhatsApp</th>
                       <th style={s.th}>{campType==='dual_tier' ? 'Deposit / Turnover (RM)' : 'Campaign Deposit (RM)'}</th>
                       <th style={s.th}>Progress</th>
@@ -2025,9 +2041,9 @@ export default function Campaigns() {
                     </tr></thead>
                     <tbody>
                       {chaseList.length === 0
-                        ? <tr><td colSpan={9} style={{ ...s.td, textAlign:'center', padding:24, color:'var(--muted)' }}>Add players above to start tracking.</td></tr>
+                        ? <tr><td colSpan={10} style={{ ...s.td, textAlign:'center', padding:24, color:'var(--muted)' }}>Add players above to start tracking.</td></tr>
                         : filteredChaseList.length === 0
-                        ? <tr><td colSpan={9} style={{ ...s.td, textAlign:'center', padding:24, color:'var(--muted)' }}>No players match the search.</td></tr>
+                        ? <tr><td colSpan={10} style={{ ...s.td, textAlign:'center', padding:24, color:'var(--muted)' }}>No players match the search.</td></tr>
                         : filteredChaseList.map((p,i) => {
                             const multi = selected?.is_multi_level && campaignLevels.length > 0
                             const multiMetric = multi ? multiMetricsByPlayer[p.id] : null
@@ -2107,6 +2123,7 @@ export default function Campaigns() {
                                     </div>
                                   )}
                                 </td>
+                                <td style={{ ...s.td, fontSize:12, color: p.host_assigned ? 'var(--text)' : 'var(--muted)' }}>{p.host_assigned || '—'}</td>
                                 <td style={{ ...s.td, fontSize:12, color:'var(--muted)' }}>
                                   <input defaultValue={p.whatsapp||''} onBlur={e=>{if(e.target.value!==(p.whatsapp||''))updatePlayer(p.id,{whatsapp:e.target.value})}} style={{ ...s.editInput, width:120 }} placeholder="—" />
                                 </td>
