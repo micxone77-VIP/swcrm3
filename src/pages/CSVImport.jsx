@@ -1264,6 +1264,11 @@ export default function CSVImport() {
       const dailySnapResult = await saveDailySnapshot(snapshotDate, setRawProgress)
       const potDailySnapResult = await savePotentialDailySnapshot(snapshotDate, setRawProgress)
       const reactivationResult = await autoDetectReactivations(snapshotDate, setRawProgress)
+
+      // Recalculate days_inactive / activity_status / churn_risk immediately after upload
+      setRawProgress('Recalculating days inactive…')
+      await supabase.rpc('refresh_days_inactive')
+
       setHistoryRefresh(n => n + 1) // also refresh the missing-days indicator
 
       setRawResult({
