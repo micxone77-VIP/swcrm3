@@ -166,6 +166,22 @@ function calcLevelTierForDeposit(dep, levels) {
   return { levelOrder: bestLevel.level_order ?? null, creditReward: Number(bestLevel.reward_amount) || 0 }
 }
 
+// WhatsApp notification helpers
+function buildWaMsg(username, campaignName, rewardFormatted) {
+  return encodeURIComponent(
+    `Hi ${username}! 🎉\nYour "${campaignName}" reward of ${rewardFormatted} Credit has been credited to your account. Please check your balance!\n\n` +
+    `Hi ${username}! 🎉\nHadiah kempen "${campaignName}" sebanyak ${rewardFormatted} Kredit telah dikreditkan ke akaun anda. Sila semak baki anda!\n\n` +
+    `您好 ${username}！🎉\n您的"${campaignName}"奖励 ${rewardFormatted} 积分已成功存入您的账户，请查看余额！`
+  )
+}
+function waHref(phone, encodedMsg) {
+  if (!phone) return null
+  const clean = String(phone).replace(/\D/g, '')
+  if (!clean) return null
+  const intl = clean.startsWith('60') ? clean : clean.startsWith('0') ? '6' + clean : '60' + clean
+  return `https://wa.me/${intl}?text=${encodedMsg}`
+}
+
 function calcReward(type, deposit, rewardPct, rewardFixed, goldBarValue, rewardCap, rewardTiers, rewardLevels = [], isMultiLevel = false) {
   let reward = 0
   if (type === 'pct_reward') reward = (parseFloat(deposit)||0) * (parseFloat(rewardPct)||0) / 100
@@ -2362,13 +2378,14 @@ export default function Campaigns() {
                 {selected?.is_multi_level && !isDailyMode ? (
                   multiPayoutRows.length === 0 ? <div style={{ padding:32, textAlign:'center', color:'var(--muted)' }}>No unlocked rewards are ready for payout yet.</div> : (
                     <table style={s.tbl}>
-                      <thead><tr><th style={s.th}>#</th><th style={s.th}>Player</th><th style={s.th}>Tier</th><th style={s.th}>Level</th><th style={s.th}>Campaign Deposit</th><th style={s.th}>Reward</th><th style={s.th}>Payout Status</th><th style={s.th}>Paid At</th><th style={s.th}>Notes</th></tr></thead>
+                      <thead><tr><th style={s.th}>#</th><th style={s.th}>Player</th><th style={s.th}>Tier</th><th style={s.th}>Level</th><th style={s.th}>Campaign Deposit</th><th style={s.th}>Reward</th><th style={s.th}>Payout Status</th><th style={s.th}>Paid At</th><th style={s.th}>Phone / WA</th><th style={s.th}>Notes</th></tr></thead>
                       <tbody>
                         {multiPayoutRows.map((row,i)=>{
                           const paid = row.status === 'paid'
                           const payoutLabel = paid ? '✅ Paid' : row.status === 'approved' ? '🟦 Approved' : '⏳ Pending'
                           const player = players.find(p=>p.id===row.playerId)
                           const note = campaignRewards.find(r=>r.id===row.rewardId)?.notes || ''
+                          const waUrl = player?.whatsapp ? waHref(player.whatsapp, buildWaMsg(row.username, selected?.name||'Campaign', rewardFmt(row.rewardAmount,campCurrency))) : null
                           return <tr key={row.rewardId} style={{ background:paid?'rgba(63,185,80,.04)':'transparent' }}>
                             <td style={{ ...s.td, color:'var(--muted)', fontSize:11 }}>{i+1}</td>
                             <td style={{ ...s.td, fontWeight:700 }}>{row.username}</td>
@@ -2378,10 +2395,17 @@ export default function Campaigns() {
                             <td style={{ ...s.td, color:typeInfo.color, fontWeight:700 }}>{rewardFmt(row.rewardAmount,campCurrency)} Credit</td>
                             <td style={s.td}><button onClick={()=>toggleCampaignReward(row.rewardId,!paid)} style={{ ...s.tag(paid?'#3fb950':'#f59e0b',paid?'rgba(63,185,80,.15)':'rgba(245,158,11,.15)'),cursor:'pointer',border:`1px solid ${paid?'rgba(63,185,80,.3)':'rgba(245,158,11,.3)'}` }}>{payoutLabel}</button></td>
                             <td style={{ ...s.td, fontSize:11, color:'var(--muted)' }}>{row.paidAt ? new Date(row.paidAt).toLocaleDateString('en-MY',{day:'numeric',month:'short',year:'numeric'}) : '—'}</td>
+                            <td style={{...s.td,minWidth:130}}>
+                              <div style={{fontSize:12,color:'var(--muted)',marginBottom:4}}>{player?.whatsapp||'—'}</div>
+                              {waUrl
+                                ? <a href={waUrl} target="_blank" rel="noreferrer" style={{ display:'inline-flex', alignItems:'center', gap:4, background:'rgba(37,211,102,.15)', color:'#25d366', border:'1px solid rgba(37,211,102,.3)', borderRadius:6, padding:'3px 10px', fontSize:11, fontWeight:700, textDecoration:'none' }}>📲 Notify</a>
+                                : <span style={{fontSize:10,color:'var(--muted)'}}>No number</span>
+                              }
+                            </td>
                             <td style={s.td}><input defaultValue={note} onBlur={async e=>{const v=e.target.value;if(v!==note){const {error}=await supabase.from('campaign_rewards').update({notes:v}).eq('id',row.rewardId);if(error)console.error(error)}}} style={{ ...s.editInput,width:140 }} placeholder="Add note..." /></td>
                           </tr>
                         })}
-                        <tr style={{ background:'var(--surface2)',fontWeight:700 }}><td colSpan={5} style={s.td}>Total unlocked rewards</td><td style={{ ...s.td,color:typeInfo.color,fontWeight:800 }}>{rewardFmt(totalReward,campCurrency)} Credit</td><td style={s.td}><span style={{color:'#3fb950'}}>{rewardFmt(paidOut,campCurrency)} paid</span><span style={{color:'#f85149',marginLeft:8}}>{rewardFmt(pendingPay,campCurrency)} pending</span></td><td colSpan={2} style={s.td}/></tr>
+                        <tr style={{ background:'var(--surface2)',fontWeight:700 }}><td colSpan={5} style={s.td}>Total unlocked rewards</td><td style={{ ...s.td,color:typeInfo.color,fontWeight:800 }}>{rewardFmt(totalReward,campCurrency)} Credit</td><td style={s.td}><span style={{color:'#3fb950'}}>{rewardFmt(paidOut,campCurrency)} paid</span><span style={{color:'#f85149',marginLeft:8}}>{rewardFmt(pendingPay,campCurrency)} pending</span></td><td colSpan={3} style={s.td}/></tr>
                       </tbody>
                     </table>
                   )
@@ -2413,6 +2437,7 @@ export default function Campaigns() {
                       <th style={s.th}>{isDailyMode&&campType==='dual_tier'&&!selected?.is_multi_level?'Deposit / Turnover (this date)':isDailyMode?'Deposit (this date)':'Deposit'}</th>
                       <th style={s.th}>Reward</th>
                       <th style={s.th}>Payout Status</th>
+                      <th style={s.th}>Phone / WA</th>
                       <th style={s.th}>Notes</th>
                     </tr></thead>
                     <tbody>{filteredPayoutList.map((p,i)=>{
@@ -2429,6 +2454,7 @@ export default function Campaigns() {
                       const lvlObj = lvlAchieved != null ? campaignLevels.find(l=>l.level_order===lvlAchieved) : null
                       const lvlName = lvlObj ? (lvlObj.level_name || `Level ${lvlObj.level_order}`) : lvlAchieved != null ? `Level ${lvlAchieved}` : '—'
                       const paid=p.payout_status==='paid'
+                      const waUrl = p.whatsapp ? waHref(p.whatsapp, buildWaMsg(p.username, selected?.name||'Campaign', rmFmt(creditReward,campCurrency))) : null
                       return <tr key={p.id}>
                         <td style={{...s.td,color:'var(--muted)',fontSize:11}}>{i+1}</td>
                         <td style={{...s.td,fontWeight:700}}>{p.username}</td>
@@ -2449,6 +2475,13 @@ export default function Campaigns() {
                             : rmFmt(creditReward,campCurrency)
                         }</td>
                         <td style={s.td}><button onClick={()=>updatePlayer(p.id,{payout_status:paid?'pending':'paid',payout_date:paid?null:new Date().toISOString()})} style={{...s.tag(paid?'#3fb950':'#f59e0b',paid?'rgba(63,185,80,.15)':'rgba(245,158,11,.15)'),cursor:'pointer'}}>{paid?'✅ Paid':'⏳ Pending'}</button></td>
+                        <td style={{...s.td,minWidth:130}}>
+                          <div style={{fontSize:12,color:'var(--muted)',marginBottom:4}}>{p.whatsapp||<span style={{color:'var(--surface2)'}}>—</span>}</div>
+                          {waUrl
+                            ? <a href={waUrl} target="_blank" rel="noreferrer" style={{ display:'inline-flex', alignItems:'center', gap:4, background:'rgba(37,211,102,.15)', color:'#25d366', border:'1px solid rgba(37,211,102,.3)', borderRadius:6, padding:'3px 10px', fontSize:11, fontWeight:700, textDecoration:'none' }}>📲 Notify</a>
+                            : <span style={{fontSize:10,color:'var(--muted)'}}>No number</span>
+                          }
+                        </td>
                         <td style={s.td}><input defaultValue={p.notes||''} onBlur={e=>{if(e.target.value!==(p.notes||''))updatePlayer(p.id,{notes:e.target.value})}} style={{...s.editInput,width:140}} placeholder="Add note..."/></td>
                       </tr>
                     })}</tbody>
