@@ -223,6 +223,7 @@ export default function Campaigns() {
   const [payoutSearch, setPayoutSearch] = useState('')
   const [payoutSort, setPayoutSort] = useState('deposit')
   const [payoutSortDir, setPayoutSortDir] = useState('desc')
+  const [payoutHostFilter, setPayoutHostFilter] = useState('all')
   const [waLang, setWaLang] = useState('en')
   const [copiedId, setCopiedId] = useState(null)
   const [entryDate, setEntryDate] = useState('')
@@ -1374,8 +1375,9 @@ export default function Campaigns() {
   })()
   const filteredPayoutList = (() => {
     const base = isDailyMode ? dailyAchieved : achieved
+    const hostFiltered = payoutHostFilter === 'all' ? base : base.filter(p => p.host_assigned === payoutHostFilter)
     const srch = payoutSearch.trim().toLowerCase()
-    const filtered = srch ? base.filter(p => (p.username||'').toLowerCase().includes(srch) || (p.full_name||'').toLowerCase().includes(srch)) : base
+    const filtered = srch ? hostFiltered.filter(p => (p.username||'').toLowerCase().includes(srch) || (p.full_name||'').toLowerCase().includes(srch)) : hostFiltered
     const sm = payoutSortDir === 'asc' ? 1 : -1
     return [...filtered].sort((a, b) => {
       if (payoutSort === 'name') return sm * (a.username||'').localeCompare(b.username||'')
@@ -2423,6 +2425,20 @@ export default function Campaigns() {
                   <div style={{ padding:32,textAlign:'center',color:'var(--muted)' }}>{isDailyMode?'No players qualified on this date yet.':'No players have reached the target yet.'}</div>
                 ) : (
                   <>
+                  {/* Payout host filter */}
+                  {chaseHosts.length > 1 && (
+                    <div style={{ padding:'6px 24px', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', gap:6, flexWrap:'wrap' }}>
+                      <span style={{ fontSize:11, color:'var(--muted)', fontWeight:600 }}>Host:</span>
+                      {chaseHosts.map(h => (
+                        <button key={h} onClick={()=>setPayoutHostFilter(h)}
+                          style={{ padding:'3px 10px', borderRadius:14, fontSize:11, fontWeight:600, border:'1px solid var(--border)', cursor:'pointer',
+                            background: payoutHostFilter===h ? 'var(--accent)' : 'var(--surface2)',
+                            color: payoutHostFilter===h ? '#fff' : 'var(--muted)' }}>
+                          {h === 'all' ? '🌐 All' : h}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                   {/* Payout search + sort controls */}
                   <div style={{ padding:'8px 24px', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
                     <input value={payoutSearch} onChange={e=>setPayoutSearch(e.target.value)}
@@ -2455,6 +2471,7 @@ export default function Campaigns() {
                       <th style={s.th}>{isDailyMode&&campType==='dual_tier'&&!selected?.is_multi_level?'Deposit / Turnover (this date)':isDailyMode?'Deposit (this date)':'Deposit'}</th>
                       <th style={s.th}>Reward</th>
                       <th style={s.th}>Payout Status</th>
+                      <th style={s.th}>Host</th>
                       <th style={s.th}>Phone / WA</th>
                       <th style={s.th}>Notes</th>
                     </tr></thead>
@@ -2494,6 +2511,7 @@ export default function Campaigns() {
                             : rmFmt(creditReward,campCurrency)
                         }</td>
                         <td style={s.td}><button onClick={()=>updatePlayer(p.id,{payout_status:paid?'pending':'paid',payout_date:paid?null:new Date().toISOString()})} style={{...s.tag(paid?'#3fb950':'#f59e0b',paid?'rgba(63,185,80,.15)':'rgba(245,158,11,.15)'),cursor:'pointer'}}>{paid?'✅ Paid':'⏳ Pending'}</button></td>
+                        <td style={{...s.td,fontSize:12,color:'var(--muted)',fontWeight:600}}>{p.host_assigned||<span style={{color:'var(--surface2)'}}>—</span>}</td>
                         <td style={{...s.td,minWidth:130}}>
                           <div style={{fontSize:12,color:'var(--muted)',marginBottom:4}}>{p.whatsapp||<span style={{color:'var(--surface2)'}}>—</span>}</div>
                           <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
@@ -2522,7 +2540,7 @@ export default function Campaigns() {
                           <td style={s.td}/>
                           <td style={{ ...s.td, color:'#3fb950', fontWeight:800 }}>{rmFmt(sumDep, campCurrency)}</td>
                           <td style={{ ...s.td, color:typeInfo.color, fontWeight:800 }}>{rmFmt(sumReward, campCurrency)}</td>
-                          <td colSpan={3} style={s.td}/>
+                          <td colSpan={4} style={s.td}/>
                         </tr>
                       )
                     })()}
