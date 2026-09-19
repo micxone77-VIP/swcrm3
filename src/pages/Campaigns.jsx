@@ -196,6 +196,11 @@ export default function Campaigns() {
   const [activeTab,  setActiveTab]  = useState('chase')
   const [chaseFilter, setChaseFilter] = useState('')
   const [hostFilter, setHostFilter] = useState('all')
+  const [chaseSort, setChaseSort] = useState('deposit')
+  const [chaseSortDir, setChaseSortDir] = useState('desc')
+  const [payoutSearch, setPayoutSearch] = useState('')
+  const [payoutSort, setPayoutSort] = useState('deposit')
+  const [payoutSortDir, setPayoutSortDir] = useState('desc')
   const [copiedId, setCopiedId] = useState(null)
   const [entryDate, setEntryDate] = useState('')
   const [dailyEntries, setDailyEntries] = useState({}) // player_id -> {turnover_amount, tier_achieved, credit_reward, wcash_reward}
@@ -1326,11 +1331,40 @@ export default function Campaigns() {
   const pendingPay = Math.max(0,totalReward-paidOut)
   const chaseList = campType==='leaderboard' ? lbRanked : [...players].sort((a,b)=>playerDeposit(b)-playerDeposit(a))
   const chaseHosts = ['all', ...Array.from(new Set(chaseList.map(p => p.host_assigned).filter(Boolean))).sort()]
-  const filteredChaseList = chaseList.filter(p => {
-    const matchesHost = hostFilter === 'all' || p.host_assigned === hostFilter
-    const matchesSearch = !chaseFilter.trim() || (p.username||'').toLowerCase().includes(chaseFilter.toLowerCase()) || (p.full_name||'').toLowerCase().includes(chaseFilter.toLowerCase())
-    return matchesHost && matchesSearch
-  })
+  const filteredChaseList = (() => {
+    const filtered = chaseList.filter(p => {
+      const matchesHost = hostFilter === 'all' || p.host_assigned === hostFilter
+      const matchesSearch = !chaseFilter.trim() || (p.username||'').toLowerCase().includes(chaseFilter.toLowerCase()) || (p.full_name||'').toLowerCase().includes(chaseFilter.toLowerCase())
+      return matchesHost && matchesSearch
+    })
+    const sm = chaseSortDir === 'asc' ? 1 : -1
+    return [...filtered].sort((a, b) => {
+      if (chaseSort === 'name') return sm * (a.username||'').localeCompare(b.username||'')
+      if (chaseSort === 'reward') {
+        const rA = isDailyMode ? (dailyEntries[a.id]?.credit_reward || 0) : calcLevelTierForDeposit(playerDeposit(a), campaignLevels).creditReward
+        const rB = isDailyMode ? (dailyEntries[b.id]?.credit_reward || 0) : calcLevelTierForDeposit(playerDeposit(b), campaignLevels).creditReward
+        return sm * (rA - rB)
+      }
+      return sm * (playerDeposit(a) - playerDeposit(b))
+    })
+  })()
+  const filteredPayoutList = (() => {
+    const base = isDailyMode ? dailyAchieved : achieved
+    const srch = payoutSearch.trim().toLowerCase()
+    const filtered = srch ? base.filter(p => (p.username||'').toLowerCase().includes(srch) || (p.full_name||'').toLowerCase().includes(srch)) : base
+    const sm = payoutSortDir === 'asc' ? 1 : -1
+    return [...filtered].sort((a, b) => {
+      if (payoutSort === 'name') return sm * (a.username||'').localeCompare(b.username||'')
+      if (payoutSort === 'reward') {
+        const rA = isDailyMode ? (dailyEntries[a.id]?.credit_reward || 0) : calcReward(campType, playerDeposit(a), rewardPct, rewardFixed, goldVal, rewardCap, rewardTiers, campaignLevels, selected?.is_multi_level)
+        const rB = isDailyMode ? (dailyEntries[b.id]?.credit_reward || 0) : calcReward(campType, playerDeposit(b), rewardPct, rewardFixed, goldVal, rewardCap, rewardTiers, campaignLevels, selected?.is_multi_level)
+        return sm * (rA - rB)
+      }
+      const dA = isDailyMode ? (parseFloat(dailyEntries[a.id]?.deposit_amount) || 0) : playerDeposit(a)
+      const dB = isDailyMode ? (parseFloat(dailyEntries[b.id]?.deposit_amount) || 0) : playerDeposit(b)
+      return sm * (dA - dB)
+    })
+  })()
   function copyUsername(id, username) {
     navigator.clipboard.writeText(username).catch(()=>{})
     setCopiedId(id)
@@ -2010,18 +2044,26 @@ export default function Campaigns() {
                     ))}
                   </div>
                 )}
-                {/* Chase list search filter */}
-                <div style={{ padding:'8px 24px', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', gap:8 }}>
+                {/* Chase list search + sort filter */}
+                <div style={{ padding:'8px 24px', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
                   <input
                     value={chaseFilter}
                     onChange={e => setChaseFilter(e.target.value)}
                     placeholder={`🔍 Filter ${filteredChaseList.length} players by username…`}
-                    style={{ ...s.smInput, width:280, fontSize:12 }}
+                    style={{ ...s.smInput, width:240, fontSize:12 }}
                   />
                   {chaseFilter && (
                     <button onClick={() => setChaseFilter('')} style={{ fontSize:11, color:'var(--muted)', background:'none', border:'none', cursor:'pointer', padding:'2px 6px' }}>✕ Clear</button>
                   )}
                   {chaseFilter && <span style={{ fontSize:11, color:'var(--muted)' }}>{filteredChaseList.length} match{filteredChaseList.length !== 1 ? 'es' : ''}</span>}
+                  <span style={{ fontSize:11, color:'var(--muted)', marginLeft:4 }}>Sort:</span>
+                  {[['deposit','Deposit'],['reward','Reward'],['name','Name']].map(([key,lbl])=>(
+                    <button key={key} onClick={()=>{ if(chaseSort===key){setChaseSortDir(d=>d==='asc'?'desc':'asc')}else{setChaseSort(key);setChaseSortDir('desc')} }}
+                      style={{ padding:'3px 10px', borderRadius:14, fontSize:11, fontWeight:600, border:'1px solid var(--border)', cursor:'pointer',
+                        background: chaseSort===key ? 'var(--accent)' : 'var(--surface2)', color: chaseSort===key ? '#fff' : 'var(--muted)' }}>
+                      {lbl} {chaseSort===key ? (chaseSortDir==='asc' ? '↑' : '↓') : ''}
+                    </button>
+                  ))}
                   <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:8 }}>
                     {campType !== 'leaderboard' && (
                       <button
@@ -2346,10 +2388,72 @@ export default function Campaigns() {
                 ) : (isDailyMode ? dailyAchieved : achieved).length === 0 ? (
                   <div style={{ padding:32,textAlign:'center',color:'var(--muted)' }}>{isDailyMode?'No players qualified on this date yet.':'No players have reached the target yet.'}</div>
                 ) : (
+                  <>
+                  {/* Payout search + sort controls */}
+                  <div style={{ padding:'8px 24px', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
+                    <input value={payoutSearch} onChange={e=>setPayoutSearch(e.target.value)}
+                      placeholder={`🔍 Search ${filteredPayoutList.length} players…`}
+                      style={{ ...s.smInput, width:220, fontSize:12 }} />
+                    {payoutSearch && <button onClick={()=>setPayoutSearch('')} style={{ fontSize:11, color:'var(--muted)', background:'none', border:'none', cursor:'pointer', padding:'2px 6px' }}>✕</button>}
+                    <span style={{ fontSize:11, color:'var(--muted)', marginLeft:4 }}>Sort:</span>
+                    {[['deposit','Deposit'],['reward','Reward'],['name','Name']].map(([key,lbl])=>(
+                      <button key={key} onClick={()=>{ if(payoutSort===key){setPayoutSortDir(d=>d==='asc'?'desc':'asc')}else{setPayoutSort(key);setPayoutSortDir('desc')} }}
+                        style={{ padding:'3px 10px', borderRadius:14, fontSize:11, fontWeight:600, border:'1px solid var(--border)', cursor:'pointer',
+                          background: payoutSort===key ? 'var(--accent)' : 'var(--surface2)', color: payoutSort===key ? '#fff' : 'var(--muted)' }}>
+                        {lbl} {payoutSort===key ? (payoutSortDir==='asc' ? '↑' : '↓') : ''}
+                      </button>
+                    ))}
+                    <span style={{ marginLeft:'auto', fontSize:11, color:'var(--muted)' }}>{filteredPayoutList.length} of {(isDailyMode?dailyAchieved:achieved).length} players</span>
+                  </div>
                   <table style={s.tbl}>
-                    <thead><tr><th style={s.th}>#</th><th style={s.th}>Player</th><th style={s.th}>Tier</th><th style={s.th}>{isDailyMode&&campType==='dual_tier'?'Deposit / Turnover (this date)':isDailyMode?'Turnover (this date)':'Deposit'}</th><th style={s.th}>Reward</th><th style={s.th}>Payout Status</th><th style={s.th}>Notes</th></tr></thead>
-                    <tbody>{(isDailyMode?dailyAchieved:achieved).map((p,i)=>{const dualReward=isDailyMode?calcDualTierReward(dailyEntries[p.id]?.deposit_amount||0,dailyEntries[p.id]?.turnover_amount||0,rewardTiers):campType==='dual_tier'?calcDualTierReward(playerDeposit(p),p.valid_bet,rewardTiers):null;const reward=campType==='dual_tier'?(dualReward.creditAmount+dualReward.wcashAmount):calcReward(campType,playerDeposit(p),rewardPct,rewardFixed,goldVal,rewardCap,rewardTiers,campaignLevels,selected?.is_multi_level);const paid=p.payout_status==='paid';return <tr key={p.id}><td style={{...s.td,color:'var(--muted)',fontSize:11}}>{i+1}</td><td style={{...s.td,fontWeight:700}}>{p.username}</td><td style={s.td}>{p.tier||'—'}</td><td style={{...s.td,color:'#3fb950',fontWeight:600}}>{isDailyMode&&campType==='dual_tier'?<span>{rmFmt(dailyEntries[p.id]?.deposit_amount||0,campCurrency)}<br/><span style={{fontSize:10,color:'var(--muted)'}}>{rmFmt(dailyEntries[p.id]?.turnover_amount||0,campCurrency)} TO</span></span>:isDailyMode?rmFmt(dailyEntries[p.id]?.turnover_amount||0,campCurrency):rmFmt(playerDeposit(p),campCurrency)}</td><td style={{...s.td,color:typeInfo.color,fontWeight:700}}>{campType==='dual_tier'?<span>{rmFmt(dualReward.creditAmount,campCurrency)} Credit<br/><span style={{fontSize:10,color:'var(--muted)'}}>+ {rmFmt(dualReward.wcashAmount,campCurrency)} WCash</span></span>:rmFmt(reward,campCurrency)}</td><td style={s.td}><button onClick={()=>updatePlayer(p.id,{payout_status:paid?'pending':'paid',payout_date:paid?null:new Date().toISOString()})} style={{...s.tag(paid?'#3fb950':'#f59e0b',paid?'rgba(63,185,80,.15)':'rgba(245,158,11,.15)'),cursor:'pointer'}}>{paid?'✅ Paid':'⏳ Pending'}</button></td><td style={s.td}><input defaultValue={p.notes||''} onBlur={e=>{if(e.target.value!==(p.notes||''))updatePlayer(p.id,{notes:e.target.value})}} style={{...s.editInput,width:140}} placeholder="Add note..."/></td></tr>})}</tbody>
+                    <thead><tr>
+                      <th style={s.th}>#</th>
+                      <th style={s.th}>Player</th>
+                      <th style={s.th}>{isDailyMode&&selected?.is_multi_level ? 'Level' : 'Tier'}</th>
+                      <th style={s.th}>{isDailyMode&&campType==='dual_tier'&&!selected?.is_multi_level?'Deposit / Turnover (this date)':isDailyMode?'Deposit (this date)':'Deposit'}</th>
+                      <th style={s.th}>Reward</th>
+                      <th style={s.th}>Payout Status</th>
+                      <th style={s.th}>Notes</th>
+                    </tr></thead>
+                    <tbody>{filteredPayoutList.map((p,i)=>{
+                      const isDailyMulti = isDailyMode && selected?.is_multi_level
+                      const entry = dailyEntries[p.id]
+                      const dualReward = !isDailyMulti && campType==='dual_tier'
+                        ? (isDailyMode ? calcDualTierReward(entry?.deposit_amount||0, entry?.turnover_amount||0, rewardTiers) : calcDualTierReward(playerDeposit(p), p.valid_bet, rewardTiers))
+                        : null
+                      const creditReward = isDailyMulti
+                        ? (entry?.credit_reward || 0)
+                        : campType==='dual_tier' ? dualReward.creditAmount : calcReward(campType, playerDeposit(p), rewardPct, rewardFixed, goldVal, rewardCap, rewardTiers, campaignLevels, selected?.is_multi_level)
+                      const wcashReward = isDailyMulti ? 0 : campType==='dual_tier' ? dualReward.wcashAmount : 0
+                      const lvlAchieved = isDailyMulti ? entry?.tier_achieved : null
+                      const lvlObj = lvlAchieved != null ? campaignLevels.find(l=>l.level_order===lvlAchieved) : null
+                      const lvlName = lvlObj ? (lvlObj.level_name || `Level ${lvlObj.level_order}`) : lvlAchieved != null ? `Level ${lvlAchieved}` : '—'
+                      const paid=p.payout_status==='paid'
+                      return <tr key={p.id}>
+                        <td style={{...s.td,color:'var(--muted)',fontSize:11}}>{i+1}</td>
+                        <td style={{...s.td,fontWeight:700}}>{p.username}</td>
+                        <td style={s.td}>{isDailyMulti
+                          ? <span style={{ fontSize:11, color:'#c9a961', fontWeight:600 }}>{lvlName}</span>
+                          : (p.tier ? <span style={{ ...s.badge, background:TIER_BG[p.tier]||'transparent', color:TIER_COLOR[p.tier]||'var(--muted)' }}>{p.tier}</span> : '—')
+                        }</td>
+                        <td style={{...s.td,color:'#3fb950',fontWeight:600}}>{isDailyMode
+                          ? (campType==='dual_tier'&&!isDailyMulti
+                            ? <span>{rmFmt(entry?.deposit_amount||0,campCurrency)}<br/><span style={{fontSize:10,color:'var(--muted)'}}>{rmFmt(entry?.turnover_amount||0,campCurrency)} TO</span></span>
+                            : rmFmt(entry?.deposit_amount||0,campCurrency))
+                          : rmFmt(playerDeposit(p),campCurrency)
+                        }</td>
+                        <td style={{...s.td,color:typeInfo.color,fontWeight:700}}>{isDailyMulti
+                          ? <span>{rmFmt(creditReward,campCurrency)} Credit</span>
+                          : campType==='dual_tier'
+                            ? <span>{rmFmt(dualReward.creditAmount,campCurrency)} Credit<br/><span style={{fontSize:10,color:'var(--muted)'}}>+ {rmFmt(dualReward.wcashAmount,campCurrency)} WCash</span></span>
+                            : rmFmt(creditReward,campCurrency)
+                        }</td>
+                        <td style={s.td}><button onClick={()=>updatePlayer(p.id,{payout_status:paid?'pending':'paid',payout_date:paid?null:new Date().toISOString()})} style={{...s.tag(paid?'#3fb950':'#f59e0b',paid?'rgba(63,185,80,.15)':'rgba(245,158,11,.15)'),cursor:'pointer'}}>{paid?'✅ Paid':'⏳ Pending'}</button></td>
+                        <td style={s.td}><input defaultValue={p.notes||''} onBlur={e=>{if(e.target.value!==(p.notes||''))updatePlayer(p.id,{notes:e.target.value})}} style={{...s.editInput,width:140}} placeholder="Add note..."/></td>
+                      </tr>
+                    })}</tbody>
                   </table>
+                  </>
                 )}
 
                 {/* ── STREAK BONUSES PAYOUT SECTION ── */}
