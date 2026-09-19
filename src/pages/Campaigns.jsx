@@ -156,6 +156,16 @@ function calcLevelFixedReward(deposit, levels) {
   return reward
 }
 
+// For dual_tier + daily + is_multi_level campaigns: returns the highest campaign_level
+// the deposit qualifies for, and that level's credit reward.
+function calcLevelTierForDeposit(dep, levels) {
+  const deposit = parseFloat(dep) || 0
+  const sorted = [...(levels || [])].sort((a, b) => Number(b.deposit_threshold) - Number(a.deposit_threshold))
+  const bestLevel = sorted.find(l => deposit >= (Number(l.deposit_threshold) || 0))
+  if (!bestLevel) return { levelOrder: null, creditReward: 0 }
+  return { levelOrder: bestLevel.level_order ?? null, creditReward: Number(bestLevel.reward_amount) || 0 }
+}
+
 function calcReward(type, deposit, rewardPct, rewardFixed, goldBarValue, rewardCap, rewardTiers, rewardLevels = [], isMultiLevel = false) {
   let reward = 0
   if (type === 'pct_reward') reward = (parseFloat(deposit)||0) * (parseFloat(rewardPct)||0) / 100
@@ -646,14 +656,25 @@ export default function Campaigns() {
   // other date's row for this player is untouched. This IS the "doesn't carry
   // over to the next day" behavior: each date is its own independent record.
   async function saveDailyEntry(playerId, depositAmount, turnoverAmount) {
-    // Both deposit AND turnover must meet a tier's thresholds to qualify.
-    const dualReward = calcDualTierReward(depositAmount, turnoverAmount, rewardTiers)
+    let tier_achieved_val = null, credit_reward_val = 0, wcash_reward_val = 0
+    if (selected?.is_multi_level && campaignLevels?.length > 0) {
+      // Multi-level daily: qualify by deposit against campaign_levels thresholds
+      const { levelOrder, creditReward } = calcLevelTierForDeposit(depositAmount, campaignLevels)
+      tier_achieved_val = levelOrder
+      credit_reward_val = creditReward
+    } else {
+      // Standard dual-tier: both deposit AND turnover must meet tier thresholds
+      const dualReward = calcDualTierReward(depositAmount, turnoverAmount, rewardTiers)
+      tier_achieved_val = dualReward.tierIndex >= 0 ? dualReward.tierIndex : null
+      credit_reward_val = dualReward.creditAmount
+      wcash_reward_val = dualReward.wcashAmount
+    }
     const payload = {
       campaign_id: selected.id, player_id: playerId, entry_date: entryDate,
       deposit_amount: depositAmount,
       turnover_amount: turnoverAmount,
-      tier_achieved: dualReward.tierIndex >= 0 ? dualReward.tierIndex : null,
-      credit_reward: dualReward.creditAmount, wcash_reward: dualReward.wcashAmount,
+      tier_achieved: tier_achieved_val,
+      credit_reward: credit_reward_val, wcash_reward: wcash_reward_val,
       entered_by: profile?.full_name || null,
       updated_at: new Date().toISOString(),
     }
@@ -679,6 +700,33 @@ export default function Campaigns() {
     }
     setStreakBonuses(map)
     setStreakBonusesLoading(false)
+  }
+
+  // Retroactively fixes tier_achieved + credit_reward for ALL daily_turnover_entries of this campaign.
+  // Needed for is_multi_level daily campaigns where entries were saved with the wrong calc.
+  async function recalcDailyRewards() {
+    if (!selected?.is_multi_level || !campaignLevels?.length) return
+    setDailyLoading(true)
+    const { data, error } = await supabase.from('daily_turnover_entries')
+      .select('id, player_id, deposit_amount, entry_date')
+      .eq('campaign_id', selected.id)
+    if (error) { alert('Load failed: ' + error.message); setDailyLoading(false); return }
+    const rows = data || []
+    if (!rows.length) { alert('No entries to recalculate.'); setDailyLoading(false); return }
+    const updates = rows.map(row => {
+      const { levelOrder, creditReward } = calcLevelTierForDeposit(row.deposit_amount, campaignLevels)
+      return { id: row.id, tier_achieved: levelOrder, credit_reward: creditReward, wcash_reward: 0, updated_at: new Date().toISOString() }
+    })
+    const BATCH = 50
+    for (let i = 0; i < updates.length; i += BATCH) {
+      const { error: upErr } = await supabase.from('daily_turnover_entries')
+        .upsert(updates.slice(i, i + BATCH), { onConflict: 'id' })
+      if (upErr) { alert('Recalc batch failed: ' + upErr.message); setDailyLoading(false); return }
+    }
+    await loadDailyEntries(selected.id, entryDate)
+    await loadCampaignSummary(selected.id)
+    alert(`✅ Recalculated rewards for ${rows.length} entries.`)
+    setDailyLoading(false)
   }
 
   async function checkAndAwardStreak(playerId, afterEntryDate) {
@@ -835,16 +883,26 @@ export default function Campaigns() {
         const snap = byUsername[username]
         const dep = Math.round(snap.deposit)
         const to  = Math.round(snap.validBet)
-        const dualReward = calcDualTierReward(dep, to, rewardTiers)
+        let tier_achieved_val = null, credit_reward_val = 0, wcash_reward_val = 0
+        if (selected?.is_multi_level && campaignLevels?.length > 0) {
+          const { levelOrder, creditReward } = calcLevelTierForDeposit(dep, campaignLevels)
+          tier_achieved_val = levelOrder
+          credit_reward_val = creditReward
+        } else {
+          const dualReward = calcDualTierReward(dep, to, rewardTiers)
+          tier_achieved_val = dualReward.tierIndex >= 0 ? dualReward.tierIndex : null
+          credit_reward_val = dualReward.creditAmount
+          wcash_reward_val = dualReward.wcashAmount
+        }
         return {
           campaign_id: selected.id,
           player_id: p.id,
           entry_date: entryDate,
           deposit_amount: dep,
           turnover_amount: to,
-          tier_achieved: dualReward.tierIndex >= 0 ? dualReward.tierIndex : null,
-          credit_reward: dualReward.creditAmount,
-          wcash_reward: dualReward.wcashAmount,
+          tier_achieved: tier_achieved_val,
+          credit_reward: credit_reward_val,
+          wcash_reward: wcash_reward_val,
           entered_by: (profile?.full_name || 'Import') + ' (auto)',
           updated_at: new Date().toISOString(),
         }
@@ -992,20 +1050,42 @@ export default function Campaigns() {
 
     // Always recompute credit/wcash fresh from deposit_amount + turnover_amount
     // against the campaign's CURRENT tier settings — never trust the stored
-    // credit_reward/wcash_reward columns. Both conditions must be met; older
-    // rows that predate the deposit_amount column will have null/0 deposit and
-    // will only qualify if their tier's depositThreshold is also 0.
+    // credit_reward/wcash_reward columns. For is_multi_level campaigns, use
+    // campaign_levels thresholds (deposit only). For standard dual_tier, both
+    // deposit and turnover must meet the tier thresholds.
+    const isMultiLevelDaily = selected?.is_multi_level && campaignLevels?.length > 0
     const entries = (data || [])
-      .filter(e => (parseFloat(e.turnover_amount) || 0) > 0)
+      .filter(e => isMultiLevelDaily
+        ? (parseFloat(e.deposit_amount) || 0) > 0
+        : (parseFloat(e.turnover_amount) || 0) > 0)
       .map(e => {
         const dep = parseFloat(e.deposit_amount) || 0
+        if (isMultiLevelDaily) {
+          const { levelOrder, creditReward } = calcLevelTierForDeposit(dep, campaignLevels)
+          return { ...e, tier_achieved: levelOrder, credit_reward: creditReward, wcash_reward: 0 }
+        }
         const r = calcDualTierReward(dep, e.turnover_amount, rewardTiers)
         return { ...e, tier_achieved: r.tierIndex >= 0 ? r.tierIndex : null, credit_reward: r.creditAmount, wcash_reward: r.wcashAmount }
       })
 
-    const uniqueParticipants = new Set(entries.map(e => e.player_id)).size
+    const uniqueParticipants = new Set(entries.filter(e => (e.credit_reward || 0) > 0).map(e => e.player_id)).size
     const totalCredit = entries.reduce((s, e) => s + e.credit_reward, 0)
     const totalWcash = entries.reduce((s, e) => s + e.wcash_reward, 0)
+
+    // Per-level player counts for is_multi_level daily campaigns
+    const levelPlayerCounts = {}
+    if (isMultiLevelDaily) {
+      const sortedLevels = [...campaignLevels].sort((a, b) => Number(a.deposit_threshold) - Number(b.deposit_threshold))
+      sortedLevels.forEach(level => { levelPlayerCounts[level.id] = new Set() })
+      entries.forEach(e => {
+        sortedLevels.forEach(level => {
+          if ((parseFloat(e.deposit_amount) || 0) >= (Number(level.deposit_threshold) || 0)) {
+            levelPlayerCounts[level.id].add(e.player_id)
+          }
+        })
+      })
+      sortedLevels.forEach(level => { levelPlayerCounts[level.id] = levelPlayerCounts[level.id].size })
+    }
 
     const tierHitCounts = {}
     ;(rewardTiers || []).forEach((t, i) => { tierHitCounts[i] = 0 })
@@ -1035,7 +1115,7 @@ export default function Campaigns() {
     const pendingCredit = playerRows.filter(r => !r.paid).reduce((s, r) => s + r.credit, 0)
     const pendingWcash = playerRows.filter(r => !r.paid).reduce((s, r) => s + r.wcash, 0)
 
-    setSummaryData({ uniqueParticipants, totalCredit, totalWcash, tierHitCounts, playerRows, totalEntryDays: new Set(entries.map(e => e.entry_date)).size, paidCredit, paidWcash, pendingCredit, pendingWcash })
+    setSummaryData({ uniqueParticipants, totalCredit, totalWcash, tierHitCounts, playerRows, totalEntryDays: new Set(entries.map(e => e.entry_date)).size, paidCredit, paidWcash, pendingCredit, pendingWcash, levelPlayerCounts })
     setSummaryLoading(false)
   }
 
@@ -1963,6 +2043,13 @@ export default function Campaigns() {
                       style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:6, padding:'6px 10px', fontSize:12, color:'var(--text)' }} />
                     <span style={{ fontSize:11, color:'var(--muted)' }}>Each day settles independently — entering turnover for this date does not affect any other date's record.</span>
                     {dailyLoading && <span style={{ fontSize:11, color:'var(--muted)' }}>Loading…</span>}
+                    {selected?.is_multi_level && campaignLevels?.length > 0 && (
+                      <button onClick={recalcDailyRewards} disabled={dailyLoading}
+                        style={{ marginLeft:'auto', background:'rgba(201,169,97,.12)', border:'1px solid rgba(201,169,97,.3)', color:'#c9a961', padding:'5px 12px', borderRadius:6, fontSize:11, fontWeight:700, cursor:'pointer' }}
+                        title="Recalculate tier_achieved and credit_reward for ALL entries of this campaign using campaign level thresholds">
+                        🔄 Recalculate All Rewards
+                      </button>
+                    )}
                   </div>
                 )}
                 <table style={s.tbl}>
@@ -2204,7 +2291,7 @@ export default function Campaigns() {
                 <div style={{ padding:'8px 24px', fontSize:11, color:'var(--muted)', background:'rgba(63,185,80,.04)', borderBottom:'1px solid var(--border)' }}>
                   {selected?.is_multi_level ? (selected?.payout_mode === 'highest_only' ? 'Payout mode: Highest level only — one reward per player. Mark paid only after it is actually issued.' : 'Payout mode: All levels — each unlocked level earns its own reward. Mark the individual reward paid only after it is actually issued.') : isDailyMode ? <>Showing players who qualified on <strong style={{ color:'#c9a961' }}>{entryDate}</strong>.</> : 'Only showing players who reached the campaign target.'}
                 </div>
-                {selected?.is_multi_level ? (
+                {selected?.is_multi_level && !isDailyMode ? (
                   multiPayoutRows.length === 0 ? <div style={{ padding:32, textAlign:'center', color:'var(--muted)' }}>No unlocked rewards are ready for payout yet.</div> : (
                     <table style={s.tbl}>
                       <thead><tr><th style={s.th}>#</th><th style={s.th}>Player</th><th style={s.th}>Tier</th><th style={s.th}>Level</th><th style={s.th}>Campaign Deposit</th><th style={s.th}>Reward</th><th style={s.th}>Payout Status</th><th style={s.th}>Paid At</th><th style={s.th}>Notes</th></tr></thead>
@@ -2466,12 +2553,28 @@ export default function Campaigns() {
                 {selected?.is_multi_level && <>
                   <div style={{fontSize:13,fontWeight:700,marginBottom:8}}>🏆 Multi-Level Progress</div>
                   <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12,marginBottom:18}}>
-                    {[
-                      ['Players with reward',multiSummary.playersWithReward,'#3fb950'],['Fully completed',multiSummary.fullyCompleted,'#a78bfa'],['Levels unlocked',multiSummary.unlockedLevels,'#c9a961'],['Full completion rate',multiSummary.successRate+'%','#3fb950'],
-                    ].map(([label,val,color])=><div key={label} style={{background:'var(--bg)',border:'1px solid var(--border)',borderRadius:8,padding:14}}><div style={{fontSize:20,fontWeight:700,color}}>{val}</div><div style={{fontSize:11,color:'var(--muted)',marginTop:2}}>{label}</div></div>)}
+                    {(()=>{
+                      const sortedLvls = [...campaignLevels].sort((a,b)=>Number(b.deposit_threshold)-Number(a.deposit_threshold))
+                      const highestLvlId = sortedLvls[0]?.id
+                      const dailyPlayersWithReward = isDailyMode ? (summaryData?.uniqueParticipants || 0) : multiSummary.playersWithReward
+                      const dailyFullyCompleted = isDailyMode ? (summaryData?.levelPlayerCounts?.[highestLvlId] || 0) : multiSummary.fullyCompleted
+                      const dailyUnlockedLevels = isDailyMode ? Object.values(summaryData?.levelPlayerCounts || {}).reduce((s,v)=>s+v,0) : multiSummary.unlockedLevels
+                      const dailySuccessRate = isDailyMode ? (players.length ? Math.round(dailyFullyCompleted/players.length*100) : 0) : multiSummary.successRate
+                      return [
+                        ['Players with reward',dailyPlayersWithReward,'#3fb950'],['Fully completed',dailyFullyCompleted,'#a78bfa'],['Levels unlocked',dailyUnlockedLevels,'#c9a961'],['Full completion rate',dailySuccessRate+'%','#3fb950'],
+                      ]
+                    })().map(([label,val,color])=><div key={label} style={{background:'var(--bg)',border:'1px solid var(--border)',borderRadius:8,padding:14}}><div style={{fontSize:20,fontWeight:700,color}}>{val}</div><div style={{fontSize:11,color:'var(--muted)',marginTop:2}}>{label}</div></div>)}
                   </div>
-                  <table style={{...s.tbl,marginBottom:24}}><thead><tr><th style={s.th}>Level</th><th style={s.th}>Target</th><th style={s.th}>Unlocked Players</th><th style={s.th}>Reward Each</th><th style={s.th}>Reward Rows</th></tr></thead><tbody>
-                    {campaignLevels.map(level=>{const unlockedCount=campaignPlayerLevels.filter(pl=>pl.campaign_level_id===level.id&&['unlocked','claimed','issued','paid','approved'].includes(pl.status)).length;const rewardRows=campaignRewards.filter(r=>r.campaign_level_id===level.id).length;return <tr key={level.id}><td style={{...s.td,fontWeight:700}}>{level.level_name}</td><td style={s.td}>{rmFmt(level.deposit_threshold,campCurrency)}</td><td style={{...s.td,color:'#3fb950',fontWeight:700}}>{unlockedCount}</td><td style={{...s.td,color:typeInfo.color,fontWeight:700}}>{rmFmt(level.reward_amount,campCurrency)} Credit</td><td style={s.td}>{rewardRows}</td></tr>})}
+                  <table style={{...s.tbl,marginBottom:24}}><thead><tr><th style={s.th}>Level</th><th style={s.th}>Target</th><th style={s.th}>Qualified Players</th><th style={s.th}>Reward Each</th><th style={s.th}>{isDailyMode?'Player-Days':'Reward Rows'}</th></tr></thead><tbody>
+                    {campaignLevels.map(level=>{
+                      const unlockedCount=isDailyMode
+                        ? (summaryData?.levelPlayerCounts?.[level.id] || 0)
+                        : campaignPlayerLevels.filter(pl=>pl.campaign_level_id===level.id&&['unlocked','claimed','issued','paid','approved'].includes(pl.status)).length
+                      const rewardRows=isDailyMode
+                        ? Object.values(summaryData?.tierHitCounts||{}).reduce((s,v)=>s+v,0) // placeholder — not meaningful for multi-level daily
+                        : campaignRewards.filter(r=>r.campaign_level_id===level.id).length
+                      return <tr key={level.id}><td style={{...s.td,fontWeight:700}}>{level.level_name}</td><td style={s.td}>{rmFmt(level.deposit_threshold,campCurrency)}</td><td style={{...s.td,color:'#3fb950',fontWeight:700}}>{unlockedCount}</td><td style={{...s.td,color:typeInfo.color,fontWeight:700}}>{rmFmt(level.reward_amount,campCurrency)} Credit</td><td style={s.td}>{isDailyMode?'—':rewardRows}</td></tr>
+                    })}
                   </tbody></table>
                 </>}
 
