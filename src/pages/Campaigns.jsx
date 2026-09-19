@@ -167,12 +167,18 @@ function calcLevelTierForDeposit(dep, levels) {
 }
 
 // WhatsApp notification helpers
-function buildWaMsg(username, campaignName, rewardFormatted) {
-  return encodeURIComponent(
-    `Hi ${username}! 🎉\nYour "${campaignName}" reward of ${rewardFormatted} Credit has been credited to your account. Please check your balance!\n\n` +
-    `Hi ${username}! 🎉\nHadiah kempen "${campaignName}" sebanyak ${rewardFormatted} Kredit telah dikreditkan ke akaun anda. Sila semak baki anda!\n\n` +
-    `您好 ${username}！🎉\n您的"${campaignName}"奖励 ${rewardFormatted} 积分已成功存入您的账户，请查看余额！`
-  )
+const WA_MSGS = {
+  en: (u, c, r) => `Hi ${u}! 🎉\nYour "${c}" reward of ${r} Credit has been credited to your account. Please check your balance!`,
+  my: (u, c, r) => `Hi ${u}! 🎉\nHadiah kempen "${c}" sebanyak ${r} Kredit telah dikreditkan ke akaun anda. Sila semak baki anda!`,
+  cn: (u, c, r) => `您好 ${u}！🎉\n您的"${c}"奖励 ${r} 积分已成功存入您的账户，请查看余额！`,
+}
+function buildWaMsgText(username, campaignName, rewardFormatted, lang) {
+  const fn = WA_MSGS[lang]
+  if (fn) return fn(username, campaignName, rewardFormatted)
+  return Object.values(WA_MSGS).map(f => f(username, campaignName, rewardFormatted)).join('\n\n')
+}
+function buildWaMsg(username, campaignName, rewardFormatted, lang) {
+  return encodeURIComponent(buildWaMsgText(username, campaignName, rewardFormatted, lang))
 }
 function waHref(phone, encodedMsg) {
   if (!phone) return null
@@ -217,6 +223,7 @@ export default function Campaigns() {
   const [payoutSearch, setPayoutSearch] = useState('')
   const [payoutSort, setPayoutSort] = useState('deposit')
   const [payoutSortDir, setPayoutSortDir] = useState('desc')
+  const [waLang, setWaLang] = useState('en')
   const [copiedId, setCopiedId] = useState(null)
   const [entryDate, setEntryDate] = useState('')
   const [dailyEntries, setDailyEntries] = useState({}) // player_id -> {turnover_amount, tier_achieved, credit_reward, wcash_reward}
@@ -1089,6 +1096,7 @@ export default function Campaigns() {
         return { ...e, tier_achieved: r.tierIndex >= 0 ? r.tierIndex : null, credit_reward: r.creditAmount, wcash_reward: r.wcashAmount }
       })
 
+    const qualifyingEntries = entries.filter(e => (e.credit_reward || 0) > 0).length
     const uniqueParticipants = new Set(entries.filter(e => (e.credit_reward || 0) > 0).map(e => e.player_id)).size
     const totalCredit = entries.reduce((s, e) => s + e.credit_reward, 0)
     const totalWcash = entries.reduce((s, e) => s + e.wcash_reward, 0)
@@ -1136,7 +1144,7 @@ export default function Campaigns() {
     const pendingCredit = playerRows.filter(r => !r.paid).reduce((s, r) => s + r.credit, 0)
     const pendingWcash = playerRows.filter(r => !r.paid).reduce((s, r) => s + r.wcash, 0)
 
-    setSummaryData({ uniqueParticipants, totalCredit, totalWcash, tierHitCounts, playerRows, totalEntryDays: new Set(entries.map(e => e.entry_date)).size, paidCredit, paidWcash, pendingCredit, pendingWcash, levelPlayerCounts })
+    setSummaryData({ uniqueParticipants, qualifyingEntries, totalCredit, totalWcash, tierHitCounts, playerRows, totalEntryDays: new Set(entries.map(e => e.entry_date)).size, paidCredit, paidWcash, pendingCredit, pendingWcash, levelPlayerCounts })
     setSummaryLoading(false)
   }
 
@@ -2385,7 +2393,8 @@ export default function Campaigns() {
                           const payoutLabel = paid ? '✅ Paid' : row.status === 'approved' ? '🟦 Approved' : '⏳ Pending'
                           const player = players.find(p=>p.id===row.playerId)
                           const note = campaignRewards.find(r=>r.id===row.rewardId)?.notes || ''
-                          const waUrl = player?.whatsapp ? waHref(player.whatsapp, buildWaMsg(row.username, selected?.name||'Campaign', rewardFmt(row.rewardAmount,campCurrency))) : null
+                          const waMultiText = buildWaMsgText(row.username, selected?.name||'Campaign', rewardFmt(row.rewardAmount,campCurrency), waLang)
+                          const waUrl = player?.whatsapp ? waHref(player.whatsapp, buildWaMsg(row.username, selected?.name||'Campaign', rewardFmt(row.rewardAmount,campCurrency), waLang)) : null
                           return <tr key={row.rewardId} style={{ background:paid?'rgba(63,185,80,.04)':'transparent' }}>
                             <td style={{ ...s.td, color:'var(--muted)', fontSize:11 }}>{i+1}</td>
                             <td style={{ ...s.td, fontWeight:700 }}>{row.username}</td>
@@ -2397,10 +2406,11 @@ export default function Campaigns() {
                             <td style={{ ...s.td, fontSize:11, color:'var(--muted)' }}>{row.paidAt ? new Date(row.paidAt).toLocaleDateString('en-MY',{day:'numeric',month:'short',year:'numeric'}) : '—'}</td>
                             <td style={{...s.td,minWidth:130}}>
                               <div style={{fontSize:12,color:'var(--muted)',marginBottom:4}}>{player?.whatsapp||'—'}</div>
-                              {waUrl
-                                ? <a href={waUrl} target="_blank" rel="noreferrer" style={{ display:'inline-flex', alignItems:'center', gap:4, background:'rgba(37,211,102,.15)', color:'#25d366', border:'1px solid rgba(37,211,102,.3)', borderRadius:6, padding:'3px 10px', fontSize:11, fontWeight:700, textDecoration:'none' }}>📲 Notify</a>
-                                : <span style={{fontSize:10,color:'var(--muted)'}}>No number</span>
-                              }
+                              <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
+                                {waUrl && <a href={waUrl} target="_blank" rel="noreferrer" style={{ display:'inline-flex', alignItems:'center', gap:4, background:'rgba(37,211,102,.15)', color:'#25d366', border:'1px solid rgba(37,211,102,.3)', borderRadius:6, padding:'3px 8px', fontSize:11, fontWeight:700, textDecoration:'none' }}>📲 WA</a>}
+                                <button onClick={()=>navigator.clipboard.writeText(waMultiText).catch(()=>{})} style={{ background:'rgba(88,166,255,.12)', color:'#58a6ff', border:'1px solid rgba(88,166,255,.3)', borderRadius:6, padding:'3px 8px', fontSize:11, fontWeight:700, cursor:'pointer' }}>📋 Copy</button>
+                                {!waUrl && <span style={{fontSize:10,color:'var(--muted)'}}>No number</span>}
+                              </div>
                             </td>
                             <td style={s.td}><input defaultValue={note} onBlur={async e=>{const v=e.target.value;if(v!==note){const {error}=await supabase.from('campaign_rewards').update({notes:v}).eq('id',row.rewardId);if(error)console.error(error)}}} style={{ ...s.editInput,width:140 }} placeholder="Add note..." /></td>
                           </tr>
@@ -2425,6 +2435,14 @@ export default function Campaigns() {
                         style={{ padding:'3px 10px', borderRadius:14, fontSize:11, fontWeight:600, border:'1px solid var(--border)', cursor:'pointer',
                           background: payoutSort===key ? 'var(--accent)' : 'var(--surface2)', color: payoutSort===key ? '#fff' : 'var(--muted)' }}>
                         {lbl} {payoutSort===key ? (payoutSortDir==='asc' ? '↑' : '↓') : ''}
+                      </button>
+                    ))}
+                    <span style={{ fontSize:11, color:'var(--muted)', marginLeft:8 }}>WA Lang:</span>
+                    {[['en','EN'],['my','MY'],['cn','中文']].map(([key,lbl])=>(
+                      <button key={key} onClick={()=>setWaLang(key)}
+                        style={{ padding:'3px 10px', borderRadius:14, fontSize:11, fontWeight:700, border:'1px solid var(--border)', cursor:'pointer',
+                          background: waLang===key ? '#25d366' : 'var(--surface2)', color: waLang===key ? '#fff' : 'var(--muted)' }}>
+                        {lbl}
                       </button>
                     ))}
                     <span style={{ marginLeft:'auto', fontSize:11, color:'var(--muted)' }}>{filteredPayoutList.length} of {(isDailyMode?dailyAchieved:achieved).length} players</span>
@@ -2454,7 +2472,8 @@ export default function Campaigns() {
                       const lvlObj = lvlAchieved != null ? campaignLevels.find(l=>l.level_order===lvlAchieved) : null
                       const lvlName = lvlObj ? (lvlObj.level_name || `Level ${lvlObj.level_order}`) : lvlAchieved != null ? `Level ${lvlAchieved}` : '—'
                       const paid=p.payout_status==='paid'
-                      const waUrl = p.whatsapp ? waHref(p.whatsapp, buildWaMsg(p.username, selected?.name||'Campaign', rmFmt(creditReward,campCurrency))) : null
+                      const waMsgText = buildWaMsgText(p.username, selected?.name||'Campaign', rmFmt(creditReward,campCurrency), waLang)
+                      const waUrl = p.whatsapp ? waHref(p.whatsapp, buildWaMsg(p.username, selected?.name||'Campaign', rmFmt(creditReward,campCurrency), waLang)) : null
                       return <tr key={p.id}>
                         <td style={{...s.td,color:'var(--muted)',fontSize:11}}>{i+1}</td>
                         <td style={{...s.td,fontWeight:700}}>{p.username}</td>
@@ -2477,14 +2496,37 @@ export default function Campaigns() {
                         <td style={s.td}><button onClick={()=>updatePlayer(p.id,{payout_status:paid?'pending':'paid',payout_date:paid?null:new Date().toISOString()})} style={{...s.tag(paid?'#3fb950':'#f59e0b',paid?'rgba(63,185,80,.15)':'rgba(245,158,11,.15)'),cursor:'pointer'}}>{paid?'✅ Paid':'⏳ Pending'}</button></td>
                         <td style={{...s.td,minWidth:130}}>
                           <div style={{fontSize:12,color:'var(--muted)',marginBottom:4}}>{p.whatsapp||<span style={{color:'var(--surface2)'}}>—</span>}</div>
-                          {waUrl
-                            ? <a href={waUrl} target="_blank" rel="noreferrer" style={{ display:'inline-flex', alignItems:'center', gap:4, background:'rgba(37,211,102,.15)', color:'#25d366', border:'1px solid rgba(37,211,102,.3)', borderRadius:6, padding:'3px 10px', fontSize:11, fontWeight:700, textDecoration:'none' }}>📲 Notify</a>
-                            : <span style={{fontSize:10,color:'var(--muted)'}}>No number</span>
-                          }
+                          <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
+                            {waUrl && <a href={waUrl} target="_blank" rel="noreferrer" style={{ display:'inline-flex', alignItems:'center', gap:4, background:'rgba(37,211,102,.15)', color:'#25d366', border:'1px solid rgba(37,211,102,.3)', borderRadius:6, padding:'3px 8px', fontSize:11, fontWeight:700, textDecoration:'none' }}>📲 WA</a>}
+                            <button onClick={()=>navigator.clipboard.writeText(waMsgText).catch(()=>{})} style={{ background:'rgba(88,166,255,.12)', color:'#58a6ff', border:'1px solid rgba(88,166,255,.3)', borderRadius:6, padding:'3px 8px', fontSize:11, fontWeight:700, cursor:'pointer' }}>📋 Copy</button>
+                            {!waUrl && <span style={{fontSize:10,color:'var(--muted)'}}>No number</span>}
+                          </div>
                         </td>
                         <td style={s.td}><input defaultValue={p.notes||''} onBlur={e=>{if(e.target.value!==(p.notes||''))updatePlayer(p.id,{notes:e.target.value})}} style={{...s.editInput,width:140}} placeholder="Add note..."/></td>
                       </tr>
-                    })}</tbody>
+                    })}
+                    {(() => {
+                      const sumDep = filteredPayoutList.reduce((s,p) => s + (isDailyMode ? (parseFloat(dailyEntries[p.id]?.deposit_amount)||0) : playerDeposit(p)), 0)
+                      const sumReward = filteredPayoutList.reduce((s,p) => {
+                        if (isDailyMode && selected?.is_multi_level) return s + (dailyEntries[p.id]?.credit_reward || 0)
+                        if (campType==='dual_tier' && !selected?.is_multi_level) {
+                          const dr = isDailyMode ? calcDualTierReward(dailyEntries[p.id]?.deposit_amount||0, dailyEntries[p.id]?.turnover_amount||0, rewardTiers) : calcDualTierReward(playerDeposit(p), p.valid_bet, rewardTiers)
+                          return s + dr.creditAmount + dr.wcashAmount
+                        }
+                        return s + calcReward(campType, playerDeposit(p), rewardPct, rewardFixed, goldVal, rewardCap, rewardTiers, campaignLevels, selected?.is_multi_level)
+                      }, 0)
+                      const paidCount = filteredPayoutList.filter(p=>p.payout_status==='paid').length
+                      return (
+                        <tr style={{ background:'var(--surface2)', fontWeight:700, borderTop:'2px solid var(--border)' }}>
+                          <td colSpan={2} style={{ ...s.td, color:'var(--muted)', fontSize:12 }}>Total ({filteredPayoutList.length} players · {paidCount} paid)</td>
+                          <td style={s.td}/>
+                          <td style={{ ...s.td, color:'#3fb950', fontWeight:800 }}>{rmFmt(sumDep, campCurrency)}</td>
+                          <td style={{ ...s.td, color:typeInfo.color, fontWeight:800 }}>{rmFmt(sumReward, campCurrency)}</td>
+                          <td colSpan={3} style={s.td}/>
+                        </tr>
+                      )
+                    })()}
+                    </tbody>
                   </table>
                   </>
                 )}
@@ -2708,7 +2750,7 @@ export default function Campaigns() {
                 <div style={{ display:'grid', gridTemplateColumns:'repeat(6,1fr)', gap:12, marginBottom:18 }}>
                   {[
                     ['Players',players.length,'#a78bfa'],['Qualified',achieved.length,'#3fb950'],
-                    ['Reward Rows',selected?.is_multi_level?multiSummary.rewardRows:achieved.length,'#c9a961'],
+                    ['Reward Rows', isDailyMode && selected?.is_multi_level ? (summaryData?.qualifyingEntries ?? '…') : selected?.is_multi_level ? multiSummary.rewardRows : achieved.length, '#c9a961'],
                     ['Total Reward',rewardFmt(totalReward,campCurrency),typeInfo.color],['Paid',rewardFmt(paidOut,campCurrency),'#3fb950'],['Pending',rewardFmt(pendingPay,campCurrency),'#f85149'],
                   ].map(([label,val,color])=><div key={label} style={{background:'var(--bg)',border:'1px solid var(--border)',borderRadius:8,padding:14}}><div style={{fontSize:18,fontWeight:700,color}}>{val}</div><div style={{fontSize:11,color:'var(--muted)',marginTop:2}}>{label}</div></div>)}
                 </div>
