@@ -2421,8 +2421,8 @@ export default function Campaigns() {
                           const waMultiAgent = player?.host_assigned || null
                           const waMultiMult = selected?.turnover_multiplier ? Number(selected.turnover_multiplier) : null
                           const waMultiTurnover = waMultiMult && row.rewardAmount > 0 ? rewardFmt(row.rewardAmount * waMultiMult, campCurrency) : null
-                          const waMultiText = buildWaMsgText(row.username, selected?.name||'Campaign', rewardFmt(row.rewardAmount,campCurrency), waLang, waMultiAgent, waMultiTurnover)
-                          const waUrl = player?.whatsapp ? waHref(player.whatsapp, buildWaMsg(row.username, selected?.name||'Campaign', rewardFmt(row.rewardAmount,campCurrency), waLang, waMultiAgent, waMultiTurnover)) : null
+                          const waMultiText = buildWaMsgText(row.username, selected?.campaign_name||'Campaign', rewardFmt(row.rewardAmount,campCurrency), waLang, waMultiAgent, waMultiTurnover)
+                          const waUrl = player?.whatsapp ? waHref(player.whatsapp, buildWaMsg(row.username, selected?.campaign_name||'Campaign', rewardFmt(row.rewardAmount,campCurrency), waLang, waMultiAgent, waMultiTurnover)) : null
                           return <tr key={row.rewardId} style={{ background:paid?'rgba(63,185,80,.04)':'transparent' }}>
                             <td style={{ ...s.td, color:'var(--muted)', fontSize:11 }}>{i+1}</td>
                             <td style={{ ...s.td, fontWeight:700 }}>{row.username}</td>
@@ -2518,8 +2518,8 @@ export default function Campaigns() {
                       const waAgent = p.host_assigned || null
                       const waTurnoverMult = selected?.turnover_multiplier ? Number(selected.turnover_multiplier) : null
                       const waTurnoverReq = waTurnoverMult && creditReward > 0 ? rmFmt(creditReward * waTurnoverMult, campCurrency) : null
-                      const waMsgText = buildWaMsgText(p.username, selected?.name||'Campaign', rmFmt(creditReward,campCurrency), waLang, waAgent, waTurnoverReq)
-                      const waUrl = p.whatsapp ? waHref(p.whatsapp, buildWaMsg(p.username, selected?.name||'Campaign', rmFmt(creditReward,campCurrency), waLang, waAgent, waTurnoverReq)) : null
+                      const waMsgText = buildWaMsgText(p.username, selected?.campaign_name||'Campaign', rmFmt(creditReward,campCurrency), waLang, waAgent, waTurnoverReq)
+                      const waUrl = p.whatsapp ? waHref(p.whatsapp, buildWaMsg(p.username, selected?.campaign_name||'Campaign', rmFmt(creditReward,campCurrency), waLang, waAgent, waTurnoverReq)) : null
                       return <tr key={p.id}>
                         <td style={{...s.td,color:'var(--muted)',fontSize:11}}>{i+1}</td>
                         <td style={{...s.td,fontWeight:700}}>{p.username}</td>
