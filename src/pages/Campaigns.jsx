@@ -713,15 +713,15 @@ export default function Campaigns() {
     if (error) { alert('Load failed: ' + error.message); setDailyLoading(false); return }
     const rows = data || []
     if (!rows.length) { alert('No entries to recalculate.'); setDailyLoading(false); return }
-    const updates = rows.map(row => {
+    // Use individual .update() calls — never .upsert() here, which would try to INSERT
+    // a new row when the id doesn't match, triggering the campaign_id not-null constraint.
+    const now = new Date().toISOString()
+    for (const row of rows) {
       const { levelOrder, creditReward } = calcLevelTierForDeposit(row.deposit_amount, campaignLevels)
-      return { id: row.id, tier_achieved: levelOrder, credit_reward: creditReward, wcash_reward: 0, updated_at: new Date().toISOString() }
-    })
-    const BATCH = 50
-    for (let i = 0; i < updates.length; i += BATCH) {
       const { error: upErr } = await supabase.from('daily_turnover_entries')
-        .upsert(updates.slice(i, i + BATCH), { onConflict: 'id' })
-      if (upErr) { alert('Recalc batch failed: ' + upErr.message); setDailyLoading(false); return }
+        .update({ tier_achieved: levelOrder, credit_reward: creditReward, wcash_reward: 0, updated_at: now })
+        .eq('id', row.id)
+      if (upErr) { alert('Recalc failed: ' + upErr.message); setDailyLoading(false); return }
     }
     await loadDailyEntries(selected.id, entryDate)
     await loadCampaignSummary(selected.id)
@@ -2197,9 +2197,11 @@ export default function Campaigns() {
                               pr = getProgress(playerDeposit(p), depTarget)
                             }
                             const reward = multi
-                              ? (multiMetric?.qualifiedRewardTotal || 0)
+                              ? (isDailyMode ? (dailyEntry?.credit_reward || 0) : (multiMetric?.qualifiedRewardTotal || 0))
                               : campType==='dual_tier' ? (dualReward.creditAmount + dualReward.wcashAmount) : calcReward(campType, playerDeposit(p), rewardPct, rewardFixed, goldVal, rewardCap, rewardTiers, campaignLevels, selected?.is_multi_level)
-                            const qualified = multi ? (multiMetric?.completedCount > 0) : campType==='dual_tier' ? dualReward.tierIndex >= 0 : playerDeposit(p) >= depTarget
+                            const qualified = multi
+                              ? (isDailyMode ? (dailyEntry?.credit_reward || 0) > 0 : (multiMetric?.completedCount > 0))
+                              : campType==='dual_tier' ? dualReward.tierIndex >= 0 : playerDeposit(p) >= depTarget
                             const playerStreaks = streakBonuses[p.id] || []
                             const pendingStreaks = playerStreaks.filter(sb => sb.payout_status !== 'paid')
                             const paidStreaks = playerStreaks.filter(sb => sb.payout_status === 'paid')
@@ -2260,11 +2262,35 @@ export default function Campaigns() {
                                     </div>
                                     <span style={{ fontSize:11, color:pr.color, fontWeight:700, minWidth:36 }}>{pr.pct}%</span>
                                   </div>
-                                  {multi && <div style={{ fontSize:10, color:'var(--muted)', marginTop:4 }}>{multiMetric?.allCompleted ? 'All campaign levels unlocked' : multiMetric?.nextLevel ? `Next: ${multiMetric.nextLevel.level_name} · ${rmFmt(Math.max(0, Number(multiMetric.nextLevel.deposit_threshold)-playerDeposit(p)), campCurrency)} more` : '—'}</div>}
+                                  {multi && <div style={{ fontSize:10, color:'var(--muted)', marginTop:4 }}>
+                                    {isDailyMode
+                                      ? (() => {
+                                          const dep = dailyEntry?.deposit_amount || 0
+                                          const sortedLvls = [...campaignLevels].sort((a,b)=>(parseFloat(a.deposit_threshold)||0)-(parseFloat(b.deposit_threshold)||0))
+                                          const nextLvl = sortedLvls.find(l => dep < (parseFloat(l.deposit_threshold)||0))
+                                          return nextLvl ? `Next: ${nextLvl.level_name || ('Level '+nextLvl.level_order)} · ${rmFmt(Math.max(0, Number(nextLvl.deposit_threshold)-dep), campCurrency)} more` : dep > 0 ? 'All levels unlocked today' : '—'
+                                        })()
+                                      : (multiMetric?.allCompleted ? 'All campaign levels unlocked' : multiMetric?.nextLevel ? `Next: ${multiMetric.nextLevel.level_name} · ${rmFmt(Math.max(0, Number(multiMetric.nextLevel.deposit_threshold)-playerDeposit(p)), campCurrency)} more` : '—')
+                                    }
+                                  </div>}
                                 </td>
                                 <td style={{ ...s.td, color: qualified ? typeInfo.color : 'var(--muted)', fontWeight: qualified ? 700 : 400, fontSize:12 }}>
                                   {multi ? (
-                                    <span>{rmFmt(reward, campCurrency)} total<br /><span style={{ fontSize:10, color:'var(--muted)' }}>{multiMetric?.completedCount || 0}/{campaignLevels.length} levels unlocked</span></span>
+                                    isDailyMode ? (
+                                      <span>
+                                        {reward > 0 ? rmFmt(reward, campCurrency) : '—'} today
+                                        <br />
+                                        <span style={{ fontSize:10, color:'var(--muted)' }}>
+                                          {(() => {
+                                            if (dailyEntry?.tier_achieved == null) return 'No level yet'
+                                            const lvl = campaignLevels.find(l => l.level_order === dailyEntry.tier_achieved)
+                                            return lvl ? `${lvl.level_name || ('Level '+lvl.level_order)} achieved` : `Level ${dailyEntry.tier_achieved} achieved`
+                                          })()}
+                                        </span>
+                                      </span>
+                                    ) : (
+                                      <span>{rmFmt(reward, campCurrency)} total<br /><span style={{ fontSize:10, color:'var(--muted)' }}>{multiMetric?.completedCount || 0}/{campaignLevels.length} levels unlocked</span></span>
+                                    )
                                   ) : !qualified ? '—' : campType==='dual_tier'
                                       ? <span>{rmFmt(dualReward.creditAmount, campCurrency)} Credit<br/><span style={{fontSize:10,color:'var(--muted)'}}>+ {rmFmt(dualReward.wcashAmount, campCurrency)} WCash</span></span>
                                       : rmFmt(reward, campCurrency)}
