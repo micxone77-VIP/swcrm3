@@ -167,6 +167,16 @@ function calcLevelTierForDeposit(dep, levels) {
 }
 
 // WhatsApp notification helpers
+// Substitutes {username} {campaign} {agent} {reward} {turnover} in a custom template
+function applyPayoutTemplate(tpl, username, campaignName, rewardFormatted, agent, turnoverRequired) {
+  return tpl
+    .replace(/\{username\}/g, username || '')
+    .replace(/\{campaign\}/g, campaignName || '')
+    .replace(/\{agent\}/g, agent || '')
+    .replace(/\{reward\}/g, rewardFormatted || '')
+    .replace(/\{turnover\}/g, turnoverRequired || '')
+}
+
 // agent = host_assigned name; turnoverRequired = reward × multiplier (null if no requirement)
 const WA_MSGS = {
   en: (u, c, r, agent, turnoverRequired) => {
@@ -188,13 +198,19 @@ const WA_MSGS = {
     return intro + body + turnover
   },
 }
-function buildWaMsgText(username, campaignName, rewardFormatted, lang, agent, turnoverRequired) {
+function buildWaMsgText(username, campaignName, rewardFormatted, lang, agent, turnoverRequired, campaign) {
+  // Use campaign's custom payout template if set for this language
+  const templateKey = { en: 'payout_template_en', my: 'payout_template_my', cn: 'payout_template_cn' }[lang]
+  const customTpl = campaign && templateKey ? campaign[templateKey] : null
+  if (customTpl && customTpl.trim()) {
+    return applyPayoutTemplate(customTpl, username, campaignName, rewardFormatted, agent, turnoverRequired)
+  }
   const fn = WA_MSGS[lang]
   if (fn) return fn(username, campaignName, rewardFormatted, agent, turnoverRequired)
   return Object.values(WA_MSGS).map(f => f(username, campaignName, rewardFormatted, agent, turnoverRequired)).join('\n\n')
 }
-function buildWaMsg(username, campaignName, rewardFormatted, lang, agent, turnoverRequired) {
-  return encodeURIComponent(buildWaMsgText(username, campaignName, rewardFormatted, lang, agent, turnoverRequired))
+function buildWaMsg(username, campaignName, rewardFormatted, lang, agent, turnoverRequired, campaign) {
+  return encodeURIComponent(buildWaMsgText(username, campaignName, rewardFormatted, lang, agent, turnoverRequired, campaign))
 }
 function waHref(phone, encodedMsg) {
   if (!phone) return null
@@ -466,6 +482,9 @@ export default function Campaigns() {
       status:         form.status,
       notes:          form.notes||null,
       turnover_multiplier: form.turnover_multiplier ? parseFloat(form.turnover_multiplier) : null,
+      payout_template_en: form.payout_template_en||null,
+      payout_template_my: form.payout_template_my||null,
+      payout_template_cn: form.payout_template_cn||null,
       created_by:     profile?.id||null,
       created_at:     new Date().toISOString(),
     }).select().single()
@@ -2015,6 +2034,47 @@ export default function Campaigns() {
                   </div>
                 </div>
 
+                {/* ── PAYOUT WA MESSAGE TEMPLATES ── */}
+                <div style={{ borderTop:'1px solid var(--border)', paddingTop:14, marginBottom:14 }}>
+                  <div style={{ fontSize:11, fontWeight:800, color:'#25d366', marginBottom:4, letterSpacing:'.5px' }}>📲 PAYOUT NOTIFICATION MESSAGE</div>
+                  <div style={{ fontSize:11, color:'var(--muted)', marginBottom:10 }}>
+                    Edit the message sent when a player qualifies for payout. Leave blank to use the default. Variables: <code style={{ background:'var(--surface2)', padding:'1px 4px', borderRadius:3 }}>{'{username}'}</code> <code style={{ background:'var(--surface2)', padding:'1px 4px', borderRadius:3 }}>{'{campaign}'}</code> <code style={{ background:'var(--surface2)', padding:'1px 4px', borderRadius:3 }}>{'{agent}'}</code> <code style={{ background:'var(--surface2)', padding:'1px 4px', borderRadius:3 }}>{'{reward}'}</code> <code style={{ background:'var(--surface2)', padding:'1px 4px', borderRadius:3 }}>{'{turnover}'}</code>
+                  </div>
+                  {[
+                    ['en', '🇬🇧 English', 'payout_template_en', `Hi {username}! 🎉 I'm {agent} from SureWin VIP Team.\nYour "{campaign}" reward of {reward} Credit has been credited to your account. Please check your balance!\n\n⚠️ A {turnover} turnover is required before withdrawal.`],
+                    ['my', '🇲🇾 Malay', 'payout_template_my', `Hi {username}! 🎉 Saya {agent} dari Pasukan SureWin VIP.\nHadiah kempen "{campaign}" sebanyak {reward} Kredit telah dikreditkan ke akaun anda. Sila semak baki anda!\n\n⚠️ Turnover sebanyak {turnover} diperlukan sebelum pengeluaran boleh dibuat.`],
+                    ['cn', '🇨🇳 中文', 'payout_template_cn', `你好 {username}！🎉我是SureWin VIP部门的{agent}\n你的"{campaign}"奖励 {reward} 积分已成功存入你的账户，请查看余额！\n\n⚠️ 温馨提示：领取奖励后需完成 {turnover} 的流水要求，方可申请提款。`],
+                  ].map(([lang, label, field, placeholder]) => {
+                    const tpl = editCampForm[field] || ''
+                    const sampleAgent = 'Marcus'
+                    const sampleReward = 'RM 800'
+                    const sampleTurnover = editCampForm.turnover_multiplier ? `RM ${800 * Number(editCampForm.turnover_multiplier)}` : 'RM 2400'
+                    const preview = applyPayoutTemplate(
+                      tpl || placeholder,
+                      'haur2972', editCampForm.campaign_name || selected?.campaign_name || 'Campaign',
+                      sampleReward, sampleAgent, sampleTurnover
+                    )
+                    return (
+                      <div key={lang} style={{ marginBottom:16 }}>
+                        <div style={{ fontSize:11, color:'var(--muted)', fontWeight:700, marginBottom:6 }}>{label}</div>
+                        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+                          <textarea
+                            style={{ ...s.fta, width:'100%', fontFamily:'monospace', fontSize:12 }}
+                            rows={5}
+                            value={tpl}
+                            onChange={e=>setEditCampForm(f=>({...f,[field]:e.target.value}))}
+                            placeholder={placeholder}
+                          />
+                          <div style={{ background:'rgba(37,211,102,.06)', border:'1px solid rgba(37,211,102,.2)', borderRadius:8, padding:'10px 12px', fontSize:12, color:'var(--text)', whiteSpace:'pre-wrap', lineHeight:1.6 }}>
+                            <div style={{ fontSize:10, color:'#25d366', fontWeight:700, marginBottom:6 }}>👁 Preview</div>
+                            {preview}
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+
                 <div style={{ display:'flex', gap:8, alignItems:'center' }}>
                   <button style={s.btnG} onClick={editCampaign} disabled={saving}>{saving?'Saving…':'💾 Save Campaign'}</button>
                   <button style={s.btnSm} onClick={()=>{setEditingCamp(false);setCampaignLevelsEdit([])}} disabled={saving}>Cancel</button>
@@ -2421,8 +2481,8 @@ export default function Campaigns() {
                           const waMultiAgent = player?.host_assigned || null
                           const waMultiMult = selected?.turnover_multiplier ? Number(selected.turnover_multiplier) : null
                           const waMultiTurnover = waMultiMult && row.rewardAmount > 0 ? rewardFmt(row.rewardAmount * waMultiMult, campCurrency) : null
-                          const waMultiText = buildWaMsgText(row.username, selected?.campaign_name||'Campaign', rewardFmt(row.rewardAmount,campCurrency), waLang, waMultiAgent, waMultiTurnover)
-                          const waUrl = player?.whatsapp ? waHref(player.whatsapp, buildWaMsg(row.username, selected?.campaign_name||'Campaign', rewardFmt(row.rewardAmount,campCurrency), waLang, waMultiAgent, waMultiTurnover)) : null
+                          const waMultiText = buildWaMsgText(row.username, selected?.campaign_name||'Campaign', rewardFmt(row.rewardAmount,campCurrency), waLang, waMultiAgent, waMultiTurnover, selected)
+                          const waUrl = player?.whatsapp ? waHref(player.whatsapp, buildWaMsg(row.username, selected?.campaign_name||'Campaign', rewardFmt(row.rewardAmount,campCurrency), waLang, waMultiAgent, waMultiTurnover, selected)) : null
                           return <tr key={row.rewardId} style={{ background:paid?'rgba(63,185,80,.04)':'transparent' }}>
                             <td style={{ ...s.td, color:'var(--muted)', fontSize:11 }}>{i+1}</td>
                             <td style={{ ...s.td, fontWeight:700 }}>{row.username}</td>
@@ -2518,8 +2578,8 @@ export default function Campaigns() {
                       const waAgent = p.host_assigned || null
                       const waTurnoverMult = selected?.turnover_multiplier ? Number(selected.turnover_multiplier) : null
                       const waTurnoverReq = waTurnoverMult && creditReward > 0 ? rmFmt(creditReward * waTurnoverMult, campCurrency) : null
-                      const waMsgText = buildWaMsgText(p.username, selected?.campaign_name||'Campaign', rmFmt(creditReward,campCurrency), waLang, waAgent, waTurnoverReq)
-                      const waUrl = p.whatsapp ? waHref(p.whatsapp, buildWaMsg(p.username, selected?.campaign_name||'Campaign', rmFmt(creditReward,campCurrency), waLang, waAgent, waTurnoverReq)) : null
+                      const waMsgText = buildWaMsgText(p.username, selected?.campaign_name||'Campaign', rmFmt(creditReward,campCurrency), waLang, waAgent, waTurnoverReq, selected)
+                      const waUrl = p.whatsapp ? waHref(p.whatsapp, buildWaMsg(p.username, selected?.campaign_name||'Campaign', rmFmt(creditReward,campCurrency), waLang, waAgent, waTurnoverReq, selected)) : null
                       return <tr key={p.id}>
                         <td style={{...s.td,color:'var(--muted)',fontSize:11}}>{i+1}</td>
                         <td style={{...s.td,fontWeight:700}}>{p.username}</td>

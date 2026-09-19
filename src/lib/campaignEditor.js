@@ -160,6 +160,9 @@ export function buildCampaignUpdate(form) {
     whatsapp_template: form.whatsapp_template || null,
     whatsapp_template_zh: form.whatsapp_template_zh || null,
     turnover_multiplier: numeric(form.turnover_multiplier),
+    payout_template_en: form.payout_template_en || null,
+    payout_template_my: form.payout_template_my || null,
+    payout_template_cn: form.payout_template_cn || null,
   }
 }
 
