@@ -159,6 +159,7 @@ export function buildCampaignUpdate(form) {
     streak_bonus_cap: form.streak_bonus_cap != null ? Number(form.streak_bonus_cap) : 0,
     whatsapp_template: form.whatsapp_template || null,
     whatsapp_template_zh: form.whatsapp_template_zh || null,
+    turnover_multiplier: numeric(form.turnover_multiplier),
   }
 }
 

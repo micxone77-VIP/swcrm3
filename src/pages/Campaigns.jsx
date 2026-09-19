@@ -167,18 +167,34 @@ function calcLevelTierForDeposit(dep, levels) {
 }
 
 // WhatsApp notification helpers
+// agent = host_assigned name; turnoverRequired = reward × multiplier (null if no requirement)
 const WA_MSGS = {
-  en: (u, c, r) => `Hi ${u}! 🎉\nYour "${c}" reward of ${r} Credit has been credited to your account. Please check your balance!`,
-  my: (u, c, r) => `Hi ${u}! 🎉\nHadiah kempen "${c}" sebanyak ${r} Kredit telah dikreditkan ke akaun anda. Sila semak baki anda!`,
-  cn: (u, c, r) => `您好 ${u}！🎉\n您的"${c}"奖励 ${r} 积分已成功存入您的账户，请查看余额！`,
+  en: (u, c, r, agent, turnoverRequired) => {
+    const intro = agent ? `Hi ${u}! 🎉 I'm ${agent} from SureWin VIP Team.` : `Hi ${u}! 🎉`
+    const body = `\nYour "${c}" reward of ${r} Credit has been credited to your account. Please check your balance!`
+    const turnover = turnoverRequired ? `\n\n⚠️ Please note: A ${turnoverRequired} turnover is required before you can make a withdrawal.` : ''
+    return intro + body + turnover
+  },
+  my: (u, c, r, agent, turnoverRequired) => {
+    const intro = agent ? `Hi ${u}! 🎉 Saya ${agent} dari Pasukan SureWin VIP.` : `Hi ${u}! 🎉`
+    const body = `\nHadiah kempen "${c}" sebanyak ${r} Kredit telah dikreditkan ke akaun anda. Sila semak baki anda!`
+    const turnover = turnoverRequired ? `\n\n⚠️ Harap maklum: Turnover sebanyak ${turnoverRequired} diperlukan sebelum pengeluaran boleh dibuat.` : ''
+    return intro + body + turnover
+  },
+  cn: (u, c, r, agent, turnoverRequired) => {
+    const intro = agent ? `你好 ${u}！🎉我是SureWin VIP部门的${agent}` : `你好 ${u}！🎉`
+    const body = `\n你的"${c}"奖励 ${r} 积分已成功存入你的账户，请查看余额！`
+    const turnover = turnoverRequired ? `\n\n⚠️ 温馨提示：领取奖励后需完成 ${turnoverRequired} 的流水要求，方可申请提款。` : ''
+    return intro + body + turnover
+  },
 }
-function buildWaMsgText(username, campaignName, rewardFormatted, lang) {
+function buildWaMsgText(username, campaignName, rewardFormatted, lang, agent, turnoverRequired) {
   const fn = WA_MSGS[lang]
-  if (fn) return fn(username, campaignName, rewardFormatted)
-  return Object.values(WA_MSGS).map(f => f(username, campaignName, rewardFormatted)).join('\n\n')
+  if (fn) return fn(username, campaignName, rewardFormatted, agent, turnoverRequired)
+  return Object.values(WA_MSGS).map(f => f(username, campaignName, rewardFormatted, agent, turnoverRequired)).join('\n\n')
 }
-function buildWaMsg(username, campaignName, rewardFormatted, lang) {
-  return encodeURIComponent(buildWaMsgText(username, campaignName, rewardFormatted, lang))
+function buildWaMsg(username, campaignName, rewardFormatted, lang, agent, turnoverRequired) {
+  return encodeURIComponent(buildWaMsgText(username, campaignName, rewardFormatted, lang, agent, turnoverRequired))
 }
 function waHref(phone, encodedMsg) {
   if (!phone) return null
@@ -449,6 +465,7 @@ export default function Campaigns() {
       rank_rewards:   form.campaign_type==='leaderboard' ? form.rank_rewards : null,
       status:         form.status,
       notes:          form.notes||null,
+      turnover_multiplier: form.turnover_multiplier ? parseFloat(form.turnover_multiplier) : null,
       created_by:     profile?.id||null,
       created_at:     new Date().toISOString(),
     }).select().single()
@@ -1731,6 +1748,7 @@ export default function Campaigns() {
                 </div>
               </div>
               <div style={s.frow}><div style={s.flbl}>Offer Description</div><textarea style={s.fta} rows={2} value={form.offer_desc} onChange={e=>setForm({...form,offer_desc:e.target.value})} placeholder="What's being offered?" /></div>
+              <div style={s.frow}><div style={s.flbl}>Turnover Multiplier <span style={{ fontWeight:400, color:'var(--muted)', fontSize:10 }}>(WA message — e.g. 3 means reward × 3 required before withdrawal)</span></div><input type="number" min="1" step="0.5" style={s.finput} value={form.turnover_multiplier??''} onChange={e=>setForm({...form,turnover_multiplier:e.target.value})} placeholder="e.g. 3 (leave blank = no requirement)" /></div>
               <div style={s.frow}><div style={s.flbl}>Notes</div><textarea style={s.fta} rows={2} value={form.notes} onChange={e=>setForm({...form,notes:e.target.value})} /></div>
               {msg.text && <div style={{ color:msg.ok?'#3fb950':'#f85149', fontSize:12, marginBottom:10 }}>{msg.text}</div>}
               <div style={{ display:'flex', gap:8 }}>
@@ -1975,6 +1993,11 @@ export default function Campaigns() {
                     <textarea style={s.fta} rows={3} value={editCampForm.offer_desc||''} onChange={e=>setEditCampForm(f=>({...f,offer_desc:e.target.value}))} placeholder="Write player-facing How to Join, Rules & Regulations, eligibility, deposit rules, reward conditions, and payout terms. Use line breaks for sections." />
                     <textarea style={s.fta} rows={3} value={editCampForm.notes||''} onChange={e=>setEditCampForm(f=>({...f,notes:e.target.value}))} placeholder="Internal notes" />
                   </div>
+                </div>
+
+                <div style={{ borderTop:'1px solid var(--border)', paddingTop:14, marginBottom:14 }}>
+                  <div style={s.flbl}>Turnover Multiplier <span style={{ fontWeight:400, color:'var(--muted)', fontSize:10 }}>(WA payout message — e.g. 3 means reward × 3 required before withdrawal)</span></div>
+                  <input type="number" min="1" step="0.5" style={{ ...s.finput, width:180, marginTop:4 }} value={editCampForm.turnover_multiplier??''} onChange={e=>setEditCampForm(f=>({...f,turnover_multiplier:e.target.value}))} placeholder="e.g. 3 (leave blank = no requirement)" />
                 </div>
 
                 <div style={{ borderTop:'1px solid var(--border)', paddingTop:14, marginBottom:14 }}>
@@ -2395,8 +2418,11 @@ export default function Campaigns() {
                           const payoutLabel = paid ? '✅ Paid' : row.status === 'approved' ? '🟦 Approved' : '⏳ Pending'
                           const player = players.find(p=>p.id===row.playerId)
                           const note = campaignRewards.find(r=>r.id===row.rewardId)?.notes || ''
-                          const waMultiText = buildWaMsgText(row.username, selected?.name||'Campaign', rewardFmt(row.rewardAmount,campCurrency), waLang)
-                          const waUrl = player?.whatsapp ? waHref(player.whatsapp, buildWaMsg(row.username, selected?.name||'Campaign', rewardFmt(row.rewardAmount,campCurrency), waLang)) : null
+                          const waMultiAgent = player?.host_assigned || null
+                          const waMultiMult = selected?.turnover_multiplier ? Number(selected.turnover_multiplier) : null
+                          const waMultiTurnover = waMultiMult && row.rewardAmount > 0 ? rewardFmt(row.rewardAmount * waMultiMult, campCurrency) : null
+                          const waMultiText = buildWaMsgText(row.username, selected?.name||'Campaign', rewardFmt(row.rewardAmount,campCurrency), waLang, waMultiAgent, waMultiTurnover)
+                          const waUrl = player?.whatsapp ? waHref(player.whatsapp, buildWaMsg(row.username, selected?.name||'Campaign', rewardFmt(row.rewardAmount,campCurrency), waLang, waMultiAgent, waMultiTurnover)) : null
                           return <tr key={row.rewardId} style={{ background:paid?'rgba(63,185,80,.04)':'transparent' }}>
                             <td style={{ ...s.td, color:'var(--muted)', fontSize:11 }}>{i+1}</td>
                             <td style={{ ...s.td, fontWeight:700 }}>{row.username}</td>
@@ -2489,8 +2515,11 @@ export default function Campaigns() {
                       const lvlObj = lvlAchieved != null ? campaignLevels.find(l=>l.level_order===lvlAchieved) : null
                       const lvlName = lvlObj ? (lvlObj.level_name || `Level ${lvlObj.level_order}`) : lvlAchieved != null ? `Level ${lvlAchieved}` : '—'
                       const paid=p.payout_status==='paid'
-                      const waMsgText = buildWaMsgText(p.username, selected?.name||'Campaign', rmFmt(creditReward,campCurrency), waLang)
-                      const waUrl = p.whatsapp ? waHref(p.whatsapp, buildWaMsg(p.username, selected?.name||'Campaign', rmFmt(creditReward,campCurrency), waLang)) : null
+                      const waAgent = p.host_assigned || null
+                      const waTurnoverMult = selected?.turnover_multiplier ? Number(selected.turnover_multiplier) : null
+                      const waTurnoverReq = waTurnoverMult && creditReward > 0 ? rmFmt(creditReward * waTurnoverMult, campCurrency) : null
+                      const waMsgText = buildWaMsgText(p.username, selected?.name||'Campaign', rmFmt(creditReward,campCurrency), waLang, waAgent, waTurnoverReq)
+                      const waUrl = p.whatsapp ? waHref(p.whatsapp, buildWaMsg(p.username, selected?.name||'Campaign', rmFmt(creditReward,campCurrency), waLang, waAgent, waTurnoverReq)) : null
                       return <tr key={p.id}>
                         <td style={{...s.td,color:'var(--muted)',fontSize:11}}>{i+1}</td>
                         <td style={{...s.td,fontWeight:700}}>{p.username}</td>
