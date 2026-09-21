@@ -1199,6 +1199,13 @@ export default function Campaigns() {
     const playerMap = {}
     players.forEach(p => { playerMap[p.id] = p })
 
+    // Deposit totals from ALL raw entries (not just qualifying ones)
+    const depositByPlayer = {}
+    ;(data || []).forEach(e => {
+      if (!depositByPlayer[e.player_id]) depositByPlayer[e.player_id] = 0
+      depositByPlayer[e.player_id] += parseFloat(e.deposit_amount) || 0
+    })
+
     const byPlayer = {}
     entries.forEach(e => {
       if (!byPlayer[e.player_id]) byPlayer[e.player_id] = { credit: 0, wcash: 0, days: 0 }
@@ -1220,7 +1227,7 @@ export default function Campaigns() {
     const pendingCredit = playerRows.filter(r => !r.paid).reduce((s, r) => s + r.credit, 0)
     const pendingWcash = playerRows.filter(r => !r.paid).reduce((s, r) => s + r.wcash, 0)
 
-    setSummaryData({ uniqueParticipants, qualifyingEntries, totalCredit, totalWcash, tierHitCounts, playerRows, totalEntryDays: new Set(entries.map(e => e.entry_date)).size, paidCredit, paidWcash, pendingCredit, pendingWcash, levelPlayerCounts })
+    setSummaryData({ uniqueParticipants, qualifyingEntries, totalCredit, totalWcash, tierHitCounts, playerRows, totalEntryDays: new Set(entries.map(e => e.entry_date)).size, paidCredit, paidWcash, pendingCredit, pendingWcash, levelPlayerCounts, depositByPlayer })
     setSummaryLoading(false)
   }
 
@@ -2870,7 +2877,7 @@ export default function Campaigns() {
                 // Compute bonus
                 let bonusAmt = 0
                 if (achieved) {
-                  bonusAmt = bonusType === 'pct' ? totalReward * bonusPct : bonusFixed
+                  bonusAmt = bonusType === 'pct' ? totalDeposit * bonusPct / 100 : bonusFixed
                   if (bonusCap > 0) bonusAmt = Math.min(bonusAmt, bonusCap)
                 }
                 // Streak bonus records already in DB
@@ -2888,7 +2895,7 @@ export default function Campaigns() {
                 <div style={{ overflowX:'auto' }}>
                   {/* Header */}
                   <div style={{ padding:'8px 24px', fontSize:11, color:'var(--muted)', background:'rgba(245,158,11,.04)', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', gap:12 }}>
-                    <span>🔥 Streak target: <strong>{streakDays} consecutive days</strong> · Bonus: {bonusType === 'pct' ? `${(bonusPct * 100).toFixed(0)}% of total reward` : `RM ${bonusFixed} fixed`}{bonusCap > 0 ? ` (cap: ${rmFmt(bonusCap, campCurrency)})` : ''}</span>
+                    <span>🔥 Streak target: <strong>{streakDays} consecutive days</strong> · Bonus: {bonusType === 'pct' ? `${bonusPct}% of period deposit` : `RM ${bonusFixed} fixed`}{bonusCap > 0 ? ` (cap: ${rmFmt(bonusCap, campCurrency)})` : ''}</span>
                     {allDailyEntriesLoading && <span style={{ color:'#f59e0b' }}>Loading…</span>}
                     {!selected?.streak_enabled && <span style={{ background:'rgba(248,81,73,.15)', color:'#f85149', borderRadius:4, padding:'1px 8px', fontSize:10, fontWeight:700 }}>STREAK DISABLED</span>}
                     <button onClick={() => { loadAllDailyEntries(selected.id); loadStreakBonuses(selected.id) }} style={{ marginLeft:'auto', background:'var(--surface2)', border:'1px solid var(--border)', color:'var(--muted)', padding:'3px 10px', borderRadius:5, fontSize:11, cursor:'pointer' }}>↺ Refresh</button>
@@ -3100,7 +3107,7 @@ export default function Campaigns() {
                               <td style={{ ...s.td, fontSize:12 }}>{p.whatsapp||'—'}</td>
                               <td style={{ ...s.td, color:'#3fb950' }}>
                                 {isDailyMode
-                                  ? (real ? rmFmt(real.deposit, campCurrency) : <span style={{ color:'var(--muted)' }}>—</span>)
+                                  ? rmFmt(summaryData?.depositByPlayer?.[p.id] ?? null, campCurrency)
                                   : rmFmt(playerDeposit(p), campCurrency)}
                               </td>
                               <td style={{ ...s.td, color:'var(--accent)' }}>{real ? rmFmt(real.validBet, campCurrency) : <span style={{ color:'var(--muted)' }}>—</span>}</td>
