@@ -903,8 +903,12 @@ export default function Campaigns() {
       } else {
         bonusAmount = parseFloat(selected.streak_bonus_fixed) || 0
       }
-      const cap = parseFloat(selected.streak_bonus_cap) || 0
-      if (cap > 0) bonusAmount = Math.min(bonusAmount, cap)
+      // Per-player cap override takes priority over campaign-level cap
+      const playerRec = players.find(pl => pl.id === playerId)
+      const playerCap = parseFloat(playerRec?.streak_bonus_cap_override) || 0
+      const campaignCap = parseFloat(selected.streak_bonus_cap) || 0
+      const effectiveCap = playerCap > 0 ? playerCap : campaignCap
+      if (effectiveCap > 0) bonusAmount = Math.min(bonusAmount, effectiveCap)
       bonusAmount = Math.round(bonusAmount * 100) / 100
 
       // Payout date = period_end + 1 day
@@ -2915,60 +2919,8 @@ export default function Campaigns() {
                     }} style={{ marginLeft:'auto', background:'var(--surface2)', border:'1px solid var(--border)', color:'var(--muted)', padding:'3px 10px', borderRadius:5, fontSize:11, cursor:'pointer' }}>↺ Refresh</button>
                   </div>
 
-                  {/* Streak progress table */}
-                  <table style={s.tbl}>
-                    <thead><tr>
-                      <th style={s.th}>#</th>
-                      <th style={s.th}>Player</th>
-                      <th style={s.th}>Tier</th>
-                      <th style={s.th}>Host</th>
-                      <th style={s.th}>Qualifying Days</th>
-                      <th style={s.th}>Max Streak</th>
-                      <th style={s.th}>Current Run</th>
-                      <th style={s.th}>Target ({streakDays}d)</th>
-                      <th style={s.th}>Est. Bonus</th>
-                      <th style={s.th}>Awarded</th>
-                    </tr></thead>
-                    <tbody>
-                      {playerStreakRows.map(({ p, dates, maxStreak, currentRun, achieved, bonusAmt, awardedBonuses }, i) => {
-                        const awardedTotal = awardedBonuses.reduce((s, r) => s + (parseFloat(r.bonus_amount)||0), 0)
-                        const awardedPaid = awardedBonuses.filter(r => r.payout_status === 'paid').length
-                        return (
-                          <tr key={p.id} style={{ background: achieved ? 'rgba(63,185,80,.04)' : 'transparent' }}>
-                            <td style={{ ...s.td, color:'var(--muted)', fontSize:11 }}>{i+1}</td>
-                            <td style={{ ...s.td, fontWeight:700 }}>{p.username}</td>
-                            <td style={s.td}>{p.tier ? <span style={{ ...s.badge, background:TIER_BG[p.tier]||'transparent', color:TIER_COLOR[p.tier]||'var(--muted)' }}>{p.tier}</span> : '—'}</td>
-                            <td style={{ ...s.td, fontSize:12, color:'var(--muted)' }}>{p.host_assigned || '—'}</td>
-                            <td style={{ ...s.td, color:'#58a6ff', fontWeight:600 }}>{dates.length}</td>
-                            <td style={{ ...s.td, color: maxStreak >= streakDays ? '#3fb950' : maxStreak >= Math.ceil(streakDays * 0.6) ? '#f59e0b' : 'var(--muted)', fontWeight:700, fontSize:15 }}>
-                              {maxStreak > 0 ? `🔥 ${maxStreak}` : '—'}
-                            </td>
-                            <td style={{ ...s.td, fontSize:12, color: currentRun.length >= streakDays ? '#3fb950' : 'var(--muted)' }}>
-                              {currentRun.length > 0 ? `${currentRun.length}d (${fmtDate(currentRun[0])}→${fmtDate(currentRun[currentRun.length-1])})` : '—'}
-                            </td>
-                            <td style={s.td}>
-                              {achieved
-                                ? <span style={{ color:'#3fb950', fontWeight:700 }}>✅ Hit</span>
-                                : <span style={{ color:'#f85149', fontWeight:600 }}>❌ {streakDays - maxStreak}d short</span>
-                              }
-                            </td>
-                            <td style={{ ...s.td, color: achieved ? '#f59e0b' : 'var(--muted)', fontWeight: achieved ? 700 : 400 }}>
-                              {achieved ? rmFmt(bonusAmt, campCurrency) : '—'}
-                            </td>
-                            <td style={{ ...s.td, fontSize:11 }}>
-                              {awardedBonuses.length > 0
-                                ? <span>{awardedBonuses.length} bonus{awardedBonuses.length>1?'es':''} · {rmFmt(awardedTotal, campCurrency)} · {awardedPaid}/{awardedBonuses.length} paid</span>
-                                : <span style={{ color:'var(--surface2)' }}>—</span>
-                              }
-                            </td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
-
-                  {/* Streak Bonus Payout section */}
-                  <div style={{ borderTop:'2px solid var(--border)', marginTop:8 }}>
+                  {/* Streak Bonus Payout section — shown first */}
+                  <div style={{ borderBottom:'2px solid var(--border)', marginBottom:8 }}>
                     <div style={{ padding:'10px 24px', display:'flex', alignItems:'center', gap:10, background:'rgba(245,158,11,.04)' }}>
                       <span style={{ fontSize:13, fontWeight:800 }}>💸 Streak Bonus Payout</span>
                       {streakBonusesLoading && <span style={{ fontSize:11, color:'var(--muted)' }}>Loading…</span>}
@@ -3042,6 +2994,79 @@ export default function Campaigns() {
                       </table>
                     )}
                   </div>
+
+                  {/* Streak progress table — below payout */}
+                  <table style={s.tbl}>
+                    <thead><tr>
+                      <th style={s.th}>#</th>
+                      <th style={s.th}>Player</th>
+                      <th style={s.th}>Tier</th>
+                      <th style={s.th}>Host</th>
+                      <th style={s.th}>Qualifying Days</th>
+                      <th style={s.th}>Max Streak</th>
+                      <th style={s.th}>Current Run</th>
+                      <th style={s.th}>Target ({streakDays}d)</th>
+                      <th style={s.th}>Cap Override</th>
+                      <th style={s.th}>Est. Bonus</th>
+                      <th style={s.th}>Awarded</th>
+                    </tr></thead>
+                    <tbody>
+                      {playerStreakRows.map(({ p, dates, maxStreak, currentRun, achieved, bonusAmt, awardedBonuses }, i) => {
+                        const awardedTotal = awardedBonuses.reduce((s, r) => s + (parseFloat(r.bonus_amount)||0), 0)
+                        const awardedPaid = awardedBonuses.filter(r => r.payout_status === 'paid').length
+                        const playerCapOverride = parseFloat(p.streak_bonus_cap_override) || 0
+                        const campaignCap = parseFloat(selected.streak_bonus_cap) || 0
+                        return (
+                          <tr key={p.id} style={{ background: achieved ? 'rgba(63,185,80,.04)' : 'transparent' }}>
+                            <td style={{ ...s.td, color:'var(--muted)', fontSize:11 }}>{i+1}</td>
+                            <td style={{ ...s.td, fontWeight:700 }}>{p.username}</td>
+                            <td style={s.td}>{p.tier ? <span style={{ ...s.badge, background:TIER_BG[p.tier]||'transparent', color:TIER_COLOR[p.tier]||'var(--muted)' }}>{p.tier}</span> : '—'}</td>
+                            <td style={{ ...s.td, fontSize:12, color:'var(--muted)' }}>{p.host_assigned || '—'}</td>
+                            <td style={{ ...s.td, color:'#58a6ff', fontWeight:600 }}>{dates.length}</td>
+                            <td style={{ ...s.td, color: maxStreak >= streakDays ? '#3fb950' : maxStreak >= Math.ceil(streakDays * 0.6) ? '#f59e0b' : 'var(--muted)', fontWeight:700, fontSize:15 }}>
+                              {maxStreak > 0 ? `🔥 ${maxStreak}` : '—'}
+                            </td>
+                            <td style={{ ...s.td, fontSize:12, color: currentRun.length >= streakDays ? '#3fb950' : 'var(--muted)' }}>
+                              {currentRun.length > 0 ? `${currentRun.length}d (${fmtDate(currentRun[0])}→${fmtDate(currentRun[currentRun.length-1])})` : '—'}
+                            </td>
+                            <td style={s.td}>
+                              {achieved
+                                ? <span style={{ color:'#3fb950', fontWeight:700 }}>✅ Hit</span>
+                                : <span style={{ color:'#f85149', fontWeight:600 }}>❌ {streakDays - maxStreak}d short</span>
+                              }
+                            </td>
+                            <td style={{ ...s.td, fontSize:11 }}>
+                              <input
+                                key={p.streak_bonus_cap_override}
+                                defaultValue={playerCapOverride > 0 ? playerCapOverride : ''}
+                                placeholder={campaignCap > 0 ? `${campaignCap} (camp)` : 'No cap'}
+                                onBlur={async e => {
+                                  const val = e.target.value.trim()
+                                  const newCap = val === '' ? null : parseFloat(val)
+                                  if (isNaN(newCap) && val !== '') return
+                                  const { error } = await supabase.from('campaign_players')
+                                    .update({ streak_bonus_cap_override: newCap })
+                                    .eq('id', p.id)
+                                  if (error) { console.error(error); return }
+                                  await loadPlayers(selected.id)
+                                }}
+                                style={{ ...s.editInput, width:80, color: playerCapOverride > 0 ? '#f85149' : 'var(--muted)' }}
+                              />
+                            </td>
+                            <td style={{ ...s.td, color: achieved ? '#f59e0b' : 'var(--muted)', fontWeight: achieved ? 700 : 400 }}>
+                              {achieved ? rmFmt(bonusAmt, campCurrency) : '—'}
+                            </td>
+                            <td style={{ ...s.td, fontSize:11 }}>
+                              {awardedBonuses.length > 0
+                                ? <span>{awardedBonuses.length} bonus{awardedBonuses.length>1?'es':''} · {rmFmt(awardedTotal, campCurrency)} · {awardedPaid}/{awardedBonuses.length} paid</span>
+                                : <span style={{ color:'var(--surface2)' }}>—</span>
+                              }
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
                 </div>
               )
             })()}
