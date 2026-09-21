@@ -822,6 +822,13 @@ export default function Campaigns() {
     }
     await loadDailyEntries(selected.id, entryDate)
     await loadCampaignSummary(selected.id)
+    // Award streak bonuses for any newly-eligible players
+    if (selected?.streak_enabled) {
+      const today = new Date().toISOString().slice(0, 10)
+      for (const p of players) {
+        await checkAndAwardStreak(p.id, today)
+      }
+    }
     alert(`✅ Recalculated rewards for ${rows.length} entries.`)
     setDailyLoading(false)
   }
@@ -2898,7 +2905,14 @@ export default function Campaigns() {
                     <span>🔥 Streak target: <strong>{streakDays} consecutive days</strong> · Bonus: {bonusType === 'pct' ? `${bonusPct}% of period deposit` : `RM ${bonusFixed} fixed`}{bonusCap > 0 ? ` (cap: ${rmFmt(bonusCap, campCurrency)})` : ''}</span>
                     {allDailyEntriesLoading && <span style={{ color:'#f59e0b' }}>Loading…</span>}
                     {!selected?.streak_enabled && <span style={{ background:'rgba(248,81,73,.15)', color:'#f85149', borderRadius:4, padding:'1px 8px', fontSize:10, fontWeight:700 }}>STREAK DISABLED</span>}
-                    <button onClick={() => { loadAllDailyEntries(selected.id); loadStreakBonuses(selected.id) }} style={{ marginLeft:'auto', background:'var(--surface2)', border:'1px solid var(--border)', color:'var(--muted)', padding:'3px 10px', borderRadius:5, fontSize:11, cursor:'pointer' }}>↺ Refresh</button>
+                    <button onClick={async () => {
+                      await loadAllDailyEntries(selected.id)
+                      if (selected?.streak_enabled) {
+                        const today = new Date().toISOString().slice(0, 10)
+                        for (const p of players) await checkAndAwardStreak(p.id, today)
+                      }
+                      await loadStreakBonuses(selected.id)
+                    }} style={{ marginLeft:'auto', background:'var(--surface2)', border:'1px solid var(--border)', color:'var(--muted)', padding:'3px 10px', borderRadius:5, fontSize:11, cursor:'pointer' }}>↺ Refresh</button>
                   </div>
 
                   {/* Streak progress table */}
