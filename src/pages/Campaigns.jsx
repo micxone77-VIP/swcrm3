@@ -2616,6 +2616,8 @@ export default function Campaigns() {
                       const lvlObj = lvlAchieved != null ? campaignLevels.find(l=>l.level_order===lvlAchieved) : null
                       const lvlName = lvlObj ? (lvlObj.level_name || `Level ${lvlObj.level_order}`) : lvlAchieved != null ? `Level ${lvlAchieved}` : '—'
                       const paid = isDailyMode ? (dailyEntries[p.id]?.payout_status === 'paid') : (p.payout_status === 'paid')
+                      const playerStreakBonuses = streakBonuses[p.id] || []
+                      const pendingStreakBonus = playerStreakBonuses.filter(r => r.payout_status !== 'paid').reduce((s,r) => s + (parseFloat(r.bonus_amount)||0), 0)
                       const waAgent = p.host_assigned || null
                       const waTurnoverMult = selected?.turnover_multiplier ? Number(selected.turnover_multiplier) : null
                       const waTurnoverReq = waTurnoverMult && creditReward > 0 ? rmFmt(creditReward * waTurnoverMult, campCurrency) : null
@@ -2640,7 +2642,12 @@ export default function Campaigns() {
                             ? <span>{rmFmt(dualReward.creditAmount,campCurrency)} Credit<br/><span style={{fontSize:10,color:'var(--muted)'}}>+ {rmFmt(dualReward.wcashAmount,campCurrency)} WCash</span></span>
                             : rmFmt(creditReward,campCurrency)
                         }</td>
-                        <td style={s.td}><button onClick={()=> isDailyMode ? updateDailyPayout(p.id, paid?'pending':'paid') : updatePlayer(p.id,{payout_status:paid?'pending':'paid',payout_date:paid?null:new Date().toISOString()})} style={{...s.tag(paid?'#3fb950':'#f59e0b',paid?'rgba(63,185,80,.15)':'rgba(245,158,11,.15)'),cursor:'pointer'}}>{paid?'✅ Paid':'⏳ Pending'}</button></td>
+                        <td style={s.td}>
+                          <button onClick={()=> isDailyMode ? updateDailyPayout(p.id, paid?'pending':'paid') : updatePlayer(p.id,{payout_status:paid?'pending':'paid',payout_date:paid?null:new Date().toISOString()})} style={{...s.tag(paid?'#3fb950':'#f59e0b',paid?'rgba(63,185,80,.15)':'rgba(245,158,11,.15)'),cursor:'pointer'}}>{paid?'✅ Paid':'⏳ Pending'}</button>
+                          {selected?.streak_enabled && pendingStreakBonus > 0 && (
+                            <div style={{ marginTop:3, fontSize:10, color:'#f59e0b', fontWeight:700, whiteSpace:'nowrap' }}>🔥 +{rmFmt(pendingStreakBonus, campCurrency)} streak</div>
+                          )}
+                        </td>
                         <td style={{...s.td,fontSize:12,color:'var(--muted)',fontWeight:600}}>{p.host_assigned||<span style={{color:'var(--surface2)'}}>—</span>}</td>
                         <td style={{...s.td,minWidth:130}}>
                           <div style={{fontSize:12,color:'var(--muted)',marginBottom:4}}>{p.whatsapp||<span style={{color:'var(--surface2)'}}>—</span>}</div>
