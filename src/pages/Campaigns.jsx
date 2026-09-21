@@ -2937,6 +2937,7 @@ export default function Campaigns() {
                         <th style={s.th}>Tier</th>
                         <th style={s.th}>Host</th>
                         <th style={s.th}>WhatsApp</th>
+                        <th style={s.th}>Last Contact</th>
                         <th style={s.th}>Enrolled</th>
                         <th style={s.th}>Days in Campaign</th>
                       </tr></thead>
@@ -2945,6 +2946,10 @@ export default function Campaigns() {
                           const enrolledDate = p.added_at ? new Date(p.added_at).toLocaleDateString('en-MY', { day:'numeric', month:'short' }) : '—'
                           // how many days this player has any entry (even non-qualifying)
                           const playerEntryDates = allDailyEntries.filter(e => e.player_id === p.id)
+                          const playerContacts = contacts[p.id] || []
+                          const lastContact = playerContacts[0]
+                          const TYPE_ICON = { daily:'📅', reward:'🎁', inactive:'💤' }
+                          const TYPE_LABEL = { daily:'Daily', reward:'Reward', inactive:'Inactive' }
                           return (
                             <tr key={p.id}>
                               <td style={{ ...s.td, color:'var(--muted)', fontSize:11 }}>{i+1}</td>
@@ -2952,6 +2957,41 @@ export default function Campaigns() {
                               <td style={s.td}>{p.tier ? <span style={{ ...s.badge, background:TIER_BG[p.tier]||'transparent', color:TIER_COLOR[p.tier]||'var(--muted)' }}>{p.tier}</span> : '—'}</td>
                               <td style={{ ...s.td, fontSize:12, color:'var(--muted)' }}>{p.host_assigned || '—'}</td>
                               <td style={{ ...s.td, fontSize:12 }}>{p.whatsapp || <span style={{ color:'var(--surface2)' }}>—</span>}</td>
+                              <td style={{ ...s.td, minWidth:110 }} onClick={e=>e.stopPropagation()}>
+                                {(() => {
+                                  let badge
+                                  if (lastContact) {
+                                    const days = Math.floor((Date.now() - new Date(lastContact.contacted_at).getTime()) / 86400000)
+                                    const col = days === 0 ? '#3fb950' : days <= 2 ? '#f59e0b' : '#f85149'
+                                    badge = <div style={{ fontSize:10, color:col, fontWeight:700, marginBottom:3 }}>
+                                      {TYPE_ICON[lastContact.contact_type]||'📞'} {days === 0 ? 'Today' : `${days}d ago`}
+                                      <span style={{ color:'var(--muted)', fontWeight:400, marginLeft:3 }}>{TYPE_LABEL[lastContact.contact_type]||lastContact.contact_type}</span>
+                                    </div>
+                                  } else {
+                                    badge = <div style={{ fontSize:10, color:'#f85149', fontWeight:700, marginBottom:3 }}>📞 Never</div>
+                                  }
+                                  return <>
+                                    {badge}
+                                    {contactLog === p.id ? (
+                                      <div style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:8, minWidth:160 }}>
+                                        <div style={{ fontSize:11, color:'var(--muted)', marginBottom:6, fontWeight:600 }}>Log contact:</div>
+                                        {[['daily','📅 Daily'],['reward','🎁 Reward'],['inactive','💤 Inactive']].map(([type,lbl])=>(
+                                          <button key={type} onClick={()=>logContact(p.id, type)}
+                                            style={{ display:'block', width:'100%', textAlign:'left', background:'none', border:'1px solid var(--border)', color:'var(--text)', borderRadius:5, padding:'4px 8px', fontSize:11, cursor:'pointer', marginBottom:3 }}>
+                                            {lbl}
+                                          </button>
+                                        ))}
+                                        <button onClick={()=>setContactLog(null)} style={{ background:'none', border:'none', color:'var(--muted)', fontSize:10, cursor:'pointer', marginTop:2 }}>✕ Cancel</button>
+                                      </div>
+                                    ) : (
+                                      <button onClick={()=>setContactLog(p.id)}
+                                        style={{ background:'rgba(88,166,255,.1)', color:'#58a6ff', border:'1px solid rgba(88,166,255,.25)', borderRadius:5, padding:'2px 7px', fontSize:10, cursor:'pointer', fontWeight:600 }}>
+                                        + Log
+                                      </button>
+                                    )}
+                                  </>
+                                })()}
+                              </td>
                               <td style={{ ...s.td, fontSize:11, color:'var(--muted)' }}>{enrolledDate}</td>
                               <td style={{ ...s.td, fontSize:12, color: playerEntryDates.length > 0 ? '#f59e0b' : '#f85149' }}>
                                 {playerEntryDates.length > 0 ? `${playerEntryDates.length} entries (0 qualifying)` : 'No entries at all'}
