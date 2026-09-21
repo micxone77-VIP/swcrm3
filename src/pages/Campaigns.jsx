@@ -2139,7 +2139,7 @@ export default function Campaigns() {
                 [t('campaigns.totalReward'),`${rewardFmt(totalReward, campCurrency)} ${deliveryInfo.label}`, typeInfo.color],
                 [t('campaigns.paidOut'),    rewardFmt(paidOut, campCurrency),    '#3fb950'],
                 [t('campaigns.pendingPay'), rewardFmt(pendingPay, campCurrency), '#f85149'],
-                [t('campaigns.successRate'),players.length?(selected?.is_multi_level?multiSummary.successRate:Math.round(achieved.length/players.length*100))+'%':'0%', '#3fb950'],
+                [t('campaigns.successRate'),players.length?(isDailyMode||!selected?.is_multi_level?Math.round(achieved.length/players.length*100):multiSummary.successRate)+'%':'0%', '#3fb950'],
               ].map(([l,v,c])=>( <div key={l}><div style={{ fontSize:16, fontWeight:800, color:c }}>{v}</div><div style={{ fontSize:10, color:'var(--muted)' }}>{l}</div></div> ))}
             </div>
 
@@ -2171,7 +2171,7 @@ export default function Campaigns() {
             <div style={{ display:'flex', borderBottom:'1px solid var(--border)', padding:'0 24px' }}>
               {[
                 ['chase',    `🏃 Chase List (${players.length})`],
-                ['payout',   `💰 Payout (${selected?.is_multi_level ? multiPayoutRows.length : achieved.length} rewards)`],
+                ['payout',   `💰 Payout (${isDailyMode ? dailyAchieved.length : selected?.is_multi_level ? multiPayoutRows.length : achieved.length} rewards)`],
                 ...(isDailyMode ? [['streak', `🔥 Streak${selected?.streak_enabled ? '' : ' (off)'}`]] : []),
                 ...(isDailyMode ? [['inactive', `😴 Inactive`]] : []),
                 ['register', '📋 All Players'],
@@ -3222,7 +3222,7 @@ export default function Campaigns() {
                         ? <div style={{ color:'var(--muted)', fontSize:12 }}>Loading streak bonuses…</div>
                         : allSRows.length === 0
                           ? <div style={{ background:'rgba(255,165,0,.06)', border:'1px solid rgba(245,158,11,.2)', borderRadius:8, padding:'14px 18px', fontSize:12, color:'#f59e0b' }}>
-                              🔥 Streak bonus is <strong>enabled</strong> for this campaign ({selected.streak_days} days · {selected.streak_bonus_type === 'percentage' ? `${selected.streak_bonus_pct}%` : rmFmt(selected.streak_bonus_fixed, campCurrency)} per streak). No bonuses awarded yet — keep logging daily entries to trigger streak milestones.
+                              🔥 Streak bonus is <strong>enabled</strong> for this campaign ({selected.streak_days} days · {selected.streak_bonus_type === 'pct' ? `${selected.streak_bonus_pct}%` : rmFmt(selected.streak_bonus_fixed, campCurrency)} per streak). No bonuses awarded yet — keep logging daily entries to trigger streak milestones.
                             </div>
                           : <>
                               <div style={{ display:'grid', gridTemplateColumns:'repeat(5,1fr)', gap:12, marginBottom:12 }}>
