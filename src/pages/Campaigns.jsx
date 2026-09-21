@@ -708,13 +708,29 @@ export default function Campaigns() {
   async function loadDailyEntries(campaignId, date) {
     setDailyLoading(true)
     const { data, error } = await supabase.from('daily_turnover_entries')
-      .select('player_id, deposit_amount, turnover_amount, tier_achieved, credit_reward, wcash_reward')
+      .select('player_id, deposit_amount, turnover_amount, tier_achieved, credit_reward, wcash_reward, payout_status, payout_date')
       .eq('campaign_id', campaignId).eq('entry_date', date)
     if (error) { console.error('loadDailyEntries error', error); setDailyEntries({}); setDailyLoading(false); return }
     const map = {}
     ;(data || []).forEach(e => { map[e.player_id] = e })
     setDailyEntries(map)
     setDailyLoading(false)
+  }
+
+  // Updates payout_status on the daily_turnover_entries row for the current date.
+  // This is the per-date payout toggle for daily-mode campaigns.
+  async function updateDailyPayout(playerId, newStatus) {
+    const newDate = newStatus === 'paid' ? new Date().toISOString() : null
+    const { error } = await supabase.from('daily_turnover_entries')
+      .update({ payout_status: newStatus, payout_date: newDate })
+      .eq('campaign_id', selected.id)
+      .eq('player_id', playerId)
+      .eq('entry_date', entryDate)
+    if (error) { console.error('updateDailyPayout error', error); return }
+    setDailyEntries(prev => ({
+      ...prev,
+      [playerId]: { ...(prev[playerId] || {}), payout_status: newStatus, payout_date: newDate }
+    }))
   }
 
   // Upserts a player's turnover for the currently-selected date only — every
@@ -2574,7 +2590,7 @@ export default function Campaigns() {
                       const lvlAchieved = isDailyMulti ? entry?.tier_achieved : null
                       const lvlObj = lvlAchieved != null ? campaignLevels.find(l=>l.level_order===lvlAchieved) : null
                       const lvlName = lvlObj ? (lvlObj.level_name || `Level ${lvlObj.level_order}`) : lvlAchieved != null ? `Level ${lvlAchieved}` : '—'
-                      const paid=p.payout_status==='paid'
+                      const paid = isDailyMode ? (dailyEntries[p.id]?.payout_status === 'paid') : (p.payout_status === 'paid')
                       const waAgent = p.host_assigned || null
                       const waTurnoverMult = selected?.turnover_multiplier ? Number(selected.turnover_multiplier) : null
                       const waTurnoverReq = waTurnoverMult && creditReward > 0 ? rmFmt(creditReward * waTurnoverMult, campCurrency) : null
@@ -2599,7 +2615,7 @@ export default function Campaigns() {
                             ? <span>{rmFmt(dualReward.creditAmount,campCurrency)} Credit<br/><span style={{fontSize:10,color:'var(--muted)'}}>+ {rmFmt(dualReward.wcashAmount,campCurrency)} WCash</span></span>
                             : rmFmt(creditReward,campCurrency)
                         }</td>
-                        <td style={s.td}><button onClick={()=>updatePlayer(p.id,{payout_status:paid?'pending':'paid',payout_date:paid?null:new Date().toISOString()})} style={{...s.tag(paid?'#3fb950':'#f59e0b',paid?'rgba(63,185,80,.15)':'rgba(245,158,11,.15)'),cursor:'pointer'}}>{paid?'✅ Paid':'⏳ Pending'}</button></td>
+                        <td style={s.td}><button onClick={()=> isDailyMode ? updateDailyPayout(p.id, paid?'pending':'paid') : updatePlayer(p.id,{payout_status:paid?'pending':'paid',payout_date:paid?null:new Date().toISOString()})} style={{...s.tag(paid?'#3fb950':'#f59e0b',paid?'rgba(63,185,80,.15)':'rgba(245,158,11,.15)'),cursor:'pointer'}}>{paid?'✅ Paid':'⏳ Pending'}</button></td>
                         <td style={{...s.td,fontSize:12,color:'var(--muted)',fontWeight:600}}>{p.host_assigned||<span style={{color:'var(--surface2)'}}>—</span>}</td>
                         <td style={{...s.td,minWidth:130}}>
                           <div style={{fontSize:12,color:'var(--muted)',marginBottom:4}}>{p.whatsapp||<span style={{color:'var(--surface2)'}}>—</span>}</div>
@@ -2622,7 +2638,7 @@ export default function Campaigns() {
                         }
                         return s + calcReward(campType, playerDeposit(p), rewardPct, rewardFixed, goldVal, rewardCap, rewardTiers, campaignLevels, selected?.is_multi_level)
                       }, 0)
-                      const paidCount = filteredPayoutList.filter(p=>p.payout_status==='paid').length
+                      const paidCount = filteredPayoutList.filter(p=> isDailyMode ? dailyEntries[p.id]?.payout_status==='paid' : p.payout_status==='paid').length
                       return (
                         <tr style={{ background:'var(--surface2)', fontWeight:700, borderTop:'2px solid var(--border)' }}>
                           <td colSpan={2} style={{ ...s.td, color:'var(--muted)', fontSize:12 }}>Total ({filteredPayoutList.length} players · {paidCount} paid)</td>
