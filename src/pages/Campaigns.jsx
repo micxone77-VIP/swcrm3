@@ -276,6 +276,8 @@ export default function Campaigns() {
   const [levelsLoading, setLevelsLoading] = useState(false)
   const [streakBonuses, setStreakBonuses] = useState({})   // map: campaign_player_id → [...rows]
   const [streakBonusesLoading, setStreakBonusesLoading] = useState(false)
+  const [contacts, setContacts] = useState({})             // map: campaign_player_id → [...rows]
+  const [contactLog, setContactLog] = useState(null)       // player_id of open log popup, or null
   const [waPopup, setWaPopup] = useState(null)  // { rawNumber, message } — editable before opening WA
   const [waCopied, setWaCopied] = useState(false)
   // All daily entries for streak/inactive tabs — loaded on demand
@@ -368,9 +370,11 @@ export default function Campaigns() {
       loadCampaignLevels(selected.id)
       if (selected.streak_enabled) loadStreakBonuses(selected.id)
       else setStreakBonuses({})
+      loadContacts(selected.id)
     } else {
       setCampaignLevels([])
       setStreakBonuses({})
+      setContacts({})
     }
   }, [selected?.id])
 
@@ -706,7 +710,7 @@ export default function Campaigns() {
     await loadCampaigns()
   }
 
-  function closeModal() { setModal(null); setSelected(null); setPlayers([]); setCampaignPlayerLevels([]); setCampaignRewards([]); setVipSearch(''); setVipResults([]); setEditingCamp(false); setAiAnalysis(null); setDailyEntries({}); setEntryDate(''); setStreakBonuses({}); setStreakBonusesLoading(false) }
+  function closeModal() { setModal(null); setSelected(null); setPlayers([]); setCampaignPlayerLevels([]); setCampaignRewards([]); setVipSearch(''); setVipResults([]); setEditingCamp(false); setAiAnalysis(null); setDailyEntries({}); setEntryDate(''); setStreakBonuses({}); setStreakBonusesLoading(false); setContacts({}); setContactLog(null) }
 
   async function loadDailyEntries(campaignId, date) {
     setDailyLoading(true)
@@ -784,6 +788,36 @@ export default function Campaigns() {
     }
     setStreakBonuses(map)
     setStreakBonusesLoading(false)
+  }
+
+  // ── Contact log ─────────────────────────────────────────────────────────────
+  async function loadContacts(campId) {
+    const { data, error } = await supabase
+      .from('campaign_player_contacts')
+      .select('*')
+      .eq('campaign_id', campId)
+      .order('contacted_at', { ascending: false })
+    if (error) { console.error('loadContacts error', error); return }
+    const map = {}
+    for (const r of (data || [])) {
+      if (!map[r.campaign_player_id]) map[r.campaign_player_id] = []
+      map[r.campaign_player_id].push(r)
+    }
+    setContacts(map)
+  }
+
+  async function logContact(playerId, type, note = '') {
+    const { error } = await supabase.from('campaign_player_contacts').insert({
+      campaign_id: selected.id,
+      campaign_player_id: playerId,
+      contacted_at: new Date().toISOString(),
+      contact_type: type,
+      host: user?.email || null,
+      notes: note || null,
+    })
+    if (error) { console.error('logContact error', error); return }
+    setContactLog(null)
+    await loadContacts(selected.id)
   }
 
   // Load ALL daily entries for the campaign (used by Streak + Inactive tabs)
@@ -2362,7 +2396,7 @@ export default function Campaigns() {
                       <th style={s.th}>{campType==='dual_tier' ? 'Deposit / Turnover (RM)' : 'Campaign Deposit (RM)'}</th>
                       <th style={s.th}>Progress</th>
                       <th style={s.th}>Reward</th>
-                      <th style={s.th}>Contact</th>
+                      <th style={s.th}>Last Contact</th>
                       <th style={s.th}>Priority</th>
                       <th style={s.th}>✕</th>
                     </tr></thead>
@@ -2517,7 +2551,45 @@ export default function Campaigns() {
                                       ? <span>{rmFmt(dualReward.creditAmount, campCurrency)} Credit<br/><span style={{fontSize:10,color:'var(--muted)'}}>+ {rmFmt(dualReward.wcashAmount, campCurrency)} WCash</span></span>
                                       : rmFmt(reward, campCurrency)}
                                 </td>
-                                <td style={s.td}><CampaignWaButton p={p} /></td>
+                                <td style={{ ...s.td, minWidth:110 }} onClick={e=>e.stopPropagation()}>
+                                  {(() => {
+                                    const playerContacts = contacts[p.id] || []
+                                    const last = playerContacts[0]
+                                    const TYPE_ICON = { daily:'📅', reward:'🎁', inactive:'💤' }
+                                    const TYPE_LABEL = { daily:'Daily', reward:'Reward', inactive:'Inactive' }
+                                    let badge = null
+                                    if (last) {
+                                      const days = Math.floor((Date.now() - new Date(last.contacted_at).getTime()) / 86400000)
+                                      const col = days === 0 ? '#3fb950' : days <= 2 ? '#f59e0b' : '#f85149'
+                                      badge = <div style={{ fontSize:10, color:col, fontWeight:700, marginBottom:3 }}>
+                                        {TYPE_ICON[last.contact_type]||'📞'} {days === 0 ? 'Today' : `${days}d ago`}
+                                        <span style={{ color:'var(--muted)', fontWeight:400, marginLeft:3 }}>{TYPE_LABEL[last.contact_type]||last.contact_type}</span>
+                                      </div>
+                                    } else {
+                                      badge = <div style={{ fontSize:10, color:'#f85149', fontWeight:700, marginBottom:3 }}>📞 Never</div>
+                                    }
+                                    return <>
+                                      {badge}
+                                      {contactLog === p.id ? (
+                                        <div style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:8, minWidth:160 }}>
+                                          <div style={{ fontSize:11, color:'var(--muted)', marginBottom:6, fontWeight:600 }}>Log contact:</div>
+                                          {[['daily','📅 Daily'],['reward','🎁 Reward'],['inactive','💤 Inactive']].map(([type,lbl])=>(
+                                            <button key={type} onClick={()=>logContact(p.id, type)}
+                                              style={{ display:'block', width:'100%', textAlign:'left', background:'none', border:'1px solid var(--border)', color:'var(--text)', borderRadius:5, padding:'4px 8px', fontSize:11, cursor:'pointer', marginBottom:3 }}>
+                                              {lbl}
+                                            </button>
+                                          ))}
+                                          <button onClick={()=>setContactLog(null)} style={{ background:'none', border:'none', color:'var(--muted)', fontSize:10, cursor:'pointer', marginTop:2 }}>✕ Cancel</button>
+                                        </div>
+                                      ) : (
+                                        <button onClick={()=>setContactLog(p.id)}
+                                          style={{ background:'rgba(88,166,255,.1)', color:'#58a6ff', border:'1px solid rgba(88,166,255,.25)', borderRadius:5, padding:'2px 7px', fontSize:10, cursor:'pointer', fontWeight:600 }}>
+                                          + Log
+                                        </button>
+                                      )}
+                                    </>
+                                  })()}
+                                </td>
                                 <td style={s.td}><span style={{ ...s.tag(pr.color, pr.bg), fontSize:10 }}>{pr.label}</span></td>
                                 <td style={s.td} onClick={e=>e.stopPropagation()}>
                                   <button onClick={()=>removePlayer(p.id)} style={{ background:'none', border:'1px solid rgba(248,81,73,.3)', color:'#f85149', padding:'2px 8px', borderRadius:5, fontSize:11, cursor:'pointer' }}>✕</button>
@@ -2628,6 +2700,7 @@ export default function Campaigns() {
                       <th style={s.th}>{isDailyMode&&campType==='dual_tier'&&!selected?.is_multi_level?'Deposit / Turnover (this date)':isDailyMode?'Deposit (this date)':'Deposit'}</th>
                       <th style={s.th}>Reward</th>
                       <th style={s.th}>Payout Status</th>
+                      <th style={s.th}>Last Contact</th>
                       <th style={s.th}>Host</th>
                       <th style={s.th}>Phone / WA</th>
                       <th style={s.th}>Notes</th>
@@ -2677,6 +2750,45 @@ export default function Campaigns() {
                           {selected?.streak_enabled && pendingStreakBonus > 0 && (
                             <div style={{ marginTop:3, fontSize:10, color:'#f59e0b', fontWeight:700, whiteSpace:'nowrap' }}>🔥 +{rmFmt(pendingStreakBonus, campCurrency)} streak</div>
                           )}
+                        </td>
+                        <td style={{ ...s.td, minWidth:110 }} onClick={e=>e.stopPropagation()}>
+                          {(() => {
+                            const playerContacts = contacts[p.id] || []
+                            const last = playerContacts[0]
+                            const TYPE_ICON = { daily:'📅', reward:'🎁', inactive:'💤' }
+                            const TYPE_LABEL = { daily:'Daily', reward:'Reward', inactive:'Inactive' }
+                            let badge = null
+                            if (last) {
+                              const days = Math.floor((Date.now() - new Date(last.contacted_at).getTime()) / 86400000)
+                              const col = days === 0 ? '#3fb950' : days <= 2 ? '#f59e0b' : '#f85149'
+                              badge = <div style={{ fontSize:10, color:col, fontWeight:700, marginBottom:3 }}>
+                                {TYPE_ICON[last.contact_type]||'📞'} {days === 0 ? 'Today' : `${days}d ago`}
+                                <span style={{ color:'var(--muted)', fontWeight:400, marginLeft:3 }}>{TYPE_LABEL[last.contact_type]||last.contact_type}</span>
+                              </div>
+                            } else {
+                              badge = <div style={{ fontSize:10, color:'#f85149', fontWeight:700, marginBottom:3 }}>📞 Never</div>
+                            }
+                            return <>
+                              {badge}
+                              {contactLog === p.id ? (
+                                <div style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:8, minWidth:160 }}>
+                                  <div style={{ fontSize:11, color:'var(--muted)', marginBottom:6, fontWeight:600 }}>Log contact:</div>
+                                  {[['daily','📅 Daily'],['reward','🎁 Reward'],['inactive','💤 Inactive']].map(([type,lbl])=>(
+                                    <button key={type} onClick={()=>logContact(p.id, type)}
+                                      style={{ display:'block', width:'100%', textAlign:'left', background:'none', border:'1px solid var(--border)', color:'var(--text)', borderRadius:5, padding:'4px 8px', fontSize:11, cursor:'pointer', marginBottom:3 }}>
+                                      {lbl}
+                                    </button>
+                                  ))}
+                                  <button onClick={()=>setContactLog(null)} style={{ background:'none', border:'none', color:'var(--muted)', fontSize:10, cursor:'pointer', marginTop:2 }}>✕ Cancel</button>
+                                </div>
+                              ) : (
+                                <button onClick={()=>setContactLog(p.id)}
+                                  style={{ background:'rgba(88,166,255,.1)', color:'#58a6ff', border:'1px solid rgba(88,166,255,.25)', borderRadius:5, padding:'2px 7px', fontSize:10, cursor:'pointer', fontWeight:600 }}>
+                                  + Log
+                                </button>
+                              )}
+                            </>
+                          })()}
                         </td>
                         <td style={{...s.td,fontSize:12,color:'var(--muted)',fontWeight:600}}>{p.host_assigned||<span style={{color:'var(--surface2)'}}>—</span>}</td>
                         <td style={{...s.td,minWidth:130}}>
