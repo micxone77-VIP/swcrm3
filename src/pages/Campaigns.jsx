@@ -876,18 +876,18 @@ export default function Campaigns() {
     const totalComplete = Math.floor(activeRun.length / streakDays)
     if (totalComplete === 0) return
 
-    // Check what's already been awarded
+    // Check what's already been awarded (fetch id + bonus_amount + status too for update logic)
     const { data: existing, error: existingErr } = await supabase
       .from('campaign_streak_bonuses')
-      .select('streak_number')
+      .select('id, streak_number, bonus_amount, payout_status')
       .eq('campaign_id', selected.id)
       .eq('campaign_player_id', playerId)
     if (existingErr) { console.error('streak bonus fetch error', existingErr); return }
-    const awardedNums = new Set((existing || []).map(r => r.streak_number))
+    const awardedMap = {}
+    for (const r of (existing || [])) awardedMap[r.streak_number] = r
 
-    // Award any missing streaks
+    // Award missing streaks; update bonus_amount on pending records if cap changed
     for (let sn = 1; sn <= totalComplete; sn++) {
-      if (awardedNums.has(sn)) continue
       const startIdx = (sn - 1) * streakDays
       const periodDates = activeRun.slice(startIdx, startIdx + streakDays)
       const periodStart = periodDates[0]
@@ -915,6 +915,18 @@ export default function Campaigns() {
       const endDt = new Date(periodEnd + 'T00:00:00Z')
       endDt.setUTCDate(endDt.getUTCDate() + 1)
       const payoutDate = endDt.toISOString().slice(0, 10)
+
+      const existingRec = awardedMap[sn]
+      if (existingRec) {
+        // Already awarded — update bonus_amount only if it changed AND status is still pending
+        if (existingRec.payout_status === 'pending' && existingRec.bonus_amount !== bonusAmount) {
+          const { error: upErr } = await supabase.from('campaign_streak_bonuses')
+            .update({ bonus_amount: bonusAmount })
+            .eq('id', existingRec.id)
+          if (upErr) console.error('streak bonus update error', upErr)
+        }
+        continue
+      }
 
       const { error: insertErr } = await supabase.from('campaign_streak_bonuses').insert({
         campaign_id: selected.id,
