@@ -2156,7 +2156,7 @@ export default function Campaigns() {
                     ['my', '🇲🇾 Malay', 'payout_template_my', `Hi {username}! 🎉 Saya {agent} dari Pasukan SureWin VIP.\nHadiah kempen "{campaign}" sebanyak {reward} Kredit telah dikreditkan ke akaun anda. Sila semak baki anda!\n\n⚠️ Turnover sebanyak {turnover} diperlukan sebelum pengeluaran boleh dibuat.`],
                     ['cn', '🇨🇳 中文', 'payout_template_cn', `你好 {username}！🎉我是SureWin VIP部门的{agent}\n你的"{campaign}"奖励 {reward} 积分已成功存入你的账户，请查看余额！\n\n⚠️ 温馨提示：领取奖励后需完成 {turnover} 的流水要求，方可申请提款。`],
                   ].map(([lang, label, field, placeholder]) => {
-                    const tpl = editCampForm[field] || ''
+                    const tpl = editCampForm[field] ?? ''
                     const sampleAgent = 'Marcus'
                     const sampleReward = 'RM 800'
                     const sampleTurnover = editCampForm.turnover_multiplier ? `RM ${800 * Number(editCampForm.turnover_multiplier)}` : 'RM 2400'
@@ -2172,9 +2172,8 @@ export default function Campaigns() {
                           <textarea
                             style={{ ...s.fta, width:'100%', fontFamily:'monospace', fontSize:12 }}
                             rows={5}
-                            value={tpl}
+                            value={tpl !== '' ? tpl : placeholder}
                             onChange={e=>setEditCampForm(f=>({...f,[field]:e.target.value}))}
-                            placeholder={placeholder}
                           />
                           <div style={{ background:'rgba(37,211,102,.06)', border:'1px solid rgba(37,211,102,.2)', borderRadius:8, padding:'10px 12px', fontSize:12, color:'var(--text)', whiteSpace:'pre-wrap', lineHeight:1.6 }}>
                             <div style={{ fontSize:10, color:'#25d366', fontWeight:700, marginBottom:6 }}>👁 Preview</div>
