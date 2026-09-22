@@ -2590,10 +2590,23 @@ export default function Campaigns() {
                                           <button onClick={()=>setContactLog(null)} style={{ background:'none', border:'none', color:'var(--muted)', fontSize:10, cursor:'pointer', marginTop:2 }}>✕ Cancel</button>
                                         </div>
                                       ) : (
-                                        <button onClick={()=>setContactLog(p.id)}
-                                          style={{ background:'rgba(88,166,255,.1)', color:'#58a6ff', border:'1px solid rgba(88,166,255,.25)', borderRadius:5, padding:'2px 7px', fontSize:10, cursor:'pointer', fontWeight:600 }}>
-                                          + Log
-                                        </button>
+                                        <div style={{ display:'flex', gap:4, alignItems:'center', flexWrap:'wrap' }}>
+                                          <button onClick={()=>setContactLog(p.id)}
+                                            style={{ background:'rgba(88,166,255,.1)', color:'#58a6ff', border:'1px solid rgba(88,166,255,.25)', borderRadius:5, padding:'2px 7px', fontSize:10, cursor:'pointer', fontWeight:600 }}>
+                                            + Log
+                                          </button>
+                                          {p.whatsapp && (() => {
+                                            const chaseReward = multi
+                                              ? (isDailyMode ? rmFmt(dailyEntry?.credit_reward||0, campCurrency) : rmFmt(multiMetric?.qualifiedRewardTotal||0, campCurrency))
+                                              : campType==='dual_tier' ? rmFmt((dualReward?.creditAmount||0)+(dualReward?.wcashAmount||0), campCurrency)
+                                              : rmFmt(calcReward(campType,playerDeposit(p),rewardPct,rewardFixed,goldVal,rewardCap,rewardTiers,campaignLevels,selected?.is_multi_level), campCurrency)
+                                            const chaseWaUrl = waHref(p.whatsapp, buildWaMsg(p.username, selected?.campaign_name||'Campaign', chaseReward, waLang, p.host_assigned||null, null, selected))
+                                            return <a href={chaseWaUrl} target="_blank" rel="noopener noreferrer"
+                                              style={{ background:'rgba(37,211,102,.1)', color:'#25d366', border:'1px solid rgba(37,211,102,.25)', borderRadius:5, padding:'2px 7px', fontSize:10, cursor:'pointer', fontWeight:600, textDecoration:'none' }}>
+                                              📱 WA
+                                            </a>
+                                          })()}
+                                        </div>
                                       )}
                                     </>
                                   })()}
