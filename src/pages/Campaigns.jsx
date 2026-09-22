@@ -2710,9 +2710,8 @@ export default function Campaigns() {
                           const dep = isDailyMode ? (parseFloat(entry?.deposit_amount)||0) : playerDeposit(p)
                           let rewardAmt = ''
                           if (isDailyMode && selected?.is_multi_level) {
-                            const metric = buildMultiLevelPlayerMetrics(p, safeLevels, campaignPlayerLevels)
-                            const total = metric?.qualifiedRewardTotal || 0
-                            rewardAmt = total > 0 ? `RM ${total.toLocaleString('en-MY')} Credit` : ''
+                            const cr = parseFloat(entry?.credit_reward)||0
+                            rewardAmt = cr > 0 ? `RM ${cr.toLocaleString('en-MY')} Credit` : ''
                           } else if (isDailyMode && campType === 'dual_tier') {
                             // Recalculate from entry deposit+turnover — same logic as payout table
                             const r = calcDualTierReward(entry?.deposit_amount||0, entry?.turnover_amount||0, safeTiers)
