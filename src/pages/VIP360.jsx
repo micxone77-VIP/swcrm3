@@ -119,7 +119,7 @@ supabase.from('profiles').select('full_name').in('role',['admin','host']).order(
 ])
 if (vipRes.error) throw vipRes.error
 setVip(vipRes.data)
-setEditForm({ host_assigned: vipRes.data.host_assigned||'', tier: vipRes.data.tier||'', activity_status: vipRes.data.activity_status||'', phone: vipRes.data.phone||'', whatsapp: vipRes.data.whatsapp||'', email: vipRes.data.email||'', telegram: vipRes.data.telegram||'', address: vipRes.data.address||'', special_requests: vipRes.data.special_requests||'', churn_risk: vipRes.data.churn_risk||'' })
+setEditForm({ full_name: vipRes.data.full_name||'', birthday: vipRes.data.birthday||'', host_assigned: vipRes.data.host_assigned||'', tier: vipRes.data.tier||'', activity_status: vipRes.data.activity_status||'', phone: vipRes.data.phone||'', whatsapp: vipRes.data.whatsapp||'', email: vipRes.data.email||'', telegram: vipRes.data.telegram||'', churn_risk: vipRes.data.churn_risk||'', address: vipRes.data.address||'', special_requests: vipRes.data.special_requests||'', notes: vipRes.data.notes||'' })
 setMonthly(montRes.data || [])
 setDaily(dailyRes.data || [])
 setContacts(contRes.data || [])
@@ -194,8 +194,6 @@ setEditSaving(true)
 const clean = Object.fromEntries(
 Object.entries(editForm).map(([k, v]) => [k, v === '' ? null : v])
 )
-// vip_tier enum requires uppercase — normalise regardless of dropdown display value
-if (clean.tier) clean.tier = clean.tier.toUpperCase()
 const { error: err } = await supabase.from('vip_members').update(clean).eq('id', id)
 setEditSaving(false)
 if (err) { toast('Error: ' + err.message, 'error'); return }
@@ -208,8 +206,8 @@ async function getAIInsight() {
 setAiLoading(true)
 try {
 const summary = `VIP: ${vip.full_name||vip.username}, Tier: ${vip.tier}, Risk: ${vip.churn_risk}, Days inactive: ${daysInactive}, Total deposit: ${formatMoney(vip.total_deposit, vip.currency)}. Last 3 months deposits: ${periodMonthly.slice(0,3).map(m=>formatMoney(m.total_deposit,vip.currency)).join(', ')}.`
-const result = await callAI('chat', { question: `Analyze this VIP player and provide a brief insight with recommended action: ${summary}`, history: [] })
-setAiInsight(result.answer || 'No insight generated.')
+const result = await callAI(`Analyze this VIP player and provide a brief insight with recommended action: ${summary}`)
+setAiInsight(result)
 } catch(e) { toast(t('vip360.aiUnavailable'), 'error') }
 setAiLoading(false)
 }
@@ -734,9 +732,19 @@ AI insights are labeled and separate from confirmed CRM data.
 <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
 <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
 <div>
+<label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>Full Name</label>
+<Input value={editForm.full_name||''} onChange={e => setEditForm(f=>({...f,full_name:e.target.value}))} placeholder="Real name" />
+</div>
+<div>
+<label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>Birthday</label>
+<Input type="date" value={editForm.birthday||''} onChange={e => setEditForm(f=>({...f,birthday:e.target.value}))} />
+</div>
+</div>
+<div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
+<div>
 <label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>Tier</label>
 <Select value={editForm.tier} onChange={e => setEditForm(f=>({...f,tier:e.target.value}))} style={{ width:'100%' }}>
-{TIERS.map(t => <option key={t} value={t}>{t.charAt(0) + t.slice(1).toLowerCase()}</option>)}
+{TIERS.map(t => <option key={t} value={t}>{t}</option>)}
 </Select>
 </div>
 <div>
@@ -788,6 +796,10 @@ AI insights are labeled and separate from confirmed CRM data.
 <div>
 <label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>Remark</label>
 <Textarea value={editForm.special_requests||''} onChange={e => setEditForm(f=>({...f,special_requests:e.target.value}))} rows={2} />
+</div>
+<div>
+<label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>Internal Notes</label>
+<Textarea value={editForm.notes||''} onChange={e => setEditForm(f=>({...f,notes:e.target.value}))} rows={3} />
 </div>
 <div style={{ display:'flex', gap:8, justifyContent:'flex-end' }}>
 <Btn variant="ghost" onClick={() => setShowEdit(false)}>Cancel</Btn>
