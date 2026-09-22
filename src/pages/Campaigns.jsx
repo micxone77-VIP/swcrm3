@@ -2713,6 +2713,10 @@ export default function Campaigns() {
                             const metric = buildMultiLevelPlayerMetrics(p, safeLevels, campaignPlayerLevels)
                             const total = metric?.qualifiedRewardTotal || 0
                             rewardAmt = total > 0 ? `RM ${total.toLocaleString('en-MY')} Credit` : ''
+                          } else if (isDailyMode && campType === 'dual_tier') {
+                            // Recalculate from entry deposit+turnover — same logic as payout table
+                            const r = calcDualTierReward(entry?.deposit_amount||0, entry?.turnover_amount||0, safeTiers)
+                            rewardAmt = [r.creditAmount>0&&`RM ${r.creditAmount.toLocaleString('en-MY')} Credit`, r.wcashAmount>0&&`RM ${r.wcashAmount.toLocaleString('en-MY')} WCash`].filter(Boolean).join(' + ')
                           } else if (isDailyMode) {
                             const cr = parseFloat(entry?.credit_reward)||0
                             const wr = parseFloat(entry?.wcash_reward)||0
