@@ -2700,31 +2700,52 @@ export default function Campaigns() {
                     ))}
                     <span style={{ marginLeft:'auto', fontSize:11, color:'var(--muted)' }}>{filteredPayoutList.length} of {(isDailyMode?dailyAchieved:achieved).length} players</span>
                     <button onClick={() => {
-                      const campName = selected?.campaign_name || 'Campaign'
-                      const dateStr = isDailyMode && entryDate ? entryDate : new Date().toLocaleDateString('en-MY',{day:'numeric',month:'short',year:'numeric'})
-                      const lines = filteredPayoutList.map(p => {
-                        const entry = isDailyMode ? dailyEntries[p.id] : null
-                        const dep = isDailyMode ? (parseFloat(entry?.deposit_amount)||0) : playerDeposit(p)
-                        let rewardAmt = ''
-                        if (isDailyMode && selected?.is_multi_level) {
-                          const metric = buildMultiLevelPlayerMetrics(p.id, dailyEntries, campaignLevels)
-                          rewardAmt = metric?.totalCreditReward > 0 ? `RM ${metric.totalCreditReward.toLocaleString('en-MY')} Credit` : ''
-                        } else if (isDailyMode) {
-                          const cr = parseFloat(entry?.credit_reward)||0
-                          const wr = parseFloat(entry?.wcash_reward)||0
-                          rewardAmt = [cr>0&&`RM ${cr.toLocaleString('en-MY')} Credit`, wr>0&&`RM ${wr.toLocaleString('en-MY')} WCash`].filter(Boolean).join(' + ')
-                        } else {
-                          const r = calcReward(campType,dep,rewardPct,rewardFixed,goldVal,rewardCap,rewardTiers,campaignLevels,selected?.is_multi_level)
-                          rewardAmt = rewardFmt(r, campCurrency)
+                      try {
+                        const campName = selected?.campaign_name || 'Campaign'
+                        const dateStr = isDailyMode && entryDate ? entryDate : new Date().toLocaleDateString('en-MY',{day:'numeric',month:'short',year:'numeric'})
+                        const safeTiers = rewardTiers || []
+                        const safeLevels = campaignLevels || []
+                        const lines = filteredPayoutList.map(p => {
+                          const entry = isDailyMode ? dailyEntries[p.id] : null
+                          const dep = isDailyMode ? (parseFloat(entry?.deposit_amount)||0) : playerDeposit(p)
+                          let rewardAmt = ''
+                          if (isDailyMode && selected?.is_multi_level) {
+                            const metric = buildMultiLevelPlayerMetrics(p, safeLevels, campaignPlayerLevels)
+                            const total = metric?.qualifiedRewardTotal || 0
+                            rewardAmt = total > 0 ? `RM ${total.toLocaleString('en-MY')} Credit` : ''
+                          } else if (isDailyMode) {
+                            const cr = parseFloat(entry?.credit_reward)||0
+                            const wr = parseFloat(entry?.wcash_reward)||0
+                            rewardAmt = [cr>0&&`RM ${cr.toLocaleString('en-MY')} Credit`, wr>0&&`RM ${wr.toLocaleString('en-MY')} WCash`].filter(Boolean).join(' + ')
+                          } else if (campType === 'dual_tier') {
+                            const r = calcDualTierReward(dep, p.valid_bet, safeTiers)
+                            rewardAmt = [r.creditAmount>0&&`RM ${r.creditAmount.toLocaleString('en-MY')} Credit`, r.wcashAmount>0&&`RM ${r.wcashAmount.toLocaleString('en-MY')} WCash`].filter(Boolean).join(' + ')
+                          } else {
+                            const r = calcReward(campType, dep, rewardPct, rewardFixed, goldVal, rewardCap, safeTiers, safeLevels, selected?.is_multi_level)
+                            rewardAmt = rewardFmt(r, campCurrency)
+                          }
+                          return `${p.username} - ${rewardAmt}`
+                        })
+                        // Pending streak bonuses (all players, not just payout list)
+                        const streakLines = []
+                        for (const p of players) {
+                          const pending = (streakBonuses[p.id] || []).filter(sb => sb.payout_status !== 'paid')
+                          for (const sb of pending) {
+                            const amt = parseFloat(sb.bonus_amount) || 0
+                            streakLines.push(`${p.username} - Streak #${sb.streak_number}: RM ${amt.toLocaleString('en-MY',{minimumFractionDigits:2,maximumFractionDigits:2})}`)
+                          }
                         }
-                        return `${p.username} - ${rewardAmt}`
-                      })
-                      const text = `${campName}\n${dateStr}\n\n${lines.join('\n')}`
-                      navigator.clipboard.writeText(text).catch(()=>{})
-                      const el = document.createElement('a')
-                      el.href = 'data:text/plain;charset=utf-8,' + encodeURIComponent(text)
-                      el.download = `payout_${campName.replace(/\s+/g,'_')}_${dateStr.replace(/\s+/g,'_')}.txt`
-                      el.click()
+                        let text = `${campName}\n${dateStr}\n\n${lines.join('\n')}`
+                        if (streakLines.length > 0) text += `\n\n--- Pending Streak Bonuses ---\n${streakLines.join('\n')}`
+                        navigator.clipboard.writeText(text).catch(()=>{})
+                        const el = document.createElement('a')
+                        el.href = 'data:text/plain;charset=utf-8,' + encodeURIComponent(text)
+                        el.download = `payout_${campName.replace(/\s+/g,'_')}_${dateStr.replace(/\s+/g,'_')}.txt`
+                        el.click()
+                      } catch(err) {
+                        console.error('Export error:', err)
+                        alert('Export failed: ' + err.message)
+                      }
                     }} style={{ background:'var(--surface2)', border:'1px solid var(--border)', color:'var(--text)', padding:'4px 12px', borderRadius:6, fontSize:11, cursor:'pointer', whiteSpace:'nowrap' }}>
                       ⬇ Export
                     </button>
