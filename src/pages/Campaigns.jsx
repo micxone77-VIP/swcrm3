@@ -2716,7 +2716,20 @@ export default function Campaigns() {
                           } else if (isDailyMode && campType === 'dual_tier') {
                             // Recalculate from entry deposit+turnover — same logic as payout table
                             const r = calcDualTierReward(entry?.deposit_amount||0, entry?.turnover_amount||0, safeTiers)
-                            rewardAmt = [r.creditAmount>0&&`RM ${r.creditAmount.toLocaleString('en-MY')} Credit`, r.wcashAmount>0&&`RM ${r.wcashAmount.toLocaleString('en-MY')} WCash`].filter(Boolean).join(' + ')
+                            let credit = r.creditAmount
+                            let wcash = r.wcashAmount
+                            // If recalc gives 0 (missing tier config), try stored values
+                            if (credit === 0 && wcash === 0) {
+                              credit = parseFloat(entry?.credit_reward)||0
+                              wcash = parseFloat(entry?.wcash_reward)||0
+                            }
+                            rewardAmt = [credit>0&&`RM ${credit.toLocaleString('en-MY')} Credit`, wcash>0&&`RM ${wcash.toLocaleString('en-MY')} WCash`].filter(Boolean).join(' + ')
+                            // Last resort: show deposit/turnover so export isn't blank
+                            if (!rewardAmt) {
+                              const dep2 = parseFloat(entry?.deposit_amount)||0
+                              const to2 = parseFloat(entry?.turnover_amount)||0
+                              if (dep2 > 0) rewardAmt = `Dep RM ${dep2.toLocaleString('en-MY')}${to2>0?' / TO RM '+to2.toLocaleString('en-MY'):''} (pending tier calc)`
+                            }
                           } else if (isDailyMode) {
                             const cr = parseFloat(entry?.credit_reward)||0
                             const wr = parseFloat(entry?.wcash_reward)||0
