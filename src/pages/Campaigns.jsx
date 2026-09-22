@@ -820,7 +820,7 @@ export default function Campaigns() {
       campaign_player_id: playerId,
       contacted_at: new Date().toISOString(),
       contact_type: type,
-      host: user?.email || null,
+      host: profile?.email || null,
       notes: note || null,
     })
     if (error) { console.error('logContact error', error); return }
