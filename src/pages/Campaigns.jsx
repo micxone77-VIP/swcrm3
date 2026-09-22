@@ -2699,6 +2699,35 @@ export default function Campaigns() {
                       </button>
                     ))}
                     <span style={{ marginLeft:'auto', fontSize:11, color:'var(--muted)' }}>{filteredPayoutList.length} of {(isDailyMode?dailyAchieved:achieved).length} players</span>
+                    <button onClick={() => {
+                      const campName = selected?.campaign_name || 'Campaign'
+                      const dateStr = isDailyMode && entryDate ? entryDate : new Date().toLocaleDateString('en-MY',{day:'numeric',month:'short',year:'numeric'})
+                      const lines = filteredPayoutList.map(p => {
+                        const entry = isDailyMode ? dailyEntries[p.id] : null
+                        const dep = isDailyMode ? (parseFloat(entry?.deposit_amount)||0) : playerDeposit(p)
+                        let rewardAmt = ''
+                        if (isDailyMode && selected?.is_multi_level) {
+                          const metric = buildMultiLevelPlayerMetrics(p.id, dailyEntries, campaignLevels)
+                          rewardAmt = metric?.totalCreditReward > 0 ? `RM ${metric.totalCreditReward.toLocaleString('en-MY')} Credit` : ''
+                        } else if (isDailyMode) {
+                          const cr = parseFloat(entry?.credit_reward)||0
+                          const wr = parseFloat(entry?.wcash_reward)||0
+                          rewardAmt = [cr>0&&`RM ${cr.toLocaleString('en-MY')} Credit`, wr>0&&`RM ${wr.toLocaleString('en-MY')} WCash`].filter(Boolean).join(' + ')
+                        } else {
+                          const r = calcReward(campType,dep,rewardPct,rewardFixed,goldVal,rewardCap,rewardTiers,campaignLevels,selected?.is_multi_level)
+                          rewardAmt = rewardFmt(r, campCurrency)
+                        }
+                        return `${p.username} - ${rewardAmt}`
+                      })
+                      const text = `${campName}\n${dateStr}\n\n${lines.join('\n')}`
+                      navigator.clipboard.writeText(text).catch(()=>{})
+                      const el = document.createElement('a')
+                      el.href = 'data:text/plain;charset=utf-8,' + encodeURIComponent(text)
+                      el.download = `payout_${campName.replace(/\s+/g,'_')}_${dateStr.replace(/\s+/g,'_')}.txt`
+                      el.click()
+                    }} style={{ background:'var(--surface2)', border:'1px solid var(--border)', color:'var(--text)', padding:'4px 12px', borderRadius:6, fontSize:11, cursor:'pointer', whiteSpace:'nowrap' }}>
+                      ⬇ Export
+                    </button>
                   </div>
                   <table style={s.tbl}>
                     <thead><tr>
