@@ -2285,6 +2285,14 @@ export default function Campaigns() {
                       {lbl} {chaseSort===key ? (chaseSortDir==='asc' ? '↑' : '↓') : ''}
                     </button>
                   ))}
+                  <span style={{ fontSize:11, color:'var(--muted)', marginLeft:4 }}>WA:</span>
+                  {[['en','EN'],['my','MY'],['cn','中文']].map(([key,lbl])=>(
+                    <button key={key} onClick={()=>setWaLang(key)}
+                      style={{ padding:'3px 10px', borderRadius:14, fontSize:11, fontWeight:700, border:'1px solid var(--border)', cursor:'pointer',
+                        background: waLang===key ? '#25d366' : 'var(--surface2)', color: waLang===key ? '#fff' : 'var(--muted)' }}>
+                      {lbl}
+                    </button>
+                  ))}
                   <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:8 }}>
                     {campType !== 'leaderboard' && (
                       <button
