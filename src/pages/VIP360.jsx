@@ -119,7 +119,7 @@ supabase.from('profiles').select('full_name').in('role',['admin','host']).order(
 ])
 if (vipRes.error) throw vipRes.error
 setVip(vipRes.data)
-setEditForm({ full_name: vipRes.data.full_name||'', birthday: vipRes.data.birthday||'', host_assigned: vipRes.data.host_assigned||'', tier: vipRes.data.tier||'', activity_status: vipRes.data.activity_status||'', phone: vipRes.data.phone||'', whatsapp: vipRes.data.whatsapp||'', email: vipRes.data.email||'', telegram: vipRes.data.telegram||'', churn_risk: vipRes.data.churn_risk||'', address: vipRes.data.address||'', special_requests: vipRes.data.special_requests||'', notes: vipRes.data.notes||'' })
+setEditForm({ full_name: vipRes.data.full_name||'', birthday: vipRes.data.birthday||'', host_assigned: vipRes.data.host_assigned||'', tier: vipRes.data.tier||'', activity_status: vipRes.data.activity_status||'', phone: vipRes.data.phone||'', whatsapp: vipRes.data.whatsapp||'', email: vipRes.data.email||'', telegram: vipRes.data.telegram||'', churn_risk: vipRes.data.churn_risk||'', address: vipRes.data.address||'', special_requests: vipRes.data.special_requests||'' })
 setMonthly(montRes.data || [])
 setDaily(dailyRes.data || [])
 setContacts(contRes.data || [])
@@ -190,9 +190,10 @@ load()
 
 async function saveEdit() {
 setEditSaving(true)
-// Convert empty strings to null — enum columns reject '' with a 400
+// Only include columns that exist in vip_members (notes is not a column)
+const ALLOWED = ['full_name','birthday','host_assigned','tier','activity_status','phone','whatsapp','email','telegram','churn_risk','address','special_requests']
 const clean = Object.fromEntries(
-Object.entries(editForm).map(([k, v]) => [k, v === '' ? null : v])
+  ALLOWED.map(k => [k, editForm[k] === '' ? null : (editForm[k] ?? null)])
 )
 const { error: err } = await supabase.from('vip_members').update(clean).eq('id', id)
 setEditSaving(false)
@@ -796,10 +797,6 @@ AI insights are labeled and separate from confirmed CRM data.
 <div>
 <label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>Remark</label>
 <Textarea value={editForm.special_requests||''} onChange={e => setEditForm(f=>({...f,special_requests:e.target.value}))} rows={2} />
-</div>
-<div>
-<label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>Internal Notes</label>
-<Textarea value={editForm.notes||''} onChange={e => setEditForm(f=>({...f,notes:e.target.value}))} rows={3} />
 </div>
 <div style={{ display:'flex', gap:8, justifyContent:'flex-end' }}>
 <Btn variant="ghost" onClick={() => setShowEdit(false)}>Cancel</Btn>
