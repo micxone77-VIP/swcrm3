@@ -25,7 +25,7 @@ const MAX_STORED_MESSAGES = 40
 function storageKey(userId) { return `askdata_chat_${userId || 'anon'}` }
 
 // ── Simple markdown renderer: bold, headers, numbered/bullet lists
-function renderMarkdown(text) {
+function renderMarkdown(text, onVipClick, usernameSet) {
   const lines = text.split('\n')
   const elements = []
   let key = 0
@@ -38,7 +38,7 @@ function renderMarkdown(text) {
     if (trimmed.startsWith('### ')) {
       elements.push(
         <div key={key++} style={{ fontWeight: 700, fontSize: 13, color: 'var(--brand)', marginTop: 10, marginBottom: 2 }}>
-          {inlineBold(trimmed.slice(4))}
+          {inlineBold(trimmed.slice(4), onVipClick, usernameSet)}
         </div>
       )
       continue
@@ -47,7 +47,7 @@ function renderMarkdown(text) {
     if (trimmed.startsWith('## ')) {
       elements.push(
         <div key={key++} style={{ fontWeight: 700, fontSize: 14, color: 'var(--text)', marginTop: 10, marginBottom: 2 }}>
-          {inlineBold(trimmed.slice(3))}
+          {inlineBold(trimmed.slice(3), onVipClick, usernameSet)}
         </div>
       )
       continue
@@ -58,7 +58,7 @@ function renderMarkdown(text) {
       elements.push(
         <div key={key++} style={{ display: 'flex', gap: 6, marginBottom: 2 }}>
           <span style={{ color: 'var(--brand)', fontWeight: 700, minWidth: 20, flexShrink: 0 }}>{numMatch[1]}.</span>
-          <span>{inlineBold(numMatch[2])}</span>
+          <span>{inlineBold(numMatch[2], onVipClick, usernameSet)}</span>
         </div>
       )
       continue
@@ -68,25 +68,35 @@ function renderMarkdown(text) {
       elements.push(
         <div key={key++} style={{ display: 'flex', gap: 6, marginBottom: 2 }}>
           <span style={{ color: 'var(--brand)', flexShrink: 0 }}>•</span>
-          <span>{inlineBold(trimmed.slice(2))}</span>
+          <span>{inlineBold(trimmed.slice(2), onVipClick, usernameSet)}</span>
         </div>
       )
       continue
     }
     // Plain line
-    elements.push(<div key={key++} style={{ marginBottom: 1 }}>{inlineBold(trimmed)}</div>)
+    elements.push(<div key={key++} style={{ marginBottom: 1 }}>{inlineBold(trimmed, onVipClick, usernameSet)}</div>)
   }
   return elements
 }
 
-// Render **bold** inline
-function inlineBold(text) {
+// Render **bold** inline — usernames become clickable buttons
+function inlineBold(text, onVipClick, usernameSet) {
   const parts = text.split(/\*\*(.+?)\*\*/g)
-  return parts.map((part, i) =>
-    i % 2 === 1
-      ? <strong key={i} style={{ color: 'var(--text)', fontWeight: 700 }}>{part}</strong>
-      : part
-  )
+  return parts.map((part, i) => {
+    if (i % 2 !== 1) return part
+    const isUsername = usernameSet && usernameSet.has(part)
+    if (isUsername && onVipClick) {
+      return (
+        <button key={i} onClick={() => onVipClick(part)}
+          style={{ background: 'none', border: 'none', color: 'var(--brand)', fontWeight: 700,
+                   cursor: 'pointer', padding: 0, fontSize: 'inherit', textDecoration: 'underline',
+                   textDecorationStyle: 'dotted', lineHeight: 'inherit' }}>
+          {part}
+        </button>
+      )
+    }
+    return <strong key={i} style={{ color: 'var(--text)', fontWeight: 700 }}>{part}</strong>
+  })
 }
 
 // Extract usernames wrapped in ** from AI response
@@ -103,10 +113,11 @@ function extractUsernames(text) {
   return out
 }
 
-// ── AI message bubble with chips + copy button
+// ── AI message bubble with inline clickable usernames + chips + copy
 function AIBubble({ content, onVipClick }) {
   const [copied, setCopied] = useState(false)
   const usernames = extractUsernames(content)
+  const usernameSet = new Set(usernames)
 
   function copy() {
     navigator.clipboard.writeText(content).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1800) })
@@ -114,9 +125,9 @@ function AIBubble({ content, onVipClick }) {
 
   return (
     <div style={s.bubbleAI}>
-      <div>{renderMarkdown(content)}</div>
+      <div>{renderMarkdown(content, onVipClick, usernameSet)}</div>
 
-      {/* Clickable VIP username chips */}
+      {/* Clickable VIP username chips (quick access row) */}
       {usernames.length > 0 && (
         <div style={{ display:'flex', flexWrap:'wrap', gap:6, marginTop:10 }}>
           {usernames.map(u => (
