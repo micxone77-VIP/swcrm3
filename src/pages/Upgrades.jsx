@@ -367,7 +367,7 @@ function ContactLogForm({ player, onClose }) {
 }
 
 // ── TAB 1: VIP Upgrade Candidates ─────────────────────────────────────────────
-function VIPCandidatesTab() {
+function VIPCandidatesTab({ hostFilter = 'ALL' }) {
   const navigate = useNavigate()
   const { profile } = useAuth()
   const { t } = useLanguage()
@@ -469,6 +469,8 @@ function VIPCandidatesTab() {
   const filtered = vips.filter(v => {
     if (tierF !== 'ALL' && v.tier !== tierF) return false
     if (search && !v.username.toLowerCase().includes(search.toLowerCase())) return false
+    if (hostFilter === 'UNASSIGNED' && v.host_assigned) return false
+    if (hostFilter !== 'ALL' && hostFilter !== 'UNASSIGNED' && v.host_assigned !== hostFilter) return false
     if (upgradeF === 'QUALIFIES') return v.upgrade !== null
     if (upgradeF === 'SKIP') return v.upgrade && TIER_ORDER.indexOf(v.upgrade.tier) - TIER_ORDER.indexOf(v.tier) > 1
     if (upgradeF !== 'ALL') return v.upgrade?.tier === upgradeF
@@ -649,7 +651,7 @@ function VIPCandidatesTab() {
 const DEFAULT_THRESHOLDS = { BRONZE: 500, SILVER: 3000 }
 
 // ── TAB 2: Potential Players ───────────────────────────────────────────────────
-function PotentialsTab() {
+function PotentialsTab({ hostFilter = 'ALL' }) {
   const { t } = useLanguage()
   const { profile } = useAuth()
   const myName = profile?.full_name || ''
@@ -726,6 +728,8 @@ function PotentialsTab() {
     if (flagF === 'FLAGGED' && !p.upgrade_flag) return false
     if (flagF === 'CLEAN'   &&  p.upgrade_flag) return false
     if (search && !p.username.toLowerCase().includes(search.toLowerCase())) return false
+    if (hostFilter === 'UNASSIGNED' && p.host_assigned) return false
+    if (hostFilter !== 'ALL' && hostFilter !== 'UNASSIGNED' && p.host_assigned !== hostFilter) return false
     return true
   })
 
@@ -931,7 +935,7 @@ function PotentialsTab() {
 }
 
 // ── TAB 3: Graduated History ───────────────────────────────────────────────────
-function GraduatedTab() {
+function GraduatedTab({ hostFilter = 'ALL' }) {
   const { t } = useLanguage()
   const navigate = useNavigate()
   const [players, setPlayers] = useState([])
@@ -953,9 +957,12 @@ function GraduatedTab() {
     load()
   }, [])
 
-  const filtered = players.filter(p =>
-    !search || p.username.toLowerCase().includes(search.toLowerCase())
-  )
+  const filtered = players.filter(p => {
+    if (search && !p.username.toLowerCase().includes(search.toLowerCase())) return false
+    if (hostFilter === 'UNASSIGNED' && p.host_assigned) return false
+    if (hostFilter !== 'ALL' && hostFilter !== 'UNASSIGNED' && p.host_assigned !== hostFilter) return false
+    return true
+  })
 
   return (
     <div>
@@ -1038,7 +1045,7 @@ function GraduatedTab() {
 }
 
 // ── TAB 4: Tier History ───────────────────────────────────────────────────────
-function TierHistoryTab() {
+function TierHistoryTab({ hostFilter = 'ALL' }) {
   const navigate = useNavigate()
   const [players, setPlayers]       = useState([])
   const [loading, setLoading]       = useState(true)
@@ -1137,6 +1144,8 @@ function TierHistoryTab() {
   const filtered = players.filter(v => {
     if (tierF !== 'ALL' && v.tier !== tierF) return false
     if (search && !v.username.toLowerCase().includes(search.toLowerCase())) return false
+    if (hostFilter === 'UNASSIGNED' && v.host_assigned) return false
+    if (hostFilter !== 'ALL' && hostFilter !== 'UNASSIGNED' && v.host_assigned !== hostFilter) return false
     return true
   })
 
@@ -1266,28 +1275,74 @@ function TierHistoryTab() {
 // ── MAIN ──────────────────────────────────────────────────────────────────────
 export default function Upgrades() {
   const { t } = useLanguage()
+  const { profile } = useAuth()
   const [tab, setTab] = useUrlParam('tab', 'vip')
+  const [hostFilter, setHostFilter] = useUrlParam('hHost', 'ALL')
+  const [hosts, setHosts] = useState([])
   const [counts, setCounts] = useState({ vipReady: 0, potFlagged: 0, graduated: 0 })
 
   useEffect(() => {
     const loadCounts = async () => {
-      const [{ count: vipReady }, { count: potFlagged }, { count: graduated }] = await Promise.all([
+      const [{ count: vipReady }, { count: potFlagged }, { count: graduated }, { data: hostData }] = await Promise.all([
         supabase.from('vip_members').select('*', { count: 'exact', head: true })
           .in('tier', ['GOLD', 'PLATINUM']),
         supabase.from('potential_players').select('*', { count: 'exact', head: true })
           .eq('upgrade_flag', true).eq('is_graduated', false),
         supabase.from('potential_players').select('*', { count: 'exact', head: true })
           .eq('is_graduated', true),
+        supabase.from('vip_members').select('host_assigned')
+          .not('host_assigned', 'is', null).neq('host_assigned', ''),
       ])
       setCounts({ vipReady: vipReady || 0, potFlagged: potFlagged || 0, graduated: graduated || 0 })
+      if (hostData) {
+        const unique = [...new Set(hostData.map(r => r.host_assigned))].sort()
+        setHosts(unique)
+      }
     }
     loadCounts()
   }, [])
 
+  // "My players" quick shortcut — auto-detect current user's name
+  const myName = profile?.full_name || ''
+
   return (
     <div style={s.page}>
-      <div style={s.heading}>{t('upgrades.heading', 'Upgrades')}</div>
-      <div style={s.sub}>{t('upgrades.sub', 'Track VIP tier upgrades and promote Bronze/Silver players to VIP status')}</div>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 4 }}>
+        <div>
+          <div style={s.heading}>{t('upgrades.heading', 'Upgrades')}</div>
+          <div style={s.sub}>{t('upgrades.sub', 'Track VIP tier upgrades and promote Bronze/Silver players to VIP status')}</div>
+        </div>
+
+        {/* ── Global Host Filter ── */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+          <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 500 }}>Host:</span>
+          <select
+            value={hostFilter}
+            onChange={e => setHostFilter(e.target.value)}
+            style={{
+              ...s.select,
+              fontWeight: hostFilter !== 'ALL' ? 700 : 400,
+              color: hostFilter !== 'ALL' ? 'var(--accent)' : 'var(--text)',
+              minWidth: 160,
+            }}
+          >
+            <option value="ALL">All Hosts</option>
+            {myName && <option value={myName}>👤 My Players ({myName})</option>}
+            {hosts.filter(h => h !== myName).map(h => (
+              <option key={h} value={h}>{h}</option>
+            ))}
+            <option value="UNASSIGNED">— Unassigned —</option>
+          </select>
+          {hostFilter !== 'ALL' && (
+            <button
+              style={{ ...s.outlineBtn('var(--muted)'), fontSize: 11, padding: '4px 10px' }}
+              onClick={() => setHostFilter('ALL')}
+            >
+              ✕ Clear
+            </button>
+          )}
+        </div>
+      </div>
 
       <div style={s.tabBar}>
         <button style={s.tab(tab === 'vip')} onClick={() => setTab('vip')}>
@@ -1307,10 +1362,10 @@ export default function Upgrades() {
         </button>
       </div>
 
-      {tab === 'vip'        && <VIPCandidatesTab />}
-      {tab === 'potentials' && <PotentialsTab />}
-      {tab === 'graduated'  && <GraduatedTab />}
-      {tab === 'history'    && <TierHistoryTab />}
+      {tab === 'vip'        && <VIPCandidatesTab hostFilter={hostFilter} />}
+      {tab === 'potentials' && <PotentialsTab    hostFilter={hostFilter} />}
+      {tab === 'graduated'  && <GraduatedTab     hostFilter={hostFilter} />}
+      {tab === 'history'    && <TierHistoryTab   hostFilter={hostFilter} />}
     </div>
   )
 }
