@@ -36,6 +36,9 @@ import RetentionAnalytics    from './pages/RetentionAnalytics'
 import RetentionQueue        from './pages/RetentionQueue'
 import MonthlyReportExport   from './pages/MonthlyReportExport'
 import HostPerformance       from './pages/HostPerformance'
+import ActiveTracker         from './pages/ActiveTracker'
+import WeeklyOutcome         from './pages/WeeklyOutcome'
+import LuckySpinAdmin        from './pages/LuckySpinAdmin'
 import './pages/RetentionAnalytics.css'
 
 export default function App() {
@@ -50,9 +53,11 @@ export default function App() {
       <Route path="vips" element={<RequireRole roles={['admin','host']}><AllVIPs /></RequireRole>} />
       <Route path="vips/:id" element={<RequireRole roles={['admin','host','readonly']}><VIP360 /></RequireRole>} />
       <Route path="at-risk" element={<RequireRole roles={['admin','host']}><AtRisk /></RequireRole>} />
+      <Route path="active-tracker" element={<RequireRole roles={['admin','host']}><ActiveTracker /></RequireRole>} />
       <Route path="follow-up" element={<RequireRole roles={['admin','host']}><FollowUp /></RequireRole>} />
       <Route path="birthdays" element={<RequireRole roles={['admin','host','readonly']}><BirthdayReminder /></RequireRole>} />
       <Route path="campaigns" element={<RequireRole roles={['admin','host']}><CampaignsCountryTieredFixed /></RequireRole>} />
+      <Route path="lucky-spin-admin" element={<RequireRole roles={['admin','host']}><LuckySpinAdmin /></RequireRole>} />
       <Route path="upgrades" element={<RequireRole roles={['admin','host']}><Upgrades /></RequireRole>} />
       <Route path="transfer" element={<RequireRole roles={['admin']}><TransferTracker /></RequireRole>} />
       <Route path="budget" element={<RequireRole roles={['admin']}><BudgetStrategy /></RequireRole>} />
@@ -70,6 +75,7 @@ export default function App() {
       <Route path="contacts" element={<RequireRole roles={['admin','host']}><ContactLog /></RequireRole>} />
       <Route path="targets" element={<RequireRole roles={['admin','host']}><DailyTargets /></RequireRole>} />
       <Route path="churn" element={<RequireRole roles={['admin','host']}><ChurnAlerts /></RequireRole>} />
+      <Route path="weekly-outcome" element={<RequireRole roles={['admin','host','readonly']}><WeeklyOutcome /></RequireRole>} />
       <Route path="retention" element={<RequireRole roles={['admin','host','readonly']}><RetentionWorkspace /></RequireRole>} />
       <Route path="retention-queue" element={<RequireRole roles={['admin','host','readonly']}><RetentionQueue /></RequireRole>} />
       <Route path="retention-analytics" element={<RequireRole roles={['admin','readonly']}><RetentionAnalytics /></RequireRole>} />
