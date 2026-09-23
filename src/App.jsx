@@ -34,11 +34,8 @@ import ChurnAlerts           from './pages/ChurnAlerts'
 import RetentionWorkspace    from './pages/RetentionWorkspace'
 import RetentionAnalytics    from './pages/RetentionAnalytics'
 import RetentionQueue        from './pages/RetentionQueue'
-import WeeklyOutcome         from './pages/WeeklyOutcome'
 import MonthlyReportExport   from './pages/MonthlyReportExport'
-import LuckySpinAdmin        from './pages/LuckySpinAdmin'
-import ActiveTracker         from './pages/ActiveTracker'
-import DailyReport           from './pages/DailyReport'
+import HostPerformance       from './pages/HostPerformance'
 import './pages/RetentionAnalytics.css'
 
 export default function App() {
@@ -75,12 +72,9 @@ export default function App() {
       <Route path="churn" element={<RequireRole roles={['admin','host']}><ChurnAlerts /></RequireRole>} />
       <Route path="retention" element={<RequireRole roles={['admin','host','readonly']}><RetentionWorkspace /></RequireRole>} />
       <Route path="retention-queue" element={<RequireRole roles={['admin','host','readonly']}><RetentionQueue /></RequireRole>} />
-      <Route path="weekly-outcome" element={<RequireRole roles={['admin','host','readonly']}><WeeklyOutcome /></RequireRole>} />
       <Route path="retention-analytics" element={<RequireRole roles={['admin','readonly']}><RetentionAnalytics /></RequireRole>} />
       <Route path="monthly-report" element={<RequireRole roles={['admin']}><MonthlyReportExport /></RequireRole>} />
-      <Route path="lucky-spin-admin" element={<RequireRole roles={['admin','host']}><LuckySpinAdmin /></RequireRole>} />
-      <Route path="active-tracker" element={<RequireRole roles={['admin','host']}><ActiveTracker /></RequireRole>} />
-      <Route path="daily-report" element={<RequireRole roles={['admin','host']}><DailyReport /></RequireRole>} />
+      <Route path="host-performance" element={<RequireRole roles={['admin','host','readonly']}><HostPerformance /></RequireRole>} />
     </Route>
     <Route path="*" element={<Navigate to="/today" replace />} />
   </Routes></BrowserRouter></LanguageProvider></AuthProvider>
