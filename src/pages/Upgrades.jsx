@@ -382,19 +382,9 @@ function VIPCandidatesTab() {
   const [contactModal, setContactModal] = useState(null)
   const [selectedMonth, setSelectedMonth] = useUrlParam('vMonth', '')
   const [availableMonths, setAvailableMonths] = useState([])
-  const [hosts, setHosts] = useState([])
-  const [hostF, setHostF] = useUrlParam('vHost', 'ALL')
 
   useEffect(() => {
     const init = async () => {
-      // Load hosts list for the filter dropdown
-      const { data: hostRows } = await supabase
-        .from('profiles')
-        .select('full_name')
-        .not('full_name', 'is', null)
-        .order('full_name')
-      setHosts((hostRows || []).map(r => r.full_name))
-
       // Fetch oldest and newest snapshot dates (2 queries only), then generate all
       // month labels between them in JS — avoids paginating all 26 000+ rows.
       const [{ data: oldest }, { data: newest }] = await Promise.all([
@@ -478,8 +468,6 @@ function VIPCandidatesTab() {
 
   const filtered = vips.filter(v => {
     if (tierF !== 'ALL' && v.tier !== tierF) return false
-    if (hostF === 'UNASSIGNED' && v.host_assigned) return false
-    if (hostF !== 'ALL' && hostF !== 'UNASSIGNED' && v.host_assigned !== hostF) return false
     if (search && !v.username.toLowerCase().includes(search.toLowerCase())) return false
     if (upgradeF === 'QUALIFIES') return v.upgrade !== null
     if (upgradeF === 'SKIP') return v.upgrade && TIER_ORDER.indexOf(v.upgrade.tier) - TIER_ORDER.indexOf(v.tier) > 1
@@ -534,11 +522,6 @@ function VIPCandidatesTab() {
             <option key={m} value={m}>{m}</option>
           ))}
         </select>
-        <select value={hostF} onChange={e => setHostF(e.target.value)} style={s.select}>
-          <option value="ALL">All Hosts</option>
-          <option value="UNASSIGNED">— Unassigned —</option>
-          {hosts.map(h => <option key={h} value={h}>{h}</option>)}
-        </select>
         <span style={{ fontSize: 12, color: 'var(--muted)', marginLeft: 'auto' }}>
           {filtered.length} members shown
         </span>
@@ -572,16 +555,7 @@ function VIPCandidatesTab() {
                       onMouseLeave={() => setHovered(null)}
                       onClick={() => navigate(`/vips/${v.id}`)}
                     >
-                      <td style={s.td}>
-                        <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                          <strong>{v.username}</strong>
-                          <button
-                            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px 4px', color: 'var(--muted)', fontSize: 11, borderRadius: 3, lineHeight: 1, opacity: 0.6 }}
-                            onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(v.username) }}
-                            title="Copy username"
-                          >⧉</button>
-                        </span>
-                      </td>
+                      <td style={s.td}><strong>{v.username}</strong></td>
                       <td style={s.td}><span style={s.tierBadge(v.tier)}>{v.tier}</span></td>
                       <td style={s.td}>{fmt(v.monthly_valid_bet, v.currency)}</td>
                       <td style={s.td}>
@@ -858,16 +832,7 @@ function PotentialsTab() {
                         onMouseEnter={() => setHovered(p.id)}
                         onMouseLeave={() => setHovered(null)}
                       >
-                        <td style={s.td}>
-                          <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                            <strong>{p.username}</strong>
-                            <button
-                              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px 4px', color: 'var(--muted)', fontSize: 11, borderRadius: 3, lineHeight: 1, opacity: 0.6 }}
-                              onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(p.username) }}
-                              title="Copy username"
-                            >⧉</button>
-                          </span>
-                        </td>
+                        <td style={s.td}><strong>{p.username}</strong></td>
                         <td style={s.td}><span style={s.tierBadge(p.tier)}>{p.tier}</span></td>
                         <td style={s.td}>{fmt(p.monthly_valid_bet, p.currency)}</td>
                         <td style={{ ...s.td, minWidth: 100 }}>
@@ -1036,16 +1001,7 @@ function GraduatedTab() {
                     onMouseEnter={() => setHovered(p.id)}
                     onMouseLeave={() => setHovered(null)}
                   >
-                    <td style={s.td}>
-                      <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                        <strong>{p.username}</strong>
-                        <button
-                          style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px 4px', color: 'var(--muted)', fontSize: 11, borderRadius: 3, lineHeight: 1, opacity: 0.6 }}
-                          onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(p.username) }}
-                          title="Copy username"
-                        >⧉</button>
-                      </span>
-                    </td>
+                    <td style={s.td}><strong>{p.username}</strong></td>
                     <td style={s.td}><span style={s.tierBadge(p.tier)}>{p.tier}</span></td>
                     <td style={s.td}>
                       <span style={s.tierBadge(p.upgraded_to_tier || 'GOLD')}>
@@ -1073,6 +1029,232 @@ function GraduatedTab() {
                     </td>
                   </tr>
                 ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── TAB 4: Tier History ───────────────────────────────────────────────────────
+function TierHistoryTab() {
+  const navigate = useNavigate()
+  const [players, setPlayers]       = useState([])
+  const [loading, setLoading]       = useState(true)
+  const [tierF, setTierF]           = useUrlParam('hTier', 'ALL')
+  const [search, setSearch]         = useUrlParam('hSearch', '')
+  const [sortCol, setSortCol]       = useUrlParam('hSort', 'days')
+  const [hovered, setHovered]       = useState(null)
+  const [currentMonth, setCurrentMonth] = useState('')
+
+  const NEXT_TIER   = { GOLD: 'PLATINUM', PLATINUM: 'DIAMOND', DIAMOND: null }
+  const NEXT_THRESH = { GOLD: 2000000,    PLATINUM: 6000000,   DIAMOND: null  }
+
+  const daysToStr = (days) => {
+    if (days === null || days === undefined) return '—'
+    if (days < 30) return `${days}d`
+    const months = Math.floor(days / 30)
+    const rem = days % 30
+    return rem > 0 ? `${months}mo ${rem}d` : `${months}mo`
+  }
+
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true)
+
+      // 1. Fetch all active Gold/Platinum/Diamond VIP members
+      const { data: vipData } = await supabase
+        .from('vip_members')
+        .select('id, username, tier, host_assigned, currency')
+        .in('tier', ['GOLD', 'PLATINUM', 'DIAMOND'])
+
+      if (!vipData || vipData.length === 0) { setPlayers([]); setLoading(false); return }
+
+      // 2. Fetch tier change logs for VIP tiers — pick most recent per (username, tier)
+      const { data: logs } = await supabase
+        .from('tier_change_logs')
+        .select('username, new_tier, changed_at')
+        .in('new_tier', ['GOLD', 'PLATINUM', 'DIAMOND'])
+        .order('changed_at', { ascending: false })
+
+      // Build map: `${username}|${new_tier}` → most recent log
+      const logMap = {}
+      for (const log of (logs || [])) {
+        const key = `${log.username}|${log.new_tier}`
+        if (!logMap[key]) logMap[key] = log
+      }
+
+      // 3. Resolve current VB month (latest available)
+      const now = new Date()
+      const thisMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`
+      const { data: monthCheck } = await supabase
+        .from('vip_monthly_totals')
+        .select('snapshot_month')
+        .eq('snapshot_month', thisMonth)
+        .limit(1)
+      let resolvedMonth = thisMonth
+      if (!monthCheck || monthCheck.length === 0) {
+        const { data: latestMonth } = await supabase
+          .from('vip_monthly_totals')
+          .select('snapshot_month')
+          .order('snapshot_month', { ascending: false })
+          .limit(1)
+        resolvedMonth = latestMonth?.[0]?.snapshot_month || thisMonth
+      }
+      setCurrentMonth(resolvedMonth)
+
+      const { data: totals } = await supabase
+        .from('vip_monthly_totals')
+        .select('username, monthly_valid_bet')
+        .eq('snapshot_month', resolvedMonth)
+
+      const totalsMap = {}
+      ;(totals || []).forEach(t => { totalsMap[t.username] = parseFloat(t.monthly_valid_bet) || 0 })
+
+      // 4. Enrich each VIP member with upgrade date, days-in-tier and VB info
+      const today = new Date()
+      const enriched = vipData.map(v => {
+        const log = logMap[`${v.username}|${v.tier}`]
+        const upgradeDate = log?.changed_at || null
+        const daysInTier = upgradeDate
+          ? Math.floor((today - new Date(upgradeDate)) / (1000 * 60 * 60 * 24))
+          : null
+        const monthlyVB  = totalsMap[v.username] || 0
+        const nextTier   = NEXT_TIER[v.tier]
+        const nextThresh = NEXT_THRESH[v.tier]
+        const gapToNext  = nextThresh ? Math.max(0, nextThresh - monthlyVB) : null
+        const progressPct = nextThresh ? Math.min(100, (monthlyVB / nextThresh) * 100) : 100
+        return { ...v, upgrade_date: upgradeDate, days_in_tier: daysInTier, monthly_valid_bet: monthlyVB, next_tier: nextTier, next_thresh: nextThresh, gap_to_next: gapToNext, progress_pct: progressPct }
+      })
+
+      setPlayers(enriched)
+      setLoading(false)
+    }
+    load()
+  }, [])
+
+  const filtered = players.filter(v => {
+    if (tierF !== 'ALL' && v.tier !== tierF) return false
+    if (search && !v.username.toLowerCase().includes(search.toLowerCase())) return false
+    return true
+  })
+
+  const sorted = [...filtered].sort((a, b) => {
+    if (sortCol === 'days')  return (b.days_in_tier ?? -1) - (a.days_in_tier ?? -1)
+    if (sortCol === 'vb')    return (b.monthly_valid_bet || 0) - (a.monthly_valid_bet || 0)
+    if (sortCol === 'date') {
+      if (!a.upgrade_date) return 1
+      if (!b.upgrade_date) return -1
+      return a.upgrade_date.localeCompare(b.upgrade_date) // oldest first = longest in tier
+    }
+    return 0
+  })
+
+  return (
+    <div>
+      {/* Stats */}
+      <div style={s.statGrid}>
+        {[
+          { label: 'Gold VIPs',     val: players.filter(v => v.tier === 'GOLD').length,     color: TIER_COLOR.GOLD },
+          { label: 'Platinum VIPs', val: players.filter(v => v.tier === 'PLATINUM').length, color: TIER_COLOR.PLATINUM },
+          { label: 'Diamond VIPs',  val: players.filter(v => v.tier === 'DIAMOND').length,  color: TIER_COLOR.DIAMOND },
+          { label: 'Total VIPs',    val: players.length,                                     color: 'var(--accent)' },
+        ].map((st, i) => (
+          <div key={i} style={s.statCard(st.color)}>
+            <div style={{ ...s.statNum, color: st.color }}>{st.val}</div>
+            <div style={s.statLabel}>{st.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Filters */}
+      <div style={s.filterRow}>
+        <input
+          placeholder="Search username…"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          style={s.searchInput}
+        />
+        <select value={tierF} onChange={e => setTierF(e.target.value)} style={s.select}>
+          <option value="ALL">All Tiers</option>
+          <option value="GOLD">Gold</option>
+          <option value="PLATINUM">Platinum</option>
+          <option value="DIAMOND">Diamond</option>
+        </select>
+        <select value={sortCol} onChange={e => setSortCol(e.target.value)} style={s.select}>
+          <option value="days">Sort: Longest in Tier</option>
+          <option value="date">Sort: Upgrade Date (oldest)</option>
+          <option value="vb">Sort: Monthly VB</option>
+        </select>
+        <span style={{ fontSize: 12, color: 'var(--muted)', marginLeft: 'auto' }}>
+          {filtered.length} VIPs{currentMonth ? ` · VB: ${currentMonth}` : ''}
+        </span>
+      </div>
+
+      {loading ? <div style={s.loading}>Loading…</div> : (
+        <div style={{ overflowX: 'auto' }}>
+          <table style={s.table}>
+            <thead>
+              <tr>
+                {['Username', 'Tier', 'Upgraded On', 'Time in Tier', 'Monthly VB', 'Progress', 'Gap to Next', 'Host'].map(h => (
+                  <th key={h} style={s.th}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {sorted.length === 0
+                ? <tr><td colSpan={8}><div style={s.empty}>No VIPs match this filter</div></td></tr>
+                : sorted.map(v => (
+                  <tr
+                    key={v.id}
+                    style={s.tr(hovered === v.id)}
+                    onMouseEnter={() => setHovered(v.id)}
+                    onMouseLeave={() => setHovered(null)}
+                    onClick={() => navigate(`/vips/${v.id}`)}
+                  >
+                    <td style={s.td}><strong>{v.username}</strong></td>
+                    <td style={s.td}><span style={s.tierBadge(v.tier)}>{v.tier}</span></td>
+                    <td style={s.td}>{fmtDate(v.upgrade_date)}</td>
+                    <td style={s.td}>
+                      <span style={{
+                        fontWeight: v.days_in_tier > 365 ? 700 : 400,
+                        color: v.days_in_tier > 365 ? '#f59e0b' : 'var(--text)',
+                      }}>
+                        {daysToStr(v.days_in_tier)}
+                      </span>
+                    </td>
+                    <td style={s.td}>{fmt(v.monthly_valid_bet, v.currency)}</td>
+                    <td style={{ ...s.td, minWidth: 110 }}>
+                      {v.next_tier
+                        ? <div>
+                            <div style={s.progressWrap}>
+                              <div style={s.progressBar(v.progress_pct, TIER_COLOR[v.next_tier])} />
+                            </div>
+                            <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 3 }}>
+                              {v.progress_pct.toFixed(0)}% to {v.next_tier}
+                            </div>
+                          </div>
+                        : <span style={{ fontSize: 12, color: TIER_COLOR.DIAMOND || '#a78bfa', fontWeight: 700 }}>
+                            ★ MAX
+                          </span>
+                      }
+                    </td>
+                    <td style={s.td}>
+                      {v.next_tier
+                        ? v.gap_to_next === 0
+                          ? <span style={{ fontSize: 12, color: '#4ade80', fontWeight: 600 }}>✓ Ready</span>
+                          : <span style={{ fontSize: 12, color: 'var(--muted)' }}>
+                              {fmt(v.gap_to_next, v.currency)}
+                              <span style={{ fontSize: 10, marginLeft: 4 }}>to {v.next_tier}</span>
+                            </span>
+                        : <span style={{ fontSize: 12, color: 'var(--muted)' }}>Max tier</span>
+                      }
+                    </td>
+                    <td style={{ ...s.td, fontSize: 12, color: 'var(--muted)' }}>{v.host_assigned || '—'}</td>
+                  </tr>
+                ))
+              }
             </tbody>
           </table>
         </div>
@@ -1120,11 +1302,15 @@ export default function Upgrades() {
           {t('upgrades.tabGraduated', 'Graduated')}
           {counts.graduated > 0 && <span style={s.tabBadge('var(--muted)')}>{counts.graduated}</span>}
         </button>
+        <button style={s.tab(tab === 'history')} onClick={() => setTab('history')}>
+          Tier History
+        </button>
       </div>
 
       {tab === 'vip'        && <VIPCandidatesTab />}
       {tab === 'potentials' && <PotentialsTab />}
       {tab === 'graduated'  && <GraduatedTab />}
+      {tab === 'history'    && <TierHistoryTab />}
     </div>
   )
 }
