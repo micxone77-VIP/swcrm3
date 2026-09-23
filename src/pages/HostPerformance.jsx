@@ -124,25 +124,36 @@ const DeltaBadge = ({ curr, prev }) => {
 }
 
 /* ─── Tier progress bar ─── */
-function TierBar({ vb, tier }) {
+// monthVb = running monthly total (for upgrade threshold progress)
+// weekVb  = this-week-only contribution (earned in the selected period)
+function TierBar({ monthVb, weekVb, tier }) {
   const target = TIER_NEXT_VB[tier]
-  const pct = Math.min((vb / target) * 100, 100)
+  const pct = Math.min((monthVb / target) * 100, 100)
   const color = TIER_COLOR[tier]
   const isDiamond = tier === 'DIAMOND'
+  const remaining = Math.max(0, target - monthVb)
   return (
-    <div style={{ width: '100%' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--muted)', marginBottom: 2 }}>
-        <span>{fmtNum(vb)}</span>
-        <span style={{ color }}>{isDiamond ? '✓ MAX' : `${TIER_NEXT_LABEL[tier]} @ ${fmtNum(target)}`}</span>
+    <div style={{ width: '100%', minWidth: 180 }}>
+      {/* Monthly total vs threshold */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--muted)', marginBottom: 3 }}>
+        <span>Monthly: <strong style={{ color: 'var(--text)' }}>{fmtNum(monthVb)}</strong></span>
+        <span style={{ color }}>{isDiamond ? '✓ MAX TIER' : `${TIER_NEXT_LABEL[tier]} @ ${fmtNum(target)}`}</span>
       </div>
-      <div style={{ height: 5, borderRadius: 3, background: 'var(--border)', overflow: 'hidden' }}>
+      <div style={{ height: 6, borderRadius: 3, background: 'var(--border)', overflow: 'hidden' }}>
         <div style={{ height: '100%', width: pct + '%', background: color, borderRadius: 3, transition: 'width .3s' }} />
       </div>
-      {!isDiamond && (
-        <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 1 }}>
-          Need {fmtNum(Math.max(0, target - vb))} more
-        </div>
-      )}
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 3, fontSize: 10 }}>
+        {/* This week's contribution */}
+        <span style={{ color: weekVb > 0 ? '#22C55E' : 'var(--muted)' }}>
+          +{fmtNum(weekVb)} this wk
+        </span>
+        {/* Remaining to upgrade */}
+        {!isDiamond && (
+          <span style={{ color: remaining <= 200_000 ? '#F59E0B' : 'var(--disabled)' }}>
+            {remaining <= 0 ? '🎯 Ready!' : `${fmtNum(remaining)} left`}
+          </span>
+        )}
+      </div>
     </div>
   )
 }
@@ -153,19 +164,17 @@ async function exportExcel(rows, periodLabel, prevLabel) {
   const header = [
     'Username', 'Tier', 'Host', 'Days Inactive', 'Last Deposit',
     `${periodLabel} Deposits`, `${prevLabel} Deposits`, 'Deposit Δ%',
-    `${periodLabel} Valid Bet`, `${prevLabel} Valid Bet`, 'VB Δ%',
-    'To Next Tier VB', 'Upgrade Progress %',
+    `${periodLabel} Week VB`, 'Monthly VB (Running)', 'Monthly VB Remaining', 'Upgrade Progress %',
   ]
   const data = rows.map(r => {
     const depDelta = r.prevDeposit > 0 ? (((r.deposit - r.prevDeposit) / r.prevDeposit) * 100).toFixed(1) + '%' : '-'
-    const vbDelta = r.prevVb > 0 ? (((r.vb - r.prevVb) / r.prevVb) * 100).toFixed(1) + '%' : '-'
     const target = TIER_NEXT_VB[r.tier]
-    const remaining = Math.max(0, target - r.vb)
-    const progress = ((r.vb / target) * 100).toFixed(1) + '%'
+    const remaining = Math.max(0, target - r.monthVb)
+    const progress = ((r.monthVb / target) * 100).toFixed(1) + '%'
     return [
       r.username, r.tier, r.host || '-', r.daysInactive ?? '-', r.lastDeposit || '-',
       r.deposit, r.prevDeposit || 0, depDelta,
-      r.vb, r.prevVb || 0, vbDelta,
+      r.weekVb, r.monthVb,
       remaining === 0 ? 'MAX' : remaining, progress,
     ]
   })
@@ -244,6 +253,11 @@ export default function HostPerformance() {
         if (!tiers.includes(m.tier)) return
         const cur = curMetrics[uname]
         const prev = prevMetrics[uname]
+        // monthVb = running monthly total at end of current period (for tier progress)
+        // weekVb  = VB earned ONLY in the selected period = current minus previous period's total
+        const monthVb = cur?.monthly_valid_bet || 0
+        const prevMonthVb = prev?.monthly_valid_bet || 0
+        const weekVb = Math.max(0, monthVb - prevMonthVb)
         rows.push({
           username: uname,
           tier: m.tier,
@@ -252,8 +266,9 @@ export default function HostPerformance() {
           lastDeposit: m.last_deposit_date,
           deposit: cur?.total_deposit || 0,
           prevDeposit: prev?.total_deposit || 0,
-          vb: cur?.monthly_valid_bet || 0,
-          prevVb: prev?.monthly_valid_bet || 0,
+          weekVb,          // this period's VB only
+          monthVb,         // running monthly total (for tier upgrade bar)
+          prevMonthVb,     // previous period's running total
           betCount: cur?.bet_count || 0,
           winLoss: cur?.win_loss || 0,
           isExcluded: m.is_excluded,
@@ -277,14 +292,11 @@ export default function HostPerformance() {
       return true
     })
     r.sort((a, b) => {
-      if (sortBy === 'vb') return b.vb - a.vb
+      if (sortBy === 'vb') return b.weekVb - a.weekVb
       if (sortBy === 'deposit') return b.deposit - a.deposit
       if (sortBy === 'days') return (a.daysInactive ?? 999) - (b.daysInactive ?? 999)
-      if (sortBy === 'delta') {
-        const dA = a.prevVb > 0 ? (a.vb - a.prevVb) / a.prevVb : 0
-        const dB = b.prevVb > 0 ? (b.vb - b.prevVb) / b.prevVb : 0
-        return dB - dA
-      }
+      if (sortBy === 'delta') return b.weekVb - a.weekVb // sort by this-week earnings
+      if (sortBy === 'monthly') return b.monthVb - a.monthVb
       return 0
     })
     return r
@@ -294,16 +306,16 @@ export default function HostPerformance() {
   const hostSummary = useMemo(() => {
     const map = {}
     visibleRows.forEach(r => {
-      if (!map[r.host]) map[r.host] = { host: r.host, count: 0, deposit: 0, prevDeposit: 0, vb: 0, prevVb: 0, active: 0 }
+      if (!map[r.host]) map[r.host] = { host: r.host, count: 0, deposit: 0, prevDeposit: 0, weekVb: 0, prevWeekVb: 0, active: 0 }
       const h = map[r.host]
       h.count++
       h.deposit += r.deposit
       h.prevDeposit += r.prevDeposit
-      h.vb += r.vb
-      h.prevVb += r.prevVb
+      h.weekVb += r.weekVb
+      // prev week VB = prevMonthVb minus the week before that (we don't have that, so skip delta for cards)
       if (r.daysInactive <= 7) h.active++
     })
-    return Object.values(map).sort((a, b) => b.vb - a.vb)
+    return Object.values(map).sort((a, b) => b.weekVb - a.weekVb)
   }, [visibleRows])
 
   // Contact stats per host
@@ -494,9 +506,8 @@ export default function HostPerformance() {
                   <DeltaBadge curr={h.deposit} prev={h.prevDeposit} />
                 </div>
                 <div>
-                  <div style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.4px' }}>Valid Bet</div>
-                  <div style={{ fontSize: 18, fontWeight: 800, marginTop: 2 }}>{fmtNum(h.vb)}</div>
-                  <DeltaBadge curr={h.vb} prev={h.prevVb} />
+                  <div style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.4px' }}>This Week VB</div>
+                  <div style={{ fontSize: 18, fontWeight: 800, marginTop: 2 }}>{fmtNum(h.weekVb)}</div>
                 </div>
               </div>
             </div>
@@ -512,7 +523,7 @@ export default function HostPerformance() {
         </div>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
           <span style={{ fontSize: 12, color: 'var(--muted)' }}>Sort:</span>
-          {[['vb', '📊 Valid Bet'], ['deposit', '💰 Deposit'], ['days', '💤 Inactive'], ['delta', '📈 Growth']].map(([k, lbl]) => (
+          {[['vb', '📊 Week VB'], ['monthly', '📅 Monthly VB'], ['deposit', '💰 Deposit'], ['days', '💤 Inactive']].map(([k, lbl]) => (
             <button key={k} onClick={() => setSortBy(k)}
               style={{
                 fontSize: 12, padding: '4px 9px', borderRadius: 6, cursor: 'pointer', fontWeight: 600,
@@ -536,9 +547,9 @@ export default function HostPerformance() {
                 ['Days Inactive', '90px'],
                 [labelA + ' Deposit', '130px'],
                 [labelB ? labelB + ' Deposit' : null, '130px'],
-                [labelA + ' Valid Bet', '130px'],
-                [labelB ? labelB + ' Valid Bet' : null, '130px'],
-                ['→ Next Tier', '200px'],
+                ['This Week VB', '130px'],
+                [labelB ? labelB + ' Wk VB' : null, '120px'],
+                ['Monthly Progress → Next Tier', '220px'],
               ].filter(([h]) => h != null).map(([h, w]) => (
                 <th key={h} style={{ padding: '10px 14px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '.4px', whiteSpace: 'nowrap', width: w }}>{h}</th>
               ))}
@@ -591,18 +602,17 @@ export default function HostPerformance() {
                   {periodBRange && (
                     <td style={{ padding: '10px 14px', color: 'var(--muted)' }}>{fmtNum(r.prevDeposit)}</td>
                   )}
-                  {/* Current VB */}
+                  {/* This week VB */}
                   <td style={{ padding: '10px 14px', fontWeight: 700 }}>
-                    {fmtNum(r.vb)}
-                    {periodBRange && <DeltaBadge curr={r.vb} prev={r.prevVb} />}
+                    {fmtNum(r.weekVb)}
                   </td>
-                  {/* Prev VB */}
+                  {/* Prev week VB (prevMonthVb - the week before that isn't stored, so show prevMonthVb label) */}
                   {periodBRange && (
-                    <td style={{ padding: '10px 14px', color: 'var(--muted)' }}>{fmtNum(r.prevVb)}</td>
+                    <td style={{ padding: '10px 14px', color: 'var(--muted)' }}>{fmtNum(r.prevMonthVb)}</td>
                   )}
-                  {/* Tier progress */}
+                  {/* Monthly tier progress */}
                   <td style={{ padding: '10px 14px' }}>
-                    <TierBar vb={r.vb} tier={r.tier} />
+                    <TierBar monthVb={r.monthVb} weekVb={r.weekVb} tier={r.tier} />
                   </td>
                 </tr>
               )
