@@ -12,7 +12,7 @@
 //   OPENAI_API_KEY        your OpenAI API key (secret)
 
 const OPENAI_MODEL = 'gpt-4o-mini'
-const MAX_TOKENS   = 1400
+const MAX_TOKENS   = 2500
 
 // ─── Entry point ──────────────────────────────────────────────────────────────
 
