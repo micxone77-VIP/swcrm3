@@ -14,6 +14,21 @@ const TIERS = ['BLACK','DIAMOND','PLATINUM','GOLD','SILVER','BRONZE']
 const TIER_COLOR = { DIAMOND:'#b9f2ff', PLATINUM:'#C0C0C0', GOLD:'#ffd700', SILVER:'#a8a8a8', BRONZE:'#cd7f32' }
 const TIER_BG    = { DIAMOND:'rgba(185,242,255,.12)', PLATINUM:'rgba(192,192,192,.12)', GOLD:'rgba(255,215,0,.12)', SILVER:'rgba(168,168,168,.1)', BRONZE:'rgba(205,127,50,.1)' }
 
+// Contact log types — used across Chase List, Payout, and Inactive tabs
+const CONTACT_TYPES = [
+  ['daily',       '📅', 'Daily Chase'],
+  ['wa_sent',     '📱', 'WA Sent'],
+  ['responded',   '✅', 'Responded'],
+  ['no_response', '🔕', 'No Reply'],
+  ['promised',    '🤝', 'Promised'],
+  ['deposited',   '💰', 'Deposited'],
+  ['reward',      '🎁', 'Reward'],
+  ['inactive',    '💤', 'Inactive'],
+  ['other',       '💬', 'Other'],
+]
+const CT_ICON  = Object.fromEntries(CONTACT_TYPES.map(([k,icon])=>[k,icon]))
+const CT_LABEL = Object.fromEntries(CONTACT_TYPES.map(([k,,lbl])=>[k,lbl]))
+
 const CAMPAIGN_TYPES = {
   gold_bar:     { label:'🥇 Gold Bar',       color:'#ffd700', desc:'Deposit threshold → receive physical gold bar or gift' },
   pct_reward:   { label:'💰 % Reward',        color:'#3fb950', desc:'Deposit amount × % = cashback (credit/cash)' },
@@ -286,6 +301,8 @@ export default function Campaigns() {
   const [streakBonusesLoading, setStreakBonusesLoading] = useState(false)
   const [contacts, setContacts] = useState({})             // map: campaign_player_id → [...rows]
   const [contactLog, setContactLog] = useState(null)       // player_id of open log popup, or null
+  const [contactNote, setContactNote] = useState('')       // note being entered in log popup
+  const [contactHistory, setContactHistory] = useState(null) // player_id of open history view
   const [waPopup, setWaPopup] = useState(null)  // { rawNumber, message } — editable before opening WA
   const [waCopied, setWaCopied] = useState(false)
   // All daily entries for streak/inactive tabs — loaded on demand
@@ -718,7 +735,7 @@ export default function Campaigns() {
     await loadCampaigns()
   }
 
-  function closeModal() { setModal(null); setSelected(null); setPlayers([]); setCampaignPlayerLevels([]); setCampaignRewards([]); setVipSearch(''); setVipResults([]); setEditingCamp(false); setAiAnalysis(null); setDailyEntries({}); setEntryDate(''); setStreakBonuses({}); setStreakBonusesLoading(false); setContacts({}); setContactLog(null); setInactiveHostFilter('all') }
+  function closeModal() { setModal(null); setSelected(null); setPlayers([]); setCampaignPlayerLevels([]); setCampaignRewards([]); setVipSearch(''); setVipResults([]); setEditingCamp(false); setAiAnalysis(null); setDailyEntries({}); setEntryDate(''); setStreakBonuses({}); setStreakBonusesLoading(false); setContacts({}); setContactLog(null); setContactNote(''); setContactHistory(null); setInactiveHostFilter('all') }
 
   async function loadDailyEntries(campaignId, date) {
     setDailyLoading(true)
@@ -814,17 +831,19 @@ export default function Campaigns() {
     setContacts(map)
   }
 
-  async function logContact(playerId, type, note = '') {
+  async function logContact(playerId, type) {
     const { error } = await supabase.from('campaign_player_contacts').insert({
       campaign_id: selected.id,
       campaign_player_id: playerId,
       contacted_at: new Date().toISOString(),
       contact_type: type,
       host: profile?.email || null,
-      notes: note || null,
+      notes: contactNote.trim() || null,
     })
     if (error) { console.error('logContact error', error); return }
     setContactLog(null)
+    setContactNote('')
+    setContactHistory(null)
     await loadContacts(selected.id)
   }
 
@@ -2570,15 +2589,15 @@ export default function Campaigns() {
                                   {(() => {
                                     const playerContacts = contacts[p.id] || []
                                     const last = playerContacts[0]
-                                    const TYPE_ICON = { daily:'📅', reward:'🎁', inactive:'💤' }
-                                    const TYPE_LABEL = { daily:'Daily', reward:'Reward', inactive:'Inactive' }
                                     let badge = null
                                     if (last) {
                                       const days = Math.floor((Date.now() - new Date(last.contacted_at).getTime()) / 86400000)
                                       const col = days === 0 ? '#3fb950' : days <= 2 ? '#f59e0b' : '#f85149'
-                                      badge = <div style={{ fontSize:10, color:col, fontWeight:700, marginBottom:3 }}>
-                                        {TYPE_ICON[last.contact_type]||'📞'} {days === 0 ? 'Today' : `${days}d ago`}
-                                        <span style={{ color:'var(--muted)', fontWeight:400, marginLeft:3 }}>{TYPE_LABEL[last.contact_type]||last.contact_type}</span>
+                                      badge = <div style={{ fontSize:10, color:col, fontWeight:700, marginBottom:3, cursor:'pointer' }}
+                                        onClick={()=>{setContactLog(null);setContactNote('');setContactHistory(contactHistory===p.id?null:p.id)}} title="View contact history">
+                                        {CT_ICON[last.contact_type]||'📞'} {days === 0 ? 'Today' : `${days}d ago`}
+                                        <span style={{ color:'var(--muted)', fontWeight:400, marginLeft:3 }}>{CT_LABEL[last.contact_type]||last.contact_type}</span>
+                                        {last.notes && <div style={{ color:'var(--muted)', fontWeight:400, fontSize:9, fontStyle:'italic', maxWidth:140, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>"{last.notes}"</div>}
                                       </div>
                                     } else {
                                       badge = <div style={{ fontSize:10, color:'#f85149', fontWeight:700, marginBottom:3 }}>📞 Never</div>
@@ -2586,19 +2605,42 @@ export default function Campaigns() {
                                     return <>
                                       {badge}
                                       {contactLog === p.id ? (
-                                        <div style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:8, minWidth:160 }}>
-                                          <div style={{ fontSize:11, color:'var(--muted)', marginBottom:6, fontWeight:600 }}>Log contact:</div>
-                                          {[['daily','📅 Daily'],['reward','🎁 Reward'],['inactive','💤 Inactive']].map(([type,lbl])=>(
-                                            <button key={type} onClick={()=>logContact(p.id, type)}
-                                              style={{ display:'block', width:'100%', textAlign:'left', background:'none', border:'1px solid var(--border)', color:'var(--text)', borderRadius:5, padding:'4px 8px', fontSize:11, cursor:'pointer', marginBottom:3 }}>
-                                              {lbl}
-                                            </button>
-                                          ))}
-                                          <button onClick={()=>setContactLog(null)} style={{ background:'none', border:'none', color:'var(--muted)', fontSize:10, cursor:'pointer', marginTop:2 }}>✕ Cancel</button>
+                                        <div style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:8, minWidth:210 }}>
+                                          <div style={{ fontSize:11, color:'var(--muted)', marginBottom:5, fontWeight:600 }}>Log contact</div>
+                                          <textarea value={contactNote} onChange={e=>setContactNote(e.target.value)} placeholder="Notes (optional)..." rows={2}
+                                            style={{ width:'100%', background:'var(--surface)', border:'1px solid var(--border)', borderRadius:5, color:'var(--text)', fontSize:11, padding:'4px 6px', resize:'none', marginBottom:5, boxSizing:'border-box' }} />
+                                          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:3, marginBottom:5 }}>
+                                            {CONTACT_TYPES.map(([type,icon,lbl])=>(
+                                              <button key={type} onClick={()=>logContact(p.id, type)}
+                                                style={{ textAlign:'left', background:'none', border:'1px solid var(--border)', color:'var(--text)', borderRadius:5, padding:'3px 6px', fontSize:10, cursor:'pointer' }}>
+                                                {icon} {lbl}
+                                              </button>
+                                            ))}
+                                          </div>
+                                          <button onClick={()=>{setContactLog(null);setContactNote('')}} style={{ background:'none', border:'none', color:'var(--muted)', fontSize:10, cursor:'pointer' }}>✕ Cancel</button>
+                                        </div>
+                                      ) : contactHistory === p.id ? (
+                                        <div style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:8, minWidth:210, maxHeight:220, overflowY:'auto' }}>
+                                          <div style={{ fontSize:11, color:'var(--muted)', marginBottom:5, fontWeight:600, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                                            <span>📋 {p.username}</span>
+                                            <button onClick={()=>setContactHistory(null)} style={{ background:'none', border:'none', color:'var(--muted)', fontSize:10, cursor:'pointer', padding:0 }}>✕</button>
+                                          </div>
+                                          {(contacts[p.id]||[]).slice(0,8).map((c,ci)=>{
+                                            const d=Math.floor((Date.now()-new Date(c.contacted_at).getTime())/86400000)
+                                            return <div key={ci} style={{ borderBottom:'1px solid var(--border)', paddingBottom:4, marginBottom:4 }}>
+                                              <div style={{ fontSize:10, fontWeight:600, color:d===0?'#3fb950':d<=2?'#f59e0b':'var(--muted)' }}>
+                                                {CT_ICON[c.contact_type]||'📞'} {CT_LABEL[c.contact_type]||c.contact_type} · {d===0?'Today':`${d}d ago`}
+                                                {c.host&&<span style={{ fontWeight:400, color:'var(--muted)', marginLeft:4 }}>{c.host.split('@')[0]}</span>}
+                                              </div>
+                                              {c.notes&&<div style={{ fontSize:9, color:'var(--muted)', marginTop:1, fontStyle:'italic' }}>"{c.notes}"</div>}
+                                            </div>
+                                          })}
+                                          {!(contacts[p.id]||[]).length&&<div style={{ fontSize:10, color:'var(--muted)' }}>No contacts yet.</div>}
+                                          <button onClick={()=>{setContactHistory(null);setContactLog(p.id)}} style={{ background:'rgba(88,166,255,.1)', color:'#58a6ff', border:'1px solid rgba(88,166,255,.25)', borderRadius:5, padding:'2px 7px', fontSize:10, cursor:'pointer', fontWeight:600, marginTop:2 }}>+ Log New</button>
                                         </div>
                                       ) : (
                                         <div style={{ display:'flex', gap:4, alignItems:'center', flexWrap:'wrap' }}>
-                                          <button onClick={()=>setContactLog(p.id)}
+                                          <button onClick={()=>{setContactHistory(null);setContactNote('');setContactLog(p.id)}}
                                             style={{ background:'rgba(88,166,255,.1)', color:'#58a6ff', border:'1px solid rgba(88,166,255,.25)', borderRadius:5, padding:'2px 7px', fontSize:10, cursor:'pointer', fontWeight:600 }}>
                                             + Log
                                           </button>
@@ -2849,15 +2891,15 @@ export default function Campaigns() {
                           {(() => {
                             const playerContacts = contacts[p.id] || []
                             const last = playerContacts[0]
-                            const TYPE_ICON = { daily:'📅', reward:'🎁', inactive:'💤' }
-                            const TYPE_LABEL = { daily:'Daily', reward:'Reward', inactive:'Inactive' }
                             let badge = null
                             if (last) {
                               const days = Math.floor((Date.now() - new Date(last.contacted_at).getTime()) / 86400000)
                               const col = days === 0 ? '#3fb950' : days <= 2 ? '#f59e0b' : '#f85149'
-                              badge = <div style={{ fontSize:10, color:col, fontWeight:700, marginBottom:3 }}>
-                                {TYPE_ICON[last.contact_type]||'📞'} {days === 0 ? 'Today' : `${days}d ago`}
-                                <span style={{ color:'var(--muted)', fontWeight:400, marginLeft:3 }}>{TYPE_LABEL[last.contact_type]||last.contact_type}</span>
+                              badge = <div style={{ fontSize:10, color:col, fontWeight:700, marginBottom:3, cursor:'pointer' }}
+                                onClick={()=>{setContactLog(null);setContactNote('');setContactHistory(contactHistory===p.id?null:p.id)}} title="View contact history">
+                                {CT_ICON[last.contact_type]||'📞'} {days === 0 ? 'Today' : `${days}d ago`}
+                                <span style={{ color:'var(--muted)', fontWeight:400, marginLeft:3 }}>{CT_LABEL[last.contact_type]||last.contact_type}</span>
+                                {last.notes && <div style={{ color:'var(--muted)', fontWeight:400, fontSize:9, fontStyle:'italic', maxWidth:140, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>"{last.notes}"</div>}
                               </div>
                             } else {
                               badge = <div style={{ fontSize:10, color:'#f85149', fontWeight:700, marginBottom:3 }}>📞 Never</div>
@@ -2865,18 +2907,41 @@ export default function Campaigns() {
                             return <>
                               {badge}
                               {contactLog === p.id ? (
-                                <div style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:8, minWidth:160 }}>
-                                  <div style={{ fontSize:11, color:'var(--muted)', marginBottom:6, fontWeight:600 }}>Log contact:</div>
-                                  {[['daily','📅 Daily'],['reward','🎁 Reward'],['inactive','💤 Inactive']].map(([type,lbl])=>(
-                                    <button key={type} onClick={()=>logContact(p.id, type)}
-                                      style={{ display:'block', width:'100%', textAlign:'left', background:'none', border:'1px solid var(--border)', color:'var(--text)', borderRadius:5, padding:'4px 8px', fontSize:11, cursor:'pointer', marginBottom:3 }}>
-                                      {lbl}
-                                    </button>
-                                  ))}
-                                  <button onClick={()=>setContactLog(null)} style={{ background:'none', border:'none', color:'var(--muted)', fontSize:10, cursor:'pointer', marginTop:2 }}>✕ Cancel</button>
+                                <div style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:8, minWidth:210 }}>
+                                  <div style={{ fontSize:11, color:'var(--muted)', marginBottom:5, fontWeight:600 }}>Log contact</div>
+                                  <textarea value={contactNote} onChange={e=>setContactNote(e.target.value)} placeholder="Notes (optional)..." rows={2}
+                                    style={{ width:'100%', background:'var(--surface)', border:'1px solid var(--border)', borderRadius:5, color:'var(--text)', fontSize:11, padding:'4px 6px', resize:'none', marginBottom:5, boxSizing:'border-box' }} />
+                                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:3, marginBottom:5 }}>
+                                    {CONTACT_TYPES.map(([type,icon,lbl])=>(
+                                      <button key={type} onClick={()=>logContact(p.id, type)}
+                                        style={{ textAlign:'left', background:'none', border:'1px solid var(--border)', color:'var(--text)', borderRadius:5, padding:'3px 6px', fontSize:10, cursor:'pointer' }}>
+                                        {icon} {lbl}
+                                      </button>
+                                    ))}
+                                  </div>
+                                  <button onClick={()=>{setContactLog(null);setContactNote('')}} style={{ background:'none', border:'none', color:'var(--muted)', fontSize:10, cursor:'pointer' }}>✕ Cancel</button>
+                                </div>
+                              ) : contactHistory === p.id ? (
+                                <div style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:8, minWidth:210, maxHeight:220, overflowY:'auto' }}>
+                                  <div style={{ fontSize:11, color:'var(--muted)', marginBottom:5, fontWeight:600, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                                    <span>📋 {p.username}</span>
+                                    <button onClick={()=>setContactHistory(null)} style={{ background:'none', border:'none', color:'var(--muted)', fontSize:10, cursor:'pointer', padding:0 }}>✕</button>
+                                  </div>
+                                  {(contacts[p.id]||[]).slice(0,8).map((c,ci)=>{
+                                    const d=Math.floor((Date.now()-new Date(c.contacted_at).getTime())/86400000)
+                                    return <div key={ci} style={{ borderBottom:'1px solid var(--border)', paddingBottom:4, marginBottom:4 }}>
+                                      <div style={{ fontSize:10, fontWeight:600, color:d===0?'#3fb950':d<=2?'#f59e0b':'var(--muted)' }}>
+                                        {CT_ICON[c.contact_type]||'📞'} {CT_LABEL[c.contact_type]||c.contact_type} · {d===0?'Today':`${d}d ago`}
+                                        {c.host&&<span style={{ fontWeight:400, color:'var(--muted)', marginLeft:4 }}>{c.host.split('@')[0]}</span>}
+                                      </div>
+                                      {c.notes&&<div style={{ fontSize:9, color:'var(--muted)', marginTop:1, fontStyle:'italic' }}>"{c.notes}"</div>}
+                                    </div>
+                                  })}
+                                  {!(contacts[p.id]||[]).length&&<div style={{ fontSize:10, color:'var(--muted)' }}>No contacts yet.</div>}
+                                  <button onClick={()=>{setContactHistory(null);setContactLog(p.id)}} style={{ background:'rgba(88,166,255,.1)', color:'#58a6ff', border:'1px solid rgba(88,166,255,.25)', borderRadius:5, padding:'2px 7px', fontSize:10, cursor:'pointer', fontWeight:600, marginTop:2 }}>+ Log New</button>
                                 </div>
                               ) : (
-                                <button onClick={()=>setContactLog(p.id)}
+                                <button onClick={()=>{setContactHistory(null);setContactNote('');setContactLog(p.id)}}
                                   style={{ background:'rgba(88,166,255,.1)', color:'#58a6ff', border:'1px solid rgba(88,166,255,.25)', borderRadius:5, padding:'2px 7px', fontSize:10, cursor:'pointer', fontWeight:600 }}>
                                   + Log
                                 </button>
@@ -3057,8 +3122,6 @@ export default function Campaigns() {
                           const playerEntryDates = allDailyEntries.filter(e => e.player_id === p.id)
                           const playerContacts = contacts[p.id] || []
                           const lastContact = playerContacts[0]
-                          const TYPE_ICON = { daily:'📅', reward:'🎁', inactive:'💤' }
-                          const TYPE_LABEL = { daily:'Daily', reward:'Reward', inactive:'Inactive' }
                           return (
                             <tr key={p.id}>
                               <td style={{ ...s.td, color:'var(--muted)', fontSize:11 }}>{i+1}</td>
@@ -3072,9 +3135,11 @@ export default function Campaigns() {
                                   if (lastContact) {
                                     const days = Math.floor((Date.now() - new Date(lastContact.contacted_at).getTime()) / 86400000)
                                     const col = days === 0 ? '#3fb950' : days <= 2 ? '#f59e0b' : '#f85149'
-                                    badge = <div style={{ fontSize:10, color:col, fontWeight:700, marginBottom:3 }}>
-                                      {TYPE_ICON[lastContact.contact_type]||'📞'} {days === 0 ? 'Today' : `${days}d ago`}
-                                      <span style={{ color:'var(--muted)', fontWeight:400, marginLeft:3 }}>{TYPE_LABEL[lastContact.contact_type]||lastContact.contact_type}</span>
+                                    badge = <div style={{ fontSize:10, color:col, fontWeight:700, marginBottom:3, cursor:'pointer' }}
+                                      onClick={()=>{setContactLog(null);setContactNote('');setContactHistory(contactHistory===p.id?null:p.id)}} title="View contact history">
+                                      {CT_ICON[lastContact.contact_type]||'📞'} {days === 0 ? 'Today' : `${days}d ago`}
+                                      <span style={{ color:'var(--muted)', fontWeight:400, marginLeft:3 }}>{CT_LABEL[lastContact.contact_type]||lastContact.contact_type}</span>
+                                      {lastContact.notes && <div style={{ color:'var(--muted)', fontWeight:400, fontSize:9, fontStyle:'italic', maxWidth:140, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>"{lastContact.notes}"</div>}
                                     </div>
                                   } else {
                                     badge = <div style={{ fontSize:10, color:'#f85149', fontWeight:700, marginBottom:3 }}>📞 Never</div>
@@ -3082,18 +3147,41 @@ export default function Campaigns() {
                                   return <>
                                     {badge}
                                     {contactLog === p.id ? (
-                                      <div style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:8, minWidth:160 }}>
-                                        <div style={{ fontSize:11, color:'var(--muted)', marginBottom:6, fontWeight:600 }}>Log contact:</div>
-                                        {[['daily','📅 Daily'],['reward','🎁 Reward'],['inactive','💤 Inactive']].map(([type,lbl])=>(
-                                          <button key={type} onClick={()=>logContact(p.id, type)}
-                                            style={{ display:'block', width:'100%', textAlign:'left', background:'none', border:'1px solid var(--border)', color:'var(--text)', borderRadius:5, padding:'4px 8px', fontSize:11, cursor:'pointer', marginBottom:3 }}>
-                                            {lbl}
-                                          </button>
-                                        ))}
-                                        <button onClick={()=>setContactLog(null)} style={{ background:'none', border:'none', color:'var(--muted)', fontSize:10, cursor:'pointer', marginTop:2 }}>✕ Cancel</button>
+                                      <div style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:8, minWidth:210 }}>
+                                        <div style={{ fontSize:11, color:'var(--muted)', marginBottom:5, fontWeight:600 }}>Log contact</div>
+                                        <textarea value={contactNote} onChange={e=>setContactNote(e.target.value)} placeholder="Notes (optional)..." rows={2}
+                                          style={{ width:'100%', background:'var(--surface)', border:'1px solid var(--border)', borderRadius:5, color:'var(--text)', fontSize:11, padding:'4px 6px', resize:'none', marginBottom:5, boxSizing:'border-box' }} />
+                                        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:3, marginBottom:5 }}>
+                                          {CONTACT_TYPES.map(([type,icon,lbl])=>(
+                                            <button key={type} onClick={()=>logContact(p.id, type)}
+                                              style={{ textAlign:'left', background:'none', border:'1px solid var(--border)', color:'var(--text)', borderRadius:5, padding:'3px 6px', fontSize:10, cursor:'pointer' }}>
+                                              {icon} {lbl}
+                                            </button>
+                                          ))}
+                                        </div>
+                                        <button onClick={()=>{setContactLog(null);setContactNote('')}} style={{ background:'none', border:'none', color:'var(--muted)', fontSize:10, cursor:'pointer' }}>✕ Cancel</button>
+                                      </div>
+                                    ) : contactHistory === p.id ? (
+                                      <div style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:8, minWidth:210, maxHeight:220, overflowY:'auto' }}>
+                                        <div style={{ fontSize:11, color:'var(--muted)', marginBottom:5, fontWeight:600, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                                          <span>📋 {p.username}</span>
+                                          <button onClick={()=>setContactHistory(null)} style={{ background:'none', border:'none', color:'var(--muted)', fontSize:10, cursor:'pointer', padding:0 }}>✕</button>
+                                        </div>
+                                        {(contacts[p.id]||[]).slice(0,8).map((c,ci)=>{
+                                          const d=Math.floor((Date.now()-new Date(c.contacted_at).getTime())/86400000)
+                                          return <div key={ci} style={{ borderBottom:'1px solid var(--border)', paddingBottom:4, marginBottom:4 }}>
+                                            <div style={{ fontSize:10, fontWeight:600, color:d===0?'#3fb950':d<=2?'#f59e0b':'var(--muted)' }}>
+                                              {CT_ICON[c.contact_type]||'📞'} {CT_LABEL[c.contact_type]||c.contact_type} · {d===0?'Today':`${d}d ago`}
+                                              {c.host&&<span style={{ fontWeight:400, color:'var(--muted)', marginLeft:4 }}>{c.host.split('@')[0]}</span>}
+                                            </div>
+                                            {c.notes&&<div style={{ fontSize:9, color:'var(--muted)', marginTop:1, fontStyle:'italic' }}>"{c.notes}"</div>}
+                                          </div>
+                                        })}
+                                        {!(contacts[p.id]||[]).length&&<div style={{ fontSize:10, color:'var(--muted)' }}>No contacts yet.</div>}
+                                        <button onClick={()=>{setContactHistory(null);setContactLog(p.id)}} style={{ background:'rgba(88,166,255,.1)', color:'#58a6ff', border:'1px solid rgba(88,166,255,.25)', borderRadius:5, padding:'2px 7px', fontSize:10, cursor:'pointer', fontWeight:600, marginTop:2 }}>+ Log New</button>
                                       </div>
                                     ) : (
-                                      <button onClick={()=>setContactLog(p.id)}
+                                      <button onClick={()=>{setContactHistory(null);setContactNote('');setContactLog(p.id)}}
                                         style={{ background:'rgba(88,166,255,.1)', color:'#58a6ff', border:'1px solid rgba(88,166,255,.25)', borderRadius:5, padding:'2px 7px', fontSize:10, cursor:'pointer', fontWeight:600 }}>
                                         + Log
                                       </button>
