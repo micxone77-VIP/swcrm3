@@ -194,6 +194,35 @@ const s = {
   value:      { fontSize: 13, fontWeight: 500 },
 }
 
+// ── Copy Button helper ────────────────────────────────────────────────────────
+function CopyBtn({ text, style }) {
+  const [done, setDone] = useState(false)
+  const copy = (e) => {
+    e.stopPropagation()
+    if (!text) return
+    navigator.clipboard.writeText(text).then(() => {
+      setDone(true)
+      setTimeout(() => setDone(false), 1500)
+    })
+  }
+  return (
+    <button
+      onClick={copy}
+      title={`Copy ${text}`}
+      style={{
+        border: 'none', background: 'transparent',
+        cursor: text ? 'pointer' : 'default',
+        color: done ? '#4ade80' : 'var(--muted)',
+        fontSize: 11, padding: '0 3px', lineHeight: 1,
+        opacity: text ? 1 : 0.3,
+        ...style,
+      }}
+    >
+      {done ? '✓' : '📋'}
+    </button>
+  )
+}
+
 // ── Confirm Upgrade Modal ─────────────────────────────────────────────────────
 function ConfirmUpgradeModal({ player, isPotential, onClose, onConfirm }) {
   const { t } = useLanguage()
@@ -296,6 +325,10 @@ function WhatsAppModal({ player, agentName, onClose }) {
   const [lang, setLang]     = useState('en')
   const [copied, setCopied] = useState(false)
 
+  // Normalize stored whatsapp/phone number — strip spaces, dashes, leading +
+  const rawWa = (player.whatsapp || player.phone || '').replace(/[\s\-()]/g, '')
+  const waNumber = rawWa.startsWith('+') ? rawWa.slice(1) : rawWa
+
   const currency = player.currency || 'MYR'
   const turnover = fmt(player.monthly_valid_bet, currency)
   const nextTier = player.upgrade?.tier || player.next_tier || null
@@ -324,7 +357,8 @@ function WhatsAppModal({ player, agentName, onClose }) {
   }
 
   const handleWhatsApp = () => {
-    window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank')
+    const base = waNumber ? `https://wa.me/${waNumber}` : 'https://wa.me/'
+    window.open(`${base}?text=${encodeURIComponent(message)}`, '_blank')
   }
 
   return (
@@ -422,7 +456,10 @@ function WhatsAppModal({ player, agentName, onClose }) {
         </div>
 
         <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 10, textAlign: 'center' }}>
-          WhatsApp will open with the message pre-filled — select the contact manually.
+          {waNumber
+            ? <>📱 Will open chat with <strong>{rawWa}</strong> directly</>
+            : <>No phone number on file — select the contact manually.</>
+          }
         </div>
       </div>
     </div>
@@ -554,7 +591,7 @@ function VIPCandidatesTab({ hostFilter = 'ALL' }) {
       setLoading(true)
       const { data: vipData } = await supabase
         .from('vip_members')
-        .select('id, username, tier, last_deposit_date, days_inactive, host_assigned, currency')
+        .select('id, username, tier, last_deposit_date, days_inactive, host_assigned, currency, phone, whatsapp')
         .in('tier', ['GOLD', 'PLATINUM'])
 
       if (!vipData || vipData.length === 0) { setVips([]); setLoading(false); return }
@@ -673,14 +710,14 @@ function VIPCandidatesTab({ hostFilter = 'ALL' }) {
           <table style={s.table}>
             <thead>
               <tr>
-                {[t('common.username', 'Username'), t('upgrades.colCurrentTier', 'Current Tier'), t('upgrades.colValidBet', 'Valid Bet'), t('upgrades.colLastMonthTurnover'), t('upgrades.colProgress', 'Progress'), t('upgrades.colUpgradesTo', 'Upgrades To'), t('upgrades.colGap', 'Gap'), t('upgrades.colLastDeposit', 'Last Deposit'), t('upgrades.colHost', 'Host'), ''].map(h => (
+                {[t('common.username', 'Username'), t('upgrades.colCurrentTier', 'Current Tier'), t('upgrades.colValidBet', 'Valid Bet'), t('upgrades.colLastMonthTurnover'), t('upgrades.colProgress', 'Progress'), t('upgrades.colUpgradesTo', 'Upgrades To'), t('upgrades.colGap', 'Gap'), t('upgrades.colLastDeposit', 'Last Deposit'), t('upgrades.colHost', 'Host'), 'Phone / WA', ''].map(h => (
                   <th key={h} style={s.th}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0
-                ? <tr><td colSpan={9}><div style={s.empty}>No members match this filter</div></td></tr>
+                ? <tr><td colSpan={11}><div style={s.empty}>No members match this filter</div></td></tr>
                 : filtered.map(v => {
                   const pct = v.upgrade ? Math.min(100, (v.monthly_valid_bet / v.upgrade.threshold) * 100) : 0
                   const isSkip = v.upgrade && TIER_ORDER.indexOf(v.upgrade.tier) - TIER_ORDER.indexOf(v.tier) > 1
@@ -696,7 +733,12 @@ function VIPCandidatesTab({ hostFilter = 'ALL' }) {
                       onMouseLeave={() => setHovered(null)}
                       onClick={() => navigate(`/vips/${v.id}`)}
                     >
-                      <td style={s.td}><strong>{v.username}</strong></td>
+                      <td style={s.td}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                          <strong>{v.username}</strong>
+                          <CopyBtn text={v.username} />
+                        </div>
+                      </td>
                       <td style={s.td}><span style={s.tierBadge(v.tier)}>{v.tier}</span></td>
                       <td style={s.td}>{fmt(v.monthly_valid_bet, v.currency)}</td>
                       <td style={s.td}>
@@ -743,6 +785,15 @@ function VIPCandidatesTab({ hostFilter = 'ALL' }) {
                       </td>
                       <td style={s.td}>{fmtDate(v.last_deposit_date)}</td>
                       <td style={{ ...s.td, fontSize: 12, color: 'var(--muted)' }}>{v.host_assigned || '—'}</td>
+                      <td style={s.td} onClick={e => e.stopPropagation()}>
+                        {(v.phone || v.whatsapp)
+                          ? <div style={{ display: 'flex', alignItems: 'center', gap: 2, whiteSpace: 'nowrap' }}>
+                              <span style={{ fontSize: 12 }}>{v.whatsapp || v.phone}</span>
+                              <CopyBtn text={v.whatsapp || v.phone} />
+                            </div>
+                          : <span style={{ fontSize: 11, color: 'var(--muted)' }}>—</span>
+                        }
+                      </td>
                       <td style={s.td} onClick={e => e.stopPropagation()}>
                         <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
                           {v.upgrade
@@ -1230,7 +1281,7 @@ function TierHistoryTab({ hostFilter = 'ALL' }) {
       // 1. Fetch all active Gold/Platinum/Diamond VIP members
       const { data: vipData } = await supabase
         .from('vip_members')
-        .select('id, username, tier, host_assigned, currency')
+        .select('id, username, tier, host_assigned, currency, phone, whatsapp')
         .in('tier', ['GOLD', 'PLATINUM', 'DIAMOND'])
 
       if (!vipData || vipData.length === 0) { setPlayers([]); setLoading(false); return }
@@ -1400,14 +1451,14 @@ function TierHistoryTab({ hostFilter = 'ALL' }) {
           <table style={s.table}>
             <thead>
               <tr>
-                {['Username', 'Tier', 'Upgraded On', 'Time in Tier', 'Monthly VB', 'Progress', 'Gap to Next', 'Host', ''].map(h => (
+                {['Username', 'Tier', 'Upgraded On', 'Time in Tier', 'Monthly VB', 'Progress', 'Gap to Next', 'Host', 'Phone / WA', ''].map(h => (
                   <th key={h} style={s.th}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {sorted.length === 0
-                ? <tr><td colSpan={9}><div style={s.empty}>No VIPs match this filter</div></td></tr>
+                ? <tr><td colSpan={10}><div style={s.empty}>No VIPs match this filter</div></td></tr>
                 : sorted.map(v => (
                   <tr
                     key={v.id}
@@ -1416,7 +1467,12 @@ function TierHistoryTab({ hostFilter = 'ALL' }) {
                     onMouseLeave={() => setHovered(null)}
                     onClick={() => navigate(`/vips/${v.id}`)}
                   >
-                    <td style={s.td}><strong>{v.username}</strong></td>
+                    <td style={s.td}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                        <strong>{v.username}</strong>
+                        <CopyBtn text={v.username} />
+                      </div>
+                    </td>
                     <td style={s.td}><span style={s.tierBadge(v.tier)}>{v.tier}</span></td>
                     <td style={s.td}>
                       {v.upgrade_date
@@ -1472,6 +1528,15 @@ function TierHistoryTab({ hostFilter = 'ALL' }) {
                       }
                     </td>
                     <td style={{ ...s.td, fontSize: 12, color: 'var(--muted)' }}>{v.host_assigned || '—'}</td>
+                    <td style={s.td} onClick={e => e.stopPropagation()}>
+                      {(v.phone || v.whatsapp)
+                        ? <div style={{ display: 'flex', alignItems: 'center', gap: 2, whiteSpace: 'nowrap' }}>
+                            <span style={{ fontSize: 12 }}>{v.whatsapp || v.phone}</span>
+                            <CopyBtn text={v.whatsapp || v.phone} />
+                          </div>
+                        : <span style={{ fontSize: 11, color: 'var(--muted)' }}>—</span>
+                      }
+                    </td>
                     <td style={s.td} onClick={e => e.stopPropagation()}>
                       <button
                         title="Send WhatsApp message"
