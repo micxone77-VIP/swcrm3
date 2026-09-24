@@ -1078,21 +1078,56 @@ function TierHistoryTab({ hostFilter = 'ALL' }) {
 
       if (!vipData || vipData.length === 0) { setPlayers([]); setLoading(false); return }
 
-      // 2. Fetch tier change logs for VIP tiers — pick most recent per (username, tier)
+      // 2. Fetch tier change logs (accurate — only exists for CRM-recorded upgrades)
       const { data: logs } = await supabase
         .from('tier_change_logs')
         .select('username, new_tier, changed_at')
         .in('new_tier', ['GOLD', 'PLATINUM', 'DIAMOND'])
         .order('changed_at', { ascending: false })
 
-      // Build map: `${username}|${new_tier}` → most recent log
+      // Build map: `${username}|${new_tier}` → most recent log entry
       const logMap = {}
       for (const log of (logs || [])) {
         const key = `${log.username}|${log.new_tier}`
-        if (!logMap[key]) logMap[key] = log
+        if (!logMap[key]) logMap[key] = { date: log.changed_at, source: 'log' }
       }
 
-      // 3. Resolve current VB month (latest available)
+      // 3. For players with no tier_change_log entry, fall back to earliest snapshot
+      //    at their current tier — gives an approximate "in this tier since" date.
+      const snapMap = {}
+      const missingUsernames = vipData.filter(v => !logMap[`${v.username}|${v.tier}`]).map(v => v.username)
+      if (missingUsernames.length > 0) {
+        // Fetch oldest snapshots first — first occurrence per (username, tier) = earliest known date in that tier
+        // Use batches of 1000 (Supabase default page size) until we've covered all players or run out of data
+        let offset = 0
+        const BATCH = 1000
+        let remaining = new Set(missingUsernames)
+        while (remaining.size > 0) {
+          const { data: snaps } = await supabase
+            .from('vip_daily_snapshots')
+            .select('username, tier, snapshot_date')
+            .in('username', [...remaining])
+            .in('tier', ['GOLD', 'PLATINUM', 'DIAMOND'])
+            .order('snapshot_date', { ascending: true })
+            .range(offset, offset + BATCH - 1)
+          if (!snaps || snaps.length === 0) break
+          for (const snap of snaps) {
+            const key = `${snap.username}|${snap.tier}`
+            if (!snapMap[key]) {
+              snapMap[key] = { date: snap.snapshot_date, source: 'snapshot' }
+            }
+          }
+          // Once we've seen a player's oldest snapshot, no need to keep paginating for them
+          for (const u of [...remaining]) {
+            const v = vipData.find(v => v.username === u)
+            if (v && snapMap[`${v.username}|${v.tier}`]) remaining.delete(u)
+          }
+          if (snaps.length < BATCH) break // no more pages
+          offset += BATCH
+        }
+      }
+
+      // 4. Resolve current VB month (latest available)
       const now = new Date()
       const thisMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`
       const { data: monthCheck } = await supabase
@@ -1119,12 +1154,14 @@ function TierHistoryTab({ hostFilter = 'ALL' }) {
       const totalsMap = {}
       ;(totals || []).forEach(t => { totalsMap[t.username] = parseFloat(t.monthly_valid_bet) || 0 })
 
-      // 4. Enrich each VIP member with upgrade date, days-in-tier and VB info
+      // 5. Enrich each VIP member — tier_change_log takes priority, snapshot is fallback
       const today = new Date()
       const enriched = vipData.map(v => {
-        const log = logMap[`${v.username}|${v.tier}`]
-        const upgradeDate = log?.changed_at || null
-        const daysInTier = upgradeDate
+        const key = `${v.username}|${v.tier}`
+        const entry = logMap[key] || snapMap[key] || null
+        const upgradeDate = entry?.date || null
+        const isApprox    = entry?.source === 'snapshot'   // snapshot = "earliest seen", not exact
+        const daysInTier  = upgradeDate
           ? Math.floor((today - new Date(upgradeDate)) / (1000 * 60 * 60 * 24))
           : null
         const monthlyVB  = totalsMap[v.username] || 0
@@ -1132,7 +1169,7 @@ function TierHistoryTab({ hostFilter = 'ALL' }) {
         const nextThresh = NEXT_THRESH[v.tier]
         const gapToNext  = nextThresh ? Math.max(0, nextThresh - monthlyVB) : null
         const progressPct = nextThresh ? Math.min(100, (monthlyVB / nextThresh) * 100) : 100
-        return { ...v, upgrade_date: upgradeDate, days_in_tier: daysInTier, monthly_valid_bet: monthlyVB, next_tier: nextTier, next_thresh: nextThresh, gap_to_next: gapToNext, progress_pct: progressPct }
+        return { ...v, upgrade_date: upgradeDate, is_approx: isApprox, days_in_tier: daysInTier, monthly_valid_bet: monthlyVB, next_tier: nextTier, next_thresh: nextThresh, gap_to_next: gapToNext, progress_pct: progressPct }
       })
 
       setPlayers(enriched)
@@ -1224,14 +1261,31 @@ function TierHistoryTab({ hostFilter = 'ALL' }) {
                   >
                     <td style={s.td}><strong>{v.username}</strong></td>
                     <td style={s.td}><span style={s.tierBadge(v.tier)}>{v.tier}</span></td>
-                    <td style={s.td}>{fmtDate(v.upgrade_date)}</td>
                     <td style={s.td}>
-                      <span style={{
-                        fontWeight: v.days_in_tier > 365 ? 700 : 400,
-                        color: v.days_in_tier > 365 ? '#f59e0b' : 'var(--text)',
-                      }}>
-                        {daysToStr(v.days_in_tier)}
-                      </span>
+                      {v.upgrade_date
+                        ? <span>
+                            {v.is_approx && (
+                              <span title="Estimated from earliest snapshot — exact upgrade date not recorded" style={{ fontSize: 10, color: 'var(--muted)', marginRight: 4 }}>~</span>
+                            )}
+                            {fmtDate(v.upgrade_date)}
+                            {v.is_approx && (
+                              <span style={{ fontSize: 10, color: 'var(--muted)', marginLeft: 4 }}>est.</span>
+                            )}
+                          </span>
+                        : <span style={{ color: 'var(--muted)', fontSize: 12 }}>No data</span>
+                      }
+                    </td>
+                    <td style={s.td}>
+                      {v.days_in_tier !== null
+                        ? <span style={{
+                            fontWeight: v.days_in_tier > 365 ? 700 : 400,
+                            color: v.days_in_tier > 365 ? '#f59e0b' : 'var(--text)',
+                          }}>
+                            {daysToStr(v.days_in_tier)}
+                            {v.is_approx && <span style={{ fontSize: 10, color: 'var(--muted)', marginLeft: 4 }}>+</span>}
+                          </span>
+                        : <span style={{ color: 'var(--muted)', fontSize: 12 }}>No data</span>
+                      }
                     </td>
                     <td style={s.td}>{fmt(v.monthly_valid_bet, v.currency)}</td>
                     <td style={{ ...s.td, minWidth: 110 }}>
