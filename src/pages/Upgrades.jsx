@@ -65,7 +65,7 @@ const monthsAgo = (dateStr) => {
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 const s = {
-  page:    { padding: '28px 32px', color: 'var(--text)', maxWidth: 1100, margin: '0 auto' },
+  page:    { padding: '28px 20px', color: 'var(--text)', maxWidth: 1600, margin: '0 auto' },
   heading: { fontSize: 22, fontWeight: 700, marginBottom: 4 },
   sub:     { fontSize: 13, color: 'var(--muted)', marginBottom: 22 },
 
