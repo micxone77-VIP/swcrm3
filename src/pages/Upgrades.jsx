@@ -291,6 +291,144 @@ function ConfirmUpgradeModal({ player, isPotential, onClose, onConfirm }) {
 }
 
 
+// ── WhatsApp Template Modal ───────────────────────────────────────────────────
+function WhatsAppModal({ player, agentName, onClose }) {
+  const [lang, setLang]     = useState('en')
+  const [copied, setCopied] = useState(false)
+
+  const currency = player.currency || 'MYR'
+  const turnover = fmt(player.monthly_valid_bet, currency)
+  const nextTier = player.upgrade?.tier || player.next_tier || null
+  const nextThresh = player.upgrade?.threshold || player.next_thresh || null
+  const gap = nextThresh
+    ? fmt(Math.max(0, nextThresh - (player.monthly_valid_bet || 0)), currency)
+    : null
+  const isReady = player.upgrade !== null || player.gap_to_next === 0
+
+  const templates = {
+    en: isReady
+      ? `Hi *${player.username}*! 👋 This is ${agentName} from SureWin VIP Department.\n\nCongratulations! 🎉 Your monthly turnover of *${turnover}* has qualified you for *${nextTier}* upgrade!\n\nWe would like to arrange your upgrade — please let us know when you're available! 💎`
+      : `Hi *${player.username}*! 👋 This is ${agentName} from SureWin VIP Department.\n\nYour current monthly turnover is *${turnover}*. You are just *${gap}* away from reaching *${nextTier}* tier! 🎯\n\nKeep it up, feel free to reach out anytime! 💎`,
+    cn: isReady
+      ? `您好 *${player.username}*！👋 我是SureWin VIP部门的${agentName}。\n\n恭喜您！🎉 您本月有效流水 *${turnover}* 已达到晋升 *${nextTier}* 的要求！\n\n我们将为您安排升级，请告知您方便的时间。💎`
+      : `您好 *${player.username}*！👋 我是SureWin VIP部门的${agentName}。\n\n您本月有效流水为 *${turnover}*，距离晋升 *${nextTier}* 还差 *${gap}*！🎯\n\n继续加油，有任何需要请随时联系！💎`,
+  }
+
+  const message = templates[lang]
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(message).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    })
+  }
+
+  const handleWhatsApp = () => {
+    window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank')
+  }
+
+  return (
+    <div style={s.modal} onClick={onClose}>
+      <div style={{ ...s.modalBox, width: 500 }} onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+          <span style={{ fontSize: 22 }}>💬</span>
+          <div>
+            <div style={s.modalTitle}>WhatsApp Template</div>
+            <div style={s.modalSub}>
+              <span style={s.tierBadge(player.tier)}>{player.tier}</span>
+              <span style={{ marginLeft: 8 }}>{player.username}</span>
+              <span style={{ marginLeft: 8 }}>· Turnover: {turnover}</span>
+              {nextTier && <span style={{ marginLeft: 8 }}>· Next: {nextTier}</span>}
+            </div>
+          </div>
+        </div>
+
+        {/* Lang toggle */}
+        <div style={{ display: 'flex', gap: 6, marginBottom: 14 }}>
+          {[['en','English'],['cn','中文']].map(([k, label]) => (
+            <button
+              key={k}
+              style={{
+                padding: '5px 16px', borderRadius: 20,
+                border: `1px solid ${lang === k ? 'var(--accent)' : 'var(--border)'}`,
+                background: lang === k ? 'var(--accent)' : 'transparent',
+                color: lang === k ? '#fff' : 'var(--muted)',
+                fontWeight: lang === k ? 700 : 400,
+                fontSize: 12, cursor: 'pointer',
+              }}
+              onClick={() => { setLang(k); setCopied(false) }}
+            >
+              {label}
+            </button>
+          ))}
+          {isReady && (
+            <span style={{
+              marginLeft: 'auto', fontSize: 11, fontWeight: 700,
+              color: '#4ade80', padding: '5px 10px',
+              background: 'rgba(74,222,128,0.1)', borderRadius: 20,
+              border: '1px solid rgba(74,222,128,0.3)',
+            }}>
+              ✓ Ready to Upgrade
+            </span>
+          )}
+        </div>
+
+        {/* Message preview */}
+        <div style={{
+          background: 'var(--bg)', border: '1px solid var(--border)',
+          borderRadius: 10, padding: '14px 16px',
+          fontSize: 13, lineHeight: 1.7,
+          whiteSpace: 'pre-wrap', color: 'var(--text)',
+          marginBottom: 14, minHeight: 120,
+          fontFamily: 'inherit',
+        }}>
+          {message.split('\n').map((line, i) => {
+            // Render *bold* text
+            const parts = line.split(/(\*[^*]+\*)/g)
+            return (
+              <span key={i}>
+                {parts.map((p, j) =>
+                  p.startsWith('*') && p.endsWith('*')
+                    ? <strong key={j}>{p.slice(1, -1)}</strong>
+                    : p
+                )}
+                {i < message.split('\n').length - 1 && <br />}
+              </span>
+            )
+          })}
+        </div>
+
+        {/* Actions */}
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button
+            style={{
+              ...s.btn(copied ? '#10b981' : 'var(--surface)'),
+              color: copied ? '#fff' : 'var(--text)',
+              border: `1px solid ${copied ? '#10b981' : 'var(--border)'}`,
+              flex: 1,
+            }}
+            onClick={handleCopy}
+          >
+            {copied ? '✓ Copied!' : '📋 Copy Message'}
+          </button>
+          <button
+            style={{ ...s.btn('#25D366'), flex: 1 }}
+            onClick={handleWhatsApp}
+          >
+            💬 Open WhatsApp
+          </button>
+          <button style={s.outlineBtn('var(--muted)')} onClick={onClose}>Close</button>
+        </div>
+
+        <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 10, textAlign: 'center' }}>
+          WhatsApp will open with the message pre-filled — select the contact manually.
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Inline Contact Log Form ────────────────────────────────────────────────────
 function ContactLogForm({ player, onClose }) {
   const [channel, setChannel]   = useState('WhatsApp')
@@ -380,6 +518,7 @@ function VIPCandidatesTab({ hostFilter = 'ALL' }) {
   const [hovered, setHovered]   = useState(null)
   const [modal, setModal]           = useState(null)
   const [contactModal, setContactModal] = useState(null)
+  const [waModal, setWaModal]       = useState(null)
   const [selectedMonth, setSelectedMonth] = useUrlParam('vMonth', '')
   const [availableMonths, setAvailableMonths] = useState([])
 
@@ -605,14 +744,21 @@ function VIPCandidatesTab({ hostFilter = 'ALL' }) {
                       <td style={s.td}>{fmtDate(v.last_deposit_date)}</td>
                       <td style={{ ...s.td, fontSize: 12, color: 'var(--muted)' }}>{v.host_assigned || '—'}</td>
                       <td style={s.td} onClick={e => e.stopPropagation()}>
-                        {v.upgrade
-                          ? <button style={s.btn(TIER_COLOR[v.upgrade.tier], true)} onClick={() => setModal(v)}>
-                              {t('upgrades.btn.upgrade', 'Upgrade')}
-                            </button>
-                          : <button style={s.outlineBtn('#58a6ff')} onClick={() => setContactModal(v)}>
-                              {t('upgrades.btn.contact', 'Contact')}
-                            </button>
-                        }
+                        <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                          {v.upgrade
+                            ? <button style={s.btn(TIER_COLOR[v.upgrade.tier], true)} onClick={() => setModal(v)}>
+                                {t('upgrades.btn.upgrade', 'Upgrade')}
+                              </button>
+                            : <button style={s.outlineBtn('#58a6ff')} onClick={() => setContactModal(v)}>
+                                {t('upgrades.btn.contact', 'Contact')}
+                              </button>
+                          }
+                          <button
+                            title="Send WhatsApp message"
+                            style={{ ...s.btn('#25D366', true), padding: '4px 9px', fontSize: 14 }}
+                            onClick={() => setWaModal(v)}
+                          >💬</button>
+                        </div>
                       </td>
                     </tr>
                   )
@@ -642,6 +788,14 @@ function VIPCandidatesTab({ hostFilter = 'ALL' }) {
             <ContactLogForm player={contactModal} onClose={() => setContactModal(null)} />
           </div>
         </div>
+      )}
+
+      {waModal && (
+        <WhatsAppModal
+          player={waModal}
+          agentName={myName || 'Agent'}
+          onClose={() => setWaModal(null)}
+        />
       )}
     </div>
   )
@@ -1047,12 +1201,15 @@ function GraduatedTab({ hostFilter = 'ALL' }) {
 // ── TAB 4: Tier History ───────────────────────────────────────────────────────
 function TierHistoryTab({ hostFilter = 'ALL' }) {
   const navigate = useNavigate()
+  const { profile } = useAuth()
+  const myName = profile?.full_name || ''
   const [players, setPlayers]       = useState([])
   const [loading, setLoading]       = useState(true)
   const [tierF, setTierF]           = useUrlParam('hTier', 'ALL')
   const [search, setSearch]         = useUrlParam('hSearch', '')
   const [sortCol, setSortCol]       = useUrlParam('hSort', 'days')
   const [hovered, setHovered]       = useState(null)
+  const [waModal, setWaModal]       = useState(null)
   const [currentMonth, setCurrentMonth] = useState('')
 
   const NEXT_TIER   = { GOLD: 'PLATINUM', PLATINUM: 'DIAMOND', DIAMOND: null }
@@ -1243,14 +1400,14 @@ function TierHistoryTab({ hostFilter = 'ALL' }) {
           <table style={s.table}>
             <thead>
               <tr>
-                {['Username', 'Tier', 'Upgraded On', 'Time in Tier', 'Monthly VB', 'Progress', 'Gap to Next', 'Host'].map(h => (
+                {['Username', 'Tier', 'Upgraded On', 'Time in Tier', 'Monthly VB', 'Progress', 'Gap to Next', 'Host', ''].map(h => (
                   <th key={h} style={s.th}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {sorted.length === 0
-                ? <tr><td colSpan={8}><div style={s.empty}>No VIPs match this filter</div></td></tr>
+                ? <tr><td colSpan={9}><div style={s.empty}>No VIPs match this filter</div></td></tr>
                 : sorted.map(v => (
                   <tr
                     key={v.id}
@@ -1315,12 +1472,27 @@ function TierHistoryTab({ hostFilter = 'ALL' }) {
                       }
                     </td>
                     <td style={{ ...s.td, fontSize: 12, color: 'var(--muted)' }}>{v.host_assigned || '—'}</td>
+                    <td style={s.td} onClick={e => e.stopPropagation()}>
+                      <button
+                        title="Send WhatsApp message"
+                        style={{ ...s.btn('#25D366', true), padding: '4px 9px', fontSize: 14 }}
+                        onClick={() => setWaModal(v)}
+                      >💬</button>
+                    </td>
                   </tr>
                 ))
               }
             </tbody>
           </table>
         </div>
+      )}
+
+      {waModal && (
+        <WhatsAppModal
+          player={waModal}
+          agentName={myName || 'Agent'}
+          onClose={() => setWaModal(null)}
+        />
       )}
     </div>
   )
