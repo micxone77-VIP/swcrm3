@@ -330,6 +330,10 @@ function WhatsAppModal({ player, agentName, waNumbers = [], onClose }) {
   const rawWa = (player.whatsapp || player.phone || '').replace(/[\s\-()]/g, '')
   const waNumber = rawWa.startsWith('+') ? rawWa.slice(1) : rawWa
 
+  // Normalize stored whatsapp/phone number — strip spaces, dashes, leading +
+  const rawWa = (player.whatsapp || player.phone || '').replace(/[\s\-()]/g, '')
+  const waNumber = rawWa.startsWith('+') ? rawWa.slice(1) : rawWa
+
   const currency = player.currency || 'MYR'
   const turnover = fmt(player.monthly_valid_bet, currency)
 
