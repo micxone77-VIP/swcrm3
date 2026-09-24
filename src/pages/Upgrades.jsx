@@ -331,20 +331,32 @@ function WhatsAppModal({ player, agentName, onClose }) {
 
   const currency = player.currency || 'MYR'
   const turnover = fmt(player.monthly_valid_bet, currency)
-  const nextTier = player.upgrade?.tier || player.next_tier || null
-  const nextThresh = player.upgrade?.threshold || player.next_thresh || null
+
+  // Fallback next-tier map so template always has a target even when player hasn't qualified
+  const FALLBACK_NEXT = {
+    GOLD:     { tier: 'PLATINUM', threshold: 2000000 },
+    PLATINUM: { tier: 'DIAMOND',  threshold: 6000000 },
+    DIAMOND:  { tier: null,       threshold: null     },
+  }
+  const fallback = FALLBACK_NEXT[player.tier] || {}
+  const nextTier   = player.upgrade?.tier   || player.next_tier   || fallback.tier   || null
+  const nextThresh = player.upgrade?.threshold || player.next_thresh || fallback.threshold || null
   const gap = nextThresh
     ? fmt(Math.max(0, nextThresh - (player.monthly_valid_bet || 0)), currency)
     : null
-  const isReady = player.upgrade !== null || player.gap_to_next === 0
+  const isReady = (player.upgrade != null) || player.gap_to_next === 0
+
+  const nextLabel = nextTier || '下一级别'
+  const nextLabelEn = nextTier || 'next tier'
+  const gapLabel = gap || '—'
 
   const templates = {
     en: isReady
-      ? `Hi *${player.username}*! 👋 This is ${agentName} from SureWin VIP Department.\n\nCongratulations! 🎉 Your monthly turnover of *${turnover}* has qualified you for *${nextTier}* upgrade!\n\nWe would like to arrange your upgrade — please let us know when you're available! 💎`
-      : `Hi *${player.username}*! 👋 This is ${agentName} from SureWin VIP Department.\n\nYour current monthly turnover is *${turnover}*. You are just *${gap}* away from reaching *${nextTier}* tier! 🎯\n\nKeep it up, feel free to reach out anytime! 💎`,
+      ? `Hi *${player.username}*! 👋 This is ${agentName} from SureWin VIP Department.\n\nCongratulations! 🎉 Your monthly turnover of *${turnover}* has qualified you for *${nextLabelEn}* upgrade!\n\nWe would like to arrange your upgrade — please let us know when you're available! 💎`
+      : `Hi *${player.username}*! 👋 This is ${agentName} from SureWin VIP Department.\n\nYour current monthly turnover is *${turnover}*. You are just *${gapLabel}* away from reaching *${nextLabelEn}* tier! 🎯\n\nKeep it up, feel free to reach out anytime! 💎`,
     cn: isReady
-      ? `您好 *${player.username}*！👋 我是SureWin VIP部门的${agentName}。\n\n恭喜您！🎉 您本月有效流水 *${turnover}* 已达到晋升 *${nextTier}* 的要求！\n\n我们将为您安排升级，请告知您方便的时间。💎`
-      : `您好 *${player.username}*！👋 我是SureWin VIP部门的${agentName}。\n\n您本月有效流水为 *${turnover}*，距离晋升 *${nextTier}* 还差 *${gap}*！🎯\n\n继续加油，有任何需要请随时联系！💎`,
+      ? `您好 *${player.username}*！👋 我是SureWin VIP部门的${agentName}。\n\n恭喜您！🎉 您本月有效流水 *${turnover}* 已达到晋升 *${nextLabel}* 的要求！\n\n我们将为您安排升级，请告知您方便的时间。💎`
+      : `您好 *${player.username}*！👋 我是SureWin VIP部门的${agentName}。\n\n您本月有效流水为 *${turnover}*，距离晋升 *${nextLabel}* 还差 *${gapLabel}*！🎯\n\n继续加油，有任何需要请随时联系！💎`,
   }
 
   const message = templates[lang]
