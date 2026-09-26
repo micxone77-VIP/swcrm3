@@ -284,10 +284,30 @@ function PromoteModal({ suspended, standbys, onDone, onClose }) {
   )
 }
 
+// ─── Reload urgency helper ────────────────────────────────────────────────────
+// Returns null | 'warn' (≥25 days) | 'urgent' (≥30 days or valid_until ≤7 days)
+function reloadUrgency(row) {
+  if (!['Active', 'Cooling'].includes(row.status)) return null
+  const today = new Date(); today.setHours(0,0,0,0)
+  let urgent = false, warn = false
+  if (row.last_reload_date) {
+    const days = Math.floor((today - new Date(row.last_reload_date)) / 86400000)
+    if (days >= 30) urgent = true
+    else if (days >= 25) warn = true
+  }
+  if (row.valid_until) {
+    const daysLeft = Math.floor((new Date(row.valid_until) - today) / 86400000)
+    if (daysLeft <= 7) urgent = true
+  }
+  return urgent ? 'urgent' : warn ? 'warn' : null
+}
+
 // ─── Row ──────────────────────────────────────────────────────────────────────
 function NumberRow({ row, standbys, onEdit, onDelete, onPromote }) {
   const fmtDate = d => d ? new Date(d).toLocaleDateString('en-MY', { day: '2-digit', month: 'short', year: '2-digit' }) : '—'
   const isExpired = row.valid_until && new Date(row.valid_until) < new Date()
+  const urgency = reloadUrgency(row)
+  const reloadColor = urgency === 'urgent' ? '#EF4444' : urgency === 'warn' ? '#F59E0B' : 'var(--muted)'
 
   return (
     <tr style={{ borderBottom: '1px solid var(--border)', fontSize: 13 }}>
@@ -320,7 +340,12 @@ function NumberRow({ row, standbys, onEdit, onDelete, onPromote }) {
       <td style={{ padding: '8px 10px', color: isExpired ? '#EF4444' : 'var(--muted)', fontSize: 12 }}>
         {fmtDate(row.valid_until)}{isExpired && <span style={{ marginLeft: 4, fontSize: 10, color: '#EF4444' }}>⚠️</span>}
       </td>
-      <td style={{ padding: '8px 10px', color: 'var(--muted)', fontSize: 12 }}>{fmtDate(row.last_reload_date)}</td>
+      <td style={{ padding: '8px 10px', fontSize: 12, color: reloadColor, fontWeight: urgency ? 700 : 400 }}>
+        {fmtDate(row.last_reload_date)}
+        {urgency === 'urgent' && <span title="Reload overdue!" style={{ marginLeft: 4 }}>🔴</span>}
+        {urgency === 'warn'   && <span title="Reload due soon" style={{ marginLeft: 4 }}>🟡</span>}
+        {!row.last_reload_date && ['Active','Cooling'].includes(row.status) && <span style={{ color: '#F59E0B', fontSize: 11 }}>No date set</span>}
+      </td>
       <td style={{ padding: '8px 10px', color: 'var(--muted)', fontSize: 12, maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.notes || '—'}</td>
       <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>
         <div style={{ display: 'flex', gap: 4 }}>
@@ -419,9 +444,13 @@ export default function WANumbers() {
     chip: (active) => ({ padding: '5px 14px', borderRadius: 20, border: `1px solid ${active ? 'var(--brand)' : 'var(--border)'}`, background: active ? 'var(--brand)' : 'var(--surface2)', color: active ? '#fff' : 'var(--muted)', cursor: 'pointer', fontSize: 12, fontWeight: active ? 700 : 400 }),
   }
 
-  const totalActive   = rows.filter(r => r.status === 'Active').length
-  const totalStandby  = rows.filter(r => r.status === 'Standby').length
+  const totalActive    = rows.filter(r => r.status === 'Active').length
+  const totalStandby   = rows.filter(r => r.status === 'Standby').length
   const totalSuspended = rows.filter(r => r.status === 'Suspended').length
+
+  // Numbers needing reload attention (from visible rows)
+  const reloadAlerts = visible.filter(r => reloadUrgency(r) !== null)
+    .sort((a, b) => (reloadUrgency(a) === 'urgent' ? -1 : 1))
 
   return (
     <div style={s.page}>
@@ -445,6 +474,36 @@ export default function WANumbers() {
           <button key={h} style={s.chip(hostFilter === h)} onClick={() => setHostFilter(h)}>{h}</button>
         ))}
       </div>
+
+      {/* Reload alert banner */}
+      {reloadAlerts.length > 0 && (
+        <div style={{ marginBottom: 20, borderRadius: 10, border: '1px solid #EF444444', background: '#EF444411', padding: '12px 16px' }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#EF4444', marginBottom: 8 }}>
+            🔔 Reload Reminder — {reloadAlerts.length} number{reloadAlerts.length > 1 ? 's' : ''} need attention
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {reloadAlerts.map(r => {
+              const u = reloadUrgency(r)
+              const today = new Date(); today.setHours(0,0,0,0)
+              const days = r.last_reload_date
+                ? Math.floor((today - new Date(r.last_reload_date)) / 86400000)
+                : null
+              return (
+                <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13 }}>
+                  <span>{u === 'urgent' ? '🔴' : '🟡'}</span>
+                  <strong style={{ color: 'var(--text)' }}>{r.codename || r.number}</strong>
+                  <span style={{ color: 'var(--muted)' }}>{r.number}</span>
+                  <span style={{ color: u === 'urgent' ? '#EF4444' : '#F59E0B', fontWeight: 600 }}>
+                    {days === null ? 'No reload date set' : days >= 30 ? `${days} days since last reload — OVERDUE` : `${days} days since last reload — due soon`}
+                  </span>
+                  <span style={{ color: 'var(--muted)', fontSize: 11 }}>({r.host})</span>
+                  <button onClick={() => setEditModal(r)} style={{ marginLeft: 'auto', padding: '3px 10px', borderRadius: 5, border: '1px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)', cursor: 'pointer', fontSize: 11 }}>Update reload date</button>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Sections */}
       {loading ? (
