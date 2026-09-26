@@ -39,6 +39,7 @@ import HostPerformance       from './pages/HostPerformance'
 import ActiveTracker         from './pages/ActiveTracker'
 import WeeklyOutcome         from './pages/WeeklyOutcome'
 import LuckySpinAdmin        from './pages/LuckySpinAdmin'
+import WANumbers             from './pages/WANumbers'
 import './pages/RetentionAnalytics.css'
 
 export default function App() {
@@ -81,6 +82,7 @@ export default function App() {
       <Route path="retention-analytics" element={<RequireRole roles={['admin','readonly']}><RetentionAnalytics /></RequireRole>} />
       <Route path="monthly-report" element={<RequireRole roles={['admin']}><MonthlyReportExport /></RequireRole>} />
       <Route path="host-performance" element={<RequireRole roles={['admin','host','readonly']}><HostPerformance /></RequireRole>} />
+      <Route path="wa-numbers" element={<RequireRole roles={['admin','host']}><WANumbers /></RequireRole>} />
     </Route>
     <Route path="*" element={<Navigate to="/today" replace />} />
   </Routes></BrowserRouter></LanguageProvider></AuthProvider>

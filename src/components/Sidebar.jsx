@@ -45,6 +45,7 @@ const NAV_GROUPS = [
     { to: '/host-performance', label: 'Host Performance', icon: '🏆', roles: ['admin','host','readonly'] },
   ] },
   { key: 'system', label: 'System', icon: '⚙️', items: [
+    { to: '/wa-numbers', label: 'WA Numbers', icon: '📱', roles: ['admin','host'] },
     { to: '/users', label: 'Users', icon: '👥', roles: ['admin'] },
     { to: '/import', label: 'Import', icon: '📥', roles: ['admin'] },
     { to: '/export', label: 'Export', icon: '📤', roles: ['admin'] },
