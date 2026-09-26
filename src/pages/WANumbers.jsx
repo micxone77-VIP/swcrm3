@@ -61,10 +61,12 @@ function NumberModal({ initial, hosts, onSave, onClose }) {
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
+  const isStandby = form.status === 'Standby'
+
   async function handleSave() {
-    if (!form.host.trim())     return setErr('Host is required.')
-    if (!form.codename.trim()) return setErr('Codename is required.')
-    if (!form.number.trim())   return setErr('Number is required.')
+    if (!form.host.trim())                           return setErr('Host is required.')
+    if (!isStandby && !form.codename.trim())         return setErr('Codename is required.')
+    if (!form.number.trim())                         return setErr('Number is required.')
     setSaving(true); setErr('')
     try {
       const payload = {
@@ -143,14 +145,36 @@ function NumberModal({ initial, hosts, onSave, onClose }) {
               />
               <datalist id="host-list">{hosts.map(h => <option key={h} value={h} />)}</datalist>
             </div>
-            {inp('Codename', 'codename', { placeholder: 'Marcus01' })}
+            <div style={{ marginBottom: 12, opacity: isStandby ? 0.4 : 1 }}>
+              <label style={{ display: 'block', fontSize: 11, color: 'var(--muted)', marginBottom: 4, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.4px' }}>
+                Codename {isStandby && <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>(assigned on promote)</span>}
+              </label>
+              <input
+                value={form.codename || ''}
+                onChange={e => set('codename', e.target.value)}
+                placeholder="Marcus01"
+                disabled={isStandby}
+                style={{ width: '100%', boxSizing: 'border-box', background: 'var(--surface2)', border: '1px solid var(--border)', color: 'var(--text)', borderRadius: 7, padding: '8px 10px', fontSize: 13 }}
+              />
+            </div>
             {inp('Number', 'number', { placeholder: '601112365940' })}
             {sel('Type', 'type', TYPES)}
             {sel('Telco', 'telco', ['', ...TELCOS])}
           </div>
           <div>
             {sel('Status', 'status', STATUSES)}
-            {inp('Phone Slot', 'phone_slot', { placeholder: 'opo ori 1' })}
+            <div style={{ marginBottom: 12, opacity: isStandby ? 0.4 : 1 }}>
+              <label style={{ display: 'block', fontSize: 11, color: 'var(--muted)', marginBottom: 4, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.4px' }}>
+                Phone Slot {isStandby && <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>(assigned on promote)</span>}
+              </label>
+              <input
+                value={form.phone_slot || ''}
+                onChange={e => set('phone_slot', e.target.value)}
+                placeholder="opo ori 1"
+                disabled={isStandby}
+                style={{ width: '100%', boxSizing: 'border-box', background: 'var(--surface2)', border: '1px solid var(--border)', color: 'var(--text)', borderRadius: 7, padding: '8px 10px', fontSize: 13 }}
+              />
+            </div>
             {inp('Email', 'email', { placeholder: 'c.wapps101@gmail.com' })}
             {inp('Valid Until', 'valid_until', { type: 'date' })}
             {inp('Last Reload', 'last_reload_date', { type: 'date' })}
@@ -215,8 +239,15 @@ function PromoteModal({ suspended, standbys, onDone, onClose }) {
   async function go() {
     if (!chosen) return
     setBusy(true)
+    // Suspend the old active number
     await supabase.from('wa_numbers').update({ status: 'Suspended' }).eq('id', suspended.id)
-    await supabase.from('wa_numbers').update({ status: 'Active' }).eq('id', chosen)
+    // Promote standby: inherit codename, phone_slot, email from the suspended slot
+    await supabase.from('wa_numbers').update({
+      status: 'Active',
+      codename:   suspended.codename,
+      phone_slot: suspended.phone_slot,
+      email:      suspended.email,
+    }).eq('id', chosen)
     onDone()
   }
 
@@ -235,8 +266,8 @@ function PromoteModal({ suspended, standbys, onDone, onClose }) {
               <label key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderRadius: 7, marginBottom: 4, background: chosen === s.id ? 'rgba(34,197,94,.1)' : 'var(--surface2)', border: `1px solid ${chosen === s.id ? '#22C55E44' : 'var(--border)'}`, cursor: 'pointer' }}>
                 <input type="radio" name="standby" value={s.id} checked={chosen === s.id} onChange={() => setChosen(s.id)} />
                 <div>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{s.codename} — {s.number}</div>
-                  <div style={{ fontSize: 11, color: 'var(--muted)' }}>{s.telco} · {s.phone_slot || 'No slot'}</div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{s.number}</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)' }}>{s.telco} · {s.type} — will take slot <strong style={{ color: 'var(--text)' }}>{suspended.codename}</strong> / {suspended.phone_slot}</div>
                 </div>
               </label>
             ))}
