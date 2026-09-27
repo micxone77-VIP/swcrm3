@@ -12,7 +12,266 @@
 //   OPENAI_API_KEY        your OpenAI API key (secret)
 
 const OPENAI_MODEL = 'gpt-4o-mini'
-const MAX_TOKENS   = 2500
+const MAX_TOKENS   = 3200
+
+// ─── CRM System Knowledge ─────────────────────────────────────────────────────
+// Injected into every Ask Data prompt so the AI can teach users how the
+// campaign system works, explain fields, and check settings.
+
+const CRM_SYSTEM_KNOWLEDGE = `
+═══ CRM SYSTEM KNOWLEDGE (how this CRM works) ═══
+
+You know the complete structure of the Campaign system. Use this knowledge to:
+• Teach the host how to create a campaign step by step
+• Explain what any campaign setting means
+• Check whether a campaign's settings look correct
+• Explain how reward calculations work
+• Guide the host through using any tab or feature
+
+── CAMPAIGN TYPES ───────────────────────────────────────────────────────────
+There are 6 campaign types, each with its own reward logic:
+
+1. GOLD BAR (gold_bar)
+   - Player deposits ≥ deposit_target → receives a physical gold bar or gift
+   - gold_bar_value field shows the RM value of the gold bar
+   - Example: Deposit ≥ RM 50,000 → receive gold bar worth RM 3,400
+   - Good for: high-value single-shot incentive campaigns
+
+2. % REWARD (pct_reward)
+   - Player deposits ≥ deposit_target → earns deposit × reward_pct%
+   - Optional reward_cap limits the maximum payout (e.g. max RM 5,000)
+   - Example: Deposit RM 50,000 × 6% = RM 3,000 Credit reward
+   - Good for: scalable deposit incentives where bigger deposit = bigger reward
+
+3. FIXED REWARD (fixed_reward)
+   - Single level: deposit ≥ deposit_target → fixed reward_fixed amount
+   - Multi-level (is_multi_level=true): multiple thresholds each unlock a credit reward
+     e.g. Level 1: deposit ≥ RM 30k → RM 800 credit; Level 2: ≥ RM 50k → RM 1,500 credit
+     The player can unlock multiple levels — each unlocked level pays its own credit amount
+     Levels are additive: hitting Level 2 doesn't lose Level 1 reward
+   - Good for: milestone-style campaigns with increasing incentives
+
+4. TIERED % REWARD (tiered_reward)
+   - Multiple deposit ranges, each with its own reward %
+   - The % applies to the FULL deposit amount at the highest qualifying tier (not cumulative)
+   - Example tiers: RM 10k-29,999 → 1.5% | RM 30k-49,999 → 3% | RM 50k+ → 6%
+   - Player deposits RM 35,000 → highest qualifying tier is 3% → reward = RM 35,000 × 3% = RM 1,050
+   - Good for: encouraging larger deposits with better rates for higher amounts
+
+5. DEPOSIT + TURNOVER TIERS (dual_tier)
+   - Player must meet BOTH a deposit threshold AND a turnover threshold simultaneously
+   - Earns the HIGHEST tier where BOTH conditions are met at the same time
+   - Each tier has: depositThreshold (RM), turnoverThreshold (RM), creditAmount, wcashAmount
+   - Two settlement modes:
+     a) TOTAL (settlement_frequency='total'): accumulates across the whole campaign period
+     b) DAILY (settlement_frequency='daily'): each day is independent — no carry-over between days
+        Daily mode uses a day-by-day entry screen to record each day's deposit + turnover
+   - Reward is in Credit (cash) + WCash (withdrawal cash) — these are DIFFERENT reward types
+   - Example: Tier 1: deposit ≥ RM 10,000 + turnover ≥ RM 50,000 → RM 200 credit + RM 200 wcash
+   - Good for: rewarding both deposit activity AND betting turnover
+
+6. LEADERBOARD (leaderboard)
+   - Top N players by valid bet (or deposit, or both) win rank prizes
+   - min_valid_bet: minimum monthly valid bet required to qualify
+   - min_deposit_lb: optional minimum deposit requirement (in addition or alternative)
+   - leaderboard_metric: 'turnover' (default), 'deposit', or 'turnover_deposit' (both required)
+   - top_n: how many prize slots (e.g. top 3)
+   - rank_rewards: each rank has an amount (e.g. Rank 1 = RM 12,000, Rank 2 = RM 8,000)
+   - Players must qualify (meet minimums) to be eligible; ranked by their metric
+   - Good for: competitive monthly challenges among VIPs
+
+── CAMPAIGN STATUS FLOW ─────────────────────────────────────────────────────
+draft → (publish) → upcoming (if start_date is future) or active (if start_date is today/past)
+upcoming → (launch now) → active
+active → (pause) → paused
+paused → (resume) → active
+active/paused → (end) → ended
+
+- DRAFT: not live, not visible to players, editing allowed
+- UPCOMING: published but campaign hasn't started yet
+- ACTIVE: campaign is running, daily entries or player progress being recorded
+- PAUSED: temporarily suspended
+- ENDED: campaign is finished; rewards can still be marked paid
+
+── REQUIRED FIELDS WHEN CREATING A CAMPAIGN ─────────────────────────────────
+All campaigns need:
+• campaign_type: the type (gold_bar / pct_reward / fixed_reward / tiered_reward / dual_tier / leaderboard)
+• campaign_name: descriptive name (e.g. "September Deposit Reward")
+• campaign_code: short code in capitals (e.g. "DEP-REWARD-SEP26")
+• platform: MY (Malaysia), SG (Singapore), KH (Cambodia), or BOTH
+• status: usually start as "draft"
+• start_date and end_date: date range of the campaign
+• budget_rm: total reward budget (RM)
+• reward_delivery: how reward is paid out — Credit, WCash (withdrawal cash), Gold Bar, Gift, Voucher
+
+Type-specific required fields:
+• gold_bar: deposit_target (min deposit RM), gold_bar_value (gold bar RM value)
+• pct_reward: deposit_target, reward_pct (e.g. 6 for 6%), optionally reward_cap
+• fixed_reward: deposit_target, reward_fixed (RM amount); or campaign_levels for multi-level
+• tiered_reward: deposit_target, reward_tiers (array of {min, max, pct})
+• dual_tier: reward_tiers (array of {depositThreshold, turnoverThreshold, creditAmount, wcashAmount}), settlement_frequency (total or daily)
+• leaderboard: min_valid_bet, top_n, rank_rewards (array of {rank, amount, desc}), optionally min_deposit_lb
+
+Optional fields:
+• offer_desc: description of the offer (shown on campaign card)
+• target_tier: which VIP tiers this campaign targets (GOLD/PLATINUM/DIAMOND)
+• turnover_multiplier: e.g. 3 = reward × 3 required turnover before withdrawal
+• notes: internal notes
+• whatsapp_template: custom WA message template for this campaign
+  Placeholders: {username}, {campaign}, {agent}, {gap}
+• festival: occasion name (e.g. "Merdeka 2026")
+• campaign_category: standard / deposit_milestone / leaderboard / vip_exclusive
+
+── HOW TO CREATE A CAMPAIGN (step by step) ──────────────────────────────────
+1. Go to Campaigns page → click "+ New Campaign"
+2. Select the campaign type (explains reward logic in the picker)
+3. Fill in: Campaign Name, Campaign Code (UPPERCASE), Platform, Status (start as "draft")
+4. Enter Start Date and End Date
+5. Enter the type-specific reward fields (see above)
+6. Select Reward Delivery Method (Credit / WCash / Gold Bar / Gift / Voucher)
+7. Optionally select Target Tiers and fill in Offer Description and Notes
+8. Click "Create Campaign" → campaign is saved as draft
+9. Open the campaign, click "Edit" to enroll VIP players
+10. When ready, click "Activate" (or "Publish Upcoming" if start date is future)
+
+── ENROLLING PLAYERS ─────────────────────────────────────────────────────────
+• Open a campaign → detail modal appears
+• Use the "Add VIP" button or bulk-add from VIP list
+• Players are stored in campaign_players table
+• Each enrolled player has: status (active/dropped), payout_status (pending/paid)
+• For multi-level fixed_reward campaigns: enrolling a player triggers sync_manual_campaign_player_progress RPC to calculate progress
+
+── DAILY ENTRY (for dual_tier daily mode) ────────────────────────────────────
+• Open the campaign → "Chase" tab shows a date selector at the top
+• Select the date, enter each player's deposit_amount and turnover_amount
+• Click Save — the system calculates the reward for that day automatically
+• Each date is independent: depositing RM 5,000 on Day 1 does NOT carry to Day 2
+• The reward calculation checks if both deposit AND turnover thresholds are met
+• "Import from VIP Data" button: auto-pulls deposit + turnover from actual platform snapshots
+  (vip_daily_snapshots table) — useful to avoid manual entry
+
+── CAMPAIGN TABS (in the campaign detail modal) ──────────────────────────────
+CHASE TAB (default view):
+• Shows all enrolled players sorted by deposit (highest first)
+• Columns: username, tier, host, deposit, status (qualified / near target / in progress)
+• "Near target" = 70%+ of deposit goal but not yet qualified
+• "In progress" = below 70% of goal
+• WhatsApp button (green W) builds a progress-aware WA message for each player
+• Filter by host or search by username
+• For leaderboard campaigns: shows rank, valid bet, whether in top N
+
+PAYOUT TAB:
+• Shows only players who have QUALIFIED (met the reward condition)
+• For daily dual_tier: shows all days with any qualifying entries (credit/wcash > 0)
+• Columns: username, deposit, reward earned, payout status (pending/paid)
+• Click "Mark Paid" to record that reward was delivered
+• Shows totals: total reward owed, total paid, total pending
+
+INACTIVE TAB:
+• Players who enrolled but have NOT made any qualifying entries recently
+• For daily mode: players with no entries in the last 7 days
+• Helps identify which enrolled players need a chase call
+
+STREAK TAB (only for streak-enabled campaigns):
+• Shows streak bonus records — each completed N-day streak earns a bonus
+• streak_days: how many consecutive qualifying days = 1 streak (e.g. 3)
+• Streak bonus types: percentage of period deposit OR fixed amount
+• Per-player cap override possible (streak_bonus_cap_override)
+• Payout date = last day of streak period + 1 day
+• Streaks break if player misses a day (no carry-over for non-consecutive days)
+
+SUMMARY TAB (dual_tier daily mode):
+• Shows aggregate across all days of the campaign
+• Total: qualifying entries, unique participants, total credit reward, total wcash reward
+• Per-player breakdown: total credit, total wcash, qualifying days
+• Tier hit counts: how many entries hit each tier
+• Paid vs pending split (Credit and WCash tracked separately — never combined)
+
+ALL TAB:
+• Full list of all enrolled players regardless of qualification status
+• Useful for bulk operations and overall view
+
+── REWARD CALCULATION DETAILS ────────────────────────────────────────────────
+pct_reward: reward = deposit × (reward_pct / 100), capped at reward_cap if set
+  e.g. RM 80,000 × 6% = RM 4,800; if cap = RM 4,000 → reward = RM 4,000
+
+tiered_reward: find the highest tier where deposit falls (by min/max range)
+  Apply that tier's % to the FULL deposit amount
+  e.g. Tiers: 10k-29,999→1.5%, 30k-49,999→3%, 50k+→6%
+  Player deposits RM 35,000 → highest qualifying tier is 3% → RM 35,000 × 3% = RM 1,050
+
+dual_tier: player must meet BOTH deposit AND turnover thresholds simultaneously
+  Find the HIGHEST tier where BOTH are satisfied
+  e.g. Tiers: T1(dep≥10k, to≥50k → RM200 credit+RM200 wcash), T2(dep≥20k, to≥100k → RM400+RM400)
+  Player: dep=RM 25,000, turnover=RM 80,000 → meets T1 but not T2 → earns RM 200 credit + RM 200 wcash
+
+fixed_reward multi-level: each level is independent; all qualifying levels earn their reward
+  Levels sorted by deposit_threshold ascending
+  Player qualifies for every level whose threshold they have exceeded
+
+leaderboard: players ranked by valid_bet (or deposit) descending
+  Only players meeting min_valid_bet qualify
+  Top N qualified players earn their rank's reward amount
+  A player not meeting min_valid_bet does not qualify even if they rank in top N by bet size
+
+── CONTACT LOG TYPES ─────────────────────────────────────────────────────────
+Contact logs track all player interactions. Types:
+• daily: regular daily check-in or update
+• wa_sent: WhatsApp message was sent to the player
+• responded: player responded to outreach
+• no_response: player did not respond
+• promised: player promised to deposit
+• deposited: player actually deposited after promise
+• reward: reward was credited/paid to player
+• inactive: player marked as inactive after no activity
+• other: any other type of note
+
+── WHATSAPP MESSAGING ────────────────────────────────────────────────────────
+• Every player row in Chase tab has a green "W" button
+• Auto-builds a progress-aware message showing exactly how much more the player needs
+• For pct_reward/fixed_reward: shows gap to deposit_target
+• For dual_tier: shows gap to next tier (both deposit and turnover gaps)
+• For leaderboard: shows rank, whether in top N, valid bet needed to reach top N
+• For multi-level: shows which levels completed and what's needed for next level
+• Custom template: set whatsapp_template on campaign with {username}, {campaign}, {agent}, {gap} placeholders
+• Message opens WhatsApp web with pre-filled message — host reviews before sending
+
+── PAYOUT / REWARD DELIVERY ──────────────────────────────────────────────────
+Reward delivery methods:
+• Credit: credited directly to player's account (most common)
+• WCash: withdrawal cash — has wagering requirement before player can withdraw
+• Gold Bar: physical gold bar or gift item
+• Gift: physical gift
+• Voucher: voucher code or physical voucher
+
+Payout tracking:
+• Each player has payout_status: "pending" or "paid"
+• Mark as paid in the Payout tab after delivering the reward
+• For multi-level: each level tracks separately via campaign_rewards table
+
+── REAL FINANCIALS vs CAMPAIGN ENTRIES ───────────────────────────────────────
+IMPORTANT DISTINCTION (used when checking campaign ROI):
+• campaign_players.total_deposit / daily_turnover_entries: MANUALLY ENTERED values
+  These are used purely to judge reward qualification — they may differ from actual platform data
+• vip_daily_snapshots: REAL platform data (actual deposits, withdrawals, valid bet)
+  The "Real Financials" section on each campaign uses snapshot data for profitability analysis
+  Only counts days where monthly_valid_bet > 0 (inactive days have stale data on the platform)
+
+── CHECKING IF A CAMPAIGN SETTING IS CORRECT ────────────────────────────────
+When asked to check a campaign's settings, verify:
+1. campaign_type matches the intended reward structure
+2. start_date and end_date cover the right period
+3. deposit_target is set appropriately (not 0, not too high or too low)
+4. For pct_reward: reward_pct is a number 1-20 (e.g. 6 = 6%), reward_cap if needed
+5. For dual_tier daily: settlement_frequency = 'daily', tiers have both deposit + turnover thresholds
+6. For dual_tier: each tier must have turnoverThreshold set; depositThreshold is optional
+7. For leaderboard: min_valid_bet is realistic, top_n matches rank_rewards array length
+8. For tiered_reward: tier ranges shouldn't overlap; the highest tier should have no max (blank)
+9. budget_rm should be >= the potential total reward payout
+10. target_tier should include the right tiers (empty = all tiers eligible)
+11. platform should match where the players are (MY/SG/KH/BOTH)
+12. status: draft = not live, active = running, ended = finished
+`
 
 // ─── Entry point ──────────────────────────────────────────────────────────────
 
@@ -388,6 +647,8 @@ ${contactsBlock}
 
 ═══ CAMPAIGNS (${(campaigns || []).length} total) ═══
 ${campaignsBlock}
+
+${CRM_SYSTEM_KNOWLEDGE}
 `.trim()
 }
 
