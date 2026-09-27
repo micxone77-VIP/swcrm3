@@ -1,5 +1,5 @@
 // src/pages/Today.jsx — Command Center / Today (V2)
-import { useState, useEffect } from 'react'
+import { useState, useEffect, lazy, Suspense } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import { useDashboard } from '../hooks/useDashboard'
@@ -13,6 +13,28 @@ import { TierBadge, RiskBadge } from '../components/ui'
 import { formatMoney } from '../lib/format'
 import VipQuickSearch from '../components/VipQuickSearch'
 import { useLanguage } from '../contexts/LanguageContext'
+
+const FollowUpTab = lazy(() => import('./FollowUp'))
+const RetentionQueueTab = lazy(() => import('./RetentionQueue'))
+
+const MAIN_TABS = [
+  { key: 'today',     label: '📅 Today' },
+  { key: 'followup',  label: '📞 Follow Up' },
+  { key: 'retention', label: '🎯 Retention Queue' },
+]
+
+function TabBar({ active, onChange }) {
+  return (
+    <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border)', marginBottom: 20 }}>
+      {MAIN_TABS.map(tab => (
+        <button key={tab.key} onClick={() => onChange(tab.key)}
+          style={{ padding: '9px 18px', background: 'none', border: 'none', borderBottom: active === tab.key ? '2px solid var(--accent)' : '2px solid transparent', color: active === tab.key ? 'var(--accent)' : 'var(--muted)', fontWeight: active === tab.key ? 700 : 400, fontSize: 13, cursor: 'pointer', marginBottom: -1, transition: 'color .15s' }}>
+          {tab.label}
+        </button>
+      ))}
+    </div>
+  )
+}
 
 const OUTCOMES = ['Contacted', 'No Reply', 'Replied', 'Deposited', 'Reactivated']
 const TIER_ORDER = { BLACK:0, DIAMOND:1, PLATINUM:2, GOLD:3, SILVER:4, BRONZE:5 }
@@ -30,6 +52,7 @@ export default function Today() {
   const { profile } = useAuth()
   const { toast, ToastContainer } = useToast()
   const { t } = useLanguage()
+  const [mainTab, setMainTab] = useState('today')
   const [host, setHost] = useState('All')
   const [tierFilter, setTierFilter] = useState(['PLATINUM','DIAMOND'])
   const [activeQueue, setActiveQueue] = useState('all')
@@ -154,9 +177,24 @@ export default function Today() {
   if (loading) return <div style={{ padding: 32 }}><LoadingState message="Loading today's work…" /></div>
   if (error) return <div style={{ padding: 32 }}><ErrorState message={error} onRetry={refresh} /></div>
 
+  // Sub-tab shortcut renders — bypass dashboard data for non-today tabs
+  if (mainTab === 'followup') return (
+    <div style={{ padding: '24px 28px' }}>
+      <TabBar active={mainTab} onChange={setMainTab} />
+      <Suspense fallback={<LoadingState />}><FollowUpTab /></Suspense>
+    </div>
+  )
+  if (mainTab === 'retention') return (
+    <div style={{ padding: '24px 28px' }}>
+      <TabBar active={mainTab} onChange={setMainTab} />
+      <Suspense fallback={<LoadingState />}><RetentionQueueTab /></Suspense>
+    </div>
+  )
+
   return (
     <div style={{ padding: '24px 28px', maxWidth: 1200 }}>
       <ToastContainer />
+      <TabBar active={mainTab} onChange={setMainTab} />
 
       {/* ── Header ── */}
       <div style={{ marginBottom: 24 }}>

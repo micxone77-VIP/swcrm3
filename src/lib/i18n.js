@@ -85,7 +85,7 @@ export const translations = {
         analytics: 'Analytics',
         playerProfiling: 'Player Profiling',
         contactLog: 'Contact Log',
-        churnAlerts: 'Churn Alerts',
+        churnAlerts: 'Churn Urgency',
         dailyTargets: 'Daily Targets',
         birthdayReminder: 'Birthday Reminder',
         campaigns: 'Campaigns',
@@ -722,7 +722,7 @@ export const translations = {
       allHosts: 'All Hosts',
     },
     atRisk: {
-      title: 'At Risk VIPs',
+      title: 'Active Risk VIPs',
       subtitle: 'VIPs with active churn risk signals',
       colVip: 'VIP',
       colRiskLevel: 'Risk Level',
@@ -963,7 +963,7 @@ export const translations = {
       cancel: 'Cancel',
     },
     retentionWorkspace: {
-      title: 'Retention Workspace',
+      title: 'Churn Analysis',
       subtitle: 'Monthly churn snapshot & team analysis',
       saveSnapshot: 'Save Snapshot to DB',
       saving: 'Saving…',
@@ -1077,7 +1077,7 @@ export const translations = {
         analytics: '数据分析',
         playerProfiling: '玩家画像',
         contactLog: '联系记录',
-        churnAlerts: '流失预警',
+        churnAlerts: '流失紧急',
         dailyTargets: '每日目标',
         birthdayReminder: '生日提醒',
         campaigns: '活动管理',
@@ -1714,7 +1714,7 @@ export const translations = {
       allHosts: '所有主机',
     },
     atRisk: {
-      title: '风险VIP',
+      title: '活跃风险VIP',
       subtitle: '存在流失风险信号的VIP',
       colVip: 'VIP',
       colRiskLevel: '风险等级',
@@ -1955,7 +1955,7 @@ export const translations = {
       retentionRate: '留存率',
     },
     retentionWorkspace: {
-      title: '留存工作台',
+      title: '流失分析',
       subtitle: '月度流失快照 & 团队分析',
       saveSnapshot: '保存快照到数据库',
       saving: '保存中…',

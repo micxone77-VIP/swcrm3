@@ -14,7 +14,7 @@ const NAV_GROUPS = [
   ] },
   { key: 'vip', label: 'VIP Operations', icon: '👑', items: [
     { to: '/vips', label: 'All VIPs', icon: '👥', roles: ['admin','host'] },
-    { to: '/at-risk', label: 'At Risk', icon: '⚠️', roles: ['admin','host'] },
+    { to: '/at-risk', label: 'Active Risk', icon: '⚠️', roles: ['admin','host'] },
     { to: '/active-tracker', label: 'Active Tracker', icon: '📡', roles: ['admin','host'] },
     { to: '/follow-up', label: 'Follow Up', icon: '📞', roles: ['admin','host'] },
     { to: '/birthdays', label: 'Birthdays', icon: '🎂', roles: ['admin','host','readonly'] },
@@ -22,9 +22,9 @@ const NAV_GROUPS = [
     { to: '/transfer', label: 'Transfers', icon: '🔄', roles: ['admin'] },
   ] },
   { key: 'retention', label: 'Retention', icon: '📉', items: [
-    { to: '/retention', label: 'Monthly Churn', icon: '📉', roles: ['admin','host','readonly'] },
+    { to: '/retention', label: 'Churn Analysis', icon: '📉', roles: ['admin','host','readonly'] },
     { to: '/retention-queue', label: 'Daily Work Queue', icon: '🎯', roles: ['admin','host','readonly'] },
-    { to: '/churn', label: 'Churn Alerts', icon: '🚨', roles: ['admin','host'] },
+    { to: '/churn', label: 'Churn Urgency', icon: '🚨', roles: ['admin','host'] },
     { to: '/contacts', label: 'Contact Log', icon: '📝', roles: ['admin','host'] },
     { to: '/weekly-outcome', label: 'Weekly Outcome', icon: '📋', roles: ['admin','host','readonly'] },
     { to: '/retention-analytics', label: 'Retention Analytics', icon: '📊', roles: ['admin','readonly'] },
@@ -34,15 +34,17 @@ const NAV_GROUPS = [
     { to: '/lucky-spin-admin', label: 'Lucky Spin', icon: '🎰', roles: ['admin','host'] },
     { to: '/budget', label: 'Budget', icon: '💰', roles: ['admin'] },
   ] },
-  { key: 'intelligence', label: 'Intelligence', icon: '📊', items: [
+  { key: 'analytics', label: 'Analytics', icon: '📈', items: [
     { to: '/analytics', label: 'Analytics', icon: '📈', roles: ['admin','readonly'] },
-    { to: '/kpi', label: 'KPI', icon: '🏆', roles: ['admin','host','readonly'] },
-    { to: '/period-report', label: 'Reports', icon: '📅', roles: ['admin','readonly'] },
-    { to: '/profiling', label: 'Player Insights', icon: '🧠', roles: ['admin','readonly'] },
     { to: '/tier-analytics', label: 'Tier Analytics', icon: '🔬', roles: ['admin','readonly'] },
-    { to: '/ask', label: 'Ask Data', icon: '💬', roles: ['admin','host'] },
+    { to: '/profiling', label: 'Player Insights', icon: '🧠', roles: ['admin','readonly'] },
+    { to: '/period-report', label: 'Reports', icon: '📅', roles: ['admin','readonly'] },
     { to: '/monthly-report', label: 'Monthly PPT', icon: '📊', roles: ['admin'] },
-    { to: '/host-performance', label: 'Host Performance', icon: '🏆', roles: ['admin','host','readonly'] },
+  ] },
+  { key: 'performance', label: 'Performance', icon: '🏆', items: [
+    { to: '/kpi', label: 'KPI', icon: '🏆', roles: ['admin','host','readonly'] },
+    { to: '/host-performance', label: 'Host Performance', icon: '📋', roles: ['admin','host','readonly'] },
+    { to: '/ask', label: 'Ask Data', icon: '💬', roles: ['admin','host'] },
   ] },
   { key: 'system', label: 'System', icon: '⚙️', items: [
     { to: '/wa-numbers', label: 'WA Numbers', icon: '📱', roles: ['admin','host'] },
