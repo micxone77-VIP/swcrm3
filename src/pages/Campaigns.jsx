@@ -313,6 +313,17 @@ export default function Campaigns() {
   const [vipSearch,   setVipSearch]   = useState('')
   const [vipResults,  setVipResults]  = useState([])
 
+  // Bulk enrollment
+  const [bulkEnrollOpen,     setBulkEnrollOpen]     = useState(false)
+  const [bulkEnrollList,     setBulkEnrollList]     = useState([])
+  const [bulkEnrollLoading,  setBulkEnrollLoading]  = useState(false)
+  const [bulkEnrollSelected, setBulkEnrollSelected] = useState(new Set())
+  const [bulkEnrollSearch,   setBulkEnrollSearch]   = useState('')
+  const [bulkEnrollTier,     setBulkEnrollTier]     = useState('all')
+
+  // Bulk removal (chase + all-players tabs)
+  const [selectedForRemoval, setSelectedForRemoval] = useState(new Set())
+
   // Create form
   const blankForm = {
     campaign_type: 'pct_reward',
@@ -617,6 +628,43 @@ export default function Campaigns() {
     await loadPlayers(selected.id)
   }
 
+  // ── Bulk enrollment ──────────────────────────────────────────────────────────
+  async function openBulkEnroll() {
+    setBulkEnrollOpen(true); setBulkEnrollSelected(new Set()); setBulkEnrollSearch(''); setBulkEnrollTier('all')
+    setBulkEnrollLoading(true)
+    const { data } = await supabase.from('vip_members').select('id,username,full_name,tier,phone,whatsapp').eq('is_excluded',false).order('tier').order('username').limit(500)
+    const enrolled = new Set(players.map(p => p.username))
+    setBulkEnrollList((data||[]).filter(v => !enrolled.has(v.username)))
+    setBulkEnrollLoading(false)
+  }
+
+  async function doBulkEnroll() {
+    if (!selected || bulkEnrollSelected.size === 0) return
+    const toAdd = bulkEnrollList.filter(v => bulkEnrollSelected.has(v.id))
+    const rows = toAdd.map(v => ({
+      campaign_id: selected.id, vip_id: v.id, username: v.username, tier: v.tier,
+      whatsapp: v.whatsapp || v.phone || null, total_deposit: 0, campaign_period_deposit: 0,
+      converted: false, payout_status: 'pending', added_at: new Date().toISOString(),
+    }))
+    setBulkEnrollLoading(true)
+    const { data: inserted, error } = await supabase.from('campaign_players').insert(rows).select('id')
+    if (error) { alert('Bulk add failed: ' + error.message); setBulkEnrollLoading(false); return }
+    if (selected?.is_multi_level && inserted?.length) {
+      await Promise.all(inserted.map(r => supabase.rpc('sync_manual_campaign_player_progress', { p_campaign_player_id: r.id, p_campaign_period_deposit: 0 })))
+    }
+    await loadPlayers(selected.id)
+    setBulkEnrollLoading(false); setBulkEnrollOpen(false)
+  }
+
+  // ── Bulk remove ──────────────────────────────────────────────────────────────
+  async function bulkRemovePlayers() {
+    if (selectedForRemoval.size === 0) return
+    if (!window.confirm(`Remove ${selectedForRemoval.size} player${selectedForRemoval.size > 1 ? 's' : ''} from the campaign?`)) return
+    await supabase.from('campaign_players').delete().in('id', [...selectedForRemoval])
+    await loadPlayers(selected.id)
+    setSelectedForRemoval(new Set())
+  }
+
   // ── Campaign status ─────────────────────────────────────────────────────────
   async function setCampStatus(id, status) {
     await supabase.from('campaigns').update({ status }).eq('id', id)
@@ -735,7 +783,7 @@ export default function Campaigns() {
     await loadCampaigns()
   }
 
-  function closeModal() { setModal(null); setSelected(null); setPlayers([]); setCampaignPlayerLevels([]); setCampaignRewards([]); setVipSearch(''); setVipResults([]); setEditingCamp(false); setAiAnalysis(null); setDailyEntries({}); setEntryDate(''); setStreakBonuses({}); setStreakBonusesLoading(false); setContacts({}); setContactLog(null); setContactNote(''); setContactHistory(null); setInactiveHostFilter('all') }
+  function closeModal() { setModal(null); setSelected(null); setPlayers([]); setCampaignPlayerLevels([]); setCampaignRewards([]); setVipSearch(''); setVipResults([]); setEditingCamp(false); setAiAnalysis(null); setDailyEntries({}); setEntryDate(''); setStreakBonuses({}); setStreakBonusesLoading(false); setContacts({}); setContactLog(null); setContactNote(''); setContactHistory(null); setInactiveHostFilter('all'); setBulkEnrollOpen(false); setBulkEnrollList([]); setBulkEnrollSelected(new Set()); setSelectedForRemoval(new Set()) }
 
   async function loadDailyEntries(campaignId, date) {
     setDailyLoading(true)
@@ -1895,6 +1943,7 @@ export default function Campaigns() {
                     <div key={tier} onClick={()=>toggleTier(tier)} style={{ ...s.badge, cursor:'pointer', background:active?TIER_BG[tier]:'var(--surface2)', color:active?TIER_COLOR[tier]:'var(--muted)', border:`1px solid ${active?TIER_COLOR[tier]:'var(--border)'}`, padding:'5px 14px' }}>{tier}</div>
                   )})}
                 </div>
+                <div style={{ fontSize:11, color:'var(--muted)', marginTop:6 }}>💡 Leave blank — all tiers will be eligible</div>
               </div>
               <div style={s.frow}><div style={s.flbl}>Offer Description</div><textarea style={s.fta} rows={2} value={form.offer_desc} onChange={e=>setForm({...form,offer_desc:e.target.value})} placeholder="What's being offered?" /></div>
               <div style={s.frow}><div style={s.flbl}>Turnover Multiplier <span style={{ fontWeight:400, color:'var(--muted)', fontSize:10 }}>(WA message — e.g. 3 means reward × 3 required before withdrawal)</span></div><input type="number" min="1" step="0.5" style={s.finput} value={form.turnover_multiplier??''} onChange={e=>setForm({...form,turnover_multiplier:e.target.value})} placeholder="e.g. 3 (leave blank = no requirement)" /></div>
@@ -2229,25 +2278,99 @@ export default function Campaigns() {
             {/* Add VIP */}
             <div style={{ padding:'10px 24px', borderBottom:'1px solid var(--border)' }}>
               <div style={{ fontSize:11, color:'var(--muted)', marginBottom:6 }}>➕ ADD PLAYER TO CAMPAIGN</div>
-              <div style={{ position:'relative' }}>
-                <input style={s.finput} value={vipSearch} onChange={e=>setVipSearch(e.target.value)} placeholder="Search username or name..." />
-                {vipResults.length > 0 && (
-                  <div style={{ position:'absolute', top:'100%', left:0, right:0, background:'var(--surface)', border:'1px solid var(--border)', borderRadius:8, zIndex:100, boxShadow:'0 8px 24px rgba(0,0,0,.5)', marginTop:2 }}>
-                    {vipResults.map((v,idx)=>(
-                      <div key={v.username+idx} onClick={()=>addVIP(v)}
-                        style={{ padding:'10px 14px', cursor:'pointer', display:'flex', alignItems:'center', gap:10, borderBottom:'1px solid var(--border)' }}
-                        onMouseEnter={e=>e.currentTarget.style.background='var(--surface2)'}
-                        onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
-                        <span style={{ ...s.badge, background:TIER_BG[v.tier]||'transparent', color:TIER_COLOR[v.tier]||'var(--muted)' }}>{v.tier}</span>
-                        {v.source==='potential' && <span style={{ ...s.badge, background:'rgba(99,102,241,.15)', color:'#818cf8', fontSize:9, padding:'1px 6px' }}>POTENTIAL</span>}
-                        <span style={{ fontWeight:700 }}>{v.username}</span>
-                        <span style={{ color:'var(--muted)', fontSize:12 }}>{v.full_name||''}</span>
-                        <span style={{ marginLeft:'auto', color:'#3fb950', fontSize:12 }}>+ Add</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
+              <div style={{ display:'flex', gap:8, alignItems:'flex-start' }}>
+                <div style={{ position:'relative', flex:1 }}>
+                  <input style={s.finput} value={vipSearch} onChange={e=>setVipSearch(e.target.value)} placeholder="Search username or name…" />
+                  {vipResults.length > 0 && (
+                    <div style={{ position:'absolute', top:'100%', left:0, right:0, background:'var(--surface)', border:'1px solid var(--border)', borderRadius:8, zIndex:100, boxShadow:'0 8px 24px rgba(0,0,0,.5)', marginTop:2 }}>
+                      {vipResults.map((v,idx)=>(
+                        <div key={v.username+idx} onClick={()=>addVIP(v)}
+                          style={{ padding:'10px 14px', cursor:'pointer', display:'flex', alignItems:'center', gap:10, borderBottom:'1px solid var(--border)' }}
+                          onMouseEnter={e=>e.currentTarget.style.background='var(--surface2)'}
+                          onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+                          <span style={{ ...s.badge, background:TIER_BG[v.tier]||'transparent', color:TIER_COLOR[v.tier]||'var(--muted)' }}>{v.tier}</span>
+                          {v.source==='potential' && <span style={{ ...s.badge, background:'rgba(99,102,241,.15)', color:'#818cf8', fontSize:9, padding:'1px 6px' }}>POTENTIAL</span>}
+                          <span style={{ fontWeight:700 }}>{v.username}</span>
+                          <span style={{ color:'var(--muted)', fontSize:12 }}>{v.full_name||''}</span>
+                          <span style={{ marginLeft:'auto', color:'#3fb950', fontSize:12 }}>+ Add</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <button onClick={openBulkEnroll}
+                  style={{ background:'rgba(88,166,255,.1)', border:'1px solid rgba(88,166,255,.3)', color:'#58a6ff', padding:'9px 14px', borderRadius:8, fontSize:12, fontWeight:700, cursor:'pointer', whiteSpace:'nowrap', flexShrink:0 }}>
+                  📋 Browse All VIPs
+                </button>
               </div>
+
+              {/* Bulk enrollment panel */}
+              {bulkEnrollOpen && (
+                <div style={{ marginTop:10, background:'var(--bg)', border:'1px solid var(--border)', borderRadius:10, overflow:'hidden' }}>
+                  {/* Panel header */}
+                  <div style={{ padding:'10px 14px', background:'var(--surface)', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
+                    <span style={{ fontSize:12, fontWeight:700, color:'var(--text)' }}>Select VIPs to Enroll</span>
+                    <input value={bulkEnrollSearch} onChange={e=>setBulkEnrollSearch(e.target.value)} placeholder="Filter by username…"
+                      style={{ ...s.smInput, width:160, fontSize:12 }} />
+                    <select value={bulkEnrollTier} onChange={e=>setBulkEnrollTier(e.target.value)}
+                      style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:6, padding:'5px 8px', fontSize:12, color:'var(--text)', cursor:'pointer' }}>
+                      <option value="all">All Tiers</option>
+                      {TIERS.map(t=><option key={t} value={t}>{t}</option>)}
+                    </select>
+                    <span style={{ fontSize:11, color:'var(--muted)', marginLeft:'auto' }}>
+                      {bulkEnrollLoading ? 'Loading…' : `${bulkEnrollList.filter(v=>(bulkEnrollTier==='all'||v.tier===bulkEnrollTier)&&(!bulkEnrollSearch||v.username.toLowerCase().includes(bulkEnrollSearch.toLowerCase())||((v.full_name||'').toLowerCase().includes(bulkEnrollSearch.toLowerCase())))).length} VIPs · ${bulkEnrollSelected.size} selected`}
+                    </span>
+                    <button onClick={()=>setBulkEnrollOpen(false)} style={{ background:'none', border:'none', color:'var(--muted)', fontSize:14, cursor:'pointer', padding:'2px 6px' }}>✕</button>
+                  </div>
+
+                  {/* VIP list */}
+                  <div style={{ maxHeight:260, overflowY:'auto' }}>
+                    {bulkEnrollLoading
+                      ? <div style={{ padding:20, textAlign:'center', fontSize:12, color:'var(--muted)' }}>Loading VIPs…</div>
+                      : (() => {
+                          const filtered = bulkEnrollList.filter(v =>
+                            (bulkEnrollTier==='all'||v.tier===bulkEnrollTier) &&
+                            (!bulkEnrollSearch || v.username.toLowerCase().includes(bulkEnrollSearch.toLowerCase()) || ((v.full_name||'').toLowerCase().includes(bulkEnrollSearch.toLowerCase())))
+                          )
+                          if (!filtered.length) return <div style={{ padding:20, textAlign:'center', fontSize:12, color:'var(--muted)' }}>No VIPs match.</div>
+                          return filtered.map(v => {
+                            const checked = bulkEnrollSelected.has(v.id)
+                            return (
+                              <div key={v.id} onClick={()=>{
+                                setBulkEnrollSelected(prev=>{const s=new Set(prev); checked?s.delete(v.id):s.add(v.id); return s})
+                              }}
+                                style={{ padding:'8px 14px', cursor:'pointer', display:'flex', alignItems:'center', gap:10, borderBottom:'1px solid var(--border)', background: checked ? 'rgba(88,166,255,.07)' : 'transparent' }}
+                                onMouseEnter={e=>{ if(!checked) e.currentTarget.style.background='var(--surface2)' }}
+                                onMouseLeave={e=>{ e.currentTarget.style.background = checked ? 'rgba(88,166,255,.07)' : 'transparent' }}>
+                                <input type="checkbox" checked={checked} readOnly style={{ accentColor:'var(--accent)', width:14, height:14, cursor:'pointer', flexShrink:0 }} />
+                                <span style={{ ...s.badge, background:TIER_BG[v.tier]||'transparent', color:TIER_COLOR[v.tier]||'var(--muted)', fontSize:10 }}>{v.tier}</span>
+                                <span style={{ fontWeight:700, fontSize:13 }}>{v.username}</span>
+                                <span style={{ color:'var(--muted)', fontSize:12 }}>{v.full_name||''}</span>
+                              </div>
+                            )
+                          })
+                        })()
+                    }
+                  </div>
+
+                  {/* Panel footer */}
+                  <div style={{ padding:'10px 14px', borderTop:'1px solid var(--border)', display:'flex', gap:8, alignItems:'center' }}>
+                    <button onClick={()=>{
+                      const filtered = bulkEnrollList.filter(v=>(bulkEnrollTier==='all'||v.tier===bulkEnrollTier)&&(!bulkEnrollSearch||v.username.toLowerCase().includes(bulkEnrollSearch.toLowerCase())||((v.full_name||'').toLowerCase().includes(bulkEnrollSearch.toLowerCase()))))
+                      setBulkEnrollSelected(new Set(filtered.map(v=>v.id)))
+                    }} style={{ background:'none', border:'1px solid var(--border)', borderRadius:6, padding:'5px 12px', fontSize:12, color:'var(--muted)', cursor:'pointer' }}>
+                      Select All
+                    </button>
+                    <button onClick={()=>setBulkEnrollSelected(new Set())} style={{ background:'none', border:'1px solid var(--border)', borderRadius:6, padding:'5px 12px', fontSize:12, color:'var(--muted)', cursor:'pointer' }}>
+                      Clear
+                    </button>
+                    <button onClick={doBulkEnroll} disabled={bulkEnrollSelected.size===0||bulkEnrollLoading}
+                      style={{ marginLeft:'auto', background: bulkEnrollSelected.size===0 ? 'var(--surface2)' : 'var(--accent)', border:'none', borderRadius:8, padding:'7px 18px', fontSize:13, fontWeight:700, color: bulkEnrollSelected.size===0 ? 'var(--muted)' : '#fff', cursor: bulkEnrollSelected.size===0 ? 'default' : 'pointer', opacity: bulkEnrollLoading ? 0.6 : 1 }}>
+                      {bulkEnrollLoading ? 'Enrolling…' : `✅ Enroll Selected (${bulkEnrollSelected.size})`}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Tabs */}
@@ -2313,6 +2436,12 @@ export default function Campaigns() {
                     </button>
                   ))}
                   <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:8 }}>
+                    {selectedForRemoval.size > 0 && campType !== 'leaderboard' && (
+                      <button onClick={bulkRemovePlayers}
+                        style={{ background:'rgba(248,81,73,.1)', border:'1px solid rgba(248,81,73,.4)', color:'#f85149', padding:'5px 12px', borderRadius:6, fontSize:11, fontWeight:700, cursor:'pointer', whiteSpace:'nowrap' }}>
+                        🗑 Remove Selected ({selectedForRemoval.size})
+                      </button>
+                    )}
                     {campType !== 'leaderboard' && (
                       <button
                         onClick={importFromVipData}
@@ -2423,6 +2552,19 @@ export default function Campaigns() {
                   ) : (
                     <>
                     <thead><tr>
+                      <th style={{ ...s.th, width:32 }}>
+                        <input type="checkbox" title="Select all"
+                          checked={filteredChaseList.length > 0 && filteredChaseList.every(p => selectedForRemoval.has(p.id))}
+                          onChange={e => {
+                            setSelectedForRemoval(prev => {
+                              const s = new Set(prev)
+                              if (e.target.checked) filteredChaseList.forEach(p => s.add(p.id))
+                              else filteredChaseList.forEach(p => s.delete(p.id))
+                              return s
+                            })
+                          }}
+                          style={{ accentColor:'var(--accent)', cursor:'pointer' }} />
+                      </th>
                       <th style={s.th}>#</th>
                       <th style={s.th}>Player</th>
                       <th style={s.th}>Host</th>
@@ -2436,9 +2578,9 @@ export default function Campaigns() {
                     </tr></thead>
                     <tbody>
                       {chaseList.length === 0
-                        ? <tr><td colSpan={10} style={{ ...s.td, textAlign:'center', padding:24, color:'var(--muted)' }}>Add players above to start tracking.</td></tr>
+                        ? <tr><td colSpan={11} style={{ ...s.td, textAlign:'center', padding:24, color:'var(--muted)' }}>Add players above to start tracking.</td></tr>
                         : filteredChaseList.length === 0
-                        ? <tr><td colSpan={10} style={{ ...s.td, textAlign:'center', padding:24, color:'var(--muted)' }}>No players match the search.</td></tr>
+                        ? <tr><td colSpan={11} style={{ ...s.td, textAlign:'center', padding:24, color:'var(--muted)' }}>No players match the search.</td></tr>
                         : filteredChaseList.map((p,i) => {
                             const multi = selected?.is_multi_level && campaignLevels.length > 0
                             const multiMetric = multi ? multiMetricsByPlayer[p.id] : null
@@ -2497,6 +2639,11 @@ export default function Campaigns() {
                             const paidStreaks = playerStreaks.filter(sb => sb.payout_status === 'paid')
                             return (
                               <tr key={p.id} onMouseEnter={e=>e.currentTarget.style.background='var(--surface2)'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+                                <td style={{ ...s.td, width:32 }} onClick={e=>e.stopPropagation()}>
+                                  <input type="checkbox" checked={selectedForRemoval.has(p.id)}
+                                    onChange={e=>{ setSelectedForRemoval(prev=>{const s=new Set(prev); e.target.checked?s.add(p.id):s.delete(p.id); return s}) }}
+                                    style={{ accentColor:'var(--accent)', cursor:'pointer' }} />
+                                </td>
                                 <td style={{ ...s.td, color:'var(--muted)', fontSize:11 }}>{i+1}</td>
                                 <td style={{ ...s.td, fontWeight:700 }}>
                                   <div style={{ display:'flex', alignItems:'center', gap:4 }}>
@@ -3463,8 +3610,30 @@ export default function Campaigns() {
                     URL.revokeObjectURL(url)
                   }} style={{ background:'var(--surface2)', border:'1px solid var(--border)', color:'var(--text)', padding:'5px 12px', borderRadius:6, fontSize:11, cursor:'pointer', whiteSpace:'nowrap', flexShrink:0 }}>⬇ Export CSV</button>
                 </div>
+                {selectedForRemoval.size > 0 && (
+                  <div style={{ padding:'8px 24px', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', gap:8 }}>
+                    <button onClick={bulkRemovePlayers}
+                      style={{ background:'rgba(248,81,73,.1)', border:'1px solid rgba(248,81,73,.4)', color:'#f85149', padding:'5px 12px', borderRadius:6, fontSize:11, fontWeight:700, cursor:'pointer' }}>
+                      🗑 Remove Selected ({selectedForRemoval.size})
+                    </button>
+                    <button onClick={()=>setSelectedForRemoval(new Set())} style={{ background:'none', border:'1px solid var(--border)', borderRadius:6, padding:'5px 10px', fontSize:11, color:'var(--muted)', cursor:'pointer' }}>Clear</button>
+                  </div>
+                )}
                 <table style={s.tbl}>
                   <thead><tr>
+                    <th style={{ ...s.th, width:32 }}>
+                      <input type="checkbox" title="Select all"
+                        checked={players.length > 0 && players.every(p => selectedForRemoval.has(p.id))}
+                        onChange={e => {
+                          setSelectedForRemoval(prev => {
+                            const s = new Set(prev)
+                            if (e.target.checked) players.forEach(p => s.add(p.id))
+                            else players.forEach(p => s.delete(p.id))
+                            return s
+                          })
+                        }}
+                        style={{ accentColor:'var(--accent)', cursor:'pointer' }} />
+                    </th>
                     <th style={s.th}>#</th>
                     <th style={s.th}>Username</th>
                     <th style={s.th}>Tier</th>
@@ -3481,7 +3650,7 @@ export default function Campaigns() {
                   </tr></thead>
                   <tbody>
                     {players.length===0
-                      ? <tr><td colSpan={12} style={{ ...s.td, textAlign:'center', padding:24, color:'var(--muted)' }}>No players yet.</td></tr>
+                      ? <tr><td colSpan={13} style={{ ...s.td, textAlign:'center', padding:24, color:'var(--muted)' }}>No players yet.</td></tr>
                       : players.map((p,i)=>{
                           const real = realFinancials?.byPlayer?.[p.username]
                           // Daily mode never writes to campaign_players.total_deposit/valid_bet —
@@ -3501,6 +3670,11 @@ export default function Campaigns() {
                           const rowStatusLabel = multi ? (multiMetric?.allCompleted ? 'Complete' : `${multiMetric?.completedCount||0}/${campaignLevels.length} Levels`) : (p.payout_status==='paid' ? 'Paid' : qualified ? 'Qualified' : 'In Progress')
                           return (
                             <tr key={p.id} onMouseEnter={e=>e.currentTarget.style.background='var(--surface2)'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+                              <td style={{ ...s.td, width:32 }} onClick={e=>e.stopPropagation()}>
+                                <input type="checkbox" checked={selectedForRemoval.has(p.id)}
+                                  onChange={e=>{ setSelectedForRemoval(prev=>{const s=new Set(prev); e.target.checked?s.add(p.id):s.delete(p.id); return s}) }}
+                                  style={{ accentColor:'var(--accent)', cursor:'pointer' }} />
+                              </td>
                               <td style={{ ...s.td, color:'var(--muted)', fontSize:11 }}>{i+1}</td>
                               <td style={{ ...s.td, fontWeight:700 }}>{p.username}</td>
                               <td style={s.td}>{p.tier && <span style={{ ...s.badge, background:TIER_BG[p.tier]||'transparent', color:TIER_COLOR[p.tier]||'var(--muted)' }}>{p.tier}</span>}</td>
