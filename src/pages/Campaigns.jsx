@@ -8,6 +8,7 @@ import { callAI } from '../lib/aiApi'
 import { useLanguage } from '../contexts/LanguageContext'
 import { buildCampaignUpdate, buildLevelUpsert, normalizeCampaignForEdit, normalizeLevel, validateCampaignEditor } from '../lib/campaignEditor'
 import { buildMultiLevelPlayerMetrics, buildPayoutRows, buildCampaignSummary, calculateCampaignROI } from '../lib/campaignMetrics'
+import * as XLSX from 'xlsx'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const TIERS = ['BLACK','DIAMOND','PLATINUM','GOLD','SILVER','BRONZE']
@@ -663,6 +664,40 @@ export default function Campaigns() {
     await supabase.from('campaign_players').delete().in('id', [...selectedForRemoval])
     await loadPlayers(selected.id)
     setSelectedForRemoval(new Set())
+  }
+
+  // ── Export Inactive players to Excel ────────────────────────────────────────
+  function exportInactiveToExcel(inactivePlayers) {
+    const campName = selected?.campaign_name || 'Campaign'
+    const rows = inactivePlayers.map((p, i) => {
+      const playerEntries = allDailyEntries.filter(e => e.player_id === p.id)
+      const playerContacts = contacts[p.id] || []
+      const lastContact = playerContacts[0]
+      const lastContactStr = lastContact
+        ? new Date(lastContact.contacted_at).toLocaleDateString('en-MY', { day:'numeric', month:'short', year:'numeric' })
+        : 'Never'
+      const enrolledStr = p.added_at
+        ? new Date(p.added_at).toLocaleDateString('en-MY', { day:'numeric', month:'short', year:'numeric' })
+        : '—'
+      const entriesStr = playerEntries.length > 0 ? `${playerEntries.length} entries (0 qualifying)` : 'No entries at all'
+      return {
+        '#': i + 1,
+        'Username': p.username,
+        'Tier': p.tier || '—',
+        'Host': p.host_assigned || '—',
+        'WhatsApp': p.whatsapp || '—',
+        'Last Contact': lastContactStr,
+        'Enrolled': enrolledStr,
+        'Days in Campaign': entriesStr,
+      }
+    })
+    const ws = XLSX.utils.json_to_sheet(rows)
+    // Column widths
+    ws['!cols'] = [{ wch:4 },{ wch:18 },{ wch:10 },{ wch:12 },{ wch:16 },{ wch:14 },{ wch:12 },{ wch:24 }]
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Inactive Players')
+    const filename = `${campName.replace(/[^a-z0-9]/gi,'_')}_Inactive_${new Date().toISOString().slice(0,10)}.xlsx`
+    XLSX.writeFile(wb, filename)
   }
 
   // ── Campaign status ─────────────────────────────────────────────────────────
@@ -3232,7 +3267,13 @@ export default function Campaigns() {
                   <div style={{ padding:'8px 24px', fontSize:11, color:'var(--muted)', background:'rgba(88,166,255,.04)', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', gap:12 }}>
                     <span>😴 Players enrolled but never qualified for a reward across the entire campaign period</span>
                     {allDailyEntriesLoading && <span style={{ color:'#f59e0b' }}>Loading…</span>}
-                    <button onClick={() => loadAllDailyEntries(selected.id)} style={{ marginLeft:'auto', background:'var(--surface2)', border:'1px solid var(--border)', color:'var(--muted)', padding:'3px 10px', borderRadius:5, fontSize:11, cursor:'pointer' }}>↺ Refresh</button>
+                    <div style={{ marginLeft:'auto', display:'flex', gap:6 }}>
+                      <button onClick={() => exportInactiveToExcel(inactivePlayers)} disabled={inactivePlayers.length === 0 || allDailyEntriesLoading}
+                        style={{ background:'#166534', border:'1px solid #16a34a', color:'#4ade80', padding:'3px 10px', borderRadius:5, fontSize:11, cursor:'pointer', fontWeight:600, opacity: inactivePlayers.length === 0 ? 0.5 : 1 }}>
+                        ⬇ Export Excel
+                      </button>
+                      <button onClick={() => loadAllDailyEntries(selected.id)} style={{ background:'var(--surface2)', border:'1px solid var(--border)', color:'var(--muted)', padding:'3px 10px', borderRadius:5, fontSize:11, cursor:'pointer' }}>↺ Refresh</button>
+                    </div>
                   </div>
                   {/* Inactive tab host filter */}
                   {inactiveHosts.length > 1 && (
