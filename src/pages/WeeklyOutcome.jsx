@@ -54,7 +54,7 @@ export default function WeeklyOutcome() {
       setLoading(true)
       const { data } = await supabase
         .from('contact_logs')
-        .select('id,vip_id,contact_type,outcome,notes,logged_at,host_name,vip_members(username,tier,host_assigned)')
+        .select('id,vip_id,channel,outcome,notes,logged_at,host_name,vip_members(username,tier,host_assigned)')
         .gte('logged_at', start.toISOString())
         .lte('logged_at', end.toISOString())
         .order('logged_at', { ascending: false })
@@ -180,7 +180,7 @@ export default function WeeklyOutcome() {
                   <td style={s.td}><strong>{l.vip_members?.username || l.vip_id}</strong></td>
                   <td style={s.td}>{l.vip_members?.tier || '-'}</td>
                   <td style={s.td}>{l.vip_members?.host_assigned || '-'}</td>
-                  <td style={s.td}>{l.contact_type || '-'}</td>
+                  <td style={s.td}>{l.channel || '-'}</td>
                   <td style={s.td}>
                     {l.outcome
                       ? <span style={{ ...s.badge, background:(OUTCOME_COLOR[l.outcome]||'#8b949e')+'22', color:OUTCOME_COLOR[l.outcome]||'#8b949e' }}>{l.outcome}</span>
