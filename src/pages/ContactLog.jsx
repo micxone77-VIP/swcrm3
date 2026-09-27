@@ -356,11 +356,20 @@ export default function ContactLog() {
   const [page,     setPage]     = useUrlParamNumber('page', 0)
   const [hosts,    setHosts]    = useState([])
   const [stats,    setStats]    = useState({ total:0, today:0, positive:0, bonusTotal:0 })
+  const [waNumbers, setWaNumbers]   = useState([])
+  useEffect(() => {
+    if (!profile) return
+    const myName = profile.full_name || profile.username || (profile.email ? profile.email.split('@')[0] : '')
+    if (!myName) return
+    supabase.from('wa_numbers').select('id,codename,number,telco').eq('host', myName).eq('status','Active')
+      .then(({ data }) => setWaNumbers(data || []))
+  }, [profile])
+
   const [showForm, setShowForm]     = useState(false)
+  const [notePopup, setNotePopup]   = useState(null) // { username, notes }
   const [editingLogId, setEditingLogId]       = useState(null)
   const [editingNote, setEditingNote]         = useState('')
   const [editingOutcome, setEditingOutcome]   = useState('Contacted')
-  const [noteModal, setNoteModal]             = useState(null)
   const [vipSearch,    setVipSearch]   = useState('')
   const [vipResults,   setVipResults]  = useState([])
   const [selectedVip,  setSelectedVip] = useState(null)
@@ -370,7 +379,7 @@ export default function ContactLog() {
   const [submitting,   setSubmitting]  = useState(false)
   const [logForm, setLogForm] = useState({
     contact_type:'WhatsApp', outcome:'Contacted',
-    bonus_offered:'', bonus_type:'', notes:'',
+    bonus_offered:'', bonus_type:'', notes:'', wa_number_used:'',
   })
   const vipSearchRef = useRef(null)
 
@@ -471,6 +480,7 @@ export default function ContactLog() {
       logged_at:       new Date().toISOString(),
       log_month:       new Date().toISOString().slice(0,7),
       log_week:        String(Math.ceil(new Date().getDate()/7)),
+      wa_number_used:  logForm.wa_number_used || null,
     }).select('id').single()
     if (insertError) { console.error(insertError); alert('Error: ' + insertError.message) }
     else if (inserted?.id && logForm.notes.trim()) {
@@ -487,7 +497,7 @@ export default function ContactLog() {
         })
         .catch(e => console.error('Auto-tag failed (log was still saved):', e))
     }
-    setLogForm({ contact_type:'WhatsApp', outcome:'Contacted', bonus_offered:'', bonus_type:'', notes:'' })
+    setLogForm({ contact_type:'WhatsApp', outcome:'Contacted', bonus_offered:'', bonus_type:'', notes:'', wa_number_used:'' })
     setSelectedVip(null); setVipSearch(''); setVipResults([])
     setManualMode(false); setManualUsername(''); setManualTier('GOLD')
     setShowForm(false); setSubmitting(false)
@@ -659,6 +669,16 @@ export default function ContactLog() {
                   placeholder="e.g. Reload, Birthday, Cashback" />
               </div>
             </div>
+            {logForm.contact_type === 'WhatsApp' && waNumbers.length > 0 && (
+              <div style={{ marginBottom:12 }}>
+                <div style={s.flbl}>📱 Send as (WA number)</div>
+                <select style={{ ...s.fsel, marginTop:4 }} value={logForm.wa_number_used}
+                  onChange={e => setLogForm({...logForm, wa_number_used:e.target.value})}>
+                  <option value="">— Not specified —</option>
+                  {waNumbers.map(n => <option key={n.id} value={n.codename}>{n.codename} — {n.number}{n.telco?' ('+n.telco+')':''}</option>)}
+                </select>
+              </div>
+            )}
             <div style={{ marginBottom:14 }}>
               <div style={s.flbl}>Notes *</div>
               <textarea style={{ ...s.fta, marginTop:4 }} rows={3}
@@ -739,13 +759,16 @@ export default function ContactLog() {
                     onClick={() => !isEditingThis && navigate(`/vips/${log.vip_id}`)}>
                     <td style={{ ...s.td, color:'var(--muted)', fontSize:11 }}>{page*PAGE_SIZE+i+1}</td>
                     <td style={{ ...s.td, fontWeight:700 }} onClick={e => e.stopPropagation()}>
-                      <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                      <span style={{ display:'inline-flex', alignItems:'center', gap:5 }}>
                         <span style={{ cursor:'pointer' }} onClick={() => navigate(`/vips/${log.vip_id}`)}>{log.username}</span>
                         <button
-                          onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(log.username) }}
                           title="Copy username"
-                          style={{ background:'none', border:'1px solid var(--border)', color:'var(--muted)', padding:'1px 6px', borderRadius:4, fontSize:10, cursor:'pointer', lineHeight:1.4 }}>⎘</button>
-                      </div>
+                          onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(log.username) }}
+                          style={{ background:'none', border:'none', color:'var(--muted)', cursor:'pointer', fontSize:12, padding:'0 2px', lineHeight:1, opacity:.6 }}
+                          onMouseEnter={e => e.currentTarget.style.opacity=1}
+                          onMouseLeave={e => e.currentTarget.style.opacity=.6}
+                        >⎘</button>
+                      </span>
                     </td>
                     <td style={s.td}>
                       {tier ? <span style={{ ...s.badge, background:TIER_BG[tier]||'transparent', color:TIER_COLOR[tier]||'var(--text)' }}>{tier}</span>
@@ -785,8 +808,8 @@ export default function ContactLog() {
                       ) : (
                         <div
                           style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', cursor: log.notes ? 'pointer' : 'default' }}
-                          onClick={e => { if(log.notes){ e.stopPropagation(); setNoteModal(log) } }}
-                          title={log.notes ? 'Click to view full note' : undefined}
+                          title={log.notes ? 'Click to expand' : undefined}
+                          onClick={log.notes ? () => setNotePopup({ username: log.username, notes: log.notes }) : undefined}
                         >{log.notes || '-'}</div>
                       )}
                     </td>
@@ -823,32 +846,21 @@ export default function ContactLog() {
         )}
       </div>
 
-      {noteModal && (
-        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.6)', zIndex:1000, display:'flex', alignItems:'center', justifyContent:'center' }}
-          onClick={() => setNoteModal(null)}>
-          <div style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:14, padding:'24px 28px', width:520, maxWidth:'90vw', maxHeight:'80vh', overflowY:'auto' }}
-            onClick={e => e.stopPropagation()}>
+      {/* Notes popup modal */}
+      {notePopup && (
+        <div
+          style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.6)', zIndex:1000, display:'flex', alignItems:'center', justifyContent:'center', padding:24 }}
+          onClick={() => setNotePopup(null)}
+        >
+          <div
+            style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:12, padding:'24px 28px', maxWidth:560, width:'100%', boxShadow:'0 16px 48px rgba(0,0,0,.5)', position:'relative' }}
+            onClick={e => e.stopPropagation()}
+          >
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:14 }}>
-              <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                <span style={{ fontWeight:700, color:'var(--text)', fontSize:15 }}>{noteModal.username}</span>
-                {(noteModal.vip_members?.tier || noteModal.tier) && (
-                  <span style={{ ...s.badge, background:TIER_BG[noteModal.vip_members?.tier||noteModal.tier]||'transparent', color:TIER_COLOR[noteModal.vip_members?.tier||noteModal.tier]||'var(--text)' }}>
-                    {noteModal.vip_members?.tier||noteModal.tier}
-                  </span>
-                )}
-              </div>
-              <div style={{ fontSize:11, color:'var(--muted)' }}>{timeAgo(noteModal.logged_at)}</div>
+              <div style={{ fontSize:13, fontWeight:700, color:'var(--accent)' }}>{notePopup.username} — Note</div>
+              <button onClick={() => setNotePopup(null)} style={{ background:'none', border:'none', color:'var(--muted)', fontSize:18, cursor:'pointer', lineHeight:1 }}>✕</button>
             </div>
-            <div style={{ display:'flex', gap:8, marginBottom:16 }}>
-              <span style={{ ...s.tag, background:`${TYPE_COLOR[noteModal.channel]||'#8b949e'}22`, color:TYPE_COLOR[noteModal.channel]||'#8b949e' }}>{noteModal.channel}</span>
-              <span style={{ ...s.tag, background:`${OUTCOME_COLOR[noteModal.outcome]||'#8b949e'}22`, color:OUTCOME_COLOR[noteModal.outcome]||'#8b949e' }}>{noteModal.outcome}</span>
-            </div>
-            <div style={{ fontSize:14, color:'var(--text)', lineHeight:1.75, whiteSpace:'pre-wrap', wordBreak:'break-word', borderTop:'1px solid var(--border)', paddingTop:14 }}>
-              {noteModal.notes || '—'}
-            </div>
-            <div style={{ marginTop:20, textAlign:'right' }}>
-              <button onClick={() => setNoteModal(null)} style={{ background:'var(--surface2)', color:'var(--text)', border:'1px solid var(--border)', padding:'6px 16px', borderRadius:7, fontSize:12, cursor:'pointer' }}>Close</button>
-            </div>
+            <div style={{ fontSize:13, color:'var(--text)', lineHeight:1.6, whiteSpace:'pre-wrap', wordBreak:'break-word' }}>{notePopup.notes}</div>
           </div>
         </div>
       )}

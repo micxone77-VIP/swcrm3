@@ -9,6 +9,44 @@ import {
 import { TierBadge, RiskBadge } from '../components/ui'
 import { formatMoney } from '../lib/format'
 import { useLanguage } from '../contexts/LanguageContext'
+import { useAuth } from '../hooks/useAuth'
+
+function WaSenderModal({ vip, waNumbers, myName, onClose }) {
+  const [sender, setSender] = useState(waNumbers[0]?.codename || '')
+  const rawWa = (vip.whatsapp || vip.phone || '').replace(/[\s\-()]/g, '')
+  const waNumber = rawWa.startsWith('+') ? rawWa.slice(1) : rawWa
+  function openWA() {
+    const text = `Hi ${vip.username}, this is ${myName || 'your VIP host'} from SureWin.`
+    window.open(`https://wa.me/${waNumber}?text=${encodeURIComponent(text)}`, '_blank')
+    onClose()
+  }
+  return (
+    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.6)', zIndex:2000, display:'flex', alignItems:'center', justifyContent:'center' }} onClick={onClose}>
+      <div style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:12, padding:24, width:340, boxShadow:'0 16px 48px rgba(0,0,0,.5)' }} onClick={e => e.stopPropagation()}>
+        <div style={{ fontWeight:700, marginBottom:12, fontSize:15 }}>💬 WhatsApp {vip.username}</div>
+        {waNumbers.length > 0 ? (
+          <>
+            <div style={{ fontSize:12, color:'var(--muted)', marginBottom:6 }}>Send as (codename)</div>
+            <select value={sender} onChange={e => setSender(e.target.value)}
+              style={{ width:'100%', background:'var(--surface2)', border:'1px solid var(--border)', color:'var(--text)', padding:'8px 12px', borderRadius:8, fontSize:13, outline:'none', marginBottom:14 }}>
+              {waNumbers.map(n => <option key={n.id} value={n.codename}>{n.codename} — {n.number}{n.telco?' ('+n.telco+')':''}</option>)}
+            </select>
+          </>
+        ) : (
+          <div style={{ fontSize:12, color:'var(--muted)', marginBottom:14 }}>No active WA numbers. <a href="/wa-numbers" style={{ color:'var(--accent)' }}>Add one</a></div>
+        )}
+        {!waNumber && <div style={{ fontSize:12, color:'#d29922', marginBottom:12 }}>⚠️ No phone/WhatsApp on file for this VIP.</div>}
+        <div style={{ display:'flex', gap:8, justifyContent:'flex-end' }}>
+          <button onClick={onClose} style={{ background:'var(--surface2)', border:'1px solid var(--border)', color:'var(--text)', padding:'8px 16px', borderRadius:8, cursor:'pointer', fontSize:13 }}>Cancel</button>
+          <button onClick={openWA} disabled={!waNumber}
+            style={{ background:'#25D366', border:'none', color:'#fff', padding:'8px 18px', borderRadius:8, fontWeight:700, fontSize:13, cursor:waNumber?'pointer':'not-allowed', opacity:waNumber?1:0.5 }}>
+            Open WhatsApp
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 function daysAgoLabel(d) {
   if (!d) return '—'
@@ -22,12 +60,24 @@ const RISK_LEVELS = ['All', 'Critical', 'High', 'Medium']
 export default function AtRisk() {
   const navigate = useNavigate()
   const { t } = useLanguage()
+  const { profile } = useAuth()
   const [vips, setVips]       = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError]     = useState(null)
   const [riskFilter, setRiskFilter] = useState('All')
   const [host, setHost]       = useState('All')
   const [hosts, setHosts]     = useState(['All'])
+  const [waNumbers, setWaNumbers] = useState([])
+  const [waTarget, setWaTarget] = useState(null)
+
+  useEffect(() => {
+    if (!profile) return
+    const myName = profile.full_name || profile.username || ''
+    if (myName) {
+      supabase.from('wa_numbers').select('id,codename,number,telco').eq('host', myName).eq('status','Active')
+        .then(({ data }) => setWaNumbers(data || []))
+    }
+  }, [profile])
 
   useEffect(() => {
     (async () => {
@@ -76,6 +126,7 @@ export default function AtRisk() {
 
   return (
     <div style={{ padding: '24px 28px' }}>
+      {waTarget && <WaSenderModal vip={waTarget} waNumbers={waNumbers} myName={profile?.full_name || ''} onClose={() => setWaTarget(null)} />}
       <PageHeader title={t('atRisk.title')} subtitle={t('atRisk.subtitle')} />
 
       {/* KPIs */}
@@ -150,6 +201,8 @@ export default function AtRisk() {
                       <td style={{ padding:'10px 14px', borderBottom:'1px solid var(--border)' }}>
                         <div style={{ display:'flex', gap:6 }}>
                           <Btn size="sm" variant="primary" onClick={e => { e.stopPropagation(); navigate(`/vips/${v.id}`) }}>{t('atRisk.openVip')}</Btn>
+                          <button title="Send WhatsApp" onClick={e => { e.stopPropagation(); setWaTarget(v) }}
+                            style={{ width:28, height:28, borderRadius:14, background:'#25D366', border:'none', color:'#fff', fontSize:13, fontWeight:700, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>W</button>
                         </div>
                       </td>
                     </tr>

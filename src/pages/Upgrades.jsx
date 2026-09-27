@@ -321,9 +321,10 @@ function ConfirmUpgradeModal({ player, isPotential, onClose, onConfirm }) {
 
 
 // ── WhatsApp Template Modal ───────────────────────────────────────────────────
-function WhatsAppModal({ player, agentName, onClose }) {
+function WhatsAppModal({ player, agentName, waNumbers = [], onClose }) {
   const [lang, setLang]     = useState('en')
   const [copied, setCopied] = useState(false)
+  const [sender, setSender] = useState(waNumbers[0]?.codename || '')
 
   // Normalize stored whatsapp/phone number — strip spaces, dashes, leading +
   const rawWa = (player.whatsapp || player.phone || '').replace(/[\s\-()]/g, '')
@@ -467,6 +468,16 @@ function WhatsAppModal({ player, agentName, onClose }) {
           <button style={s.outlineBtn('var(--muted)')} onClick={onClose}>Close</button>
         </div>
 
+        {waNumbers.length > 0 && (
+          <div style={{ marginTop: 12 }}>
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>📱 Send as (codename)</div>
+            <select value={sender} onChange={e => setSender(e.target.value)}
+              style={{ width:'100%', background:'var(--surface2)', border:'1px solid var(--border)', color:'var(--text)', padding:'7px 10px', borderRadius:8, fontSize:12, outline:'none' }}>
+              {waNumbers.map(n => <option key={n.id} value={n.codename}>{n.codename} — {n.number}{n.telco?' ('+n.telco+')':''}</option>)}
+            </select>
+          </div>
+        )}
+
         <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 10, textAlign: 'center' }}>
           {waNumber
             ? <>📱 Will open chat with <strong>{rawWa}</strong> directly</>
@@ -570,6 +581,12 @@ function VIPCandidatesTab({ hostFilter = 'ALL' }) {
   const [waModal, setWaModal]       = useState(null)
   const [selectedMonth, setSelectedMonth] = useUrlParam('vMonth', '')
   const [availableMonths, setAvailableMonths] = useState([])
+  const [waNumbers, setWaNumbers] = useState([])
+  useEffect(() => {
+    if (!myName) return
+    supabase.from('wa_numbers').select('id,codename,number,telco').eq('host', myName).eq('status','Active')
+      .then(({ data }) => setWaNumbers(data || []))
+  }, [myName])
 
   useEffect(() => {
     const init = async () => {
@@ -857,6 +874,7 @@ function VIPCandidatesTab({ hostFilter = 'ALL' }) {
         <WhatsAppModal
           player={waModal}
           agentName={myName || 'Agent'}
+          waNumbers={waNumbers}
           onClose={() => setWaModal(null)}
         />
       )}
@@ -1274,6 +1292,12 @@ function TierHistoryTab({ hostFilter = 'ALL' }) {
   const [hovered, setHovered]       = useState(null)
   const [waModal, setWaModal]       = useState(null)
   const [currentMonth, setCurrentMonth] = useState('')
+  const [waNumbers, setWaNumbers] = useState([])
+  useEffect(() => {
+    if (!myName) return
+    supabase.from('wa_numbers').select('id,codename,number,telco').eq('host', myName).eq('status','Active')
+      .then(({ data }) => setWaNumbers(data || []))
+  }, [myName])
 
   const NEXT_TIER   = { GOLD: 'PLATINUM', PLATINUM: 'DIAMOND', DIAMOND: null }
   const NEXT_THRESH = { GOLD: 2000000,    PLATINUM: 6000000,   DIAMOND: null  }
@@ -1568,6 +1592,7 @@ function TierHistoryTab({ hostFilter = 'ALL' }) {
         <WhatsAppModal
           player={waModal}
           agentName={myName || 'Agent'}
+          waNumbers={waNumbers}
           onClose={() => setWaModal(null)}
         />
       )}
