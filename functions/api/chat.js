@@ -110,7 +110,7 @@ async function fetchCRMContext(env) {
     ),
     // Campaign tables
     sbFetch(env,
-      `campaigns?select=id,name,status,type,start_date,end_date,description` +
+      `campaigns?select=id,campaign_name,status,campaign_type,start_date,end_date,offer_desc` +
       `&order=created_at.desc&limit=30`
     ),
     sbFetch(env,
@@ -218,12 +218,12 @@ async function fetchCRMContext(env) {
     const topByDep  = [...entries].sort((a, b) => b.total_deposit - a.total_deposit).slice(0, 10)
     return {
       id:          camp.id,
-      name:        camp.name || '(unnamed)',
+      name:        camp.campaign_name || '(unnamed)',
       status:      camp.status || '',
-      type:        camp.type || '',
+      type:        camp.campaign_type || '',
       start_date:  camp.start_date || '',
       end_date:    camp.end_date || '',
-      description: (camp.description || '').slice(0, 200),
+      description: (camp.offer_desc || '').slice(0, 200),
       player_count:   players.length,
       entry_count:    entries.length,
       qualified_count:qualified.length,
