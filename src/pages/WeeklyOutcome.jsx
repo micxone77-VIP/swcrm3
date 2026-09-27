@@ -54,10 +54,10 @@ export default function WeeklyOutcome() {
       setLoading(true)
       const { data } = await supabase
         .from('contact_logs')
-        .select('id,vip_id,contact_type,outcome,notes,contacted_at,vip_members(username,tier,host_assigned)')
-        .gte('contacted_at', start.toISOString())
-        .lte('contacted_at', end.toISOString())
-        .order('contacted_at', { ascending: false })
+        .select('id,vip_id,contact_type,outcome,notes,logged_at,host_name,vip_members(username,tier,host_assigned)')
+        .gte('logged_at', start.toISOString())
+        .lte('logged_at', end.toISOString())
+        .order('logged_at', { ascending: false })
         .limit(500)
       setLogs(data || [])
       setLoading(false)
@@ -74,7 +74,7 @@ export default function WeeklyOutcome() {
   // Per-host breakdown
   const byHost = {}
   logs.forEach(l => {
-    const host = l.vip_members?.host_assigned || 'Unassigned'
+    const host = l.host_name || l.vip_members?.host_assigned || 'Unassigned'
     if (!byHost[host]) byHost[host] = { total:0 }
     OUTCOMES.forEach(o => { if (!byHost[host][o]) byHost[host][o] = 0 })
     byHost[host].total++
@@ -176,7 +176,7 @@ export default function WeeklyOutcome() {
             <tbody>
               {logs.map(l => (
                 <tr key={l.id}>
-                  <td style={s.td}>{l.contacted_at?.slice(0,10) || '-'}</td>
+                  <td style={s.td}>{l.logged_at?.slice(0,10) || '-'}</td>
                   <td style={s.td}><strong>{l.vip_members?.username || l.vip_id}</strong></td>
                   <td style={s.td}>{l.vip_members?.tier || '-'}</td>
                   <td style={s.td}>{l.vip_members?.host_assigned || '-'}</td>
