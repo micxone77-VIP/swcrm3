@@ -161,15 +161,15 @@ export default function AskData() {
   const SUGGESTIONS = lang === 'zh' ? [
     '我的金牌玩家最近表现如何？前10名是谁？',
     '哪些钻石会员超过14天没来？',
-    '平台本月流水总额是多少？',
+    '中秋节每日存款活动参与情况怎么样？',
     '有哪些 VIP 可能会流失？',
-    '我的铂金玩家谁快升级了？',
+    '所有活动的总充值和奖励是多少？',
   ] : [
     'How is my gold tier recently? Who is top 10?',
     'Which Diamond members have been inactive for 14+ days?',
-    'What is the platform turnover this month?',
+    'How is the Mid-Autumn Festival Daily Deposit campaign going? Who are the top depositors?',
     'Which VIPs are at risk of churning?',
-    'Which of my Platinum players are close to upgrading?',
+    'Show me a summary of all campaigns — total deposits and rewards.',
   ]
 
   const [messages, setMessages] = useState([])
@@ -233,7 +233,7 @@ export default function AskData() {
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start' }}>
         <div>
           <div style={s.title}>💬 Ask Your Data</div>
-          <div style={s.sub}>Ask questions about VIPs, contacts, and churn risk — answers pull live from the CRM, never guessed. VIP names are clickable.</div>
+          <div style={s.sub}>Ask questions about VIPs, campaigns, contacts, and churn risk — answers pull live from the CRM, never guessed. VIP names are clickable.</div>
         </div>
         {messages.length > 0 && (
           <button onClick={clearConversation}
@@ -274,7 +274,7 @@ export default function AskData() {
         <input
           style={s.input}
           value={input}
-          placeholder="Ask about your VIPs, contacts, churn risk…"
+          placeholder="Ask about your VIPs, campaigns, contacts, churn risk…"
           onChange={e => setInput(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter') send() }}
         />
