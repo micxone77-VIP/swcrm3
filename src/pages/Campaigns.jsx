@@ -2832,10 +2832,17 @@ export default function Campaigns() {
                                               : campType==='dual_tier' ? rmFmt((dualReward?.creditAmount||0)+(dualReward?.wcashAmount||0), campCurrency)
                                               : rmFmt(calcReward(campType,playerDeposit(p),rewardPct,rewardFixed,goldVal,rewardCap,rewardTiers,campaignLevels,selected?.is_multi_level), campCurrency)
                                             const chaseWaUrl = waHref(p.whatsapp, buildWaMsg(p.username, selected?.campaign_name||'Campaign', chaseReward, waLang, p.host_assigned||null, null, selected))
-                                            return <a href={chaseWaUrl} target="_blank" rel="noopener noreferrer"
-                                              style={{ background:'rgba(37,211,102,.1)', color:'#25d366', border:'1px solid rgba(37,211,102,.25)', borderRadius:5, padding:'2px 7px', fontSize:10, cursor:'pointer', fontWeight:600, textDecoration:'none' }}>
-                                              📱 WA
-                                            </a>
+                                            return <>
+                                              <a href={chaseWaUrl} target="_blank" rel="noopener noreferrer"
+                                                style={{ background:'rgba(37,211,102,.1)', color:'#25d366', border:'1px solid rgba(37,211,102,.25)', borderRadius:5, padding:'2px 7px', fontSize:10, cursor:'pointer', fontWeight:600, textDecoration:'none' }}>
+                                                📱 WA
+                                              </a>
+                                              <button onClick={()=>{navigator.clipboard.writeText(p.whatsapp||''); const btn=document.getElementById('copy-wa-'+p.id); if(btn){btn.textContent='✓';setTimeout(()=>{btn.textContent='Copy'},1200)}}}
+                                                id={'copy-wa-'+p.id}
+                                                style={{ background:'rgba(88,166,255,.1)', color:'#58a6ff', border:'1px solid rgba(88,166,255,.25)', borderRadius:5, padding:'2px 7px', fontSize:10, cursor:'pointer', fontWeight:600 }}>
+                                                Copy
+                                              </button>
+                                            </>
                                           })()}
                                         </div>
                                       )}
