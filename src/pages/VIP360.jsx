@@ -119,7 +119,7 @@ supabase.from('profiles').select('full_name').in('role',['admin','host']).order(
 ])
 if (vipRes.error) throw vipRes.error
 setVip(vipRes.data)
-setEditForm({ full_name: vipRes.data.full_name||'', birthday: vipRes.data.birthday||'', host_assigned: vipRes.data.host_assigned||'', tier: vipRes.data.tier||'', activity_status: vipRes.data.activity_status||'', phone: vipRes.data.phone||'', whatsapp: vipRes.data.whatsapp||'', email: vipRes.data.email||'', telegram: vipRes.data.telegram||'', churn_risk: vipRes.data.churn_risk||'', address: vipRes.data.address||'', special_requests: vipRes.data.special_requests||'' })
+setEditForm({ full_name: vipRes.data.full_name||'', birthday: vipRes.data.birthday||'', host_assigned: vipRes.data.host_assigned||'', tier: vipRes.data.tier||'', activity_status: vipRes.data.activity_status||'', phone: vipRes.data.phone||'', whatsapp: vipRes.data.whatsapp||'', email: vipRes.data.email||'', telegram: vipRes.data.telegram||'', churn_risk: vipRes.data.churn_risk||'', address: vipRes.data.address||'', special_requests: vipRes.data.special_requests||'', tng_verified_name: vipRes.data.tng_verified_name||'', tng_verify_status: vipRes.data.tng_verify_status||'', tng_verified_at: vipRes.data.tng_verified_at||'' })
 setMonthly(montRes.data || [])
 setDaily(dailyRes.data || [])
 setContacts(contRes.data || [])
@@ -191,7 +191,7 @@ load()
 async function saveEdit() {
 setEditSaving(true)
 // Only include columns that exist in vip_members (notes is not a column)
-const ALLOWED = ['full_name','birthday','host_assigned','tier','activity_status','phone','whatsapp','email','telegram','churn_risk','address','special_requests']
+const ALLOWED = ['full_name','birthday','host_assigned','tier','activity_status','phone','whatsapp','email','telegram','churn_risk','address','special_requests','tng_verified_name','tng_verify_status','tng_verified_at']
 const clean = Object.fromEntries(
   ALLOWED.map(k => [k, editForm[k] === '' ? null : (editForm[k] ?? null)])
 )
@@ -349,6 +349,16 @@ color: m.isWL ? (m.wl <= 0 ? 'var(--success)' : 'var(--danger)') : 'var(--text)'
 <Field label="Remark">{vip.special_requests}</Field>
 <Field label="Birthday">{vip.birthday ? fmtDate(vip.birthday) : '—'}</Field>
 <Field label="Registered">{fmtDate(vip.registration_date || vip.created_at)}</Field>
+<Field label="T&G Verify">
+  {vip.tng_verify_status === 'verified' ? (
+    <span style={{ color:'#3fb950', fontWeight:700 }}>✓ Verified — {vip.tng_verified_name || '—'}</span>
+  ) : vip.tng_verify_status === 'mismatch' ? (
+    <span style={{ color:'#d29922', fontWeight:700 }}>⚠ Mismatch — {vip.tng_verified_name || '—'}</span>
+  ) : (
+    <span style={{ color:'var(--muted)' }}>Not checked</span>
+  )}
+  {vip.tng_verified_at && <span style={{ fontSize:11, color:'var(--muted)', marginLeft:8 }}>({fmtDate(vip.tng_verified_at)})</span>}
+</Field>
 </div>
 {/* Right: recent activity */}
 <div>
@@ -797,6 +807,28 @@ AI insights are labeled and separate from confirmed CRM data.
 <div>
 <label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>Remark</label>
 <Textarea value={editForm.special_requests||''} onChange={e => setEditForm(f=>({...f,special_requests:e.target.value}))} rows={2} />
+</div>
+<div style={{ borderTop:'1px solid var(--border)', paddingTop:14, marginTop:4 }}>
+<label style={{ fontSize:12, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:10, textTransform:'uppercase', letterSpacing:'.5px' }}>T&G Verification</label>
+<div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
+  <div>
+    <label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>Verified Name</label>
+    <Input value={editForm.tng_verified_name||''} onChange={e => setEditForm(f=>({...f,tng_verified_name:e.target.value}))} placeholder="Name from T&G" />
+  </div>
+  <div>
+    <label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>Status</label>
+    <Select value={editForm.tng_verify_status||''} onChange={e => setEditForm(f=>({...f,tng_verify_status:e.target.value}))}>
+      <option value="">— Not checked —</option>
+      <option value="verified">✓ Verified (name matches)</option>
+      <option value="mismatch">⚠ Mismatch (name differs)</option>
+      <option value="pending">Pending</option>
+    </Select>
+  </div>
+</div>
+<div style={{ marginTop:10 }}>
+  <label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>Date Checked</label>
+  <Input type="date" value={editForm.tng_verified_at||''} onChange={e => setEditForm(f=>({...f,tng_verified_at:e.target.value}))} style={{ maxWidth:180 }} />
+</div>
 </div>
 <div style={{ display:'flex', gap:8, justifyContent:'flex-end' }}>
 <Btn variant="ghost" onClick={() => setShowEdit(false)}>Cancel</Btn>
