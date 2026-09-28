@@ -370,6 +370,7 @@ export default function ContactLog() {
   const [editingLogId, setEditingLogId]       = useState(null)
   const [editingNote, setEditingNote]         = useState('')
   const [editingOutcome, setEditingOutcome]   = useState('Contacted')
+  const [editingWaNumber, setEditingWaNumber] = useState('')
   const [vipSearch,    setVipSearch]   = useState('')
   const [vipResults,   setVipResults]  = useState([])
   const [selectedVip,  setSelectedVip] = useState(null)
@@ -511,7 +512,7 @@ export default function ContactLog() {
   }
 
   async function saveEdit(logId) {
-    await supabase.from('contact_logs').update({ notes: editingNote, message_summary: editingNote, outcome: editingOutcome }).eq('id', logId)
+    await supabase.from('contact_logs').update({ notes: editingNote, message_summary: editingNote, outcome: editingOutcome, wa_number_used: editingWaNumber || null }).eq('id', logId)
     setEditingLogId(null)
     loadLogs()
   }
@@ -794,11 +795,18 @@ export default function ContactLog() {
                     <td style={{ ...s.td, maxWidth:300, fontSize:12, color:'var(--text)' }} onClick={e => e.stopPropagation()}>
                       {isEditingThis ? (
                         <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
-                          <div style={{ display:'flex', gap:5, alignItems:'center' }}>
+                          <div style={{ display:'flex', gap:5, alignItems:'center', flexWrap:'wrap' }}>
                             <select value={editingOutcome} onChange={e => setEditingOutcome(e.target.value)}
                               style={{ background:'var(--surface2)', border:'1px solid var(--border)', color: OUTCOME_COLOR[editingOutcome]||'var(--text)', padding:'4px 8px', borderRadius:6, fontSize:12, outline:'none', fontWeight:700, minWidth:110 }}>
                               {CONTACT_OUTCOMES.map(o => <option key={o} value={o}>{o}</option>)}
                             </select>
+                            {waNumbers.length > 0 && (
+                              <select value={editingWaNumber} onChange={e => setEditingWaNumber(e.target.value)}
+                                style={{ background:'var(--surface2)', border:'1px solid rgba(37,211,102,.4)', color: editingWaNumber ? '#25d366' : 'var(--muted)', padding:'4px 8px', borderRadius:6, fontSize:12, outline:'none', minWidth:110 }}>
+                                <option value="">📱 WA #</option>
+                                {waNumbers.map(n => <option key={n.id} value={n.codename}>{n.codename}</option>)}
+                              </select>
+                            )}
                             <input autoFocus style={{ flex:1, background:'var(--surface2)', border:'1px solid var(--border)', color:'var(--text)', padding:'4px 8px', borderRadius:6, fontSize:12, outline:'none', minWidth:0 }}
                               value={editingNote} onChange={e => setEditingNote(e.target.value)}
                               onKeyDown={e => { if(e.key==='Enter') saveEdit(log.id); if(e.key==='Escape') setEditingLogId(null) }}
@@ -823,7 +831,7 @@ export default function ContactLog() {
                     <td style={{ ...s.td, fontSize:11, color:'var(--muted)', whiteSpace:'nowrap' }}>{timeAgo(log.logged_at)}</td>
                     <td style={{ ...s.td, fontSize:11 }} onClick={e => e.stopPropagation()}>
                       <div style={{ display:'flex', gap:4 }}>
-                        <button onClick={() => { setEditingLogId(log.id); setEditingNote(log.notes||''); setEditingOutcome(log.outcome||'Contacted') }}
+                        <button onClick={() => { setEditingLogId(log.id); setEditingNote(log.notes||''); setEditingOutcome(log.outcome||'Contacted'); setEditingWaNumber(log.wa_number_used||'') }}
                           style={{ background:'none', border:'1px solid var(--border)', color:'var(--muted)', padding:'2px 8px', borderRadius:5, fontSize:11, cursor:'pointer' }}>Edit</button>
                         <button onClick={() => deleteLog(log.id)}
                           style={{ background:'none', border:'1px solid rgba(248,81,73,.3)', color:'#f85149', padding:'2px 8px', borderRadius:5, fontSize:11, cursor:'pointer' }}>Del</button>
