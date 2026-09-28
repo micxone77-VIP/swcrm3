@@ -734,6 +734,7 @@ export default function ContactLog() {
                 <th style={s.th}>Tier</th>
                 <th style={s.th}>Type</th>
                 <th style={s.th}>Outcome</th>
+                <th style={s.th}>WA #</th>
                 <th style={s.th}>Bonus</th>
                 <th style={s.th}>Notes</th>
                 <th style={s.th}>Host</th>
@@ -743,9 +744,9 @@ export default function ContactLog() {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={9} style={{ ...s.td, textAlign:'center', padding:'40px', color:'var(--muted)' }}>Loading...</td></tr>
+                <tr><td colSpan={10} style={{ ...s.td, textAlign:'center', padding:'40px', color:'var(--muted)' }}>Loading...</td></tr>
               ) : logs.length === 0 ? (
-                <tr><td colSpan={9} style={{ ...s.td, textAlign:'center', padding:'40px', color:'var(--muted)' }}>
+                <tr><td colSpan={10} style={{ ...s.td, textAlign:'center', padding:'40px', color:'var(--muted)' }}>
                   No contact logs found.{' '}
                   {!showForm && <span style={{ color:'var(--accent)', cursor:'pointer' }} onClick={() => setShowForm(true)}>Log one now</span>}
                 </td></tr>
@@ -783,6 +784,9 @@ export default function ContactLog() {
                       <span style={{ ...s.tag, background:`${OUTCOME_COLOR[log.outcome]||'#8b949e'}22`, color:OUTCOME_COLOR[log.outcome]||'#8b949e' }}>
                         {log.outcome || '-'}
                       </span>
+                    </td>
+                    <td style={{ ...s.td, fontSize:11, color: log.wa_number_used ? '#25d366' : 'var(--muted)', fontWeight: log.wa_number_used ? 600 : 400 }}>
+                      {log.wa_number_used || '—'}
                     </td>
                     <td style={{ ...s.td, fontSize:12, color: log.bonus_offered > 0 ? '#ffd700' : 'var(--muted)' }}>
                       {log.bonus_offered > 0 ? formatMoney(log.bonus_offered, log.vip_members?.currency) : '-'}

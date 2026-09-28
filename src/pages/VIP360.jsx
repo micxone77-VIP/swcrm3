@@ -456,7 +456,7 @@ marginRight:8,
 }}>{c.outcome}</span>
 {c.notes}
 </div>
-{c.host_name && <div style={{ fontSize:11, color:'var(--disabled)', marginTop:3 }}>by {c.host_name}</div>}
+{c.host_name && <div style={{ fontSize:11, color:'var(--disabled)', marginTop:3 }}>by {c.host_name}{c.wa_number_used && <span style={{ marginLeft:8, color:'#25d366', fontWeight:600 }}>📱 {c.wa_number_used}</span>}</div>}
 </div>
 </div>
 ))}
