@@ -1025,6 +1025,38 @@ export default function CSVImport() {
     onProgress(`✅ Snapshot saved: ${saved} VIPs for ${month}`)
   }
 
+  // Save monthly stats to vip_monthly_stats (for Ask Data 3-month comparisons)
+  const saveMonthlyStats = async (month, onProgress) => {
+    onProgress(`Saving monthly stats for ${month}…`)
+    const { data: vips } = await supabase
+      .from('vip_members')
+      .select('id,username,region,currency,total_deposit,total_withdrawal,total_turnover,dep_count,bonus_amount,win_loss')
+      .in('tier', ['GOLD','PLATINUM','DIAMOND','DIAMOND-P','BLACK'])
+      .eq('is_excluded', false)
+    if (!vips || vips.length === 0) return
+    const BATCH = 200
+    let saved = 0
+    for (let i = 0; i < vips.length; i += BATCH) {
+      const batch = vips.slice(i, i + BATCH).map(v => ({
+        player_id:        v.id,
+        username:         v.username,
+        month,
+        region:           v.region,
+        currency:         v.currency,
+        total_deposit:    v.total_deposit    || 0,
+        total_withdrawal: v.total_withdrawal || 0,
+        total_turnover:   v.total_turnover   || 0,
+        dep_count:        v.dep_count        || 0,
+        bonus_amount:     v.bonus_amount     || 0,
+        win_loss:         v.win_loss         || 0,
+        updated_at:       new Date().toISOString(),
+      }))
+      await supabase.from('vip_monthly_stats').upsert(batch, { onConflict: 'username,month' })
+      saved += batch.length
+    }
+    onProgress(`✅ Monthly stats saved: ${saved} VIPs for ${month}`)
+  }
+
   // Save current vip_members state as a DAILY snapshot (for calendar heatmap)
   // dateStr: 'YYYY-MM-DD' — defaults to today, but can be backdated to cover missed days
   const saveDailySnapshot = async (dateStr, onProgress) => {
@@ -1258,6 +1290,9 @@ export default function CSVImport() {
 
       // Save VIP snapshot for this month
       await saveVipSnapshot(importMonth, setRawProgress)
+
+      // Save monthly stats for Ask Data comparisons
+      await saveMonthlyStats(importMonth, setRawProgress)
 
       // Save daily snapshot (for calendar heatmap) — uses the selected snapshot date,
       // so missed days can be backdated instead of always saving as "today"
