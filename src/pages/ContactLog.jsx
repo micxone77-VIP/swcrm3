@@ -832,7 +832,7 @@ export default function ContactLog() {
                     <td style={{ ...s.td, fontSize:11 }} onClick={e => e.stopPropagation()}>
                       <div style={{ display:'flex', gap:4 }}>
                         <button onClick={() => { setEditingLogId(log.id); setEditingNote(log.notes||''); setEditingOutcome(log.outcome||'Contacted'); setEditingWaNumber(log.wa_number_used||'') }}
-                          style={{ background:'none', border:'1px solid var(--border)', color:'var(--muted)', padding:'2px 8px', borderRadius:5, fontSize:11, cursor:'pointer' }}>Edit</button>
+                          style={{ background:'rgba(99,102,241,0.12)', border:'1px solid rgba(99,102,241,0.4)', color:'#a5b4fc', padding:'2px 8px', borderRadius:5, fontSize:11, cursor:'pointer', fontWeight:600 }}>✏ Edit</button>
                         <button onClick={() => deleteLog(log.id)}
                           style={{ background:'none', border:'1px solid rgba(248,81,73,.3)', color:'#f85149', padding:'2px 8px', borderRadius:5, fontSize:11, cursor:'pointer' }}>Del</button>
                       </div>
