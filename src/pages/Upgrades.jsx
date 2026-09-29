@@ -489,6 +489,216 @@ function WhatsAppModal({ player, agentName, waNumbers = [], onClose }) {
   )
 }
 
+// ── Upgrade Challenge Modal ────────────────────────────────────────────────────
+function ChallengeModal({ player, challenge, agentName, waNumbers = [], onClose, onSaved }) {
+  const [targetAmount, setTargetAmount] = useState(challenge?.target_amount ? String(challenge.target_amount) : '')
+  const [deadline, setDeadline]         = useState(challenge?.deadline ? challenge.deadline.slice(0, 10) : '')
+  const [notes, setNotes]               = useState(challenge?.notes || '')
+  const [saving, setSaving]             = useState(false)
+  const [copied, setCopied]             = useState(false)
+  const [lang, setLang]                 = useState('en')
+
+  const currency    = player.currency || 'MYR'
+  const baseline    = challenge?.baseline_bet ?? player.monthly_valid_bet ?? 0
+  const currentBet  = player.monthly_valid_bet ?? 0
+  const target      = parseFloat(targetAmount) || 0
+  const chProgress  = target > 0 ? Math.min(100, Math.max(0, ((currentBet - baseline) / target) * 100)) : 0
+  const achieved    = target > 0 && (currentBet - baseline) >= target
+
+  const deadlineDate = deadline ? new Date(deadline + 'T23:59:59') : null
+  const isExpired    = deadlineDate && deadlineDate < new Date()
+  const daysLeft     = deadlineDate ? Math.ceil((deadlineDate - new Date()) / (1000 * 60 * 60 * 24)) : null
+
+  const VIP_NEXT    = { GOLD: 'PLATINUM', PLATINUM: 'DIAMOND' }
+  const nextTier    = VIP_NEXT[player.tier] || 'next tier'
+
+  const targetFmt   = target > 0 ? fmt(target, currency) : '___'
+  const deadlineFmt = deadline ? new Date(deadline + 'T12:00:00').toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' }) : '___'
+  const progressFmt = fmt(Math.max(0, currentBet - baseline), currency)
+
+  const waTemplates = {
+    en: achieved
+      ? `Hi *${player.username}*! 🎉 Congratulations! You've completed our special upgrade challenge!\n\nYour valid bet has increased by *${progressFmt}*, meeting the *${targetFmt}* target! 🏆\n\nYou are now eligible for your *${nextTier}* upgrade! We will arrange it shortly. Thank you for your loyalty! 💎`
+      : `Hi *${player.username}*! 👋 This is ${agentName} from SureWin VIP Department.\n\nWe have a special offer just for you! 🎯\n\nComplete *${targetFmt}* in valid bet by *${deadlineFmt}*, and you will be eligible for an upgrade to *${nextTier}*!\n\n${challenge ? `📊 Your progress so far: *${progressFmt}* / ${targetFmt} (${chProgress.toFixed(0)}%)\n` : ''}Feel free to reach out anytime! 💎`,
+    cn: achieved
+      ? `您好 *${player.username}*！🎉 恭喜您完成了我们的特别升级挑战！\n\n您的有效流水增加了 *${progressFmt}*，达成了 *${targetFmt}* 的目标！🏆\n\n您现在有资格晋升到 *${nextTier}*！我们将尽快为您安排。感谢您的支持！💎`
+      : `您好 *${player.username}*！👋 我是SureWin VIP部门的${agentName}。\n\n我们为您提供一个特别升级优惠！🎯\n\n在 *${deadlineFmt}* 之前完成 *${targetFmt}* 的有效投注，即可获得晋升到 *${nextTier}* 的资格！\n\n${challenge ? `📊 您的当前进度：*${progressFmt}* / ${targetFmt} (${chProgress.toFixed(0)}%)\n` : ''}有任何需要请随时联系！💎`,
+  }
+  const message = waTemplates[lang]
+
+  const handleSave = async () => {
+    if (!targetAmount || !deadline) return
+    setSaving(true)
+    const { data: { user } } = await supabase.auth.getUser()
+    let error
+    if (challenge?.id) {
+      ;({ error } = await supabase.from('upgrade_challenges').update({
+        target_amount: target,
+        deadline,
+        notes: notes || null,
+        status: 'active',
+      }).eq('id', challenge.id))
+    } else {
+      ;({ error } = await supabase.from('upgrade_challenges').insert({
+        username:     player.username,
+        tier:         player.tier,
+        baseline_bet: player.monthly_valid_bet ?? 0,
+        target_amount: target,
+        deadline,
+        notes:        notes || null,
+        status:       'active',
+        created_by:   user?.id || null,
+      }))
+    }
+    if (error) { alert('Save failed: ' + error.message); setSaving(false); return }
+    setSaving(false)
+    onSaved?.()
+    onClose()
+  }
+
+  const handleCancel = async () => {
+    if (!challenge?.id) return
+    if (!window.confirm('Cancel this challenge?')) return
+    await supabase.from('upgrade_challenges').update({ status: 'cancelled' }).eq('id', challenge.id)
+    onSaved?.()
+    onClose()
+  }
+
+  const openWa = () => {
+    const rawWa = (player.whatsapp || player.phone || '').replace(/[\s\-()+]/g, '')
+    const wa = rawWa ? rawWa : ''
+    window.open(`${wa ? `https://wa.me/${wa}` : 'https://wa.me/'}?text=${encodeURIComponent(message)}`, '_blank')
+  }
+
+  return (
+    <div style={s.modal} onClick={onClose}>
+      <div style={{ ...s.modalBox, width: 530 }} onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+          <span style={{ fontSize: 22 }}>🎯</span>
+          <div>
+            <div style={s.modalTitle}>Upgrade Challenge — {player.username}</div>
+            <div style={s.modalSub}>
+              <span style={s.tierBadge(player.tier)}>{player.tier}</span>
+              <span style={{ marginLeft: 8 }}>Valid Bet: {fmt(player.monthly_valid_bet, currency)}</span>
+              <span style={{ marginLeft: 8 }}>→ <span style={s.tierBadge(nextTier)}>{nextTier}</span></span>
+            </div>
+          </div>
+        </div>
+
+        {/* Existing challenge progress */}
+        {challenge && (
+          <div style={{
+            background: 'var(--bg)',
+            border: `1px solid ${achieved ? 'rgba(74,222,128,0.4)' : isExpired ? 'rgba(248,81,73,0.4)' : 'rgba(251,191,36,0.4)'}`,
+            borderRadius: 10, padding: '12px 16px', marginTop: 12, marginBottom: 16,
+          }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: achieved ? '#4ade80' : isExpired ? '#f85149' : '#fbbf24', marginBottom: 8 }}>
+              {achieved ? '✅ Challenge Completed!' : isExpired ? '⏰ Challenge Expired' : `🎯 Challenge Active · ${daysLeft}d left`}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+              <div style={{ flex: 1, height: 8, background: 'var(--border)', borderRadius: 4, overflow: 'hidden' }}>
+                <div style={{ width: `${chProgress}%`, height: '100%', background: achieved ? '#4ade80' : isExpired ? '#f85149' : '#fbbf24', borderRadius: 4, transition: 'width 0.3s' }} />
+              </div>
+              <span style={{ fontSize: 12, fontWeight: 700, color: achieved ? '#4ade80' : 'var(--text)', minWidth: 36 }}>{chProgress.toFixed(0)}%</span>
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--muted)', display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+              <span>Progress: <strong style={{ color: 'var(--text)' }}>{fmt(Math.max(0, currentBet - baseline), currency)}</strong> / {fmt(challenge.target_amount, currency)}</span>
+              <span>Deadline: <strong style={{ color: 'var(--text)' }}>{new Date(challenge.deadline + 'T12:00:00').toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })}</strong></span>
+            </div>
+          </div>
+        )}
+
+        {/* Form */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+          <div>
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>Custom Target Amount ({currency})</div>
+            <input
+              type="number"
+              value={targetAmount}
+              onChange={e => setTargetAmount(e.target.value)}
+              placeholder="e.g. 150000"
+              style={{ width: '100%', padding: '8px 10px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13, boxSizing: 'border-box' }}
+            />
+            {target > 0 && <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>= {fmt(target, currency)}</div>}
+          </div>
+          <div>
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>Deadline</div>
+            <input
+              type="date"
+              value={deadline}
+              onChange={e => setDeadline(e.target.value)}
+              style={{ width: '100%', padding: '8px 10px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13, boxSizing: 'border-box' }}
+            />
+          </div>
+        </div>
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>Notes (optional)</div>
+          <input
+            value={notes}
+            onChange={e => setNotes(e.target.value)}
+            placeholder="e.g. Special offer: 150k in 2 days for upgrade"
+            style={{ width: '100%', padding: '8px 10px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13, boxSizing: 'border-box' }}
+          />
+        </div>
+
+        {/* WhatsApp template */}
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6, fontWeight: 600 }}>💬 WhatsApp Message Template</div>
+          <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+            {[['en', 'English'], ['cn', '中文']].map(([k, label]) => (
+              <button key={k}
+                style={{ padding: '4px 12px', borderRadius: 20, border: `1px solid ${lang === k ? 'var(--accent)' : 'var(--border)'}`, background: lang === k ? 'var(--accent)' : 'transparent', color: lang === k ? '#fff' : 'var(--muted)', fontSize: 11, cursor: 'pointer', fontWeight: lang === k ? 700 : 400 }}
+                onClick={() => { setLang(k); setCopied(false) }}
+              >{label}</button>
+            ))}
+            {achieved && <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 700, color: '#4ade80', padding: '4px 10px', background: 'rgba(74,222,128,0.1)', borderRadius: 20, border: '1px solid rgba(74,222,128,0.3)' }}>✅ Achievement message</span>}
+          </div>
+          <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px', fontSize: 12, lineHeight: 1.7, whiteSpace: 'pre-wrap', color: 'var(--text)', maxHeight: 150, overflowY: 'auto', fontFamily: 'inherit' }}>
+            {message.split('\n').map((line, i) => {
+              const parts = line.split(/(\*[^*]+\*)/g)
+              return (
+                <span key={i}>
+                  {parts.map((p, j) => p.startsWith('*') && p.endsWith('*') ? <strong key={j}>{p.slice(1, -1)}</strong> : p)}
+                  {i < message.split('\n').length - 1 && <br />}
+                </span>
+              )
+            })}
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+            <button
+              style={{ ...s.btn(copied ? '#10b981' : 'var(--surface)'), color: copied ? '#fff' : 'var(--text)', border: `1px solid ${copied ? '#10b981' : 'var(--border)'}`, flex: 1, fontSize: 11 }}
+              onClick={() => navigator.clipboard.writeText(message).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000) })}
+            >
+              {copied ? '✓ Copied!' : '📋 Copy Message'}
+            </button>
+            <button style={{ ...s.btn('#25D366'), flex: 1, fontSize: 11 }} onClick={openWa}>
+              💬 Open WhatsApp
+            </button>
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          {challenge?.id && challenge.status === 'active' && (
+            <button style={{ ...s.outlineBtn('#f85149'), fontSize: 11 }} onClick={handleCancel}>
+              ✕ Cancel Challenge
+            </button>
+          )}
+          <button style={s.outlineBtn('var(--muted)')} onClick={onClose}>Close</button>
+          <button
+            style={{ ...s.btn('#fbbf24'), color: '#000', fontWeight: 700, opacity: (targetAmount && deadline) ? 1 : 0.5 }}
+            disabled={!targetAmount || !deadline || saving}
+            onClick={handleSave}
+          >
+            {saving ? 'Saving…' : challenge?.id ? '💾 Update Challenge' : '🎯 Set Challenge'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Inline Contact Log Form ────────────────────────────────────────────────────
 function ContactLogForm({ player, onClose }) {
   const [channel, setChannel]   = useState('WhatsApp')
@@ -581,12 +791,22 @@ function VIPCandidatesTab({ hostFilter = 'ALL' }) {
   const [waModal, setWaModal]       = useState(null)
   const [selectedMonth, setSelectedMonth] = useUrlParam('vMonth', '')
   const [availableMonths, setAvailableMonths] = useState([])
-  const [waNumbers, setWaNumbers] = useState([])
+  const [waNumbers, setWaNumbers]         = useState([])
+  const [challengeMap, setChallengeMap]   = useState({})
+  const [challengeModal, setChallengeModal] = useState(null)
+
   useEffect(() => {
     if (!myName) return
     supabase.from('wa_numbers').select('id,codename,number,telco').eq('host', myName).eq('status','Active')
       .then(({ data }) => setWaNumbers(data || []))
   }, [myName])
+
+  const reloadChallenges = async () => {
+    const { data } = await supabase.from('upgrade_challenges').select('*').in('status', ['active', 'expired'])
+    const cMap = {}
+    ;(data || []).forEach(c => { cMap[c.username] = c })
+    setChallengeMap(cMap)
+  }
 
   useEffect(() => {
     const init = async () => {
@@ -666,6 +886,16 @@ function VIPCandidatesTab({ hostFilter = 'ALL' }) {
       })
 
       setVips(withUpgrade)
+
+      // Load upgrade challenges alongside VIP data
+      const { data: challenges } = await supabase
+        .from('upgrade_challenges')
+        .select('*')
+        .in('status', ['active', 'expired'])
+      const cMap = {}
+      ;(challenges || []).forEach(c => { cMap[c.username] = c })
+      setChallengeMap(cMap)
+
       setLoading(false)
     }
     load()
@@ -781,13 +1011,28 @@ function VIPCandidatesTab({ hostFilter = 'ALL' }) {
                           : <span style={{ fontSize: 12, color: 'var(--muted)' }}>—</span>
                         }
                       </td>
-                      <td style={{ ...s.td, minWidth: 100 }}>
+                      <td style={{ ...s.td, minWidth: 110 }}>
                         {nextTarget
                           ? <div>
                               <div style={s.progressWrap}>
                                 <div style={s.progressBar(nextPct, TIER_COLOR[nextTarget.tier])} />
                               </div>
                               <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 3 }}>{nextPct.toFixed(0)}%</div>
+                              {(() => {
+                                const ch = challengeMap[v.username]
+                                if (!ch || ch.status !== 'active') return null
+                                const chPct = ch.target_amount > 0
+                                  ? Math.min(100, Math.max(0, ((v.monthly_valid_bet - ch.baseline_bet) / ch.target_amount) * 100))
+                                  : 0
+                                return (
+                                  <div style={{ marginTop: 5 }}>
+                                    <div style={{ height: 4, background: 'var(--border)', borderRadius: 2, overflow: 'hidden' }}>
+                                      <div style={{ width: `${chPct}%`, height: '100%', background: chPct >= 100 ? '#4ade80' : '#fbbf24', borderRadius: 2 }} />
+                                    </div>
+                                    <div style={{ fontSize: 9, color: '#fbbf24', marginTop: 2 }}>🎯 {chPct.toFixed(0)}% challenge</div>
+                                  </div>
+                                )
+                              })()}
                             </div>
                           : <span style={{ fontSize: 12, color: 'var(--muted)' }}>—</span>
                         }
@@ -824,14 +1069,34 @@ function VIPCandidatesTab({ hostFilter = 'ALL' }) {
                         }
                       </td>
                       <td style={s.td} onClick={e => e.stopPropagation()}>
-                        <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                        <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
                           {v.upgrade
                             ? <button style={s.btn(TIER_COLOR[v.upgrade.tier], true)} onClick={() => setModal(v)}>
                                 {t('upgrades.btn.upgrade', 'Upgrade')}
                               </button>
-                            : <button style={s.outlineBtn('#58a6ff')} onClick={() => setContactModal(v)}>
-                                {t('upgrades.btn.contact', 'Contact')}
-                              </button>
+                            : <>
+                                {challengeMap[v.username]
+                                  ? <button
+                                      style={{
+                                        ...s.outlineBtn(challengeMap[v.username].status === 'active' ? '#fbbf24' : '#f85149'),
+                                        fontSize: 11, fontWeight: 700,
+                                      }}
+                                      onClick={() => setChallengeModal(v)}
+                                    >
+                                      {challengeMap[v.username].status === 'active' ? '🎯 Challenge' : '⏰ Expired'}
+                                    </button>
+                                  : <button style={s.outlineBtn('#58a6ff')} onClick={() => setContactModal(v)}>
+                                      {t('upgrades.btn.contact', 'Contact')}
+                                    </button>
+                                }
+                                <button
+                                  title="Set / view upgrade challenge"
+                                  style={{ ...s.outlineBtn('#fbbf24'), padding: '3px 7px', fontSize: 12 }}
+                                  onClick={() => setChallengeModal(v)}
+                                >
+                                  {challengeMap[v.username] ? '✏' : '🎯'}
+                                </button>
+                              </>
                           }
                           <button
                             title="Send WhatsApp message"
@@ -876,6 +1141,17 @@ function VIPCandidatesTab({ hostFilter = 'ALL' }) {
           agentName={myName || 'Agent'}
           waNumbers={waNumbers}
           onClose={() => setWaModal(null)}
+        />
+      )}
+
+      {challengeModal && (
+        <ChallengeModal
+          player={challengeModal}
+          challenge={challengeMap[challengeModal.username] || null}
+          agentName={myName || 'Agent'}
+          waNumbers={waNumbers}
+          onClose={() => setChallengeModal(null)}
+          onSaved={reloadChallenges}
         />
       )}
     </div>
