@@ -173,20 +173,21 @@ export default function ChurnAlerts() {
               <span style={{color:'var(--muted)'}}>{MONTHS[month]}: {allD.length?Math.round(dContacted/allD.length*100):0}%</span>
             </div>
           </div>
-          <div style={{overflowX:'auto'}}><table style={s.tbl}><thead><tr>{['Player','Host','Risk','Days Inactive','Last Deposit','Last Contact','This Month','Actions'].map(h=><th key={h} style={s.th}>{h}</th>)}</tr></thead>
+          <div style={{overflowX:'auto'}}><table style={s.tbl}><thead><tr>{['Player','Host','Phone / WA','Risk','Days Inactive','Last Deposit','Last Contact','This Month','Actions'].map(h=><th key={h} style={s.th}>{h}</th>)}</tr></thead>
             <tbody>{dVips.map(v=>{const isC=contactedSet.has(v.username);return(
               <tr key={v.id}>
                 <td style={s.td}><span style={{display:'inline-flex',alignItems:'center',gap:4}}><button style={{background:'none',border:0,padding:0,cursor:'pointer',color:'var(--text)',fontWeight:700}} onClick={()=>navigate(`/vips/${v.id}`)}>{v.username}</button><button title="Copy username" onClick={e=>{e.stopPropagation();navigator.clipboard.writeText(v.username)}} style={{background:'none',border:'none',color:'var(--muted)',cursor:'pointer',fontSize:12,padding:'0 2px',lineHeight:1,opacity:.6}} onMouseEnter={e=>e.currentTarget.style.opacity=1} onMouseLeave={e=>e.currentTarget.style.opacity=.6}>⎘</button></span></td>
                 <td style={s.td}>{v.host_assigned||'—'}</td>
+                <td style={{...s.td,fontSize:12}}>{v.whatsapp||v.phone?<span style={{display:'inline-flex',alignItems:'center',gap:4}}><span style={{color:'var(--muted)'}}>{v.whatsapp||v.phone}</span><button title="Copy number" onClick={e=>{e.stopPropagation();navigator.clipboard.writeText((v.whatsapp||v.phone).replace(/\D/g,''))}} style={{background:'none',border:'none',color:'var(--muted)',cursor:'pointer',fontSize:11,padding:'0 2px',opacity:.6}} onMouseEnter={e=>e.currentTarget.style.opacity=1} onMouseLeave={e=>e.currentTarget.style.opacity=.6}>⎘</button></span>:'—'}</td>
                 <td style={s.td}>{v.risk_level?<span style={{padding:'2px 8px',borderRadius:12,fontSize:11,fontWeight:700,background:RISK_BG[v.risk_level]||'transparent',color:RISK_COLOR[v.risk_level]||'var(--muted)'}}>{v.risk_level}</span>:'—'}</td>
                 <td style={{...s.td,fontVariantNumeric:'tabular-nums'}}>{v.days_inactive||0}d</td>
                 <td style={s.td}>{v.last_deposit_date||'—'}</td>
                 <td style={{...s.td,fontSize:12,color:'var(--muted)'}}>{v.last_contacted?new Date(v.last_contacted).toLocaleDateString('en-MY',{day:'2-digit',month:'short'}):'Never'}</td>
                 <td style={s.td}><span style={{fontSize:12,fontWeight:700,color:isC?'#3fb950':'#f85149'}}>{isC?'✅ Done':'❌ Not yet'}</span></td>
-                <td style={s.td}><div style={{display:'flex',gap:5,flexWrap:'wrap'}}><WaButton v={v}/><button style={s.btnSm} onClick={()=>navigate(`/vips/${v.id}`)}>Open</button>{!reactivatedSet.has(v.username)&&<button style={{...s.btnSm,background:'#3fb950',color:'#fff',border:0,fontWeight:700}} onClick={()=>setReactivateModal(v)}>✅ Reactivate</button>}</div></td>
+                <td style={s.td}><div style={{display:'flex',gap:5,flexWrap:'wrap'}}><button style={{background:'#25D366',color:'#fff',border:'none',padding:'4px 10px',borderRadius:6,fontSize:12,fontWeight:700,cursor:'pointer'}} onClick={()=>setChurnWaModal({...v,reasons:[`${v.tier} monthly follow-up`],days_since_deposit:v.days_inactive,host:v.host_assigned})}>💬 WA</button><button style={s.btnSm} onClick={()=>navigate(`/vips/${v.id}`)}>Open</button>{!reactivatedSet.has(v.username)&&<button style={{...s.btnSm,background:'#3fb950',color:'#fff',border:0,fontWeight:700}} onClick={()=>setReactivateModal(v)}>✅ Reactivate</button>}</div></td>
               </tr>
             )})}
-            {!dVips.length&&<tr><td colSpan="8" style={{...s.td,textAlign:'center',color:'var(--muted)'}}>No Diamond VIPs match the filter.</td></tr>}
+            {!dVips.length&&<tr><td colSpan="9" style={{...s.td,textAlign:'center',color:'var(--muted)'}}>No Diamond VIPs match the filter.</td></tr>}
             </tbody></table></div>
         </div>)
       })()}
@@ -208,20 +209,21 @@ export default function ChurnAlerts() {
               <span style={{color:'var(--muted)'}}>{MONTHS[month]}: {allP.length?Math.round(pContacted/allP.length*100):0}%</span>
             </div>
           </div>
-          <div style={{overflowX:'auto'}}><table style={s.tbl}><thead><tr>{['Player','Host','Risk','Days Inactive','Last Deposit','Last Contact','This Month','Actions'].map(h=><th key={h} style={s.th}>{h}</th>)}</tr></thead>
+          <div style={{overflowX:'auto'}}><table style={s.tbl}><thead><tr>{['Player','Host','Phone / WA','Risk','Days Inactive','Last Deposit','Last Contact','This Month','Actions'].map(h=><th key={h} style={s.th}>{h}</th>)}</tr></thead>
             <tbody>{pVips.map(v=>{const isC=contactedSet.has(v.username);return(
               <tr key={v.id}>
                 <td style={s.td}><span style={{display:'inline-flex',alignItems:'center',gap:4}}><button style={{background:'none',border:0,padding:0,cursor:'pointer',color:'var(--text)',fontWeight:700}} onClick={()=>navigate(`/vips/${v.id}`)}>{v.username}</button><button title="Copy username" onClick={e=>{e.stopPropagation();navigator.clipboard.writeText(v.username)}} style={{background:'none',border:'none',color:'var(--muted)',cursor:'pointer',fontSize:12,padding:'0 2px',lineHeight:1,opacity:.6}} onMouseEnter={e=>e.currentTarget.style.opacity=1} onMouseLeave={e=>e.currentTarget.style.opacity=.6}>⎘</button></span></td>
                 <td style={s.td}>{v.host_assigned||'—'}</td>
+                <td style={{...s.td,fontSize:12}}>{v.whatsapp||v.phone?<span style={{display:'inline-flex',alignItems:'center',gap:4}}><span style={{color:'var(--muted)'}}>{v.whatsapp||v.phone}</span><button title="Copy number" onClick={e=>{e.stopPropagation();navigator.clipboard.writeText((v.whatsapp||v.phone).replace(/\D/g,''))}} style={{background:'none',border:'none',color:'var(--muted)',cursor:'pointer',fontSize:11,padding:'0 2px',opacity:.6}} onMouseEnter={e=>e.currentTarget.style.opacity=1} onMouseLeave={e=>e.currentTarget.style.opacity=.6}>⎘</button></span>:'—'}</td>
                 <td style={s.td}>{v.risk_level?<span style={{padding:'2px 8px',borderRadius:12,fontSize:11,fontWeight:700,background:RISK_BG[v.risk_level]||'transparent',color:RISK_COLOR[v.risk_level]||'var(--muted)'}}>{v.risk_level}</span>:'—'}</td>
                 <td style={{...s.td,fontVariantNumeric:'tabular-nums'}}>{v.days_inactive||0}d</td>
                 <td style={s.td}>{v.last_deposit_date||'—'}</td>
                 <td style={{...s.td,fontSize:12,color:'var(--muted)'}}>{v.last_contacted?new Date(v.last_contacted).toLocaleDateString('en-MY',{day:'2-digit',month:'short'}):'Never'}</td>
                 <td style={s.td}><span style={{fontSize:12,fontWeight:700,color:isC?'#3fb950':'#f85149'}}>{isC?'✅ Done':'❌ Not yet'}</span></td>
-                <td style={s.td}><div style={{display:'flex',gap:5,flexWrap:'wrap'}}><WaButton v={v}/><button style={s.btnSm} onClick={()=>navigate(`/vips/${v.id}`)}>Open</button>{!reactivatedSet.has(v.username)&&<button style={{...s.btnSm,background:'#3fb950',color:'#fff',border:0,fontWeight:700}} onClick={()=>setReactivateModal(v)}>✅ Reactivate</button>}</div></td>
+                <td style={s.td}><div style={{display:'flex',gap:5,flexWrap:'wrap'}}><button style={{background:'#25D366',color:'#fff',border:'none',padding:'4px 10px',borderRadius:6,fontSize:12,fontWeight:700,cursor:'pointer'}} onClick={()=>setChurnWaModal({...v,reasons:[`${v.tier} monthly follow-up`],days_since_deposit:v.days_inactive,host:v.host_assigned})}>💬 WA</button><button style={s.btnSm} onClick={()=>navigate(`/vips/${v.id}`)}>Open</button>{!reactivatedSet.has(v.username)&&<button style={{...s.btnSm,background:'#3fb950',color:'#fff',border:0,fontWeight:700}} onClick={()=>setReactivateModal(v)}>✅ Reactivate</button>}</div></td>
               </tr>
             )})}
-            {!pVips.length&&<tr><td colSpan="8" style={{...s.td,textAlign:'center',color:'var(--muted)'}}>No Platinum VIPs match the filter.</td></tr>}
+            {!pVips.length&&<tr><td colSpan="9" style={{...s.td,textAlign:'center',color:'var(--muted)'}}>No Platinum VIPs match the filter.</td></tr>}
             </tbody></table></div>
         </div>)
       })()}
