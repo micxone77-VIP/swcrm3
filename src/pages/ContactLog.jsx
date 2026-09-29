@@ -356,13 +356,19 @@ export default function ContactLog() {
   const [page,     setPage]     = useUrlParamNumber('page', 0)
   const [hosts,    setHosts]    = useState([])
   const [stats,    setStats]    = useState({ total:0, today:0, positive:0, bonusTotal:0 })
-  const [waNumbers, setWaNumbers]   = useState([])
+  const [waNumbers, setWaNumbers]     = useState([])
+  const [allWaNumbers, setAllWaNumbers] = useState([])
   useEffect(() => {
     if (!profile) return
     const myName = profile.full_name || profile.username || (profile.email ? profile.email.split('@')[0] : '')
-    if (!myName) return
-    supabase.from('wa_numbers').select('id,codename,number,telco').eq('host', myName).eq('status','Active')
-      .then(({ data }) => setWaNumbers(data || []))
+    // Load my numbers for the new-log form
+    if (myName) {
+      supabase.from('wa_numbers').select('id,codename,number,telco').eq('host', myName).eq('status','Active')
+        .then(({ data }) => setWaNumbers(data || []))
+    }
+    // Load ALL numbers for the edit dropdown (admin may need any number)
+    supabase.from('wa_numbers').select('id,codename,number,telco,host').eq('status','Active').order('host').order('codename')
+      .then(({ data }) => setAllWaNumbers(data || []))
   }, [profile])
 
   const [showForm, setShowForm]     = useState(false)
@@ -800,13 +806,11 @@ export default function ContactLog() {
                               style={{ background:'var(--surface2)', border:'1px solid var(--border)', color: OUTCOME_COLOR[editingOutcome]||'var(--text)', padding:'4px 8px', borderRadius:6, fontSize:12, outline:'none', fontWeight:700, minWidth:110 }}>
                               {CONTACT_OUTCOMES.map(o => <option key={o} value={o}>{o}</option>)}
                             </select>
-                            {waNumbers.length > 0 && (
-                              <select value={editingWaNumber} onChange={e => setEditingWaNumber(e.target.value)}
-                                style={{ background:'var(--surface2)', border:'1px solid rgba(37,211,102,.4)', color: editingWaNumber ? '#25d366' : 'var(--muted)', padding:'4px 8px', borderRadius:6, fontSize:12, outline:'none', minWidth:110 }}>
-                                <option value="">📱 WA #</option>
-                                {waNumbers.map(n => <option key={n.id} value={n.codename}>{n.codename}</option>)}
-                              </select>
-                            )}
+                            <select value={editingWaNumber} onChange={e => setEditingWaNumber(e.target.value)}
+                              style={{ background:'var(--surface2)', border:'1px solid rgba(37,211,102,.4)', color: editingWaNumber ? '#25d366' : 'var(--muted)', padding:'4px 8px', borderRadius:6, fontSize:12, outline:'none', minWidth:140 }}>
+                              <option value="">📱 WA # (none)</option>
+                              {allWaNumbers.map(n => <option key={n.id} value={n.codename}>{n.codename} — {n.number}{n.telco?' ('+n.telco+')':''}</option>)}
+                            </select>
                             <input autoFocus style={{ flex:1, background:'var(--surface2)', border:'1px solid var(--border)', color:'var(--text)', padding:'4px 8px', borderRadius:6, fontSize:12, outline:'none', minWidth:0 }}
                               value={editingNote} onChange={e => setEditingNote(e.target.value)}
                               onKeyDown={e => { if(e.key==='Enter') saveEdit(log.id); if(e.key==='Escape') setEditingLogId(null) }}

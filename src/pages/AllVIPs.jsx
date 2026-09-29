@@ -24,16 +24,50 @@ function daysAgoLabel(date) {
   return d + 'd ago'
 }
 
+function escCSV(v) {
+  if (v === null || v === undefined) return ''
+  const s = String(v)
+  if (s.includes(',') || s.includes('"') || s.includes('\n')) return `"${s.replace(/"/g,'""')}"`
+  return s
+}
+
 function downloadCSV(rows, filename) {
   if (!rows || rows.length === 0) return
-  const headers = ['Username','Full Name','Tier','Status','Region','Host','Total Deposit','Days Inactive','Last Deposit','Churn Risk']
-  const csv = [headers.join(','), ...rows.map(r => [
-    r.username, `"${r.full_name||''}"`, r.tier, r.activity_status||'',
-    r.region||'', r.host_assigned||'',
-    r.total_deposit||0, r.days_inactive||0,
-    r.last_deposit_date||'', r.churn_risk||'',
-  ].join(','))].join('\n')
-  const blob = new Blob([csv], { type: 'text/csv' })
+  const headers = [
+    'Username','Full Name','Tier','Status','Region','Currency','Host',
+    'Phone','WhatsApp',
+    'Total Deposit','Win/Loss','Days Inactive',
+    'Last Deposit Date','Last Contacted','Last Contact Date',
+    'Churn Risk','VIP Score','Birthday',
+    'TNG Verify Status','TNG Verified Name',
+  ]
+  const csv = [
+    headers.join(','),
+    ...rows.map(r => [
+      escCSV(r.username),
+      escCSV(r.full_name),
+      escCSV(r.tier),
+      escCSV(r.activity_status),
+      escCSV(r.region),
+      escCSV(r.currency),
+      escCSV(r.host_assigned),
+      escCSV(r.phone),
+      escCSV(r.whatsapp),
+      escCSV(r.total_deposit ?? 0),
+      escCSV(r.win_loss ?? 0),
+      escCSV(r.days_inactive ?? 0),
+      escCSV(r.last_deposit_date),
+      escCSV(r.last_contacted),
+      escCSV(r.last_contact_date),
+      escCSV(r.churn_risk),
+      escCSV(r.vip_score),
+      escCSV(r.birthday),
+      escCSV(r.tng_verify_status),
+      escCSV(r.tng_verified_name),
+    ].join(','))
+  ].join('\n')
+  const bom = '﻿'
+  const blob = new Blob([bom + csv], { type: 'text/csv;charset=utf-8;' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a'); a.href = url; a.download = filename; a.click()
   URL.revokeObjectURL(url)
@@ -69,7 +103,7 @@ export default function AllVIPs() {
     try {
       const [vipRes, hostRes] = await Promise.all([
         supabase.from('vip_members')
-          .select('id,username,full_name,tier,region,currency,days_inactive,churn_risk,host_assigned,last_deposit_date,total_deposit,win_loss,activity_status,last_contacted,last_contact_date,vip_score,is_excluded,birthday,phone,tng_verify_status,tng_verified_name')
+          .select('id,username,full_name,tier,region,currency,days_inactive,churn_risk,host_assigned,last_deposit_date,total_deposit,win_loss,activity_status,last_contacted,last_contact_date,vip_score,is_excluded,birthday,phone,whatsapp,tng_verify_status,tng_verified_name')
           .neq('is_excluded', true),
         supabase.from('profiles').select('full_name').in('role',['admin','host']).order('full_name'),
       ])
