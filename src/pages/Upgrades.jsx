@@ -529,7 +529,6 @@ function ChallengeModal({ player, challenge, agentName, waNumbers = [], onClose,
   const handleSave = async () => {
     if (!targetAmount || !deadline) return
     setSaving(true)
-    const { data: { user } } = await supabase.auth.getUser()
     let error
     if (challenge?.id) {
       ;({ error } = await supabase.from('upgrade_challenges').update({
@@ -540,14 +539,14 @@ function ChallengeModal({ player, challenge, agentName, waNumbers = [], onClose,
       }).eq('id', challenge.id))
     } else {
       ;({ error } = await supabase.from('upgrade_challenges').insert({
-        username:     player.username,
-        tier:         player.tier,
-        baseline_bet: player.monthly_valid_bet ?? 0,
-        target_amount: target,
+        username:        player.username,
+        upgrade_to_tier: nextTier,
+        host_name:       agentName || null,
+        baseline_bet:    player.monthly_valid_bet ?? 0,
+        target_amount:   target,
         deadline,
-        notes:        notes || null,
-        status:       'active',
-        created_by:   user?.id || null,
+        notes:           notes || null,
+        status:          'active',
       }))
     }
     if (error) { alert('Save failed: ' + error.message); setSaving(false); return }
