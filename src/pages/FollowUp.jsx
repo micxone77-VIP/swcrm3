@@ -122,7 +122,7 @@ export default function FollowUp() {
       }
     }
 
-    const { error: vipError } = await supabase.from('vip_members').update({ last_contact_date: nowIso }).eq('id', logTarget.id)
+    const { error: vipError } = await supabase.from('vip_members').update({ last_contacted: nowIso, last_contact_date: nowIso.slice(0,10) }).eq('id', logTarget.id)
     if (vipError) {
       setLogSaving(false); toast(`Contact saved, but VIP update failed: ${vipError.message}`, 'error'); await load(); return
     }

@@ -156,6 +156,9 @@ export default function Today() {
     })
     setLogSaving(false)
     if (err) { toast('Failed to log contact: ' + err.message, 'error'); return }
+    // Sync last_contacted on vip_members
+    const _now = new Date().toISOString()
+    await supabase.from('vip_members').update({ last_contacted: _now, last_contact_date: _now.slice(0,10) }).eq('id', logTarget.id)
     toast(`Logged: ${logTarget.username} — ${logOutcome}`, 'success')
     setLogTarget(null); setLogNote(''); setLogOutcome('Replied'); setLogWaNumber('')
     refresh()

@@ -180,7 +180,7 @@ channel: logType, outcome: logOutcome,
 notes: logNote || null, host_name: profile?.full_name || null,
 logged_at: nowStr,
 })
-await supabase.from('vip_members').update({ last_contact_date: nowStr }).eq('id', id)
+await supabase.from('vip_members').update({ last_contacted: nowStr, last_contact_date: nowStr.slice(0,10) }).eq('id', id)
 setLogSaving(false)
 if (err) { toast('Error: ' + err.message, 'error'); return }
 toast(t('vip360.contactLogged'), 'success')

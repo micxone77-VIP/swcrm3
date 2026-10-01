@@ -504,6 +504,11 @@ export default function ContactLog() {
         })
         .catch(e => console.error('Auto-tag failed (log was still saved):', e))
     }
+    // Sync last_contacted on vip_members (fire-and-forget, log already saved)
+    if (vipId) {
+      const _now = new Date().toISOString()
+      supabase.from('vip_members').update({ last_contacted: _now, last_contact_date: _now.slice(0,10) }).eq('id', vipId).then(() => {})
+    }
     setLogForm({ contact_type:'WhatsApp', outcome:'Contacted', bonus_offered:'', bonus_type:'', notes:'', wa_number_used:'' })
     setSelectedVip(null); setVipSearch(''); setVipResults([])
     setManualMode(false); setManualUsername(''); setManualTier('GOLD')
