@@ -120,15 +120,9 @@ export default function ExportPage() {
   }, [])
 
   // ── CSV EXPORTERS ──────────────────────────────────────────────────────────
-  async function exportVIPs() {
-    setLoadingCSV(p => ({...p, vip:true}))
+  async function fetchVIPRows() {
     const { data } = await supabase.from('vip_members').select('*').order('tier').order('username')
     const vips = data || []
-
-    // Merge accumulated month-to-date totals (vip_members.monthly_valid_bet/total_deposit
-    // are now just the last uploaded day's numbers, since CSV uploads happen daily)
-    // NOTE: don't filter with .in('username', usernames) — exporting all VIPs means 400+
-    // usernames, which can exceed URL length limits. Fetch the whole month instead.
     let totalsMap = {}
     if (vips.length > 0) {
       const now = new Date()
@@ -140,8 +134,7 @@ export default function ExportPage() {
       if (totalsErr) console.error('exportVIPs: vip_monthly_totals fetch error', totalsErr)
       ;(totals||[]).forEach(t => { totalsMap[t.username] = t })
     }
-
-    downloadCSV(vips.map(v => ({
+    return vips.map(v => ({
       username:           v.username,
       full_name:          v.full_name,
       tier:               v.tier,
@@ -159,8 +152,36 @@ export default function ExportPage() {
       birthday:           v.birthday,
       city:               v.city,
       notes:              v.notes,
-    })), `VIP_Members_${new Date().toISOString().slice(0,10)}.csv`)
+    }))
+  }
+
+  async function exportVIPs() {
+    setLoadingCSV(p => ({...p, vip:true}))
+    const rows = await fetchVIPRows()
+    downloadCSV(rows, `VIP_Members_${new Date().toISOString().slice(0,10)}.csv`)
     setLoadingCSV(p => ({...p, vip:false}))
+  }
+
+  async function exportVIPsXLSX() {
+    setLoadingCSV(p => ({...p, vipXlsx:true}))
+    const rows = await fetchVIPRows()
+    const TIER_ORDER = ['DIAMOND','BLACK','PLATINUM','GOLD','SILVER','BRONZE']
+    const wb = XLSX.utils.book_new()
+    // All tab first
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'All')
+    // One tab per tier (only if that tier has members)
+    TIER_ORDER.forEach(tier => {
+      const tierRows = rows.filter(r => r.tier === tier)
+      if (tierRows.length > 0)
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(tierRows), tier)
+    })
+    // Any unexpected tier values
+    const knownTiers = new Set(TIER_ORDER)
+    const otherRows = rows.filter(r => !knownTiers.has(r.tier))
+    if (otherRows.length > 0)
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(otherRows), 'OTHER')
+    XLSX.writeFile(wb, `VIP_Members_ByTier_${new Date().toISOString().slice(0,10)}.xlsx`)
+    setLoadingCSV(p => ({...p, vipXlsx:false}))
   }
 
   async function exportMailingList() {
@@ -1361,7 +1382,26 @@ export default function ExportPage() {
         </div>
 
         <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
-          <CSVExportCard icon="👑" title="VIP Members"             desc="All VIP profiles — tier, valid bet, deposit, host, birthday, region" color="#6366f1" loading={loadingCSV.vip}       onExport={exportVIPs} />
+          {/* VIP Members — CSV + XLSX by tier */}
+          <div style={{ background:'var(--surface)', border:'1px solid #6366f1', borderRadius:10, padding:'14px 16px', display:'flex', alignItems:'center', gap:14 }}>
+            <div style={{ fontSize:22 }}>👑</div>
+            <div style={{ flex:1 }}>
+              <div style={{ fontSize:13, fontWeight:700 }}>VIP Members</div>
+              <div style={{ fontSize:11, color:'var(--muted)', marginTop:2 }}>All VIP profiles — tier, valid bet, deposit, host, birthday, region</div>
+            </div>
+            <div style={{ display:'flex', gap:8 }}>
+              <button
+                style={{ ...s.btn('#6366f1'), minWidth:90, fontSize:12 }}
+                onClick={exportVIPs}
+                disabled={loadingCSV.vip}
+              >{loadingCSV.vip ? '…' : '📄 CSV'}</button>
+              <button
+                style={{ ...s.btn('#059669'), minWidth:130, fontSize:12 }}
+                onClick={exportVIPsXLSX}
+                disabled={loadingCSV.vipXlsx}
+              >{loadingCSV.vipXlsx ? '…' : '📊 XLSX (by tier)'}</button>
+            </div>
+          </div>
           <CSVExportCard icon="📮" title="VIP Mailing List"        desc="Tier, username, name, phone, email, address, race, telegram, remark — for holiday gift mailing. Fill in any blank columns by hand and re-import." color="#14b8a6" loading={loadingCSV.mailing}   onExport={exportMailingList} />
 
           <div style={{ background:'var(--surface)', border:'1px dashed var(--border)', borderRadius:10, padding:'14px 16px', display:'flex', alignItems:'center', gap:14 }}>
