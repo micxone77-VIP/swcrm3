@@ -280,6 +280,10 @@ export default function Campaigns() {
   const [payoutSortDir, setPayoutSortDir] = useState('desc')
   const [payoutHostFilter, setPayoutHostFilter] = useState('all')
   const [inactiveHostFilter, setInactiveHostFilter] = useState('all')
+  const [inactiveSort, setInactiveSort] = useState('days')
+  const [inactiveSortDir, setInactiveSortDir] = useState('desc')
+  const [allPlayerSort, setAllPlayerSort] = useState('deposit')
+  const [allPlayerSortDir, setAllPlayerSortDir] = useState('desc')
   const [waLang, setWaLang] = useState('en')
   const [copiedId, setCopiedId] = useState(null)
   const [entryDate, setEntryDate] = useState('')
@@ -915,15 +919,42 @@ export default function Campaigns() {
   }
 
   async function logContact(playerId, type) {
+    const now = new Date().toISOString()
     const { error } = await supabase.from('campaign_player_contacts').insert({
       campaign_id: selected.id,
       campaign_player_id: playerId,
-      contacted_at: new Date().toISOString(),
+      contacted_at: now,
       contact_type: type,
       host: profile?.email || null,
       notes: contactNote.trim() || null,
     })
     if (error) { console.error('logContact error', error); return }
+    // Auto-sync to global contact_logs + VIP data
+    const player = players.find(p => p.id === playerId)
+    if (player?.username) {
+      const myName = profile?.full_name || profile?.username || (profile?.email ? profile.email.split('@')[0] : 'Host')
+      const channelMap = { wa_sent:'WhatsApp', daily:'WhatsApp', responded:'WhatsApp', no_response:'WhatsApp', promised:'WhatsApp', deposited:'WhatsApp', reward:'WhatsApp', inactive:'WhatsApp', other:'Other' }
+      const noteText = contactNote.trim() || `Campaign chase: ${selected?.campaign_name || ''}`
+      const { data: vipRow } = await supabase.from('vip_members').select('id').eq('username', player.username).maybeSingle()
+      await Promise.all([
+        supabase.from('contact_logs').insert({
+          vip_id: vipRow?.id || null,
+          username: player.username,
+          tier: player.tier || null,
+          host_name: myName,
+          host_id: profile?.id || null,
+          channel: channelMap[type] || 'WhatsApp',
+          outcome: 'Contacted',
+          notes: noteText,
+          message_summary: noteText,
+          direction: 'outbound',
+          logged_at: now,
+          log_month: now.slice(0, 7),
+          log_week: String(Math.ceil(new Date().getDate() / 7)),
+        }),
+        supabase.from('vip_members').update({ last_contacted: now, last_contact_date: now.slice(0, 10) }).eq('username', player.username),
+      ])
+    }
     setContactLog(null)
     setContactNote('')
     setContactHistory(null)
@@ -1615,6 +1646,16 @@ export default function Campaigns() {
         const rA = isDailyMode ? (dailyEntries[a.id]?.credit_reward || 0) : calcLevelTierForDeposit(playerDeposit(a), campaignLevels).creditReward
         const rB = isDailyMode ? (dailyEntries[b.id]?.credit_reward || 0) : calcLevelTierForDeposit(playerDeposit(b), campaignLevels).creditReward
         return sm * (rA - rB)
+      }
+      if (chaseSort === 'turnover') {
+        const tA = isDailyMode ? (parseFloat(dailyEntries[a.id]?.turnover_amount) || 0) : (parseFloat(a.valid_bet) || 0)
+        const tB = isDailyMode ? (parseFloat(dailyEntries[b.id]?.turnover_amount) || 0) : (parseFloat(b.valid_bet) || 0)
+        return sm * (tA - tB)
+      }
+      if (chaseSort === 'progress') {
+        const pA = depTarget > 0 ? playerDeposit(a) / depTarget : 0
+        const pB = depTarget > 0 ? playerDeposit(b) / depTarget : 0
+        return sm * (pA - pB)
       }
       return sm * (playerDeposit(a) - playerDeposit(b))
     })
@@ -2452,7 +2493,7 @@ export default function Campaigns() {
                   )}
                   {chaseFilter && <span style={{ fontSize:11, color:'var(--muted)' }}>{filteredChaseList.length} match{filteredChaseList.length !== 1 ? 'es' : ''}</span>}
                   <span style={{ fontSize:11, color:'var(--muted)', marginLeft:4 }}>Sort:</span>
-                  {[['deposit','Deposit'],['reward','Reward'],['name','Name']].map(([key,lbl])=>(
+                  {[['deposit','Deposit'],['turnover','Turnover'],['reward','Reward'],['progress','Progress'],['name','Name']].map(([key,lbl])=>(
                     <button key={key} onClick={()=>{ if(chaseSort===key){setChaseSortDir(d=>d==='asc'?'desc':'asc')}else{setChaseSort(key);setChaseSortDir('desc')} }}
                       style={{ padding:'3px 10px', borderRadius:14, fontSize:11, fontWeight:600, border:'1px solid var(--border)', cursor:'pointer',
                         background: chaseSort===key ? 'var(--accent)' : 'var(--surface2)', color: chaseSort===key ? '#fff' : 'var(--muted)' }}>
@@ -2815,11 +2856,11 @@ export default function Campaigns() {
                                             </div>
                                           })}
                                           {!(contacts[p.id]||[]).length&&<div style={{ fontSize:10, color:'var(--muted)' }}>No contacts yet.</div>}
-                                          <button onClick={()=>{setContactHistory(null);setContactLog(p.id)}} style={{ background:'rgba(88,166,255,.1)', color:'#58a6ff', border:'1px solid rgba(88,166,255,.25)', borderRadius:5, padding:'2px 7px', fontSize:10, cursor:'pointer', fontWeight:600, marginTop:2 }}>+ Log New</button>
+                                          <button onClick={()=>{setContactHistory(null);const waResult=buildCampaignWaMessage(p,null);setContactNote(waResult?.body||'');setContactLog(p.id)}} style={{ background:'rgba(88,166,255,.1)', color:'#58a6ff', border:'1px solid rgba(88,166,255,.25)', borderRadius:5, padding:'2px 7px', fontSize:10, cursor:'pointer', fontWeight:600, marginTop:2 }}>+ Log New</button>
                                         </div>
                                       ) : (
                                         <div style={{ display:'flex', gap:4, alignItems:'center', flexWrap:'wrap' }}>
-                                          <button onClick={()=>{setContactHistory(null);setContactNote('');setContactLog(p.id)}}
+                                          <button onClick={()=>{setContactHistory(null);const waResult=buildCampaignWaMessage(p,null);setContactNote(waResult?.body||'');setContactLog(p.id)}}
                                             style={{ background:'rgba(88,166,255,.1)', color:'#58a6ff', border:'1px solid rgba(88,166,255,.25)', borderRadius:5, padding:'2px 7px', fontSize:10, cursor:'pointer', fontWeight:600 }}>
                                             + Log
                                           </button>
@@ -2828,13 +2869,17 @@ export default function Campaigns() {
                                               ? (isDailyMode ? rmFmt(dailyEntry?.credit_reward||0, campCurrency) : rmFmt(multiMetric?.qualifiedRewardTotal||0, campCurrency))
                                               : campType==='dual_tier' ? rmFmt((dualReward?.creditAmount||0)+(dualReward?.wcashAmount||0), campCurrency)
                                               : rmFmt(calcReward(campType,playerDeposit(p),rewardPct,rewardFixed,goldVal,rewardCap,rewardTiers,campaignLevels,selected?.is_multi_level), campCurrency)
-                                            const chaseWaUrl = waHref(p.whatsapp, buildWaMsg(p.username, selected?.campaign_name||'Campaign', chaseReward, waLang, p.host_assigned||null, null, selected))
+                                            const chaseWaMsgResult = buildCampaignWaMessage(p, null)
+                                            const chaseWaUrl = chaseWaMsgResult
+                                              ? waHref(p.whatsapp, encodeURIComponent(chaseWaMsgResult.body))
+                                              : waHref(p.whatsapp, buildWaMsg(p.username, selected?.campaign_name||'Campaign', chaseReward, waLang, p.host_assigned||null, null, selected))
+                                            const chaseTemplateTxt = chaseWaMsgResult?.body || ''
                                             return <>
                                               <a href={chaseWaUrl} target="_blank" rel="noopener noreferrer"
                                                 style={{ background:'rgba(37,211,102,.1)', color:'#25d366', border:'1px solid rgba(37,211,102,.25)', borderRadius:5, padding:'2px 7px', fontSize:10, cursor:'pointer', fontWeight:600, textDecoration:'none' }}>
                                                 📱 WA
                                               </a>
-                                              <button onClick={()=>{navigator.clipboard.writeText(p.whatsapp||''); const btn=document.getElementById('copy-wa-'+p.id); if(btn){btn.textContent='✓';setTimeout(()=>{btn.textContent='Copy'},1200)}}}
+                                              <button onClick={()=>{navigator.clipboard.writeText(chaseTemplateTxt || p.whatsapp||''); const btn=document.getElementById('copy-wa-'+p.id); if(btn){btn.textContent='✓';setTimeout(()=>{btn.textContent='Copy'},1200)}}}
                                                 id={'copy-wa-'+p.id}
                                                 style={{ background:'rgba(88,166,255,.1)', color:'#58a6ff', border:'1px solid rgba(88,166,255,.25)', borderRadius:5, padding:'2px 7px', fontSize:10, cursor:'pointer', fontWeight:600 }}>
                                                 Copy
@@ -3265,12 +3310,34 @@ export default function Campaigns() {
               )
               const allInactivePlayers = players.filter(p => !qualifiedPlayerIds.has(p.id))
               const inactiveHosts = ['all', ...Array.from(new Set(allInactivePlayers.map(p => p.host_assigned).filter(Boolean))).sort()]
-              const inactivePlayers = inactiveHostFilter === 'all' ? allInactivePlayers : allInactivePlayers.filter(p => p.host_assigned === inactiveHostFilter)
+              const inactiveFiltered = inactiveHostFilter === 'all' ? allInactivePlayers : allInactivePlayers.filter(p => p.host_assigned === inactiveHostFilter)
+              const inactiveSmDir = inactiveSortDir === 'asc' ? 1 : -1
+              const inactivePlayers = [...inactiveFiltered].sort((a, b) => {
+                if (inactiveSort === 'days') {
+                  const dA = a.added_at ? Math.floor((Date.now() - new Date(a.added_at).getTime()) / 86400000) : 0
+                  const dB = b.added_at ? Math.floor((Date.now() - new Date(b.added_at).getTime()) / 86400000) : 0
+                  return inactiveSmDir * (dA - dB)
+                }
+                if (inactiveSort === 'entries') {
+                  const eA = allDailyEntries.filter(e => e.player_id === a.id).length
+                  const eB = allDailyEntries.filter(e => e.player_id === b.id).length
+                  return inactiveSmDir * (eA - eB)
+                }
+                return inactiveSmDir * (a.username||'').localeCompare(b.username||'')
+              })
               return (
                 <div style={{ overflowX:'auto' }}>
-                  <div style={{ padding:'8px 24px', fontSize:11, color:'var(--muted)', background:'rgba(88,166,255,.04)', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', gap:12 }}>
+                  <div style={{ padding:'8px 24px', fontSize:11, color:'var(--muted)', background:'rgba(88,166,255,.04)', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', gap:12, flexWrap:'wrap' }}>
                     <span>😴 Players enrolled but never qualified for a reward across the entire campaign period</span>
                     {allDailyEntriesLoading && <span style={{ color:'#f59e0b' }}>Loading…</span>}
+                    <span style={{ color:'var(--muted)', marginLeft:4 }}>Sort:</span>
+                    {[['days','Days in Campaign'],['entries','Entries'],['name','Name']].map(([key,lbl])=>(
+                      <button key={key} onClick={()=>{ if(inactiveSort===key){setInactiveSortDir(d=>d==='asc'?'desc':'asc')}else{setInactiveSort(key);setInactiveSortDir('desc')} }}
+                        style={{ padding:'2px 8px', borderRadius:12, fontSize:11, fontWeight:600, border:'1px solid var(--border)', cursor:'pointer',
+                          background: inactiveSort===key ? 'var(--accent)' : 'var(--surface2)', color: inactiveSort===key ? '#fff' : 'var(--muted)' }}>
+                        {lbl} {inactiveSort===key ? (inactiveSortDir==='asc' ? '↑' : '↓') : ''}
+                      </button>
+                    ))}
                     <div style={{ marginLeft:'auto', display:'flex', gap:6 }}>
                       <button onClick={() => exportInactiveToExcel(inactivePlayers)} disabled={inactivePlayers.length === 0 || allDailyEntriesLoading}
                         style={{ background:'#166534', border:'1px solid #16a34a', color:'#4ade80', padding:'3px 10px', borderRadius:5, fontSize:11, cursor:'pointer', fontWeight:600, opacity: inactivePlayers.length === 0 ? 0.5 : 1 }}>
@@ -3621,7 +3688,39 @@ export default function Campaigns() {
               )
             })()}
 
-            {activeTab === 'register' && (
+            {activeTab === 'register' && (() => {
+              const apSm = allPlayerSortDir === 'asc' ? 1 : -1
+              const sortedAllPlayers = [...players].sort((a, b) => {
+                const realA = realFinancials?.byPlayer?.[a.username]
+                const realB = realFinancials?.byPlayer?.[b.username]
+                const dailyA = isDailyMode ? summaryData?.playerRows?.find(r=>r.username===a.username) : null
+                const dailyB = isDailyMode ? summaryData?.playerRows?.find(r=>r.username===b.username) : null
+                if (allPlayerSort === 'name') return apSm * (a.username||'').localeCompare(b.username||'')
+                if (allPlayerSort === 'deposit') {
+                  const dA = isDailyMode ? (summaryData?.depositByPlayer?.[a.id] ?? playerDeposit(a)) : playerDeposit(a)
+                  const dB = isDailyMode ? (summaryData?.depositByPlayer?.[b.id] ?? playerDeposit(b)) : playerDeposit(b)
+                  return apSm * (dA - dB)
+                }
+                if (allPlayerSort === 'turnover') return apSm * ((realA?.validBet||0) - (realB?.validBet||0))
+                if (allPlayerSort === 'withdrawal') return apSm * ((realA?.withdrawal||0) - (realB?.withdrawal||0))
+                if (allPlayerSort === 'reward') {
+                  const rA = isDailyMode ? ((dailyA?.credit||0)+(dailyA?.wcash||0)) : calcReward(campType,playerDeposit(a),rewardPct,rewardFixed,goldVal,rewardCap,rewardTiers,campaignLevels,selected?.is_multi_level)
+                  const rB = isDailyMode ? ((dailyB?.credit||0)+(dailyB?.wcash||0)) : calcReward(campType,playerDeposit(b),rewardPct,rewardFixed,goldVal,rewardCap,rewardTiers,campaignLevels,selected?.is_multi_level)
+                  return apSm * (rA - rB)
+                }
+                if (allPlayerSort === 'streak') {
+                  const sA = (streakBonuses[a.id]||[]).length
+                  const sB = (streakBonuses[b.id]||[]).length
+                  return apSm * (sA - sB)
+                }
+                if (allPlayerSort === 'status') {
+                  const stA = a.payout_status==='paid' ? 2 : playerDeposit(a)>=(depTarget||0) ? 1 : 0
+                  const stB = b.payout_status==='paid' ? 2 : playerDeposit(b)>=(depTarget||0) ? 1 : 0
+                  return apSm * (stA - stB)
+                }
+                return 0
+              })
+              return (
               <div style={{ overflowX:'auto' }}>
                 <div style={{ padding:'8px 24px', fontSize:11, color:'var(--muted)', background:'rgba(88,166,255,.04)', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
                   <span>Deposit is manually tracked for reward eligibility · Turnover/Withdrawal are real platform data for the campaign period ({fmtDate(selected.start_date)} → {fmtDate(selected.end_date)})</span>
@@ -3677,23 +3776,22 @@ export default function Campaigns() {
                         style={{ accentColor:'var(--accent)', cursor:'pointer' }} />
                     </th>
                     <th style={s.th}>#</th>
-                    <th style={s.th}>Username</th>
+                    {[['name','Username'],['deposit','Deposit'],['turnover','Turnover (real)'],['withdrawal','Withdrawal (real)'],['reward','Reward'],['status','Status']].map(([key,lbl])=>(
+                      <th key={key} style={{ ...s.th, cursor:'pointer', userSelect:'none' }} onClick={()=>{ if(allPlayerSort===key){setAllPlayerSortDir(d=>d==='asc'?'desc':'asc')}else{setAllPlayerSort(key);setAllPlayerSortDir('desc')} }}>
+                        {lbl} {allPlayerSort===key ? (allPlayerSortDir==='asc' ? '↑' : '↓') : <span style={{ color:'var(--surface2)', fontSize:9 }}>⇅</span>}
+                      </th>
+                    ))}
                     <th style={s.th}>Tier</th>
                     <th style={s.th}>WhatsApp</th>
-                    <th style={s.th}>Deposit</th>
-                    <th style={s.th}>Turnover (real)</th>
-                    <th style={s.th}>Withdrawal (real)</th>
                     <th style={s.th}>{selected?.is_multi_level ? 'Next Level' : 'vs Target'}</th>
-                    <th style={s.th}>Reward</th>
-                    {selected?.streak_enabled && <th style={s.th}>Streak 🔥</th>}
-                    <th style={s.th}>Status</th>
+                    {selected?.streak_enabled && <th key="streak" style={{ ...s.th, cursor:'pointer', userSelect:'none' }} onClick={()=>{ if(allPlayerSort==='streak'){setAllPlayerSortDir(d=>d==='asc'?'desc':'asc')}else{setAllPlayerSort('streak');setAllPlayerSortDir('desc')} }}>Streak 🔥 {allPlayerSort==='streak' ? (allPlayerSortDir==='asc' ? '↑' : '↓') : <span style={{ color:'var(--surface2)', fontSize:9 }}>⇅</span>}</th>}
                     <th style={s.th}>Added</th>
                     <th style={s.th}>✕</th>
                   </tr></thead>
                   <tbody>
-                    {players.length===0
+                    {sortedAllPlayers.length===0
                       ? <tr><td colSpan={13} style={{ ...s.td, textAlign:'center', padding:24, color:'var(--muted)' }}>No players yet.</td></tr>
-                      : players.map((p,i)=>{
+                      : sortedAllPlayers.map((p,i)=>{
                           const real = realFinancials?.byPlayer?.[p.username]
                           // Daily mode never writes to campaign_players.total_deposit/valid_bet —
                           // Chase List writes to daily_turnover_entries instead. Checking the old
@@ -3719,8 +3817,6 @@ export default function Campaigns() {
                               </td>
                               <td style={{ ...s.td, color:'var(--muted)', fontSize:11 }}>{i+1}</td>
                               <td style={{ ...s.td, fontWeight:700 }}>{p.username}</td>
-                              <td style={s.td}>{p.tier && <span style={{ ...s.badge, background:TIER_BG[p.tier]||'transparent', color:TIER_COLOR[p.tier]||'var(--muted)' }}>{p.tier}</span>}</td>
-                              <td style={{ ...s.td, fontSize:12 }}>{p.whatsapp||'—'}</td>
                               <td style={{ ...s.td, color:'#3fb950' }}>
                                 {isDailyMode
                                   ? rmFmt(summaryData?.depositByPlayer?.[p.id] ?? null, campCurrency)
@@ -3728,6 +3824,16 @@ export default function Campaigns() {
                               </td>
                               <td style={{ ...s.td, color:'var(--accent)' }}>{real ? rmFmt(real.validBet, campCurrency) : <span style={{ color:'var(--muted)' }}>—</span>}</td>
                               <td style={{ ...s.td, color:'#f85149' }}>{real ? rmFmt(real.withdrawal, campCurrency) : <span style={{ color:'var(--muted)' }}>—</span>}</td>
+                              <td style={{ ...s.td, color:typeInfo.color, fontWeight:qualified?700:400 }}>
+                                {qualified ? (multi ? (<span>{rmFmt(reward,campCurrency)} total<br /><span style={{ fontSize:10, color:'var(--muted)' }}>{multiMetric?.completedCount||0}/{campaignLevels.length} levels</span></span>) : rmFmt(reward,campCurrency)) : '—'}
+                              </td>
+                              <td style={s.td}>
+                                <span style={{ ...s.tag(rowStatusColor, rowStatusColor==='var(--muted)' ? 'rgba(139,148,158,.15)' : undefined), fontSize:10 }}>
+                                  {rowStatusLabel}
+                                </span>
+                              </td>
+                              <td style={s.td}>{p.tier && <span style={{ ...s.badge, background:TIER_BG[p.tier]||'transparent', color:TIER_COLOR[p.tier]||'var(--muted)' }}>{p.tier}</span>}</td>
+                              <td style={{ ...s.td, fontSize:12 }}>{p.whatsapp||'—'}</td>
                               <td style={s.td}>
                                 {multi
                                   ? (multiMetric?.allCompleted
@@ -3736,9 +3842,6 @@ export default function Campaigns() {
                                   : campType === 'dual_tier'
                                     ? <span style={{ fontSize:11, color:'var(--muted)' }}>N/A</span>
                                     : <span style={{ fontSize:12, color:qualified?'#3fb950':'#f85149', fontWeight:600 }}>{qualified ? `+${rmFmt(gap, campCurrency)}` : rmFmt(gap, campCurrency)}</span>}
-                              </td>
-                              <td style={{ ...s.td, color:typeInfo.color, fontWeight:qualified?700:400 }}>
-                                {qualified ? (multi ? (<span>{rmFmt(reward,campCurrency)} total<br /><span style={{ fontSize:10, color:'var(--muted)' }}>{multiMetric?.completedCount||0}/{campaignLevels.length} levels</span></span>) : rmFmt(reward,campCurrency)) : '—'}
                               </td>
                               {selected?.streak_enabled && (() => {
                                 const pStreaks = streakBonuses[p.id] || []
@@ -3758,11 +3861,6 @@ export default function Campaigns() {
                                   </td>
                                 )
                               })()}
-                              <td style={s.td}>
-                                <span style={{ ...s.tag(rowStatusColor, rowStatusColor==='var(--muted)' ? 'rgba(139,148,158,.15)' : undefined), fontSize:10 }}>
-                                  {rowStatusLabel}
-                                </span>
-                              </td>
                               <td style={{ ...s.td, fontSize:11, color:'var(--muted)' }}>
                                 {p.added_at ? new Date(p.added_at).toLocaleDateString('en-MY',{day:'numeric',month:'short'}) : '—'}
                               </td>
@@ -3776,7 +3874,8 @@ export default function Campaigns() {
                   </tbody>
                 </table>
               </div>
-            )}
+              )
+            })()}
             {activeTab === 'summary' && (
               <div style={{ padding:24 }}>
                 <div style={{ fontSize:13, fontWeight:700, marginBottom:8 }}>💰 Campaign Summary — {fmtDate(selected.start_date)} → {fmtDate(selected.end_date)}</div>
@@ -3818,7 +3917,7 @@ export default function Campaigns() {
 
                 {realFinancialsLoading ? <div style={{textAlign:'center',padding:24,color:'var(--muted)'}}>Loading real platform financials…</div> : !realFinancials ? <div style={{textAlign:'center',padding:24,color:'var(--muted)'}}>No real platform data available for the selected campaign period.</div> : (()=>{const rewardCost=totalReward;const netPnl=realFinancials.deposit-realFinancials.withdrawal-rewardCost;const roi=calculateCampaignROI(rewardCost,netPnl);const roiLabel=roi===null?'N/A':`${roi.toFixed(1)}%`;return <><div style={{fontSize:13,fontWeight:700,marginBottom:8}}>💼 Campaign P&amp;L — Real Platform Data</div><div style={{display:'grid',gridTemplateColumns:'repeat(6,minmax(0,1fr))',gap:12,marginBottom:10}}>{[['Real Deposit',rmFmt(realFinancials.deposit,campCurrency),'#3fb950'],['Real Withdrawal',rmFmt(realFinancials.withdrawal,campCurrency),'#f85149'],['Real Valid Bet',rmFmt(realFinancials.validBet,campCurrency),'var(--accent)'],['Reward Cost',rewardFmt(rewardCost,campCurrency),'#c9a961'],['Net P&L',rmFmt(netPnl,campCurrency),netPnl>=0?'#3fb950':'#f85149'],['ROI',roiLabel,roi===null?'var(--muted)':roi>=0?'#3fb950':'#f85149']].map(([label,val,color])=><div key={label} style={{background:'var(--bg)',border:'1px solid var(--border)',borderRadius:8,padding:14}}><div style={{fontSize:18,fontWeight:700,color}}>{val}</div><div style={{fontSize:11,color:'var(--muted)',marginTop:2}}>{label}</div></div>)}</div><div style={{fontSize:11,color:'var(--muted)',marginBottom:24}}>Net P&amp;L = Real Deposit − Real Withdrawal − Reward Cost. ROI = Net P&amp;L ÷ Reward Cost × 100%. ROI is N/A when there is no reward cost. Real figures come from platform snapshots for the campaign period; qualification uses the campaign-period deposit tracked above.</div></>})()}
 
-                {isDailyMode && (summaryLoading ? <div style={{textAlign:'center',padding:40,color:'var(--muted)'}}>Loading daily entries…</div> : !summaryData ? <div style={{textAlign:'center',padding:40,color:'var(--muted)'}}>No daily entries yet.</div> : <div><div style={{fontSize:13,fontWeight:700,marginBottom:8}}>📅 Daily Turnover Settlement</div><div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12,marginBottom:18}}>{[['Days with Entries',summaryData.totalEntryDays,'#a78bfa'],['Unique Participants',summaryData.uniqueParticipants,'#3fb950'],['Total Credit Given',rmFmt(summaryData.totalCredit,campCurrency),'#c9a961'],['Total WCash Given',rmFmt(summaryData.totalWcash,campCurrency),'#f59e0b']].map(([label,val,color])=><div key={label} style={{background:'var(--bg)',border:'1px solid var(--border)',borderRadius:8,padding:14}}><div style={{fontSize:20,fontWeight:700,color}}>{val}</div><div style={{fontSize:11,color:'var(--muted)',marginTop:2}}>{label}</div></div>)}</div></div>)}
+                {isDailyMode && (summaryLoading ? <div style={{textAlign:'center',padding:40,color:'var(--muted)'}}>Loading daily entries…</div> : !summaryData ? <div style={{textAlign:'center',padding:40,color:'var(--muted)'}}>No daily entries yet.</div> : <div><div style={{fontSize:13,fontWeight:700,marginBottom:8}}>📅 Daily Turnover Settlement</div><div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12,marginBottom:18}}>{[['Days with Entries',summaryData.totalEntryDays,'#a78bfa'],['Participants / Enrolled',`${summaryData.uniqueParticipants} / ${players.length}`,'#3fb950'],['Total Credit Given',rmFmt(summaryData.totalCredit,campCurrency),'#c9a961'],['Total WCash Given',rmFmt(summaryData.totalWcash,campCurrency),'#f59e0b']].map(([label,val,color])=><div key={label} style={{background:'var(--bg)',border:'1px solid var(--border)',borderRadius:8,padding:14}}><div style={{fontSize:20,fontWeight:700,color}}>{val}</div><div style={{fontSize:11,color:'var(--muted)',marginTop:2}}>{label}</div></div>)}</div></div>)}
 
                 {selected?.streak_enabled && (() => {
                   const allSRows = Object.entries(streakBonuses).flatMap(([pid, rows]) => {
