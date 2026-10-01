@@ -979,24 +979,21 @@ export default function Campaigns() {
 
   async function checkAndAwardStreak(playerId, afterEntryDate) {
     if (!selected?.streak_enabled || !isDailyMode) return
-    // Minimum qualifying deposit = lowest level threshold, or deposit_target as fallback
-    const sortedLvls = [...campaignLevels].sort((a, b) => (parseFloat(a.deposit_threshold) || 0) - (parseFloat(b.deposit_threshold) || 0))
-    const minThreshold = sortedLvls.length > 0
-      ? (parseFloat(sortedLvls[0].deposit_threshold) || 0)
-      : (parseFloat(selected?.deposit_target) || 5000)
 
     // Fetch all entries for this player sorted by date
     const { data: allEntries, error: entriesErr } = await supabase
       .from('daily_turnover_entries')
-      .select('entry_date, deposit_amount')
+      .select('entry_date, deposit_amount, credit_reward')
       .eq('campaign_id', selected.id)
       .eq('player_id', playerId)
       .order('entry_date', { ascending: true })
     if (entriesErr || !allEntries?.length) return
 
-    // Keep only qualifying days (deposit >= minThreshold)
+    // A day qualifies for streak if the player earned a reward that day (credit_reward > 0).
+    // This correctly handles all campaign types — turnover-only, deposit+turnover, etc. —
+    // since credit_reward is only > 0 when the player met the tier criteria.
     const qualifyingDates = allEntries
-      .filter(e => (parseFloat(e.deposit_amount) || 0) >= minThreshold)
+      .filter(e => (parseFloat(e.credit_reward) || 0) > 0)
       .map(e => e.entry_date)   // 'YYYY-MM-DD' strings, sorted ASC
     if (!qualifyingDates.length) return
 
@@ -3409,10 +3406,6 @@ export default function Campaigns() {
               const bonusFixed = Number(selected?.streak_bonus_fixed) || 0
               const bonusCap = Number(selected?.streak_bonus_cap) || 0
 
-              // Compute min qualifying deposit (lowest level threshold or deposit_target)
-              const sortedLvls = [...campaignLevels].sort((a, b) => (parseFloat(a.deposit_threshold)||0) - (parseFloat(b.deposit_threshold)||0))
-              const minThreshold = sortedLvls.length > 0 ? (parseFloat(sortedLvls[0].deposit_threshold)||0) : (parseFloat(selected?.deposit_target)||5000)
-
               // Build per-player streak data from allDailyEntries
               const perPlayer = {}
               for (const e of allDailyEntries) {
@@ -3421,7 +3414,8 @@ export default function Campaigns() {
               }
 
               const playerStreakRows = players.map(p => {
-                const entries = (perPlayer[p.id] || []).filter(e => (parseFloat(e.deposit_amount)||0) >= minThreshold)
+                // A day qualifies for streak if the player earned a reward that day (credit_reward > 0)
+                const entries = (perPlayer[p.id] || []).filter(e => (parseFloat(e.credit_reward)||0) > 0)
                 const dates = entries.map(e => e.entry_date).sort()
                 // Find all consecutive runs
                 const runs = []
