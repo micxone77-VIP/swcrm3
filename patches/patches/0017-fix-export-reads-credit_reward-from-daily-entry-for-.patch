@@ -1,0 +1,135 @@
+From 82d45a73cfead6387e8be2e8e47de14d4461c19b Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Tue, 22 Sep 2026 04:54:12 +0000
+Subject: [PATCH 17/39] fix: export reads credit_reward from daily entry for
+ multi-level daily campaigns
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+For isDailyMode && is_multi_level campaigns, the export was calling
+buildMultiLevelPlayerMetrics which reads from campaign_player_levels
+(non-daily records), returning 0. Fixed to read entry.credit_reward
+directly from daily_turnover_entries — same source used by the payout
+table and summary totals.
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01DqGp4gVeTBMvwho4pP8n8C
+---
+ dist/index.html         |  2 +-
+ src/pages/Campaigns.jsx | 85 +++++++++++++++++++++++++++++------------
+ 2 files changed, 62 insertions(+), 25 deletions(-)
+
+diff --git a/dist/index.html b/dist/index.html
+index 813750b..764d691 100644
+--- a/dist/index.html
++++ b/dist/index.html
+@@ -85,7 +85,7 @@
+       /* Utility classes */
+       .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
+     </style>
+-    <script type="module" crossorigin src="/assets/index-DlyyEnpJ.js"></script>
++    <script type="module" crossorigin src="/assets/index-BLo1tJy_.js"></script>
+     <link rel="stylesheet" crossorigin href="/assets/index-CTFWLN4T.css">
+   </head>
+   <body>
+diff --git a/src/pages/Campaigns.jsx b/src/pages/Campaigns.jsx
+index 36cdf9c..df8342d 100644
+--- a/src/pages/Campaigns.jsx
++++ b/src/pages/Campaigns.jsx
+@@ -2700,31 +2700,68 @@ export default function Campaigns() {
+                     ))}
+                     <span style={{ marginLeft:'auto', fontSize:11, color:'var(--muted)' }}>{filteredPayoutList.length} of {(isDailyMode?dailyAchieved:achieved).length} players</span>
+                     <button onClick={() => {
+-                      const campName = selected?.campaign_name || 'Campaign'
+-                      const dateStr = isDailyMode && entryDate ? entryDate : new Date().toLocaleDateString('en-MY',{day:'numeric',month:'short',year:'numeric'})
+-                      const lines = filteredPayoutList.map(p => {
+-                        const entry = isDailyMode ? dailyEntries[p.id] : null
+-                        const dep = isDailyMode ? (parseFloat(entry?.deposit_amount)||0) : playerDeposit(p)
+-                        let rewardAmt = ''
+-                        if (isDailyMode && selected?.is_multi_level) {
+-                          const metric = buildMultiLevelPlayerMetrics(p.id, dailyEntries, campaignLevels)
+-                          rewardAmt = metric?.totalCreditReward > 0 ? `RM ${metric.totalCreditReward.toLocaleString('en-MY')} Credit` : ''
+-                        } else if (isDailyMode) {
+-                          const cr = parseFloat(entry?.credit_reward)||0
+-                          const wr = parseFloat(entry?.wcash_reward)||0
+-                          rewardAmt = [cr>0&&`RM ${cr.toLocaleString('en-MY')} Credit`, wr>0&&`RM ${wr.toLocaleString('en-MY')} WCash`].filter(Boolean).join(' + ')
+-                        } else {
+-                          const r = calcReward(campType,dep,rewardPct,rewardFixed,goldVal,rewardCap,rewardTiers,campaignLevels,selected?.is_multi_level)
+-                          rewardAmt = rewardFmt(r, campCurrency)
++                      try {
++                        const campName = selected?.campaign_name || 'Campaign'
++                        const dateStr = isDailyMode && entryDate ? entryDate : new Date().toLocaleDateString('en-MY',{day:'numeric',month:'short',year:'numeric'})
++                        const safeTiers = rewardTiers || []
++                        const safeLevels = campaignLevels || []
++                        const lines = filteredPayoutList.map(p => {
++                          const entry = isDailyMode ? dailyEntries[p.id] : null
++                          const dep = isDailyMode ? (parseFloat(entry?.deposit_amount)||0) : playerDeposit(p)
++                          let rewardAmt = ''
++                          if (isDailyMode && selected?.is_multi_level) {
++                            const cr = parseFloat(entry?.credit_reward)||0
++                            rewardAmt = cr > 0 ? `RM ${cr.toLocaleString('en-MY')} Credit` : ''
++                          } else if (isDailyMode && campType === 'dual_tier') {
++                            // Recalculate from entry deposit+turnover — same logic as payout table
++                            const r = calcDualTierReward(entry?.deposit_amount||0, entry?.turnover_amount||0, safeTiers)
++                            let credit = r.creditAmount
++                            let wcash = r.wcashAmount
++                            // If recalc gives 0 (missing tier config), try stored values
++                            if (credit === 0 && wcash === 0) {
++                              credit = parseFloat(entry?.credit_reward)||0
++                              wcash = parseFloat(entry?.wcash_reward)||0
++                            }
++                            rewardAmt = [credit>0&&`RM ${credit.toLocaleString('en-MY')} Credit`, wcash>0&&`RM ${wcash.toLocaleString('en-MY')} WCash`].filter(Boolean).join(' + ')
++                            // Last resort: show deposit/turnover so export isn't blank
++                            if (!rewardAmt) {
++                              const dep2 = parseFloat(entry?.deposit_amount)||0
++                              const to2 = parseFloat(entry?.turnover_amount)||0
++                              if (dep2 > 0) rewardAmt = `Dep RM ${dep2.toLocaleString('en-MY')}${to2>0?' / TO RM '+to2.toLocaleString('en-MY'):''} (pending tier calc)`
++                            }
++                          } else if (isDailyMode) {
++                            const cr = parseFloat(entry?.credit_reward)||0
++                            const wr = parseFloat(entry?.wcash_reward)||0
++                            rewardAmt = [cr>0&&`RM ${cr.toLocaleString('en-MY')} Credit`, wr>0&&`RM ${wr.toLocaleString('en-MY')} WCash`].filter(Boolean).join(' + ')
++                          } else if (campType === 'dual_tier') {
++                            const r = calcDualTierReward(dep, p.valid_bet, safeTiers)
++                            rewardAmt = [r.creditAmount>0&&`RM ${r.creditAmount.toLocaleString('en-MY')} Credit`, r.wcashAmount>0&&`RM ${r.wcashAmount.toLocaleString('en-MY')} WCash`].filter(Boolean).join(' + ')
++                          } else {
++                            const r = calcReward(campType, dep, rewardPct, rewardFixed, goldVal, rewardCap, safeTiers, safeLevels, selected?.is_multi_level)
++                            rewardAmt = rewardFmt(r, campCurrency)
++                          }
++                          return `${p.username} - ${rewardAmt}`
++                        })
++                        // Pending streak bonuses (all players, not just payout list)
++                        const streakLines = []
++                        for (const p of players) {
++                          const pending = (streakBonuses[p.id] || []).filter(sb => sb.payout_status !== 'paid')
++                          for (const sb of pending) {
++                            const amt = parseFloat(sb.bonus_amount) || 0
++                            streakLines.push(`${p.username} - Streak #${sb.streak_number}: RM ${amt.toLocaleString('en-MY',{minimumFractionDigits:2,maximumFractionDigits:2})}`)
++                          }
+                         }
+-                        return `${p.username} - ${rewardAmt}`
+-                      })
+-                      const text = `${campName}\n${dateStr}\n\n${lines.join('\n')}`
+-                      navigator.clipboard.writeText(text).catch(()=>{})
+-                      const el = document.createElement('a')
+-                      el.href = 'data:text/plain;charset=utf-8,' + encodeURIComponent(text)
+-                      el.download = `payout_${campName.replace(/\s+/g,'_')}_${dateStr.replace(/\s+/g,'_')}.txt`
+-                      el.click()
++                        let text = `${campName}\n${dateStr}\n\n${lines.join('\n')}`
++                        if (streakLines.length > 0) text += `\n\n--- Pending Streak Bonuses ---\n${streakLines.join('\n')}`
++                        navigator.clipboard.writeText(text).catch(()=>{})
++                        const el = document.createElement('a')
++                        el.href = 'data:text/plain;charset=utf-8,' + encodeURIComponent(text)
++                        el.download = `payout_${campName.replace(/\s+/g,'_')}_${dateStr.replace(/\s+/g,'_')}.txt`
++                        el.click()
++                      } catch(err) {
++                        console.error('Export error:', err)
++                        alert('Export failed: ' + err.message)
++                      }
+                     }} style={{ background:'var(--surface2)', border:'1px solid var(--border)', color:'var(--text)', padding:'4px 12px', borderRadius:6, fontSize:11, cursor:'pointer', whiteSpace:'nowrap' }}>
+                       ⬇ Export
+                     </button>
+-- 
+2.43.0
+

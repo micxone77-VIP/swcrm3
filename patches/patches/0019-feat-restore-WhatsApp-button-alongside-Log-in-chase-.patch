@@ -1,0 +1,55 @@
+From 083ba55432d45eca9dd276dcdbb6bd01663d49b9 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Tue, 22 Sep 2026 05:39:28 +0000
+Subject: [PATCH 19/39] feat: restore WhatsApp button alongside + Log in chase
+ list
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+The WA button was missing from the chase list contact column.
+Now shows green 📱 WA link next to + Log when player has a
+WhatsApp number saved, using the same waHref/buildWaMsg logic
+as the Payout tab.
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01DqGp4gVeTBMvwho4pP8n8C
+---
+ src/pages/Campaigns.jsx | 21 +++++++++++++++++----
+ 1 file changed, 17 insertions(+), 4 deletions(-)
+
+diff --git a/src/pages/Campaigns.jsx b/src/pages/Campaigns.jsx
+index ad07646..fd1db5f 100644
+--- a/src/pages/Campaigns.jsx
++++ b/src/pages/Campaigns.jsx
+@@ -2590,10 +2590,23 @@ export default function Campaigns() {
+                                           <button onClick={()=>setContactLog(null)} style={{ background:'none', border:'none', color:'var(--muted)', fontSize:10, cursor:'pointer', marginTop:2 }}>✕ Cancel</button>
+                                         </div>
+                                       ) : (
+-                                        <button onClick={()=>setContactLog(p.id)}
+-                                          style={{ background:'rgba(88,166,255,.1)', color:'#58a6ff', border:'1px solid rgba(88,166,255,.25)', borderRadius:5, padding:'2px 7px', fontSize:10, cursor:'pointer', fontWeight:600 }}>
+-                                          + Log
+-                                        </button>
++                                        <div style={{ display:'flex', gap:4, alignItems:'center', flexWrap:'wrap' }}>
++                                          <button onClick={()=>setContactLog(p.id)}
++                                            style={{ background:'rgba(88,166,255,.1)', color:'#58a6ff', border:'1px solid rgba(88,166,255,.25)', borderRadius:5, padding:'2px 7px', fontSize:10, cursor:'pointer', fontWeight:600 }}>
++                                            + Log
++                                          </button>
++                                          {p.whatsapp && (() => {
++                                            const chaseReward = multi
++                                              ? (isDailyMode ? rmFmt(dailyEntry?.credit_reward||0, campCurrency) : rmFmt(multiMetric?.qualifiedRewardTotal||0, campCurrency))
++                                              : campType==='dual_tier' ? rmFmt((dualReward?.creditAmount||0)+(dualReward?.wcashAmount||0), campCurrency)
++                                              : rmFmt(calcReward(campType,playerDeposit(p),rewardPct,rewardFixed,goldVal,rewardCap,rewardTiers,campaignLevels,selected?.is_multi_level), campCurrency)
++                                            const chaseWaUrl = waHref(p.whatsapp, buildWaMsg(p.username, selected?.campaign_name||'Campaign', chaseReward, waLang, p.host_assigned||null, null, selected))
++                                            return <a href={chaseWaUrl} target="_blank" rel="noopener noreferrer"
++                                              style={{ background:'rgba(37,211,102,.1)', color:'#25d366', border:'1px solid rgba(37,211,102,.25)', borderRadius:5, padding:'2px 7px', fontSize:10, cursor:'pointer', fontWeight:600, textDecoration:'none' }}>
++                                              📱 WA
++                                            </a>
++                                          })()}
++                                        </div>
+                                       )}
+                                     </>
+                                   })()}
+-- 
+2.43.0
+

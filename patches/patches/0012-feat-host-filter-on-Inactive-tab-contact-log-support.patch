@@ -1,0 +1,550 @@
+From f217b39723cdf1fe484e592722fd9ada27ec5f7e Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Mon, 21 Sep 2026 09:29:54 +0000
+Subject: [PATCH 12/39] feat: host filter on Inactive tab + contact log support
+
+- Add inactiveHostFilter state for filtering inactive players by host
+- Render host filter chips on Inactive tab (same style as Chase List)
+- Footer count shows filtered vs total when a host is selected
+- Reset inactiveHostFilter on modal close
+- contact log (campaign_player_contacts) already wired in all tabs
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01DqGp4gVeTBMvwho4pP8n8C
+---
+ dist/index.html         |   2 +-
+ src/pages/Campaigns.jsx | 353 ++++++++++++++++++++++++++++++++--------
+ 2 files changed, 287 insertions(+), 68 deletions(-)
+
+diff --git a/dist/index.html b/dist/index.html
+index 66c22bf..813750b 100644
+--- a/dist/index.html
++++ b/dist/index.html
+@@ -85,7 +85,7 @@
+       /* Utility classes */
+       .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
+     </style>
+-    <script type="module" crossorigin src="/assets/index-CMEoVPVv.js"></script>
++    <script type="module" crossorigin src="/assets/index-DlyyEnpJ.js"></script>
+     <link rel="stylesheet" crossorigin href="/assets/index-CTFWLN4T.css">
+   </head>
+   <body>
+diff --git a/src/pages/Campaigns.jsx b/src/pages/Campaigns.jsx
+index 932991a..ef3c598 100644
+--- a/src/pages/Campaigns.jsx
++++ b/src/pages/Campaigns.jsx
+@@ -256,6 +256,7 @@ export default function Campaigns() {
+   const [payoutSort, setPayoutSort] = useState('deposit')
+   const [payoutSortDir, setPayoutSortDir] = useState('desc')
+   const [payoutHostFilter, setPayoutHostFilter] = useState('all')
++  const [inactiveHostFilter, setInactiveHostFilter] = useState('all')
+   const [waLang, setWaLang] = useState('en')
+   const [copiedId, setCopiedId] = useState(null)
+   const [entryDate, setEntryDate] = useState('')
+@@ -276,6 +277,8 @@ export default function Campaigns() {
+   const [levelsLoading, setLevelsLoading] = useState(false)
+   const [streakBonuses, setStreakBonuses] = useState({})   // map: campaign_player_id → [...rows]
+   const [streakBonusesLoading, setStreakBonusesLoading] = useState(false)
++  const [contacts, setContacts] = useState({})             // map: campaign_player_id → [...rows]
++  const [contactLog, setContactLog] = useState(null)       // player_id of open log popup, or null
+   const [waPopup, setWaPopup] = useState(null)  // { rawNumber, message } — editable before opening WA
+   const [waCopied, setWaCopied] = useState(false)
+   // All daily entries for streak/inactive tabs — loaded on demand
+@@ -368,9 +371,11 @@ export default function Campaigns() {
+       loadCampaignLevels(selected.id)
+       if (selected.streak_enabled) loadStreakBonuses(selected.id)
+       else setStreakBonuses({})
++      loadContacts(selected.id)
+     } else {
+       setCampaignLevels([])
+       setStreakBonuses({})
++      setContacts({})
+     }
+   }, [selected?.id])
+ 
+@@ -706,7 +711,7 @@ export default function Campaigns() {
+     await loadCampaigns()
+   }
+ 
+-  function closeModal() { setModal(null); setSelected(null); setPlayers([]); setCampaignPlayerLevels([]); setCampaignRewards([]); setVipSearch(''); setVipResults([]); setEditingCamp(false); setAiAnalysis(null); setDailyEntries({}); setEntryDate(''); setStreakBonuses({}); setStreakBonusesLoading(false) }
++  function closeModal() { setModal(null); setSelected(null); setPlayers([]); setCampaignPlayerLevels([]); setCampaignRewards([]); setVipSearch(''); setVipResults([]); setEditingCamp(false); setAiAnalysis(null); setDailyEntries({}); setEntryDate(''); setStreakBonuses({}); setStreakBonusesLoading(false); setContacts({}); setContactLog(null); setInactiveHostFilter('all') }
+ 
+   async function loadDailyEntries(campaignId, date) {
+     setDailyLoading(true)
+@@ -786,6 +791,36 @@ export default function Campaigns() {
+     setStreakBonusesLoading(false)
+   }
+ 
++  // ── Contact log ─────────────────────────────────────────────────────────────
++  async function loadContacts(campId) {
++    const { data, error } = await supabase
++      .from('campaign_player_contacts')
++      .select('*')
++      .eq('campaign_id', campId)
++      .order('contacted_at', { ascending: false })
++    if (error) { console.error('loadContacts error', error); return }
++    const map = {}
++    for (const r of (data || [])) {
++      if (!map[r.campaign_player_id]) map[r.campaign_player_id] = []
++      map[r.campaign_player_id].push(r)
++    }
++    setContacts(map)
++  }
++
++  async function logContact(playerId, type, note = '') {
++    const { error } = await supabase.from('campaign_player_contacts').insert({
++      campaign_id: selected.id,
++      campaign_player_id: playerId,
++      contacted_at: new Date().toISOString(),
++      contact_type: type,
++      host: user?.email || null,
++      notes: note || null,
++    })
++    if (error) { console.error('logContact error', error); return }
++    setContactLog(null)
++    await loadContacts(selected.id)
++  }
++
+   // Load ALL daily entries for the campaign (used by Streak + Inactive tabs)
+   async function loadAllDailyEntries(campaignId) {
+     setAllDailyEntriesLoading(true)
+@@ -822,6 +857,13 @@ export default function Campaigns() {
+     }
+     await loadDailyEntries(selected.id, entryDate)
+     await loadCampaignSummary(selected.id)
++    // Award streak bonuses for any newly-eligible players
++    if (selected?.streak_enabled) {
++      const today = new Date().toISOString().slice(0, 10)
++      for (const p of players) {
++        await checkAndAwardStreak(p.id, today)
++      }
++    }
+     alert(`✅ Recalculated rewards for ${rows.length} entries.`)
+     setDailyLoading(false)
+   }
+@@ -869,18 +911,18 @@ export default function Campaigns() {
+     const totalComplete = Math.floor(activeRun.length / streakDays)
+     if (totalComplete === 0) return
+ 
+-    // Check what's already been awarded
++    // Check what's already been awarded (fetch id + bonus_amount + status too for update logic)
+     const { data: existing, error: existingErr } = await supabase
+       .from('campaign_streak_bonuses')
+-      .select('streak_number')
++      .select('id, streak_number, bonus_amount, payout_status')
+       .eq('campaign_id', selected.id)
+       .eq('campaign_player_id', playerId)
+     if (existingErr) { console.error('streak bonus fetch error', existingErr); return }
+-    const awardedNums = new Set((existing || []).map(r => r.streak_number))
++    const awardedMap = {}
++    for (const r of (existing || [])) awardedMap[r.streak_number] = r
+ 
+-    // Award any missing streaks
++    // Award missing streaks; update bonus_amount on pending records if cap changed
+     for (let sn = 1; sn <= totalComplete; sn++) {
+-      if (awardedNums.has(sn)) continue
+       const startIdx = (sn - 1) * streakDays
+       const periodDates = activeRun.slice(startIdx, startIdx + streakDays)
+       const periodStart = periodDates[0]
+@@ -896,8 +938,12 @@ export default function Campaigns() {
+       } else {
+         bonusAmount = parseFloat(selected.streak_bonus_fixed) || 0
+       }
+-      const cap = parseFloat(selected.streak_bonus_cap) || 0
+-      if (cap > 0) bonusAmount = Math.min(bonusAmount, cap)
++      // Per-player cap override takes priority over campaign-level cap
++      const playerRec = players.find(pl => pl.id === playerId)
++      const playerCap = parseFloat(playerRec?.streak_bonus_cap_override) || 0
++      const campaignCap = parseFloat(selected.streak_bonus_cap) || 0
++      const effectiveCap = playerCap > 0 ? playerCap : campaignCap
++      if (effectiveCap > 0) bonusAmount = Math.min(bonusAmount, effectiveCap)
+       bonusAmount = Math.round(bonusAmount * 100) / 100
+ 
+       // Payout date = period_end + 1 day
+@@ -905,6 +951,18 @@ export default function Campaigns() {
+       endDt.setUTCDate(endDt.getUTCDate() + 1)
+       const payoutDate = endDt.toISOString().slice(0, 10)
+ 
++      const existingRec = awardedMap[sn]
++      if (existingRec) {
++        // Already awarded — update bonus_amount only if it changed AND status is still pending
++        if (existingRec.payout_status === 'pending' && existingRec.bonus_amount !== bonusAmount) {
++          const { error: upErr } = await supabase.from('campaign_streak_bonuses')
++            .update({ bonus_amount: bonusAmount })
++            .eq('id', existingRec.id)
++          if (upErr) console.error('streak bonus update error', upErr)
++        }
++        continue
++      }
++
+       const { error: insertErr } = await supabase.from('campaign_streak_bonuses').insert({
+         campaign_id: selected.id,
+         campaign_player_id: playerId,
+@@ -2339,7 +2397,7 @@ export default function Campaigns() {
+                       <th style={s.th}>{campType==='dual_tier' ? 'Deposit / Turnover (RM)' : 'Campaign Deposit (RM)'}</th>
+                       <th style={s.th}>Progress</th>
+                       <th style={s.th}>Reward</th>
+-                      <th style={s.th}>Contact</th>
++                      <th style={s.th}>Last Contact</th>
+                       <th style={s.th}>Priority</th>
+                       <th style={s.th}>✕</th>
+                     </tr></thead>
+@@ -2494,7 +2552,45 @@ export default function Campaigns() {
+                                       ? <span>{rmFmt(dualReward.creditAmount, campCurrency)} Credit<br/><span style={{fontSize:10,color:'var(--muted)'}}>+ {rmFmt(dualReward.wcashAmount, campCurrency)} WCash</span></span>
+                                       : rmFmt(reward, campCurrency)}
+                                 </td>
+-                                <td style={s.td}><CampaignWaButton p={p} /></td>
++                                <td style={{ ...s.td, minWidth:110 }} onClick={e=>e.stopPropagation()}>
++                                  {(() => {
++                                    const playerContacts = contacts[p.id] || []
++                                    const last = playerContacts[0]
++                                    const TYPE_ICON = { daily:'📅', reward:'🎁', inactive:'💤' }
++                                    const TYPE_LABEL = { daily:'Daily', reward:'Reward', inactive:'Inactive' }
++                                    let badge = null
++                                    if (last) {
++                                      const days = Math.floor((Date.now() - new Date(last.contacted_at).getTime()) / 86400000)
++                                      const col = days === 0 ? '#3fb950' : days <= 2 ? '#f59e0b' : '#f85149'
++                                      badge = <div style={{ fontSize:10, color:col, fontWeight:700, marginBottom:3 }}>
++                                        {TYPE_ICON[last.contact_type]||'📞'} {days === 0 ? 'Today' : `${days}d ago`}
++                                        <span style={{ color:'var(--muted)', fontWeight:400, marginLeft:3 }}>{TYPE_LABEL[last.contact_type]||last.contact_type}</span>
++                                      </div>
++                                    } else {
++                                      badge = <div style={{ fontSize:10, color:'#f85149', fontWeight:700, marginBottom:3 }}>📞 Never</div>
++                                    }
++                                    return <>
++                                      {badge}
++                                      {contactLog === p.id ? (
++                                        <div style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:8, minWidth:160 }}>
++                                          <div style={{ fontSize:11, color:'var(--muted)', marginBottom:6, fontWeight:600 }}>Log contact:</div>
++                                          {[['daily','📅 Daily'],['reward','🎁 Reward'],['inactive','💤 Inactive']].map(([type,lbl])=>(
++                                            <button key={type} onClick={()=>logContact(p.id, type)}
++                                              style={{ display:'block', width:'100%', textAlign:'left', background:'none', border:'1px solid var(--border)', color:'var(--text)', borderRadius:5, padding:'4px 8px', fontSize:11, cursor:'pointer', marginBottom:3 }}>
++                                              {lbl}
++                                            </button>
++                                          ))}
++                                          <button onClick={()=>setContactLog(null)} style={{ background:'none', border:'none', color:'var(--muted)', fontSize:10, cursor:'pointer', marginTop:2 }}>✕ Cancel</button>
++                                        </div>
++                                      ) : (
++                                        <button onClick={()=>setContactLog(p.id)}
++                                          style={{ background:'rgba(88,166,255,.1)', color:'#58a6ff', border:'1px solid rgba(88,166,255,.25)', borderRadius:5, padding:'2px 7px', fontSize:10, cursor:'pointer', fontWeight:600 }}>
++                                          + Log
++                                        </button>
++                                      )}
++                                    </>
++                                  })()}
++                                </td>
+                                 <td style={s.td}><span style={{ ...s.tag(pr.color, pr.bg), fontSize:10 }}>{pr.label}</span></td>
+                                 <td style={s.td} onClick={e=>e.stopPropagation()}>
+                                   <button onClick={()=>removePlayer(p.id)} style={{ background:'none', border:'1px solid rgba(248,81,73,.3)', color:'#f85149', padding:'2px 8px', borderRadius:5, fontSize:11, cursor:'pointer' }}>✕</button>
+@@ -2605,6 +2701,7 @@ export default function Campaigns() {
+                       <th style={s.th}>{isDailyMode&&campType==='dual_tier'&&!selected?.is_multi_level?'Deposit / Turnover (this date)':isDailyMode?'Deposit (this date)':'Deposit'}</th>
+                       <th style={s.th}>Reward</th>
+                       <th style={s.th}>Payout Status</th>
++                      <th style={s.th}>Last Contact</th>
+                       <th style={s.th}>Host</th>
+                       <th style={s.th}>Phone / WA</th>
+                       <th style={s.th}>Notes</th>
+@@ -2655,6 +2752,45 @@ export default function Campaigns() {
+                             <div style={{ marginTop:3, fontSize:10, color:'#f59e0b', fontWeight:700, whiteSpace:'nowrap' }}>🔥 +{rmFmt(pendingStreakBonus, campCurrency)} streak</div>
+                           )}
+                         </td>
++                        <td style={{ ...s.td, minWidth:110 }} onClick={e=>e.stopPropagation()}>
++                          {(() => {
++                            const playerContacts = contacts[p.id] || []
++                            const last = playerContacts[0]
++                            const TYPE_ICON = { daily:'📅', reward:'🎁', inactive:'💤' }
++                            const TYPE_LABEL = { daily:'Daily', reward:'Reward', inactive:'Inactive' }
++                            let badge = null
++                            if (last) {
++                              const days = Math.floor((Date.now() - new Date(last.contacted_at).getTime()) / 86400000)
++                              const col = days === 0 ? '#3fb950' : days <= 2 ? '#f59e0b' : '#f85149'
++                              badge = <div style={{ fontSize:10, color:col, fontWeight:700, marginBottom:3 }}>
++                                {TYPE_ICON[last.contact_type]||'📞'} {days === 0 ? 'Today' : `${days}d ago`}
++                                <span style={{ color:'var(--muted)', fontWeight:400, marginLeft:3 }}>{TYPE_LABEL[last.contact_type]||last.contact_type}</span>
++                              </div>
++                            } else {
++                              badge = <div style={{ fontSize:10, color:'#f85149', fontWeight:700, marginBottom:3 }}>📞 Never</div>
++                            }
++                            return <>
++                              {badge}
++                              {contactLog === p.id ? (
++                                <div style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:8, minWidth:160 }}>
++                                  <div style={{ fontSize:11, color:'var(--muted)', marginBottom:6, fontWeight:600 }}>Log contact:</div>
++                                  {[['daily','📅 Daily'],['reward','🎁 Reward'],['inactive','💤 Inactive']].map(([type,lbl])=>(
++                                    <button key={type} onClick={()=>logContact(p.id, type)}
++                                      style={{ display:'block', width:'100%', textAlign:'left', background:'none', border:'1px solid var(--border)', color:'var(--text)', borderRadius:5, padding:'4px 8px', fontSize:11, cursor:'pointer', marginBottom:3 }}>
++                                      {lbl}
++                                    </button>
++                                  ))}
++                                  <button onClick={()=>setContactLog(null)} style={{ background:'none', border:'none', color:'var(--muted)', fontSize:10, cursor:'pointer', marginTop:2 }}>✕ Cancel</button>
++                                </div>
++                              ) : (
++                                <button onClick={()=>setContactLog(p.id)}
++                                  style={{ background:'rgba(88,166,255,.1)', color:'#58a6ff', border:'1px solid rgba(88,166,255,.25)', borderRadius:5, padding:'2px 7px', fontSize:10, cursor:'pointer', fontWeight:600 }}>
++                                  + Log
++                                </button>
++                              )}
++                            </>
++                          })()}
++                        </td>
+                         <td style={{...s.td,fontSize:12,color:'var(--muted)',fontWeight:600}}>{p.host_assigned||<span style={{color:'var(--surface2)'}}>—</span>}</td>
+                         <td style={{...s.td,minWidth:130}}>
+                           <div style={{fontSize:12,color:'var(--muted)',marginBottom:4}}>{p.whatsapp||<span style={{color:'var(--surface2)'}}>—</span>}</div>
+@@ -2783,7 +2919,9 @@ export default function Campaigns() {
+               const qualifiedPlayerIds = new Set(
+                 allDailyEntries.filter(e => (parseFloat(e.credit_reward) || 0) > 0).map(e => e.player_id)
+               )
+-              const inactivePlayers = players.filter(p => !qualifiedPlayerIds.has(p.id))
++              const allInactivePlayers = players.filter(p => !qualifiedPlayerIds.has(p.id))
++              const inactiveHosts = ['all', ...Array.from(new Set(allInactivePlayers.map(p => p.host_assigned).filter(Boolean))).sort()]
++              const inactivePlayers = inactiveHostFilter === 'all' ? allInactivePlayers : allInactivePlayers.filter(p => p.host_assigned === inactiveHostFilter)
+               return (
+                 <div style={{ overflowX:'auto' }}>
+                   <div style={{ padding:'8px 24px', fontSize:11, color:'var(--muted)', background:'rgba(88,166,255,.04)', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', gap:12 }}>
+@@ -2791,6 +2929,19 @@ export default function Campaigns() {
+                     {allDailyEntriesLoading && <span style={{ color:'#f59e0b' }}>Loading…</span>}
+                     <button onClick={() => loadAllDailyEntries(selected.id)} style={{ marginLeft:'auto', background:'var(--surface2)', border:'1px solid var(--border)', color:'var(--muted)', padding:'3px 10px', borderRadius:5, fontSize:11, cursor:'pointer' }}>↺ Refresh</button>
+                   </div>
++                  {/* Inactive tab host filter */}
++                  {inactiveHosts.length > 1 && (
++                    <div style={{ padding:'6px 24px', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', gap:6, flexWrap:'wrap' }}>
++                      <span style={{ fontSize:11, color:'var(--muted)', marginRight:2 }}>Host:</span>
++                      {inactiveHosts.map(h => (
++                        <button key={h} onClick={() => setInactiveHostFilter(h)} style={{
++                          padding:'3px 12px', borderRadius:16, fontSize:12, fontWeight:600, border:'1px solid var(--border)', cursor:'pointer',
++                          background: inactiveHostFilter === h ? 'var(--accent)' : 'var(--surface2)',
++                          color: inactiveHostFilter === h ? '#fff' : 'var(--muted)',
++                        }}>{h === 'all' ? `All (${allInactivePlayers.length})` : `${h} (${allInactivePlayers.filter(p=>p.host_assigned===h).length})`}</button>
++                      ))}
++                    </div>
++                  )}
+                   {!allDailyEntriesLoading && inactivePlayers.length === 0 && (
+                     <div style={{ padding:'32px 24px', textAlign:'center', color:'var(--muted)', fontSize:13 }}>🎉 All enrolled players have qualified at least once!</div>
+                   )}
+@@ -2802,6 +2953,7 @@ export default function Campaigns() {
+                         <th style={s.th}>Tier</th>
+                         <th style={s.th}>Host</th>
+                         <th style={s.th}>WhatsApp</th>
++                        <th style={s.th}>Last Contact</th>
+                         <th style={s.th}>Enrolled</th>
+                         <th style={s.th}>Days in Campaign</th>
+                       </tr></thead>
+@@ -2810,6 +2962,10 @@ export default function Campaigns() {
+                           const enrolledDate = p.added_at ? new Date(p.added_at).toLocaleDateString('en-MY', { day:'numeric', month:'short' }) : '—'
+                           // how many days this player has any entry (even non-qualifying)
+                           const playerEntryDates = allDailyEntries.filter(e => e.player_id === p.id)
++                          const playerContacts = contacts[p.id] || []
++                          const lastContact = playerContacts[0]
++                          const TYPE_ICON = { daily:'📅', reward:'🎁', inactive:'💤' }
++                          const TYPE_LABEL = { daily:'Daily', reward:'Reward', inactive:'Inactive' }
+                           return (
+                             <tr key={p.id}>
+                               <td style={{ ...s.td, color:'var(--muted)', fontSize:11 }}>{i+1}</td>
+@@ -2817,6 +2973,41 @@ export default function Campaigns() {
+                               <td style={s.td}>{p.tier ? <span style={{ ...s.badge, background:TIER_BG[p.tier]||'transparent', color:TIER_COLOR[p.tier]||'var(--muted)' }}>{p.tier}</span> : '—'}</td>
+                               <td style={{ ...s.td, fontSize:12, color:'var(--muted)' }}>{p.host_assigned || '—'}</td>
+                               <td style={{ ...s.td, fontSize:12 }}>{p.whatsapp || <span style={{ color:'var(--surface2)' }}>—</span>}</td>
++                              <td style={{ ...s.td, minWidth:110 }} onClick={e=>e.stopPropagation()}>
++                                {(() => {
++                                  let badge
++                                  if (lastContact) {
++                                    const days = Math.floor((Date.now() - new Date(lastContact.contacted_at).getTime()) / 86400000)
++                                    const col = days === 0 ? '#3fb950' : days <= 2 ? '#f59e0b' : '#f85149'
++                                    badge = <div style={{ fontSize:10, color:col, fontWeight:700, marginBottom:3 }}>
++                                      {TYPE_ICON[lastContact.contact_type]||'📞'} {days === 0 ? 'Today' : `${days}d ago`}
++                                      <span style={{ color:'var(--muted)', fontWeight:400, marginLeft:3 }}>{TYPE_LABEL[lastContact.contact_type]||lastContact.contact_type}</span>
++                                    </div>
++                                  } else {
++                                    badge = <div style={{ fontSize:10, color:'#f85149', fontWeight:700, marginBottom:3 }}>📞 Never</div>
++                                  }
++                                  return <>
++                                    {badge}
++                                    {contactLog === p.id ? (
++                                      <div style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:8, minWidth:160 }}>
++                                        <div style={{ fontSize:11, color:'var(--muted)', marginBottom:6, fontWeight:600 }}>Log contact:</div>
++                                        {[['daily','📅 Daily'],['reward','🎁 Reward'],['inactive','💤 Inactive']].map(([type,lbl])=>(
++                                          <button key={type} onClick={()=>logContact(p.id, type)}
++                                            style={{ display:'block', width:'100%', textAlign:'left', background:'none', border:'1px solid var(--border)', color:'var(--text)', borderRadius:5, padding:'4px 8px', fontSize:11, cursor:'pointer', marginBottom:3 }}>
++                                            {lbl}
++                                          </button>
++                                        ))}
++                                        <button onClick={()=>setContactLog(null)} style={{ background:'none', border:'none', color:'var(--muted)', fontSize:10, cursor:'pointer', marginTop:2 }}>✕ Cancel</button>
++                                      </div>
++                                    ) : (
++                                      <button onClick={()=>setContactLog(p.id)}
++                                        style={{ background:'rgba(88,166,255,.1)', color:'#58a6ff', border:'1px solid rgba(88,166,255,.25)', borderRadius:5, padding:'2px 7px', fontSize:10, cursor:'pointer', fontWeight:600 }}>
++                                        + Log
++                                      </button>
++                                    )}
++                                  </>
++                                })()}
++                              </td>
+                               <td style={{ ...s.td, fontSize:11, color:'var(--muted)' }}>{enrolledDate}</td>
+                               <td style={{ ...s.td, fontSize:12, color: playerEntryDates.length > 0 ? '#f59e0b' : '#f85149' }}>
+                                 {playerEntryDates.length > 0 ? `${playerEntryDates.length} entries (0 qualifying)` : 'No entries at all'}
+@@ -2828,7 +3019,7 @@ export default function Campaigns() {
+                     </table>
+                   )}
+                   <div style={{ padding:'8px 24px', fontSize:11, color:'var(--muted)' }}>
+-                    {inactivePlayers.length} inactive · {players.length - inactivePlayers.length} active
++                    {inactiveHostFilter !== 'all' ? `${inactivePlayers.length} shown · ` : ''}{allInactivePlayers.length} inactive · {players.length - allInactivePlayers.length} active
+                   </div>
+                 </div>
+               )
+@@ -2898,63 +3089,18 @@ export default function Campaigns() {
+                     <span>🔥 Streak target: <strong>{streakDays} consecutive days</strong> · Bonus: {bonusType === 'pct' ? `${bonusPct}% of period deposit` : `RM ${bonusFixed} fixed`}{bonusCap > 0 ? ` (cap: ${rmFmt(bonusCap, campCurrency)})` : ''}</span>
+                     {allDailyEntriesLoading && <span style={{ color:'#f59e0b' }}>Loading…</span>}
+                     {!selected?.streak_enabled && <span style={{ background:'rgba(248,81,73,.15)', color:'#f85149', borderRadius:4, padding:'1px 8px', fontSize:10, fontWeight:700 }}>STREAK DISABLED</span>}
+-                    <button onClick={() => { loadAllDailyEntries(selected.id); loadStreakBonuses(selected.id) }} style={{ marginLeft:'auto', background:'var(--surface2)', border:'1px solid var(--border)', color:'var(--muted)', padding:'3px 10px', borderRadius:5, fontSize:11, cursor:'pointer' }}>↺ Refresh</button>
++                    <button onClick={async () => {
++                      await loadAllDailyEntries(selected.id)
++                      if (selected?.streak_enabled) {
++                        const today = new Date().toISOString().slice(0, 10)
++                        for (const p of players) await checkAndAwardStreak(p.id, today)
++                      }
++                      await loadStreakBonuses(selected.id)
++                    }} style={{ marginLeft:'auto', background:'var(--surface2)', border:'1px solid var(--border)', color:'var(--muted)', padding:'3px 10px', borderRadius:5, fontSize:11, cursor:'pointer' }}>↺ Refresh</button>
+                   </div>
+ 
+-                  {/* Streak progress table */}
+-                  <table style={s.tbl}>
+-                    <thead><tr>
+-                      <th style={s.th}>#</th>
+-                      <th style={s.th}>Player</th>
+-                      <th style={s.th}>Tier</th>
+-                      <th style={s.th}>Host</th>
+-                      <th style={s.th}>Qualifying Days</th>
+-                      <th style={s.th}>Max Streak</th>
+-                      <th style={s.th}>Current Run</th>
+-                      <th style={s.th}>Target ({streakDays}d)</th>
+-                      <th style={s.th}>Est. Bonus</th>
+-                      <th style={s.th}>Awarded</th>
+-                    </tr></thead>
+-                    <tbody>
+-                      {playerStreakRows.map(({ p, dates, maxStreak, currentRun, achieved, bonusAmt, awardedBonuses }, i) => {
+-                        const awardedTotal = awardedBonuses.reduce((s, r) => s + (parseFloat(r.bonus_amount)||0), 0)
+-                        const awardedPaid = awardedBonuses.filter(r => r.payout_status === 'paid').length
+-                        return (
+-                          <tr key={p.id} style={{ background: achieved ? 'rgba(63,185,80,.04)' : 'transparent' }}>
+-                            <td style={{ ...s.td, color:'var(--muted)', fontSize:11 }}>{i+1}</td>
+-                            <td style={{ ...s.td, fontWeight:700 }}>{p.username}</td>
+-                            <td style={s.td}>{p.tier ? <span style={{ ...s.badge, background:TIER_BG[p.tier]||'transparent', color:TIER_COLOR[p.tier]||'var(--muted)' }}>{p.tier}</span> : '—'}</td>
+-                            <td style={{ ...s.td, fontSize:12, color:'var(--muted)' }}>{p.host_assigned || '—'}</td>
+-                            <td style={{ ...s.td, color:'#58a6ff', fontWeight:600 }}>{dates.length}</td>
+-                            <td style={{ ...s.td, color: maxStreak >= streakDays ? '#3fb950' : maxStreak >= Math.ceil(streakDays * 0.6) ? '#f59e0b' : 'var(--muted)', fontWeight:700, fontSize:15 }}>
+-                              {maxStreak > 0 ? `🔥 ${maxStreak}` : '—'}
+-                            </td>
+-                            <td style={{ ...s.td, fontSize:12, color: currentRun.length >= streakDays ? '#3fb950' : 'var(--muted)' }}>
+-                              {currentRun.length > 0 ? `${currentRun.length}d (${fmtDate(currentRun[0])}→${fmtDate(currentRun[currentRun.length-1])})` : '—'}
+-                            </td>
+-                            <td style={s.td}>
+-                              {achieved
+-                                ? <span style={{ color:'#3fb950', fontWeight:700 }}>✅ Hit</span>
+-                                : <span style={{ color:'#f85149', fontWeight:600 }}>❌ {streakDays - maxStreak}d short</span>
+-                              }
+-                            </td>
+-                            <td style={{ ...s.td, color: achieved ? '#f59e0b' : 'var(--muted)', fontWeight: achieved ? 700 : 400 }}>
+-                              {achieved ? rmFmt(bonusAmt, campCurrency) : '—'}
+-                            </td>
+-                            <td style={{ ...s.td, fontSize:11 }}>
+-                              {awardedBonuses.length > 0
+-                                ? <span>{awardedBonuses.length} bonus{awardedBonuses.length>1?'es':''} · {rmFmt(awardedTotal, campCurrency)} · {awardedPaid}/{awardedBonuses.length} paid</span>
+-                                : <span style={{ color:'var(--surface2)' }}>—</span>
+-                              }
+-                            </td>
+-                          </tr>
+-                        )
+-                      })}
+-                    </tbody>
+-                  </table>
+-
+-                  {/* Streak Bonus Payout section */}
+-                  <div style={{ borderTop:'2px solid var(--border)', marginTop:8 }}>
++                  {/* Streak Bonus Payout section — shown first */}
++                  <div style={{ borderBottom:'2px solid var(--border)', marginBottom:8 }}>
+                     <div style={{ padding:'10px 24px', display:'flex', alignItems:'center', gap:10, background:'rgba(245,158,11,.04)' }}>
+                       <span style={{ fontSize:13, fontWeight:800 }}>💸 Streak Bonus Payout</span>
+                       {streakBonusesLoading && <span style={{ fontSize:11, color:'var(--muted)' }}>Loading…</span>}
+@@ -3028,6 +3174,79 @@ export default function Campaigns() {
+                       </table>
+                     )}
+                   </div>
++
++                  {/* Streak progress table — below payout */}
++                  <table style={s.tbl}>
++                    <thead><tr>
++                      <th style={s.th}>#</th>
++                      <th style={s.th}>Player</th>
++                      <th style={s.th}>Tier</th>
++                      <th style={s.th}>Host</th>
++                      <th style={s.th}>Qualifying Days</th>
++                      <th style={s.th}>Max Streak</th>
++                      <th style={s.th}>Current Run</th>
++                      <th style={s.th}>Target ({streakDays}d)</th>
++                      <th style={s.th}>Cap Override</th>
++                      <th style={s.th}>Est. Bonus</th>
++                      <th style={s.th}>Awarded</th>
++                    </tr></thead>
++                    <tbody>
++                      {playerStreakRows.map(({ p, dates, maxStreak, currentRun, achieved, bonusAmt, awardedBonuses }, i) => {
++                        const awardedTotal = awardedBonuses.reduce((s, r) => s + (parseFloat(r.bonus_amount)||0), 0)
++                        const awardedPaid = awardedBonuses.filter(r => r.payout_status === 'paid').length
++                        const playerCapOverride = parseFloat(p.streak_bonus_cap_override) || 0
++                        const campaignCap = parseFloat(selected.streak_bonus_cap) || 0
++                        return (
++                          <tr key={p.id} style={{ background: achieved ? 'rgba(63,185,80,.04)' : 'transparent' }}>
++                            <td style={{ ...s.td, color:'var(--muted)', fontSize:11 }}>{i+1}</td>
++                            <td style={{ ...s.td, fontWeight:700 }}>{p.username}</td>
++                            <td style={s.td}>{p.tier ? <span style={{ ...s.badge, background:TIER_BG[p.tier]||'transparent', color:TIER_COLOR[p.tier]||'var(--muted)' }}>{p.tier}</span> : '—'}</td>
++                            <td style={{ ...s.td, fontSize:12, color:'var(--muted)' }}>{p.host_assigned || '—'}</td>
++                            <td style={{ ...s.td, color:'#58a6ff', fontWeight:600 }}>{dates.length}</td>
++                            <td style={{ ...s.td, color: maxStreak >= streakDays ? '#3fb950' : maxStreak >= Math.ceil(streakDays * 0.6) ? '#f59e0b' : 'var(--muted)', fontWeight:700, fontSize:15 }}>
++                              {maxStreak > 0 ? `🔥 ${maxStreak}` : '—'}
++                            </td>
++                            <td style={{ ...s.td, fontSize:12, color: currentRun.length >= streakDays ? '#3fb950' : 'var(--muted)' }}>
++                              {currentRun.length > 0 ? `${currentRun.length}d (${fmtDate(currentRun[0])}→${fmtDate(currentRun[currentRun.length-1])})` : '—'}
++                            </td>
++                            <td style={s.td}>
++                              {achieved
++                                ? <span style={{ color:'#3fb950', fontWeight:700 }}>✅ Hit</span>
++                                : <span style={{ color:'#f85149', fontWeight:600 }}>❌ {streakDays - maxStreak}d short</span>
++                              }
++                            </td>
++                            <td style={{ ...s.td, fontSize:11 }}>
++                              <input
++                                key={p.streak_bonus_cap_override}
++                                defaultValue={playerCapOverride > 0 ? playerCapOverride : ''}
++                                placeholder={campaignCap > 0 ? `${campaignCap} (camp)` : 'No cap'}
++                                onBlur={async e => {
++                                  const val = e.target.value.trim()
++                                  const newCap = val === '' ? null : parseFloat(val)
++                                  if (isNaN(newCap) && val !== '') return
++                                  const { error } = await supabase.from('campaign_players')
++                                    .update({ streak_bonus_cap_override: newCap })
++                                    .eq('id', p.id)
++                                  if (error) { console.error(error); return }
++                                  await loadPlayers(selected.id)
++                                }}
++                                style={{ ...s.editInput, width:80, color: playerCapOverride > 0 ? '#f85149' : 'var(--muted)' }}
++                              />
++                            </td>
++                            <td style={{ ...s.td, color: achieved ? '#f59e0b' : 'var(--muted)', fontWeight: achieved ? 700 : 400 }}>
++                              {achieved ? rmFmt(bonusAmt, campCurrency) : '—'}
++                            </td>
++                            <td style={{ ...s.td, fontSize:11 }}>
++                              {awardedBonuses.length > 0
++                                ? <span>{awardedBonuses.length} bonus{awardedBonuses.length>1?'es':''} · {rmFmt(awardedTotal, campCurrency)} · {awardedPaid}/{awardedBonuses.length} paid</span>
++                                : <span style={{ color:'var(--surface2)' }}>—</span>
++                              }
++                            </td>
++                          </tr>
++                        )
++                      })}
++                    </tbody>
++                  </table>
+                 </div>
+               )
+             })()}
+-- 
+2.43.0
+

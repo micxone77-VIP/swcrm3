@@ -1,0 +1,397 @@
+From b29c9fab81ad656d1f723fc8c958dc82ce1e5bfc Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Fri, 18 Sep 2026 11:15:28 +0000
+Subject: [PATCH 08/39] chore: Commit pending changes from prior session
+
+- ChurnAlerts.jsx: Platinum tab host filter + coverage stats + This Month column
+- Campaigns.jsx: related updates
+- KPIProgress.jsx: related updates
+- kpi.js: related updates
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01DqGp4gVeTBMvwho4pP8n8C
+---
+ src/lib/kpi.js            | 25 ++++++++-----
+ src/pages/Campaigns.jsx   | 65 +++++++++++++++++++++++++-------
+ src/pages/ChurnAlerts.jsx | 79 +++++++++++++++++++++++++++++++++++++--
+ src/pages/KPIProgress.jsx | 32 ++++++++++++++++
+ 4 files changed, 176 insertions(+), 25 deletions(-)
+
+diff --git a/src/lib/kpi.js b/src/lib/kpi.js
+index 650f319..899929c 100644
+--- a/src/lib/kpi.js
++++ b/src/lib/kpi.js
+@@ -150,21 +150,25 @@ export async function loadKpiAutoData(monthStr) {
+     .eq('old_tier', 'PLATINUM')
+     .eq('new_tier', 'DIAMOND')
+ 
+-  // Diamond coverage — MY/SG only
++  // Diamond coverage — MY/SG only, excluding is_excluded players
+   const { data: diamonds } = await supabase
+     .from('vip_members')
+     .select('id, username')
+     .eq('tier', 'DIAMOND')
+     .in('currency', ['MYR', 'SGD'])
+-  const diamondUsernames = new Set((diamonds || []).map(d => d.username))
+-  const totalDiamonds = diamondUsernames.size
++    .eq('is_excluded', false)
++  const diamondList = diamonds || []
++  const diamondUsernameSet = new Set(diamondList.map(d => d.username))
++  const totalDiamonds = diamondUsernameSet.size
+ 
+   const { data: diamondLogs } = await supabase
+     .from('contact_logs')
+     .select('username')
+     .eq('log_month', monthStr)
+     .in('tier', ['DIAMOND'])
+-  const contactedDiamonds = new Set((diamondLogs || []).map(l => l.username)).size
++  const contactedDiamondSet = new Set((diamondLogs || []).map(l => l.username))
++  const contactedDiamonds = [...contactedDiamondSet].filter(u => diamondUsernameSet.has(u)).length
++  const uncoveredDiamonds = diamondList.filter(d => !contactedDiamondSet.has(d.username))
+   const diamondCoverage = totalDiamonds ? Math.round(contactedDiamonds / totalDiamonds * 100) : 0
+ 
+   // VIP Retention Rate — % of PLATINUM/DIAMOND/BLACK VIPs (any region, excluding
+@@ -202,11 +206,14 @@ export async function loadKpiAutoData(monthStr) {
+   const reactivationRate = totalPDCount ? Math.round((reactivatedPD || 0) / totalPDCount * 100) : 0
+ 
+   return {
+-    total_turnover:    totalTurnover,
+-    upgrade_count:     upgradeCount || 0,
+-    diamond_coverage:  diamondCoverage,
+-    retention_rate:    retentionRate,
+-    reactivation_rate: reactivationRate,
++    total_turnover:      totalTurnover,
++    upgrade_count:       upgradeCount || 0,
++    diamond_coverage:    diamondCoverage,
++    diamond_total:       totalDiamonds,
++    diamond_contacted:   contactedDiamonds,
++    diamond_uncovered:   uncoveredDiamonds,  // [{ id, username }] not yet contacted this month
++    retention_rate:      retentionRate,
++    reactivation_rate:   reactivationRate,
+   }
+ }
+ 
+diff --git a/src/pages/Campaigns.jsx b/src/pages/Campaigns.jsx
+index 160225d..57985d0 100644
+--- a/src/pages/Campaigns.jsx
++++ b/src/pages/Campaigns.jsx
+@@ -185,6 +185,7 @@ export default function Campaigns() {
+   const [campaignRewards, setCampaignRewards] = useState([])
+   const [activeTab,  setActiveTab]  = useState('chase')
+   const [chaseFilter, setChaseFilter] = useState('')
++  const [hostFilter, setHostFilter] = useState('all')
+   const [copiedId, setCopiedId] = useState(null)
+   const [entryDate, setEntryDate] = useState('')
+   const [dailyEntries, setDailyEntries] = useState({}) // player_id -> {turnover_amount, tier_achieved, credit_reward, wcash_reward}
+@@ -205,6 +206,7 @@ export default function Campaigns() {
+   const [streakBonuses, setStreakBonuses] = useState({})   // map: campaign_player_id → [...rows]
+   const [streakBonusesLoading, setStreakBonusesLoading] = useState(false)
+   const [waPopup, setWaPopup] = useState(null)  // { rawNumber, message } — editable before opening WA
++  const [waCopied, setWaCopied] = useState(false)
+ 
+   // VIP search
+   const [vipSearch,   setVipSearch]   = useState('')
+@@ -317,14 +319,27 @@ export default function Campaigns() {
+     }
+ 
+     const campaignPlayers = playersRes.data || []
+-    setPlayers(campaignPlayers)
+-    if (campaignPlayers.length === 0) {
++
++    // Enrich each player with host_assigned from vip_members (best-effort; never blocks load)
++    const usernames = [...new Set(campaignPlayers.map(p => p.username).filter(Boolean))]
++    let hostMap = {}
++    if (usernames.length > 0) {
++      const { data: hostRows } = await supabase
++        .from('vip_members')
++        .select('username, host_assigned')
++        .in('username', usernames)
++      ;(hostRows || []).forEach(r => { if (r.host_assigned) hostMap[r.username] = r.host_assigned })
++    }
++    const enriched = campaignPlayers.map(p => ({ ...p, host_assigned: hostMap[p.username] || null }))
++
++    setPlayers(enriched)
++    if (enriched.length === 0) {
+       setCampaignPlayerLevels([])
+       setCampaignRewards([])
+       return
+     }
+ 
+-    const playerIds = campaignPlayers.map(p => p.id)
++    const playerIds = enriched.map(p => p.id)
+     const [levelsRes, rewardsRes] = await Promise.all([
+       supabase.from('campaign_player_levels')
+         .select('id,campaign_player_id,campaign_level_id,status,unlocked_at,updated_at')
+@@ -1230,9 +1245,12 @@ export default function Campaigns() {
+     : players.filter(p=>p.payout_status==='paid').reduce((s,p)=>s+calcReward(campType,playerDeposit(p),rewardPct,rewardFixed,goldVal,rewardCap,rewardTiers,campaignLevels,selected?.is_multi_level),0)
+   const pendingPay = Math.max(0,totalReward-paidOut)
+   const chaseList = campType==='leaderboard' ? lbRanked : [...players].sort((a,b)=>playerDeposit(b)-playerDeposit(a))
+-  const filteredChaseList = chaseFilter.trim()
+-    ? chaseList.filter(p => (p.username||'').toLowerCase().includes(chaseFilter.toLowerCase()) || (p.full_name||'').toLowerCase().includes(chaseFilter.toLowerCase()))
+-    : chaseList
++  const chaseHosts = ['all', ...Array.from(new Set(chaseList.map(p => p.host_assigned).filter(Boolean))).sort()]
++  const filteredChaseList = chaseList.filter(p => {
++    const matchesHost = hostFilter === 'all' || p.host_assigned === hostFilter
++    const matchesSearch = !chaseFilter.trim() || (p.username||'').toLowerCase().includes(chaseFilter.toLowerCase()) || (p.full_name||'').toLowerCase().includes(chaseFilter.toLowerCase())
++    return matchesHost && matchesSearch
++  })
+   function copyUsername(id, username) {
+     navigator.clipboard.writeText(username).catch(()=>{})
+     setCopiedId(id)
+@@ -1280,7 +1298,7 @@ export default function Campaigns() {
+             return (
+               <div key={camp.id} style={{ ...s.card, cursor:'pointer', transition:'border-color .15s' }}
+                 onClick={async () => {
+-                  setSelected(camp); setActiveTab('chase'); setModal('detail')
++                  setSelected(camp); setActiveTab('chase'); setModal('detail'); setChaseFilter(''); setHostFilter('all')
+                   const today = new Date().toISOString().slice(0,10)
+                   const inRange = camp.start_date && camp.end_date && today >= camp.start_date && today <= camp.end_date
+                   setEntryDate(inRange ? today : (camp.start_date || today))
+@@ -1899,12 +1917,25 @@ export default function Campaigns() {
+                 <div style={{ padding:'8px 24px', fontSize:11, color:'var(--muted)', background:'rgba(88,166,255,.04)', borderBottom:'1px solid var(--border)' }}>
+                   Click deposit field to update · reward auto-calculated based on campaign type
+                 </div>
++                {/* Chase list host filter */}
++                {chaseHosts.length > 1 && (
++                  <div style={{ padding:'6px 24px', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', gap:6, flexWrap:'wrap' }}>
++                    <span style={{ fontSize:11, color:'var(--muted)', marginRight:2 }}>Host:</span>
++                    {chaseHosts.map(h => (
++                      <button key={h} onClick={() => setHostFilter(h)} style={{
++                        padding:'3px 12px', borderRadius:16, fontSize:12, fontWeight:600, border:'1px solid var(--border)', cursor:'pointer',
++                        background: hostFilter === h ? 'var(--accent)' : 'var(--surface2)',
++                        color: hostFilter === h ? '#fff' : 'var(--muted)',
++                      }}>{h === 'all' ? `All (${chaseList.length})` : `${h} (${chaseList.filter(p=>p.host_assigned===h).length})`}</button>
++                    ))}
++                  </div>
++                )}
+                 {/* Chase list search filter */}
+                 <div style={{ padding:'8px 24px', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', gap:8 }}>
+                   <input
+                     value={chaseFilter}
+                     onChange={e => setChaseFilter(e.target.value)}
+-                    placeholder={`🔍 Filter ${chaseList.length} players by username…`}
++                    placeholder={`🔍 Filter ${filteredChaseList.length} players by username…`}
+                     style={{ ...s.smInput, width:280, fontSize:12 }}
+                   />
+                   {chaseFilter && (
+@@ -1940,6 +1971,7 @@ export default function Campaigns() {
+                     <thead><tr>
+                       <th style={s.th}>#</th>
+                       <th style={s.th}>Player</th>
++                      <th style={s.th}>Host</th>
+                       <th style={s.th}>WhatsApp</th>
+                       <th style={s.th}>Valid Bet (RM)</th>
+                       <th style={s.th}>Deposit (RM)</th>
+@@ -1952,7 +1984,7 @@ export default function Campaigns() {
+                     </tr></thead>
+                     <tbody>
+                       {filteredChaseList.length === 0
+-                        ? <tr><td colSpan={11} style={{ ...s.td, textAlign:'center', padding:24, color:'var(--muted)' }}>{chaseList.length === 0 ? 'Add players above to start tracking.' : 'No players match the search.'}</td></tr>
++                        ? <tr><td colSpan={12} style={{ ...s.td, textAlign:'center', padding:24, color:'var(--muted)' }}>{chaseList.length === 0 ? 'Add players above to start tracking.' : 'No players match the search.'}</td></tr>
+                         : filteredChaseList.map((p,i) => {
+                             const rankingTarget = leaderboardMetric === 'deposit' ? minDepLb : minBetTarget
+                             const pr = getProgress(p._rankingValue||0, rankingTarget)
+@@ -1968,6 +2000,7 @@ export default function Campaigns() {
+                                     <button title="Copy username" onClick={()=>copyUsername(p.id, p.username)} style={{ marginLeft:2, background:'none', border:'none', cursor:'pointer', fontSize:11, color: copiedId===p.id ? '#3fb950' : 'var(--muted)', padding:'1px 4px', borderRadius:4 }}>{copiedId===p.id ? '✓' : '⎘'}</button>
+                                   </div>
+                                 </td>
++                                <td style={{ ...s.td, fontSize:12, color: p.host_assigned ? 'var(--text)' : 'var(--muted)' }}>{p.host_assigned || '—'}</td>
+                                 <td style={{ ...s.td, fontSize:12, color:'var(--muted)' }}>
+                                   <input defaultValue={p.whatsapp||''} onBlur={e=>{if(e.target.value!==(p.whatsapp||''))updatePlayer(p.id,{whatsapp:e.target.value})}} style={{ ...s.editInput, width:120 }} placeholder="—" />
+                                 </td>
+@@ -2015,6 +2048,7 @@ export default function Campaigns() {
+                     <thead><tr>
+                       <th style={s.th}>#</th>
+                       <th style={s.th}>Player</th>
++                      <th style={s.th}>Host</th>
+                       <th style={s.th}>WhatsApp</th>
+                       <th style={s.th}>{campType==='dual_tier' ? 'Deposit / Turnover (RM)' : 'Campaign Deposit (RM)'}</th>
+                       <th style={s.th}>Progress</th>
+@@ -2025,9 +2059,9 @@ export default function Campaigns() {
+                     </tr></thead>
+                     <tbody>
+                       {chaseList.length === 0
+-                        ? <tr><td colSpan={9} style={{ ...s.td, textAlign:'center', padding:24, color:'var(--muted)' }}>Add players above to start tracking.</td></tr>
++                        ? <tr><td colSpan={10} style={{ ...s.td, textAlign:'center', padding:24, color:'var(--muted)' }}>Add players above to start tracking.</td></tr>
+                         : filteredChaseList.length === 0
+-                        ? <tr><td colSpan={9} style={{ ...s.td, textAlign:'center', padding:24, color:'var(--muted)' }}>No players match the search.</td></tr>
++                        ? <tr><td colSpan={10} style={{ ...s.td, textAlign:'center', padding:24, color:'var(--muted)' }}>No players match the search.</td></tr>
+                         : filteredChaseList.map((p,i) => {
+                             const multi = selected?.is_multi_level && campaignLevels.length > 0
+                             const multiMetric = multi ? multiMetricsByPlayer[p.id] : null
+@@ -2107,6 +2141,7 @@ export default function Campaigns() {
+                                     </div>
+                                   )}
+                                 </td>
++                                <td style={{ ...s.td, fontSize:12, color: p.host_assigned ? 'var(--text)' : 'var(--muted)' }}>{p.host_assigned || '—'}</td>
+                                 <td style={{ ...s.td, fontSize:12, color:'var(--muted)' }}>
+                                   <input defaultValue={p.whatsapp||''} onBlur={e=>{if(e.target.value!==(p.whatsapp||''))updatePlayer(p.id,{whatsapp:e.target.value})}} style={{ ...s.editInput, width:120 }} placeholder="—" />
+                                 </td>
+@@ -2604,11 +2639,15 @@ export default function Campaigns() {
+                 </div>
+               )}
+             </div>
+-            <textarea rows={10} style={{ ...s.fta, width:'100%', marginBottom:14 }} value={waPopup.message} onChange={e=>setWaPopup(p=>({...p,message:e.target.value}))} />
++            <textarea rows={10} style={{ ...s.fta, width:'100%', marginBottom:14, fontFamily:"'Segoe UI Emoji','Apple Color Emoji','Noto Color Emoji','Twemoji Mozilla',sans-serif" }} value={waPopup.message} onChange={e=>setWaPopup(p=>({...p,message:e.target.value}))} />
+             <div style={{ display:'flex', gap:8 }}>
+               <a href={`https://wa.me/${waPopup.rawNumber}?text=${encodeURIComponent(waPopup.message)}`} target="_blank" rel="noopener noreferrer" onClick={()=>setWaPopup(null)}
+                 style={{ ...s.btnG, textDecoration:'none', padding:'8px 18px' }}>Open WhatsApp</a>
+-              <button style={s.btnSm} onClick={()=>setWaPopup(null)}>Cancel</button>
++              <button style={{ ...s.btnSm, background: waCopied ? '#3fb950' : undefined, color: waCopied ? '#fff' : undefined }}
++                onClick={()=>{ navigator.clipboard.writeText(waPopup.message); setWaCopied(true); setTimeout(()=>setWaCopied(false), 2000) }}>
++                {waCopied ? '✅ Copied!' : '📋 Copy'}
++              </button>
++              <button style={s.btnSm} onClick={()=>{ setWaPopup(null); setWaCopied(false) }}>Cancel</button>
+             </div>
+           </div>
+         </div>
+diff --git a/src/pages/ChurnAlerts.jsx b/src/pages/ChurnAlerts.jsx
+index 608565f..df86961 100644
+--- a/src/pages/ChurnAlerts.jsx
++++ b/src/pages/ChurnAlerts.jsx
+@@ -61,6 +61,7 @@ export default function ChurnAlerts() {
+   function getWaLink(v){const rawNumber=(v.phone&&v.phone.replace(/\D/g,'').length>=10)?v.phone:(v.whatsapp&&v.whatsapp.replace(/\D/g,'').length>=10)?v.whatsapp:'';if(!rawNumber)return null;const waNumber=rawNumber.replace(/\D/g,'');const greeting=encodeURIComponent(`Hi ${v.username}, this is ${myName||'the VIP department'}.`);return `https://wa.me/${waNumber}?text=${greeting}`}
+   function WaButton({v}){const link=getWaLink(v);if(!link)return <span style={{color:'var(--muted)'}}>—</span>;return <a href={link} target="_blank" rel="noopener noreferrer" style={{display:'inline-flex',width:26,height:26,borderRadius:13,background:'#25D366',color:'#fff',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:700,textDecoration:'none'}}>W</a>}
+   const [mineOnly,setMineOnly]=useUrlParamBool('mine',false),[riskF,setRiskF]=useUrlParam('risk','ALL'),[tierF,setTierF]=useUrlParam('tier','ALL'),[reactTierF,setReactTierF]=useUrlParam('reactTier','ALL'),[sortCol,setSortCol]=useUrlParam('sort','days_inactive'),[sortAsc,setSortAsc]=useUrlParamBool('asc',false),[stats,setStats]=useState({high:0,medium:0,dormant:0,atRisk:0})
++  const [dHostF,setDHostF]=useState('ALL'),[pHostF,setPHostF]=useState('ALL'),[contactedSet,setContactedSet]=useState(new Set()),[dUncontactedOnly,setDUncontactedOnly]=useState(false),[pUncontactedOnly,setPUncontactedOnly]=useState(false)
+   const monthStr=`${year}-${String(month+1).padStart(2,'0')}`
+ 
+   useEffect(()=>{loadAll()},[riskF,tierF,sortCol,sortAsc,month,year,mineOnly,dormantDays]); useEffect(()=>{loadPriorityContacts()},[])
+@@ -70,7 +71,11 @@ export default function ChurnAlerts() {
+   const vip=vipMap[r.username]||{};const contactedToday=Boolean(latestContact[r.username]?.logged_at&&new Date(latestContact[r.username].logged_at).toISOString().slice(0,10)===todayStr);results.push({id:vip.id||r.username,username:r.username,tier:r.tier||vip.tier,currency:r.currency||vip.currency||'MYR',host:r.host_assigned||vip.host_assigned,phone:vip.phone||null,whatsapp:vip.whatsapp||null,last_deposit_date:vip.last_deposit_date||null,days_since_deposit:Number(vip.days_inactive)||null,decline_pct:-100,net_win_loss_3d:0,reasons:[`Churned: deposited in ${prevM} but zero deposit in ${latestM} — needs reactivation`],urgency_score:4,follow_up_due:true,last_contact:latestContact[r.username]?.logged_at||null,contacted_today:contactedToday})})}}catch(monthlyErr){console.error('loadPriorityContacts monthly churn overlay error',monthlyErr)}
+   results.sort((a,b)=>getRetentionTierRank(a.tier)-getRetentionTierRank(b.tier)||Number(b.follow_up_due)-Number(a.follow_up_due)||b.urgency_score-a.urgency_score||String(a.username).localeCompare(String(b.username)));setPriorityList(results)}finally{setPriorityLoading(false)}}
+ 
+-  async function loadAll(){setLoading(true);try{const{data:members}=await supabase.from('vip_members').select('*').eq('is_excluded',false);const{data:logs}=await supabase.from('reactivation_logs').select('*').eq('reactivated_month',monthStr);const logSet=new Set((logs||[]).map(x=>x.username));setReactivated(logs||[]);setReactivatedSet(logSet);setVips(members||[]);setStats({high:(members||[]).filter(x=>x.churn_risk==='HIGH').length,medium:(members||[]).filter(x=>x.churn_risk==='MEDIUM').length,dormant:(members||[]).filter(x=>(x.days_inactive||0)>=dormantDays).length,atRisk:(members||[]).filter(x=>(x.churn_risk==='HIGH'||x.churn_risk==='MEDIUM')&&!logSet.has(x.username)).length})}catch(e){console.error(e)}finally{setLoading(false)}}
++  async function loadAll(){setLoading(true);try{const{data:members}=await supabase.from('vip_members').select('*').eq('is_excluded',false);const{data:logs}=await supabase.from('reactivation_logs').select('*').eq('reactivated_month',monthStr);const logSet=new Set((logs||[]).map(x=>x.username));setReactivated(logs||[]);setReactivatedSet(logSet);setVips(members||[]);setStats({high:(members||[]).filter(x=>x.churn_risk==='HIGH').length,medium:(members||[]).filter(x=>x.churn_risk==='MEDIUM').length,dormant:(members||[]).filter(x=>(x.days_inactive||0)>=dormantDays).length,atRisk:(members||[]).filter(x=>(x.churn_risk==='HIGH'||x.churn_risk==='MEDIUM')&&!logSet.has(x.username)).length});
++    // contact_logs this month — for Diamond/Platinum coverage tracking
++    const dpNames=(members||[]).filter(v=>v.tier==='DIAMOND'||v.tier==='PLATINUM').map(v=>v.username);
++    if(dpNames.length){const{data:cLogs}=await supabase.from('contact_logs').select('username').eq('log_month',monthStr).in('username',dpNames);setContactedSet(new Set((cLogs||[]).map(l=>l.username)))}else{setContactedSet(new Set())}
++  }catch(e){console.error(e)}finally{setLoading(false)}}
+ 
+   const visibleVips=vips.filter(v=>(tierF==='ALL'||v.tier===tierF)&&(!mineOnly||v.host_assigned===myName)); const reactRows=reactivated.filter(v=>reactTierF==='ALL'||v.tier===reactTierF)
+   return <div style={s.page}><div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-end',marginBottom:18}}><div><div style={s.title}>{t('sidebar.nav.churnAlerts')}</div><div style={s.sub}>{t('churnAlerts.subtitle')}</div></div></div>
+@@ -80,8 +85,76 @@ export default function ChurnAlerts() {
+       {tab==='reactivated'&&<div style={{overflowX:'auto'}}><table style={s.tbl}><thead><tr>{['Player','Tier','Host','Recovery','Currency','Notes'].map(h=><th key={h} style={s.th}>{h}</th>)}</tr></thead><tbody>{reactRows.map(v=><tr key={v.username}><td style={s.td}>{v.username}</td><td style={s.td}>{v.tier||'—'}</td><td style={s.td}>{v.host_name||'—'}</td><td style={s.td}>{formatMoney(v.reactivation_deposit||0,v.currency||'')}</td><td style={s.td}>{v.currency||'—'}</td><td style={s.td}>{v.notes||'—'}</td></tr>)}{!reactRows.length&&<tr><td colSpan="6" style={{...s.td,textAlign:'center'}}>No reactivated VIPs for this month.</td></tr>}</tbody></table></div>}
+       {tab==='churn'&&(()=>{const churnVips=vips.filter(v=>v.churn_risk==='HIGH'||v.churn_risk==='MEDIUM').sort((a,b)=>(a.churn_risk==='HIGH'?0:1)-(b.churn_risk==='HIGH'?0:1)||(b.days_inactive||0)-(a.days_inactive||0));return<div style={{overflowX:'auto'}}><table style={s.tbl}><thead><tr>{['Player','Tier','Host','Risk','Days Inactive','Last Deposit','Last Contact','Actions'].map(h=><th key={h} style={s.th}>{h}</th>)}</tr></thead><tbody>{churnVips.map(v=><tr key={v.id}><td style={s.td}><span style={{display:'inline-flex',alignItems:'center',gap:4}}><button style={{background:'none',border:0,padding:0,cursor:'pointer',color:'var(--text)',fontWeight:700}} onClick={()=>navigate(`/vips/${v.id}`)}>{v.username}</button><button title="Copy username" onClick={e=>{e.stopPropagation();navigator.clipboard.writeText(v.username)}} style={{background:'none',border:'none',color:'var(--muted)',cursor:'pointer',fontSize:12,padding:'0 2px',lineHeight:1,opacity:.6}} onMouseEnter={e=>e.currentTarget.style.opacity=1} onMouseLeave={e=>e.currentTarget.style.opacity=.6}>⎘</button></span></td><td style={s.td}>{v.tier}</td><td style={s.td}>{v.host_assigned||'—'}</td><td style={s.td}><span style={{padding:'2px 8px',borderRadius:12,fontSize:11,fontWeight:700,background:RISK_BG[v.churn_risk]||'transparent',color:RISK_COLOR[v.churn_risk]||'var(--muted)'}}>{v.churn_risk}</span></td><td style={{...s.td,fontVariantNumeric:'tabular-nums',color:'#f85149',fontWeight:700}}>{v.days_inactive||0}d</td><td style={s.td}>{v.last_deposit_date||'—'}</td><td style={{...s.td,fontSize:12,color:'var(--muted)'}}>{v.last_contacted?new Date(v.last_contacted).toLocaleDateString('en-MY',{day:'2-digit',month:'short'}):'Never'}</td><td style={s.td}><div style={{display:'flex',gap:5,flexWrap:'wrap'}}><WaButton v={v}/><button style={s.btnSm} onClick={()=>navigate(`/vips/${v.id}`)}>Open</button>{!reactivatedSet.has(v.username)&&<button style={{...s.btnSm,background:'#3fb950',color:'#fff',border:0,fontWeight:700}} onClick={()=>setReactivateModal(v)}>✅ Reactivate</button>}</div></td></tr>)}{!churnVips.length&&<tr><td colSpan="8" style={{...s.td,textAlign:'center',color:'var(--muted)'}}>No high/medium risk VIPs at this time.</td></tr>}</tbody></table></div>})()}
+       {tab==='dormant'&&(()=>{const dormVips=vips.filter(v=>(v.days_inactive||0)>=dormantDays&&(dormantTierF==='ALL'||v.tier===dormantTierF)).sort((a,b)=>(b.days_inactive||0)-(a.days_inactive||0));return<div><div style={{display:'flex',gap:10,padding:'10px 14px',borderBottom:'1px solid var(--border)',alignItems:'center',flexWrap:'wrap'}}><select value={dormantTierF} onChange={e=>setDormantTierF(e.target.value)} style={s.sel}><option value="ALL">All Tiers</option>{['DIAMOND','PLATINUM','GOLD','SILVER','BRONZE'].map(t=><option key={t} value={t}>{t}</option>)}</select><label style={{display:'flex',gap:6,fontSize:12,alignItems:'center',color:'var(--text)'}}>Inactive ≥<input type="number" min={1} value={dormantDays} onChange={e=>setDormantDays(Number(e.target.value))} style={{...s.sel,width:70,padding:'5px 8px',fontSize:12}} /> days</label><span style={{fontSize:12,color:'var(--muted)'}}>{dormVips.length} players</span></div><div style={{overflowX:'auto'}}><table style={s.tbl}><thead><tr>{['Player','Tier','Host','Days Inactive','Last Deposit','Last Contact','Actions'].map(h=><th key={h} style={s.th}>{h}</th>)}</tr></thead><tbody>{dormVips.map(v=><tr key={v.id}><td style={s.td}><span style={{display:'inline-flex',alignItems:'center',gap:4}}><button style={{background:'none',border:0,padding:0,cursor:'pointer',color:'var(--text)',fontWeight:700}} onClick={()=>navigate(`/vips/${v.id}`)}>{v.username}</button><button title="Copy username" onClick={e=>{e.stopPropagation();navigator.clipboard.writeText(v.username)}} style={{background:'none',border:'none',color:'var(--muted)',cursor:'pointer',fontSize:12,padding:'0 2px',lineHeight:1,opacity:.6}} onMouseEnter={e=>e.currentTarget.style.opacity=1} onMouseLeave={e=>e.currentTarget.style.opacity=.6}>⎘</button></span></td><td style={s.td}>{v.tier}</td><td style={s.td}>{v.host_assigned||'—'}</td><td style={{...s.td,fontVariantNumeric:'tabular-nums',color:'#f85149',fontWeight:700}}>{v.days_inactive||0}d</td><td style={s.td}>{v.last_deposit_date||'—'}</td><td style={{...s.td,fontSize:12,color:'var(--muted)'}}>{v.last_contacted?new Date(v.last_contacted).toLocaleDateString('en-MY',{day:'2-digit',month:'short'}):'Never'}</td><td style={s.td}><div style={{display:'flex',gap:5}}><WaButton v={v}/><button style={s.btnSm} onClick={()=>navigate(`/vips/${v.id}`)}>Open</button></div></td></tr>)}{!dormVips.length&&<tr><td colSpan="7" style={{...s.td,textAlign:'center',color:'var(--muted)'}}>No dormant VIPs match the threshold.</td></tr>}</tbody></table></div></div>})()}
+-      {tab==='diamond'&&(()=>{const dVips=vips.filter(v=>v.tier==='DIAMOND').sort((a,b)=>(b.days_inactive||0)-(a.days_inactive||0));return<div style={{overflowX:'auto'}}><table style={s.tbl}><thead><tr>{['Player','Host','Risk','Days Inactive','Last Deposit','Last Contact','Actions'].map(h=><th key={h} style={s.th}>{h}</th>)}</tr></thead><tbody>{dVips.map(v=><tr key={v.id}><td style={s.td}><span style={{display:'inline-flex',alignItems:'center',gap:4}}><button style={{background:'none',border:0,padding:0,cursor:'pointer',color:'var(--text)',fontWeight:700}} onClick={()=>navigate(`/vips/${v.id}`)}>{v.username}</button><button title="Copy username" onClick={e=>{e.stopPropagation();navigator.clipboard.writeText(v.username)}} style={{background:'none',border:'none',color:'var(--muted)',cursor:'pointer',fontSize:12,padding:'0 2px',lineHeight:1,opacity:.6}} onMouseEnter={e=>e.currentTarget.style.opacity=1} onMouseLeave={e=>e.currentTarget.style.opacity=.6}>⎘</button></span></td><td style={s.td}>{v.host_assigned||'—'}</td><td style={s.td}>{v.risk_level?<span style={{padding:'2px 8px',borderRadius:12,fontSize:11,fontWeight:700,background:RISK_BG[v.risk_level]||'transparent',color:RISK_COLOR[v.risk_level]||'var(--muted)'}}>{v.risk_level}</span>:'—'}</td><td style={{...s.td,fontVariantNumeric:'tabular-nums'}}>{v.days_inactive||0}d</td><td style={s.td}>{v.last_deposit_date||'—'}</td><td style={{...s.td,fontSize:12,color:'var(--muted)'}}>{v.last_contacted?new Date(v.last_contacted).toLocaleDateString('en-MY',{day:'2-digit',month:'short'}):'Never'}</td><td style={s.td}><div style={{display:'flex',gap:5,flexWrap:'wrap'}}><WaButton v={v}/><button style={s.btnSm} onClick={()=>navigate(`/vips/${v.id}`)}>Open</button>{!reactivatedSet.has(v.username)&&<button style={{...s.btnSm,background:'#3fb950',color:'#fff',border:0,fontWeight:700}} onClick={()=>setReactivateModal(v)}>✅ Reactivate</button>}</div></td></tr>)}{!dVips.length&&<tr><td colSpan="7" style={{...s.td,textAlign:'center',color:'var(--muted)'}}>No Diamond VIPs found.</td></tr>}</tbody></table></div>})()}
+-      {tab==='platinum'&&(()=>{const pVips=vips.filter(v=>v.tier==='PLATINUM').sort((a,b)=>(b.days_inactive||0)-(a.days_inactive||0));return<div style={{overflowX:'auto'}}><table style={s.tbl}><thead><tr>{['Player','Host','Risk','Days Inactive','Last Deposit','Last Contact','Actions'].map(h=><th key={h} style={s.th}>{h}</th>)}</tr></thead><tbody>{pVips.map(v=><tr key={v.id}><td style={s.td}><span style={{display:'inline-flex',alignItems:'center',gap:4}}><button style={{background:'none',border:0,padding:0,cursor:'pointer',color:'var(--text)',fontWeight:700}} onClick={()=>navigate(`/vips/${v.id}`)}>{v.username}</button><button title="Copy username" onClick={e=>{e.stopPropagation();navigator.clipboard.writeText(v.username)}} style={{background:'none',border:'none',color:'var(--muted)',cursor:'pointer',fontSize:12,padding:'0 2px',lineHeight:1,opacity:.6}} onMouseEnter={e=>e.currentTarget.style.opacity=1} onMouseLeave={e=>e.currentTarget.style.opacity=.6}>⎘</button></span></td><td style={s.td}>{v.host_assigned||'—'}</td><td style={s.td}>{v.risk_level?<span style={{padding:'2px 8px',borderRadius:12,fontSize:11,fontWeight:700,background:RISK_BG[v.risk_level]||'transparent',color:RISK_COLOR[v.risk_level]||'var(--muted)'}}>{v.risk_level}</span>:'—'}</td><td style={{...s.td,fontVariantNumeric:'tabular-nums'}}>{v.days_inactive||0}d</td><td style={s.td}>{v.last_deposit_date||'—'}</td><td style={{...s.td,fontSize:12,color:'var(--muted)'}}>{v.last_contacted?new Date(v.last_contacted).toLocaleDateString('en-MY',{day:'2-digit',month:'short'}):'Never'}</td><td style={s.td}><div style={{display:'flex',gap:5,flexWrap:'wrap'}}><WaButton v={v}/><button style={s.btnSm} onClick={()=>navigate(`/vips/${v.id}`)}>Open</button>{!reactivatedSet.has(v.username)&&<button style={{...s.btnSm,background:'#3fb950',color:'#fff',border:0,fontWeight:700}} onClick={()=>setReactivateModal(v)}>✅ Reactivate</button>}</div></td></tr>)}{!pVips.length&&<tr><td colSpan="7" style={{...s.td,textAlign:'center',color:'var(--muted)'}}>No Platinum VIPs found.</td></tr>}</tbody></table></div>})()}
++      {tab==='diamond'&&(()=>{
++        const allDHosts=[...new Set(vips.filter(v=>v.tier==='DIAMOND'&&v.host_assigned).map(v=>v.host_assigned))].sort()
++        const allD=vips.filter(v=>v.tier==='DIAMOND'&&(dHostF==='ALL'||v.host_assigned===dHostF))
++        const dVips=allD.filter(v=>!dUncontactedOnly||!contactedSet.has(v.username)).sort((a,b)=>Number(contactedSet.has(a.username))-Number(contactedSet.has(b.username))||(b.days_inactive||0)-(a.days_inactive||0))
++        const dContacted=allD.filter(v=>contactedSet.has(v.username)).length
++        const dNotYet=allD.length-dContacted
++        return(<div>
++          <div style={{display:'flex',gap:8,padding:'10px 14px',borderBottom:'1px solid var(--border)',alignItems:'center',flexWrap:'wrap'}}>
++            <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
++              {['ALL',...allDHosts].map(h=><button key={h} style={{...s.btnSm,background:dHostF===h?'var(--accent)':'var(--surface2)',color:dHostF===h?'#fff':'var(--text)'}} onClick={()=>setDHostF(h)}>{h==='ALL'?`All (${allD.length})`:h}</button>)}
++            </div>
++            <button style={{...s.btnSm,background:dUncontactedOnly?'#f85149':'var(--surface2)',color:dUncontactedOnly?'#fff':'var(--text)',border:dUncontactedOnly?'1px solid #f85149':'1px solid var(--border)'}} onClick={()=>setDUncontactedOnly(v=>!v)}>❌ Not contacted only</button>
++            <div style={{marginLeft:'auto',display:'flex',gap:12,fontSize:12,alignItems:'center'}}>
++              <span style={{color:'#3fb950',fontWeight:700}}>✅ {dContacted} contacted</span>
++              <span style={{color:'#f85149',fontWeight:700}}>❌ {dNotYet} not yet</span>
++              <span style={{color:'var(--muted)'}}>{MONTHS[month]}: {allD.length?Math.round(dContacted/allD.length*100):0}%</span>
++            </div>
++          </div>
++          <div style={{overflowX:'auto'}}><table style={s.tbl}><thead><tr>{['Player','Host','Risk','Days Inactive','Last Deposit','Last Contact','This Month','Actions'].map(h=><th key={h} style={s.th}>{h}</th>)}</tr></thead>
++            <tbody>{dVips.map(v=>{const isC=contactedSet.has(v.username);return(
++              <tr key={v.id}>
++                <td style={s.td}><span style={{display:'inline-flex',alignItems:'center',gap:4}}><button style={{background:'none',border:0,padding:0,cursor:'pointer',color:'var(--text)',fontWeight:700}} onClick={()=>navigate(`/vips/${v.id}`)}>{v.username}</button><button title="Copy username" onClick={e=>{e.stopPropagation();navigator.clipboard.writeText(v.username)}} style={{background:'none',border:'none',color:'var(--muted)',cursor:'pointer',fontSize:12,padding:'0 2px',lineHeight:1,opacity:.6}} onMouseEnter={e=>e.currentTarget.style.opacity=1} onMouseLeave={e=>e.currentTarget.style.opacity=.6}>⎘</button></span></td>
++                <td style={s.td}>{v.host_assigned||'—'}</td>
++                <td style={s.td}>{v.risk_level?<span style={{padding:'2px 8px',borderRadius:12,fontSize:11,fontWeight:700,background:RISK_BG[v.risk_level]||'transparent',color:RISK_COLOR[v.risk_level]||'var(--muted)'}}>{v.risk_level}</span>:'—'}</td>
++                <td style={{...s.td,fontVariantNumeric:'tabular-nums'}}>{v.days_inactive||0}d</td>
++                <td style={s.td}>{v.last_deposit_date||'—'}</td>
++                <td style={{...s.td,fontSize:12,color:'var(--muted)'}}>{v.last_contacted?new Date(v.last_contacted).toLocaleDateString('en-MY',{day:'2-digit',month:'short'}):'Never'}</td>
++                <td style={s.td}><span style={{fontSize:12,fontWeight:700,color:isC?'#3fb950':'#f85149'}}>{isC?'✅ Done':'❌ Not yet'}</span></td>
++                <td style={s.td}><div style={{display:'flex',gap:5,flexWrap:'wrap'}}><WaButton v={v}/><button style={s.btnSm} onClick={()=>navigate(`/vips/${v.id}`)}>Open</button>{!reactivatedSet.has(v.username)&&<button style={{...s.btnSm,background:'#3fb950',color:'#fff',border:0,fontWeight:700}} onClick={()=>setReactivateModal(v)}>✅ Reactivate</button>}</div></td>
++              </tr>
++            )})}
++            {!dVips.length&&<tr><td colSpan="8" style={{...s.td,textAlign:'center',color:'var(--muted)'}}>No Diamond VIPs match the filter.</td></tr>}
++            </tbody></table></div>
++        </div>)
++      })()}
++      {tab==='platinum'&&(()=>{
++        const allPHosts=[...new Set(vips.filter(v=>v.tier==='PLATINUM'&&v.host_assigned).map(v=>v.host_assigned))].sort()
++        const allP=vips.filter(v=>v.tier==='PLATINUM'&&(pHostF==='ALL'||v.host_assigned===pHostF))
++        const pVips=allP.filter(v=>!pUncontactedOnly||!contactedSet.has(v.username)).sort((a,b)=>Number(contactedSet.has(a.username))-Number(contactedSet.has(b.username))||(b.days_inactive||0)-(a.days_inactive||0))
++        const pContacted=allP.filter(v=>contactedSet.has(v.username)).length
++        const pNotYet=allP.length-pContacted
++        return(<div>
++          <div style={{display:'flex',gap:8,padding:'10px 14px',borderBottom:'1px solid var(--border)',alignItems:'center',flexWrap:'wrap'}}>
++            <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
++              {['ALL',...allPHosts].map(h=><button key={h} style={{...s.btnSm,background:pHostF===h?'var(--accent)':'var(--surface2)',color:pHostF===h?'#fff':'var(--text)'}} onClick={()=>setPHostF(h)}>{h==='ALL'?`All (${allP.length})`:h}</button>)}
++            </div>
++            <button style={{...s.btnSm,background:pUncontactedOnly?'#f85149':'var(--surface2)',color:pUncontactedOnly?'#fff':'var(--text)',border:pUncontactedOnly?'1px solid #f85149':'1px solid var(--border)'}} onClick={()=>setPUncontactedOnly(v=>!v)}>❌ Not contacted only</button>
++            <div style={{marginLeft:'auto',display:'flex',gap:12,fontSize:12,alignItems:'center'}}>
++              <span style={{color:'#3fb950',fontWeight:700}}>✅ {pContacted} contacted</span>
++              <span style={{color:'#f85149',fontWeight:700}}>❌ {pNotYet} not yet</span>
++              <span style={{color:'var(--muted)'}}>{MONTHS[month]}: {allP.length?Math.round(pContacted/allP.length*100):0}%</span>
++            </div>
++          </div>
++          <div style={{overflowX:'auto'}}><table style={s.tbl}><thead><tr>{['Player','Host','Risk','Days Inactive','Last Deposit','Last Contact','This Month','Actions'].map(h=><th key={h} style={s.th}>{h}</th>)}</tr></thead>
++            <tbody>{pVips.map(v=>{const isC=contactedSet.has(v.username);return(
++              <tr key={v.id}>
++                <td style={s.td}><span style={{display:'inline-flex',alignItems:'center',gap:4}}><button style={{background:'none',border:0,padding:0,cursor:'pointer',color:'var(--text)',fontWeight:700}} onClick={()=>navigate(`/vips/${v.id}`)}>{v.username}</button><button title="Copy username" onClick={e=>{e.stopPropagation();navigator.clipboard.writeText(v.username)}} style={{background:'none',border:'none',color:'var(--muted)',cursor:'pointer',fontSize:12,padding:'0 2px',lineHeight:1,opacity:.6}} onMouseEnter={e=>e.currentTarget.style.opacity=1} onMouseLeave={e=>e.currentTarget.style.opacity=.6}>⎘</button></span></td>
++                <td style={s.td}>{v.host_assigned||'—'}</td>
++                <td style={s.td}>{v.risk_level?<span style={{padding:'2px 8px',borderRadius:12,fontSize:11,fontWeight:700,background:RISK_BG[v.risk_level]||'transparent',color:RISK_COLOR[v.risk_level]||'var(--muted)'}}>{v.risk_level}</span>:'—'}</td>
++                <td style={{...s.td,fontVariantNumeric:'tabular-nums'}}>{v.days_inactive||0}d</td>
++                <td style={s.td}>{v.last_deposit_date||'—'}</td>
++                <td style={{...s.td,fontSize:12,color:'var(--muted)'}}>{v.last_contacted?new Date(v.last_contacted).toLocaleDateString('en-MY',{day:'2-digit',month:'short'}):'Never'}</td>
++                <td style={s.td}><span style={{fontSize:12,fontWeight:700,color:isC?'#3fb950':'#f85149'}}>{isC?'✅ Done':'❌ Not yet'}</span></td>
++                <td style={s.td}><div style={{display:'flex',gap:5,flexWrap:'wrap'}}><WaButton v={v}/><button style={s.btnSm} onClick={()=>navigate(`/vips/${v.id}`)}>Open</button>{!reactivatedSet.has(v.username)&&<button style={{...s.btnSm,background:'#3fb950',color:'#fff',border:0,fontWeight:700}} onClick={()=>setReactivateModal(v)}>✅ Reactivate</button>}</div></td>
++              </tr>
++            )})}
++            {!pVips.length&&<tr><td colSpan="8" style={{...s.td,textAlign:'center',color:'var(--muted)'}}>No Platinum VIPs match the filter.</td></tr>}
++            </tbody></table></div>
++        </div>)
++      })()}
+     </div>
+     {reactivateModal&&<ReactivateModal vip={reactivateModal} month={monthStr} onClose={()=>setReactivateModal(null)} onSaved={loadAll}/>} 
+   </div>
+diff --git a/src/pages/KPIProgress.jsx b/src/pages/KPIProgress.jsx
+index 87ee410..4ed7b53 100644
+--- a/src/pages/KPIProgress.jsx
++++ b/src/pages/KPIProgress.jsx
+@@ -350,6 +350,38 @@ export default function KPIProgress() {
+             </div>
+           ))}
+ 
++          {/* Diamond Coverage Breakdown */}
++          {autoData.diamond_uncovered !== undefined && (
++            <div style={{ ...s.card, border:'1px solid rgba(99,102,241,.3)' }}>
++              <div style={{ padding:'12px 20px', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:8 }}>
++                <div style={{ fontSize:13, fontWeight:700 }}>💎 Diamond 1对1 Breakdown — {MONTHS[month]} {year}</div>
++                <div style={{ display:'flex', gap:12, fontSize:12 }}>
++                  <span style={{ color:'#3fb950', fontWeight:700 }}>✅ Contacted: {autoData.diamond_contacted ?? 0}</span>
++                  <span style={{ color:'#f85149', fontWeight:700 }}>❌ Not yet: {(autoData.diamond_uncovered || []).length}</span>
++                  <span style={{ color:'var(--muted)' }}>Total: {autoData.diamond_total ?? 0}</span>
++                </div>
++              </div>
++              {(autoData.diamond_uncovered || []).length === 0 ? (
++                <div style={{ padding:'20px', textAlign:'center', color:'#3fb950', fontSize:13, fontWeight:600 }}>
++                  🎉 All Diamond players contacted this month!
++                </div>
++              ) : (
++                <div style={{ padding:'14px 20px' }}>
++                  <div style={{ fontSize:11, color:'var(--muted)', marginBottom:10, fontWeight:600 }}>
++                    NOT YET CONTACTED ({(autoData.diamond_uncovered || []).length} players) — contact them to improve your coverage rate
++                  </div>
++                  <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
++                    {(autoData.diamond_uncovered || []).map(d => (
++                      <span key={d.id} style={{ padding:'4px 10px', background:'rgba(248,81,73,.1)', border:'1px solid rgba(248,81,73,.3)', borderRadius:8, fontSize:12, fontWeight:600, color:'#f85149' }}>
++                        {d.username}
++                      </span>
++                    ))}
++                  </div>
++                </div>
++              )}
++            </div>
++          )}
++
+           {/* Auto data note */}
+           <div style={{ padding:'10px 14px', background:'rgba(6,182,212,.06)', border:'1px solid rgba(6,182,212,.2)', borderRadius:8, fontSize:12, color:'#06b6d4', marginTop:4 }}>
+             {t('kpi.autoCalculatedNote')}
+-- 
+2.43.0
+

@@ -1,0 +1,26 @@
+From 6e06bd7f2072e8e9b5414290810cca9cc8b8bc27 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 24 Sep 2026 04:42:53 +0000
+Subject: [PATCH 31/39] fix: widen Upgrades page to 1600px max-width to reduce
+ horizontal scroll
+
+---
+ src/pages/Upgrades.jsx | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/pages/Upgrades.jsx b/src/pages/Upgrades.jsx
+index 57ad172..8a36629 100644
+--- a/src/pages/Upgrades.jsx
++++ b/src/pages/Upgrades.jsx
+@@ -65,7 +65,7 @@ const monthsAgo = (dateStr) => {
+ 
+ // ── Styles ────────────────────────────────────────────────────────────────────
+ const s = {
+-  page:    { padding: '28px 32px', color: 'var(--text)', maxWidth: 1100, margin: '0 auto' },
++  page:    { padding: '28px 20px', color: 'var(--text)', maxWidth: 1600, margin: '0 auto' },
+   heading: { fontSize: 22, fontWeight: 700, marginBottom: 4 },
+   sub:     { fontSize: 13, color: 'var(--muted)', marginBottom: 22 },
+ 
+-- 
+2.43.0
+

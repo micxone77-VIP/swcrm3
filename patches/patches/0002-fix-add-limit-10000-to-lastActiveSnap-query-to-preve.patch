@@ -1,0 +1,49 @@
+From 1a89d550698c4621c64e5e13a54d30e2ddfabc3f Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Wed, 16 Sep 2026 14:40:40 +0000
+Subject: [PATCH 02/39] fix: add limit(10000) to lastActiveSnap query to
+ prevent row truncation
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Supabase default cap is 1000 rows — without an explicit limit, the
+last-active-date query could be silently cut off for larger snapshot
+tables, causing players to show 'No data' instead of their real
+last-active date. Also removes a redundant intermediate variable.
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01DqGp4gVeTBMvwho4pP8n8C
+---
+ src/pages/ActiveTracker.jsx | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/src/pages/ActiveTracker.jsx b/src/pages/ActiveTracker.jsx
+index cc2914b..cd04513 100644
+--- a/src/pages/ActiveTracker.jsx
++++ b/src/pages/ActiveTracker.jsx
+@@ -54,7 +54,8 @@ export default function ActiveTracker() {
+         .select('username, snapshot_date')
+         .or(ACTIVE_FILTER)
+         .gte('snapshot_date', fmt(pad(90)))
+-        .order('snapshot_date', { ascending: false }),
++        .order('snapshot_date', { ascending: false })
++        .limit(10000),
+     ])
+ 
+     const activeThisWeek  = new Set((thisSnap  || []).map(r => r.username))
+@@ -229,10 +230,9 @@ function Section({ title, subtitle, color, players, activeThisWeek, activeLastWe
+                   const wasLW = activeLastWeek.has(p.username)
+                   const activeMo = activeThisMonth.has(p.username)
+                   const lastActiveDate = lastActiveDateMap?.[p.username]
+-                  const snapDays = lastActiveDate
++                  const daysVal = lastActiveDate
+                     ? Math.floor((Date.now() - new Date(lastActiveDate).getTime()) / 86400000)
+                     : null
+-                  const daysVal = snapDays !== null ? snapDays : null
+                   const daysLabel = daysVal === null ? 'No data' : daysVal === 0 ? 'Today' : daysVal === 1 ? '1 day' : `${daysVal} days`
+                   const daysColor = daysVal === null ? 'var(--muted)' : daysVal >= 14 ? '#f85149' : daysVal >= 7 ? '#d29922' : '#3fb950'
+                   return (
+-- 
+2.43.0
+

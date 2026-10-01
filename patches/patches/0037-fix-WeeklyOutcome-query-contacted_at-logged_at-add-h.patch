@@ -1,0 +1,53 @@
+From b9ce5b052ce116184a14eb29096f394b31355b51 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sun, 27 Sep 2026 02:23:36 +0000
+Subject: [PATCH 37/39] =?UTF-8?q?fix:=20WeeklyOutcome=20query=20contacted?=
+ =?UTF-8?q?=5Fat=20=E2=86=92=20logged=5Fat,=20add=20host=5Fname=20field?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ src/pages/WeeklyOutcome.jsx | 12 ++++++------
+ 1 file changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/src/pages/WeeklyOutcome.jsx b/src/pages/WeeklyOutcome.jsx
+index 06bae3b..c5e75c7 100644
+--- a/src/pages/WeeklyOutcome.jsx
++++ b/src/pages/WeeklyOutcome.jsx
+@@ -54,10 +54,10 @@ export default function WeeklyOutcome() {
+       setLoading(true)
+       const { data } = await supabase
+         .from('contact_logs')
+-        .select('id,vip_id,contact_type,outcome,notes,contacted_at,vip_members(username,tier,host_assigned)')
+-        .gte('contacted_at', start.toISOString())
+-        .lte('contacted_at', end.toISOString())
+-        .order('contacted_at', { ascending: false })
++        .select('id,vip_id,contact_type,outcome,notes,logged_at,host_name,vip_members(username,tier,host_assigned)')
++        .gte('logged_at', start.toISOString())
++        .lte('logged_at', end.toISOString())
++        .order('logged_at', { ascending: false })
+         .limit(500)
+       setLogs(data || [])
+       setLoading(false)
+@@ -74,7 +74,7 @@ export default function WeeklyOutcome() {
+   // Per-host breakdown
+   const byHost = {}
+   logs.forEach(l => {
+-    const host = l.vip_members?.host_assigned || 'Unassigned'
++    const host = l.host_name || l.vip_members?.host_assigned || 'Unassigned'
+     if (!byHost[host]) byHost[host] = { total:0 }
+     OUTCOMES.forEach(o => { if (!byHost[host][o]) byHost[host][o] = 0 })
+     byHost[host].total++
+@@ -176,7 +176,7 @@ export default function WeeklyOutcome() {
+             <tbody>
+               {logs.map(l => (
+                 <tr key={l.id}>
+-                  <td style={s.td}>{l.contacted_at?.slice(0,10) || '-'}</td>
++                  <td style={s.td}>{l.logged_at?.slice(0,10) || '-'}</td>
+                   <td style={s.td}><strong>{l.vip_members?.username || l.vip_id}</strong></td>
+                   <td style={s.td}>{l.vip_members?.tier || '-'}</td>
+                   <td style={s.td}>{l.vip_members?.host_assigned || '-'}</td>
+-- 
+2.43.0
+

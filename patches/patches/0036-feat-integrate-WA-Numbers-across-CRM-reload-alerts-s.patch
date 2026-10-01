@@ -1,0 +1,470 @@
+From a57333e5617f85ba1e6e250c2b9a595638b1319e Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sat, 26 Sep 2026 04:56:16 +0000
+Subject: [PATCH 36/39] =?UTF-8?q?feat:=20integrate=20WA=20Numbers=20across?=
+ =?UTF-8?q?=20CRM=20=E2=80=94=20reload=20alerts,=20sender=20selector,=20WA?=
+ =?UTF-8?q?=20buttons?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ src/pages/AtRisk.jsx         | 53 ++++++++++++++++++++++++
+ src/pages/ContactLog.jsx     | 24 ++++++++++-
+ src/pages/FollowUp.jsx       | 50 ++++++++++++++++++++++
+ src/pages/Today.jsx          | 80 +++++++++++++++++++++++++++++++++++-
+ src/pages/Upgrades.jsx       | 27 +++++++++++-
+ wa_number_used_migration.sql |  5 +++
+ 6 files changed, 234 insertions(+), 5 deletions(-)
+ create mode 100644 wa_number_used_migration.sql
+
+diff --git a/src/pages/AtRisk.jsx b/src/pages/AtRisk.jsx
+index 53fed7a..5ff13f7 100644
+--- a/src/pages/AtRisk.jsx
++++ b/src/pages/AtRisk.jsx
+@@ -9,6 +9,44 @@ import {
+ import { TierBadge, RiskBadge } from '../components/ui'
+ import { formatMoney } from '../lib/format'
+ import { useLanguage } from '../contexts/LanguageContext'
++import { useAuth } from '../hooks/useAuth'
++
++function WaSenderModal({ vip, waNumbers, myName, onClose }) {
++  const [sender, setSender] = useState(waNumbers[0]?.codename || '')
++  const rawWa = (vip.whatsapp || vip.phone || '').replace(/[\s\-()]/g, '')
++  const waNumber = rawWa.startsWith('+') ? rawWa.slice(1) : rawWa
++  function openWA() {
++    const text = `Hi ${vip.username}, this is ${myName || 'your VIP host'} from SureWin.`
++    window.open(`https://wa.me/${waNumber}?text=${encodeURIComponent(text)}`, '_blank')
++    onClose()
++  }
++  return (
++    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.6)', zIndex:2000, display:'flex', alignItems:'center', justifyContent:'center' }} onClick={onClose}>
++      <div style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:12, padding:24, width:340, boxShadow:'0 16px 48px rgba(0,0,0,.5)' }} onClick={e => e.stopPropagation()}>
++        <div style={{ fontWeight:700, marginBottom:12, fontSize:15 }}>💬 WhatsApp {vip.username}</div>
++        {waNumbers.length > 0 ? (
++          <>
++            <div style={{ fontSize:12, color:'var(--muted)', marginBottom:6 }}>Send as (codename)</div>
++            <select value={sender} onChange={e => setSender(e.target.value)}
++              style={{ width:'100%', background:'var(--surface2)', border:'1px solid var(--border)', color:'var(--text)', padding:'8px 12px', borderRadius:8, fontSize:13, outline:'none', marginBottom:14 }}>
++              {waNumbers.map(n => <option key={n.id} value={n.codename}>{n.codename} — {n.number}{n.telco?' ('+n.telco+')':''}</option>)}
++            </select>
++          </>
++        ) : (
++          <div style={{ fontSize:12, color:'var(--muted)', marginBottom:14 }}>No active WA numbers. <a href="/wa-numbers" style={{ color:'var(--accent)' }}>Add one</a></div>
++        )}
++        {!waNumber && <div style={{ fontSize:12, color:'#d29922', marginBottom:12 }}>⚠️ No phone/WhatsApp on file for this VIP.</div>}
++        <div style={{ display:'flex', gap:8, justifyContent:'flex-end' }}>
++          <button onClick={onClose} style={{ background:'var(--surface2)', border:'1px solid var(--border)', color:'var(--text)', padding:'8px 16px', borderRadius:8, cursor:'pointer', fontSize:13 }}>Cancel</button>
++          <button onClick={openWA} disabled={!waNumber}
++            style={{ background:'#25D366', border:'none', color:'#fff', padding:'8px 18px', borderRadius:8, fontWeight:700, fontSize:13, cursor:waNumber?'pointer':'not-allowed', opacity:waNumber?1:0.5 }}>
++            Open WhatsApp
++          </button>
++        </div>
++      </div>
++    </div>
++  )
++}
+ 
+ function daysAgoLabel(d) {
+   if (!d) return '—'
+@@ -22,12 +60,24 @@ const RISK_LEVELS = ['All', 'Critical', 'High', 'Medium']
+ export default function AtRisk() {
+   const navigate = useNavigate()
+   const { t } = useLanguage()
++  const { profile } = useAuth()
+   const [vips, setVips]       = useState([])
+   const [loading, setLoading] = useState(true)
+   const [error, setError]     = useState(null)
+   const [riskFilter, setRiskFilter] = useState('All')
+   const [host, setHost]       = useState('All')
+   const [hosts, setHosts]     = useState(['All'])
++  const [waNumbers, setWaNumbers] = useState([])
++  const [waTarget, setWaTarget] = useState(null)
++
++  useEffect(() => {
++    if (!profile) return
++    const myName = profile.full_name || profile.username || ''
++    if (myName) {
++      supabase.from('wa_numbers').select('id,codename,number,telco').eq('host', myName).eq('status','Active')
++        .then(({ data }) => setWaNumbers(data || []))
++    }
++  }, [profile])
+ 
+   useEffect(() => {
+     (async () => {
+@@ -76,6 +126,7 @@ export default function AtRisk() {
+ 
+   return (
+     <div style={{ padding: '24px 28px' }}>
++      {waTarget && <WaSenderModal vip={waTarget} waNumbers={waNumbers} myName={profile?.full_name || ''} onClose={() => setWaTarget(null)} />}
+       <PageHeader title={t('atRisk.title')} subtitle={t('atRisk.subtitle')} />
+ 
+       {/* KPIs */}
+@@ -150,6 +201,8 @@ export default function AtRisk() {
+                       <td style={{ padding:'10px 14px', borderBottom:'1px solid var(--border)' }}>
+                         <div style={{ display:'flex', gap:6 }}>
+                           <Btn size="sm" variant="primary" onClick={e => { e.stopPropagation(); navigate(`/vips/${v.id}`) }}>{t('atRisk.openVip')}</Btn>
++                          <button title="Send WhatsApp" onClick={e => { e.stopPropagation(); setWaTarget(v) }}
++                            style={{ width:28, height:28, borderRadius:14, background:'#25D366', border:'none', color:'#fff', fontSize:13, fontWeight:700, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>W</button>
+                         </div>
+                       </td>
+                     </tr>
+diff --git a/src/pages/ContactLog.jsx b/src/pages/ContactLog.jsx
+index d3f4d34..3e4485c 100644
+--- a/src/pages/ContactLog.jsx
++++ b/src/pages/ContactLog.jsx
+@@ -356,6 +356,15 @@ export default function ContactLog() {
+   const [page,     setPage]     = useUrlParamNumber('page', 0)
+   const [hosts,    setHosts]    = useState([])
+   const [stats,    setStats]    = useState({ total:0, today:0, positive:0, bonusTotal:0 })
++  const [waNumbers, setWaNumbers]   = useState([])
++  useEffect(() => {
++    if (!profile) return
++    const myName = profile.full_name || profile.username || (profile.email ? profile.email.split('@')[0] : '')
++    if (!myName) return
++    supabase.from('wa_numbers').select('id,codename,number,telco').eq('host', myName).eq('status','Active')
++      .then(({ data }) => setWaNumbers(data || []))
++  }, [profile])
++
+   const [showForm, setShowForm]     = useState(false)
+   const [notePopup, setNotePopup]   = useState(null) // { username, notes }
+   const [editingLogId, setEditingLogId]       = useState(null)
+@@ -370,7 +379,7 @@ export default function ContactLog() {
+   const [submitting,   setSubmitting]  = useState(false)
+   const [logForm, setLogForm] = useState({
+     contact_type:'WhatsApp', outcome:'Contacted',
+-    bonus_offered:'', bonus_type:'', notes:'',
++    bonus_offered:'', bonus_type:'', notes:'', wa_number_used:'',
+   })
+   const vipSearchRef = useRef(null)
+ 
+@@ -471,6 +480,7 @@ export default function ContactLog() {
+       logged_at:       new Date().toISOString(),
+       log_month:       new Date().toISOString().slice(0,7),
+       log_week:        String(Math.ceil(new Date().getDate()/7)),
++      wa_number_used:  logForm.wa_number_used || null,
+     }).select('id').single()
+     if (insertError) { console.error(insertError); alert('Error: ' + insertError.message) }
+     else if (inserted?.id && logForm.notes.trim()) {
+@@ -487,7 +497,7 @@ export default function ContactLog() {
+         })
+         .catch(e => console.error('Auto-tag failed (log was still saved):', e))
+     }
+-    setLogForm({ contact_type:'WhatsApp', outcome:'Contacted', bonus_offered:'', bonus_type:'', notes:'' })
++    setLogForm({ contact_type:'WhatsApp', outcome:'Contacted', bonus_offered:'', bonus_type:'', notes:'', wa_number_used:'' })
+     setSelectedVip(null); setVipSearch(''); setVipResults([])
+     setManualMode(false); setManualUsername(''); setManualTier('GOLD')
+     setShowForm(false); setSubmitting(false)
+@@ -659,6 +669,16 @@ export default function ContactLog() {
+                   placeholder="e.g. Reload, Birthday, Cashback" />
+               </div>
+             </div>
++            {logForm.contact_type === 'WhatsApp' && waNumbers.length > 0 && (
++              <div style={{ marginBottom:12 }}>
++                <div style={s.flbl}>📱 Send as (WA number)</div>
++                <select style={{ ...s.fsel, marginTop:4 }} value={logForm.wa_number_used}
++                  onChange={e => setLogForm({...logForm, wa_number_used:e.target.value})}>
++                  <option value="">— Not specified —</option>
++                  {waNumbers.map(n => <option key={n.id} value={n.codename}>{n.codename} — {n.number}{n.telco?' ('+n.telco+')':''}</option>)}
++                </select>
++              </div>
++            )}
+             <div style={{ marginBottom:14 }}>
+               <div style={s.flbl}>Notes *</div>
+               <textarea style={{ ...s.fta, marginTop:4 }} rows={3}
+diff --git a/src/pages/FollowUp.jsx b/src/pages/FollowUp.jsx
+index ec0292d..ce26ae0 100644
+--- a/src/pages/FollowUp.jsx
++++ b/src/pages/FollowUp.jsx
+@@ -15,6 +15,43 @@ function daysAgoLabel(d) {
+ 
+ const OUTCOMES = ['Contacted', 'No Reply', 'Replied', 'Deposited', 'Reactivated']
+ 
++function WaSenderModal({ vip, waNumbers, myName, onClose }) {
++  const [sender, setSender] = useState(waNumbers[0]?.codename || '')
++  const rawWa = (vip.whatsapp || vip.phone || '').replace(/[\s\-()]/g, '')
++  const waNumber = rawWa.startsWith('+') ? rawWa.slice(1) : rawWa
++  function openWA() {
++    const text = `Hi ${vip.username}, this is ${myName || 'your VIP host'} from SureWin.`
++    window.open(`https://wa.me/${waNumber}?text=${encodeURIComponent(text)}`, '_blank')
++    onClose()
++  }
++  return (
++    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.6)', zIndex:2000, display:'flex', alignItems:'center', justifyContent:'center' }} onClick={onClose}>
++      <div style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:12, padding:24, width:340, boxShadow:'0 16px 48px rgba(0,0,0,.5)' }} onClick={e => e.stopPropagation()}>
++        <div style={{ fontWeight:700, marginBottom:12, fontSize:15 }}>💬 WhatsApp {vip.username}</div>
++        {waNumbers.length > 0 ? (
++          <>
++            <div style={{ fontSize:12, color:'var(--muted)', marginBottom:6 }}>Send as (codename)</div>
++            <select value={sender} onChange={e => setSender(e.target.value)}
++              style={{ width:'100%', background:'var(--surface2)', border:'1px solid var(--border)', color:'var(--text)', padding:'8px 12px', borderRadius:8, fontSize:13, outline:'none', marginBottom:14 }}>
++              {waNumbers.map(n => <option key={n.id} value={n.codename}>{n.codename} — {n.number}{n.telco?' ('+n.telco+')':''}</option>)}
++            </select>
++          </>
++        ) : (
++          <div style={{ fontSize:12, color:'var(--muted)', marginBottom:14 }}>No active WA numbers. <a href="/wa-numbers" style={{ color:'var(--accent)' }}>Add one</a></div>
++        )}
++        {!waNumber && <div style={{ fontSize:12, color:'#d29922', marginBottom:12 }}>⚠️ No phone/WhatsApp on file for this VIP.</div>}
++        <div style={{ display:'flex', gap:8, justifyContent:'flex-end' }}>
++          <button onClick={onClose} style={{ background:'var(--surface2)', border:'1px solid var(--border)', color:'var(--text)', padding:'8px 16px', borderRadius:8, cursor:'pointer', fontSize:13 }}>Cancel</button>
++          <button onClick={openWA} disabled={!waNumber}
++            style={{ background:'#25D366', border:'none', color:'#fff', padding:'8px 18px', borderRadius:8, fontWeight:700, fontSize:13, cursor:waNumber?'pointer':'not-allowed', opacity:waNumber?1:0.5 }}>
++            Open WhatsApp
++          </button>
++        </div>
++      </div>
++    </div>
++  )
++}
++
+ const TIER_FILTERS = ['ALL','BLACK','DIAMOND','PLATINUM','GOLD','SILVER','BRONZE']
+ 
+ export default function FollowUp() {
+@@ -36,6 +73,16 @@ export default function FollowUp() {
+   const [recoveryAmount, setRecoveryAmount] = useState('')
+   const [recoveryCurrency, setRecoveryCurrency] = useState('')
+   const [logSaving, setLogSaving] = useState(false)
++  const [waNumbers, setWaNumbers] = useState([])
++  const [waTarget, setWaTarget] = useState(null)
++
++  useEffect(() => {
++    if (!profile) return
++    const myName = profile.full_name || profile.username || ''
++    if (!myName) return
++    supabase.from('wa_numbers').select('id,codename,number,telco').eq('host', myName).eq('status','Active')
++      .then(({ data }) => setWaNumbers(data || []))
++  }, [profile])
+ 
+   const load = async () => {
+     setLoading(true); setLoadError('')
+@@ -182,6 +229,8 @@ export default function FollowUp() {
+                         <div style={{ display:'flex', gap:6 }}>
+                           <Btn size="sm" variant="primary" onClick={e => { e.stopPropagation(); openLog(v) }}>{t('followUp.logContact')}</Btn>
+                           <Btn size="sm" variant="ghost" onClick={e => { e.stopPropagation(); navigate(`/vips/${v.id}`) }}>{t('followUp.open')}</Btn>
++                          <button title="Send WhatsApp" onClick={e => { e.stopPropagation(); setWaTarget(v) }}
++                            style={{ width:28, height:28, borderRadius:14, background:'#25D366', border:'none', color:'#fff', fontSize:13, fontWeight:700, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>W</button>
+                         </div>
+                       </td>
+                     </tr>
+@@ -192,6 +241,7 @@ export default function FollowUp() {
+           </div>
+         )}
+       </Card>
++      {waTarget && <WaSenderModal vip={waTarget} waNumbers={waNumbers} myName={profile?.full_name || ''} onClose={() => setWaTarget(null)} />}
+       <Modal open={!!logTarget} onClose={() => { if (!logSaving) { setLogTarget(null); setLogNote(''); setRecoveryAmount(''); setRecoveryCurrency('') } }} title={t('followUp.logTitle')} width={420}>
+         {logTarget && <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+           <div style={{ fontSize:14, fontWeight:600 }}>{logTarget.username}{logTarget.full_name ? ` — ${logTarget.full_name}` : ''}</div>
+diff --git a/src/pages/Today.jsx b/src/pages/Today.jsx
+index 6e826da..5af7aee 100644
+--- a/src/pages/Today.jsx
++++ b/src/pages/Today.jsx
+@@ -62,10 +62,55 @@ export default function Today() {
+     contactedTodaySet, hostVips, getDays,
+   } = useDashboard({ host })
+ 
++  // WA reload alerts
++  const [waAlerts, setWaAlerts] = useState([])
++  const [waNumbers, setWaNumbers] = useState([])
++  useEffect(() => {
++    if (!profile) return
++    const myName = profile.full_name || profile.username || ''
++    if (!myName) return
++    const today = new Date(); today.setHours(0,0,0,0)
++    supabase.from('wa_numbers')
++      .select('id, codename, number, telco, status, last_reload_date, valid_until')
++      .eq('host', myName)
++      .in('status', ['Active', 'Cooling', 'Standby'])
++      .then(({ data }) => {
++        const all = data || []
++        setWaNumbers(all.filter(n => n.status === 'Active'))
++        const alerts = all.filter(n => {
++          if (!['Active','Cooling'].includes(n.status)) return false
++          let urgent = false, warn = false
++          if (n.last_reload_date) {
++            const days = Math.floor((today - new Date(n.last_reload_date)) / 86400000)
++            if (days >= 30) urgent = true
++            else if (days >= 25) warn = true
++          }
++          if (n.valid_until) {
++            const daysLeft = Math.floor((new Date(n.valid_until) - today) / 86400000)
++            if (daysLeft <= 7) urgent = true
++          }
++          return urgent || warn
++        }).map(n => {
++          let level = 'warn'
++          if (n.last_reload_date) {
++            const days = Math.floor((today - new Date(n.last_reload_date)) / 86400000)
++            if (days >= 30) level = 'urgent'
++          }
++          if (n.valid_until) {
++            const daysLeft = Math.floor((new Date(n.valid_until) - today) / 86400000)
++            if (daysLeft <= 7) level = 'urgent'
++          }
++          return { ...n, level }
++        })
++        setWaAlerts(alerts)
++      })
++  }, [profile])
++
+   // Quick-log modal
+   const [logTarget, setLogTarget] = useState(null)
+   const [logOutcome, setLogOutcome] = useState('Replied')
+   const [logNote, setLogNote] = useState('')
++  const [logWaNumber, setLogWaNumber] = useState('')
+   const [logSaving, setLogSaving] = useState(false)
+ 
+   const now = new Date()
+@@ -84,11 +129,12 @@ export default function Today() {
+       host_name: profile?.full_name || null,
+       logged_at: new Date().toISOString(),
+       created_at: new Date().toISOString(),
++      wa_number_used: logWaNumber || null,
+     })
+     setLogSaving(false)
+     if (err) { toast('Failed to log contact: ' + err.message, 'error'); return }
+     toast(`Logged: ${logTarget.username} — ${logOutcome}`, 'success')
+-    setLogTarget(null); setLogNote(''); setLogOutcome('Replied')
++    setLogTarget(null); setLogNote(''); setLogOutcome('Replied'); setLogWaNumber('')
+     refresh()
+   }
+ 
+@@ -218,6 +264,27 @@ export default function Today() {
+         </div>
+       </Card>
+ 
++      {/* ── WA Reload Alerts ── */}
++      {waAlerts.length > 0 && (
++        <div style={{ background: waAlerts.some(a=>a.level==='urgent') ? 'rgba(248,81,73,.1)' : 'rgba(210,153,34,.1)', border: `1px solid ${waAlerts.some(a=>a.level==='urgent') ? 'rgba(248,81,73,.4)' : 'rgba(210,153,34,.4)'}`, borderRadius: 10, padding: '12px 16px', marginBottom: 16 }}>
++          <div style={{ fontSize: 12, fontWeight: 700, color: waAlerts.some(a=>a.level==='urgent') ? '#f85149' : '#d29922', marginBottom: 8 }}>
++            📱 {waAlerts.some(a=>a.level==='urgent') ? '🚨 URGENT' : '⚠️'} WA Number Reload Reminder ({waAlerts.length})
++          </div>
++          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
++            {waAlerts.map(n => (
++              <span key={n.id} style={{ display:'inline-flex', alignItems:'center', gap:5, background: n.level==='urgent'?'rgba(248,81,73,.15)':'rgba(210,153,34,.15)', border:`1px solid ${n.level==='urgent'?'rgba(248,81,73,.5)':'rgba(210,153,34,.5)'}`, borderRadius:7, padding:'4px 10px', fontSize:11 }}>
++                <span style={{ fontWeight:700, color: n.level==='urgent'?'#f85149':'#d29922' }}>{n.codename}</span>
++                <span style={{ color:'var(--muted)' }}>{n.number}</span>
++                {n.last_reload_date && <span style={{ color:'var(--muted)' }}>· {Math.floor((new Date()-new Date(n.last_reload_date))/86400000)}d since reload</span>}
++              </span>
++            ))}
++          </div>
++          <div style={{ marginTop:8, fontSize:11, color:'var(--muted)' }}>
++            Go to <a href="/wa-numbers" style={{ color:'var(--accent)' }}>WA Numbers</a> to update reload dates.
++          </div>
++        </div>
++      )}
++
+       {/* ── Priority Queue ── */}
+       <Card>
+         <CardHeader>
+@@ -326,12 +393,21 @@ export default function Today() {
+                 {OUTCOMES.map(o => <option key={o} value={o}>{o}</option>)}
+               </Select>
+             </div>
++            {waNumbers.length > 0 && (
++              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
++                <label style={{ fontSize: 12, color: 'var(--muted)' }}>📱 Send as (WA number)</label>
++                <Select value={logWaNumber} onChange={e => setLogWaNumber(e.target.value)}>
++                  <option value="">— Not specified —</option>
++                  {waNumbers.map(n => <option key={n.id} value={n.codename}>{n.codename} ({n.number}{n.telco ? ' · '+n.telco : ''})</option>)}
++                </Select>
++              </div>
++            )}
+             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+               <label style={{ fontSize: 12, color: 'var(--muted)' }}>{t('today.notesLabel')}</label>
+               <Textarea value={logNote} onChange={e => setLogNote(e.target.value)} placeholder={t('today.notesPlaceholder')} rows={3} />
+             </div>
+             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+-              <Btn variant="ghost" onClick={() => { setLogTarget(null); setLogNote('') }}>{t('common.cancel')}</Btn>
++              <Btn variant="ghost" onClick={() => { setLogTarget(null); setLogNote(''); setLogWaNumber('') }}>{t('common.cancel')}</Btn>
+               <Btn variant="primary" onClick={submitLog} disabled={logSaving}>
+                 {logSaving ? t('today.savingLog') : t('today.saveLog')}
+               </Btn>
+diff --git a/src/pages/Upgrades.jsx b/src/pages/Upgrades.jsx
+index 8a6a080..099bede 100644
+--- a/src/pages/Upgrades.jsx
++++ b/src/pages/Upgrades.jsx
+@@ -321,9 +321,10 @@ function ConfirmUpgradeModal({ player, isPotential, onClose, onConfirm }) {
+ 
+ 
+ // ── WhatsApp Template Modal ───────────────────────────────────────────────────
+-function WhatsAppModal({ player, agentName, onClose }) {
++function WhatsAppModal({ player, agentName, waNumbers = [], onClose }) {
+   const [lang, setLang]     = useState('en')
+   const [copied, setCopied] = useState(false)
++  const [sender, setSender] = useState(waNumbers[0]?.codename || '')
+ 
+   // Normalize stored whatsapp/phone number — strip spaces, dashes, leading +
+   const rawWa = (player.whatsapp || player.phone || '').replace(/[\s\-()]/g, '')
+@@ -467,6 +468,16 @@ function WhatsAppModal({ player, agentName, onClose }) {
+           <button style={s.outlineBtn('var(--muted)')} onClick={onClose}>Close</button>
+         </div>
+ 
++        {waNumbers.length > 0 && (
++          <div style={{ marginTop: 12 }}>
++            <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>📱 Send as (codename)</div>
++            <select value={sender} onChange={e => setSender(e.target.value)}
++              style={{ width:'100%', background:'var(--surface2)', border:'1px solid var(--border)', color:'var(--text)', padding:'7px 10px', borderRadius:8, fontSize:12, outline:'none' }}>
++              {waNumbers.map(n => <option key={n.id} value={n.codename}>{n.codename} — {n.number}{n.telco?' ('+n.telco+')':''}</option>)}
++            </select>
++          </div>
++        )}
++
+         <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 10, textAlign: 'center' }}>
+           {waNumber
+             ? <>📱 Will open chat with <strong>{rawWa}</strong> directly</>
+@@ -570,6 +581,12 @@ function VIPCandidatesTab({ hostFilter = 'ALL' }) {
+   const [waModal, setWaModal]       = useState(null)
+   const [selectedMonth, setSelectedMonth] = useUrlParam('vMonth', '')
+   const [availableMonths, setAvailableMonths] = useState([])
++  const [waNumbers, setWaNumbers] = useState([])
++  useEffect(() => {
++    if (!myName) return
++    supabase.from('wa_numbers').select('id,codename,number,telco').eq('host', myName).eq('status','Active')
++      .then(({ data }) => setWaNumbers(data || []))
++  }, [myName])
+ 
+   useEffect(() => {
+     const init = async () => {
+@@ -857,6 +874,7 @@ function VIPCandidatesTab({ hostFilter = 'ALL' }) {
+         <WhatsAppModal
+           player={waModal}
+           agentName={myName || 'Agent'}
++          waNumbers={waNumbers}
+           onClose={() => setWaModal(null)}
+         />
+       )}
+@@ -1274,6 +1292,12 @@ function TierHistoryTab({ hostFilter = 'ALL' }) {
+   const [hovered, setHovered]       = useState(null)
+   const [waModal, setWaModal]       = useState(null)
+   const [currentMonth, setCurrentMonth] = useState('')
++  const [waNumbers, setWaNumbers] = useState([])
++  useEffect(() => {
++    if (!myName) return
++    supabase.from('wa_numbers').select('id,codename,number,telco').eq('host', myName).eq('status','Active')
++      .then(({ data }) => setWaNumbers(data || []))
++  }, [myName])
+ 
+   const NEXT_TIER   = { GOLD: 'PLATINUM', PLATINUM: 'DIAMOND', DIAMOND: null }
+   const NEXT_THRESH = { GOLD: 2000000,    PLATINUM: 6000000,   DIAMOND: null  }
+@@ -1568,6 +1592,7 @@ function TierHistoryTab({ hostFilter = 'ALL' }) {
+         <WhatsAppModal
+           player={waModal}
+           agentName={myName || 'Agent'}
++          waNumbers={waNumbers}
+           onClose={() => setWaModal(null)}
+         />
+       )}
+diff --git a/wa_number_used_migration.sql b/wa_number_used_migration.sql
+new file mode 100644
+index 0000000..bb54c31
+--- /dev/null
++++ b/wa_number_used_migration.sql
+@@ -0,0 +1,5 @@
++-- Migration: add wa_number_used to contact_logs
++-- Run this in Supabase SQL Editor
++
++alter table public.contact_logs
++  add column if not exists wa_number_used text; -- codename of the WA number used (e.g. "Marcus A")
+-- 
+2.43.0
+

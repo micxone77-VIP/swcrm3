@@ -1,0 +1,37 @@
+From ef3b790d2d6912ae2a2dcaa87e67ad29a65ddcd8 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Wed, 16 Sep 2026 14:53:36 +0000
+Subject: [PATCH 03/39] fix: reorder lastActiveSnap query filters to match
+ working pattern
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Supabase v2 generates different URL params depending on filter chain
+order. Move .gte(snapshot_date) before .or(ACTIVE_FILTER) to match
+the same pattern used by thisSnap/lastSnap/monthSnap queries which
+work correctly — fixes 'No data' showing for all players in Days Inactive.
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01DqGp4gVeTBMvwho4pP8n8C
+---
+ src/pages/ActiveTracker.jsx | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/pages/ActiveTracker.jsx b/src/pages/ActiveTracker.jsx
+index cd04513..ceb4798 100644
+--- a/src/pages/ActiveTracker.jsx
++++ b/src/pages/ActiveTracker.jsx
+@@ -52,8 +52,8 @@ export default function ActiveTracker() {
+         .or(ACTIVE_FILTER),
+       supabase.from('vip_daily_snapshots')
+         .select('username, snapshot_date')
+-        .or(ACTIVE_FILTER)
+         .gte('snapshot_date', fmt(pad(90)))
++        .or(ACTIVE_FILTER)
+         .order('snapshot_date', { ascending: false })
+         .limit(10000),
+     ])
+-- 
+2.43.0
+

@@ -1,0 +1,150 @@
+From cfb33803515aa2c67d48f994825d5749779601c9 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Tue, 22 Sep 2026 03:54:42 +0000
+Subject: [PATCH 15/39] feat: show 2 decimal places on streak bonus amounts
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Add bonusFmt() for percentage-based bonuses — always displays
+2 decimal places (e.g. RM 496.50 instead of RM 496).
+Applied to all bonus_amount fields in Streak tab, totals,
+paid/pending summaries, and player streak mini-badges.
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01DqGp4gVeTBMvwho4pP8n8C
+---
+ src/pages/Campaigns.jsx | 37 ++++++++++++++++++++++---------------
+ 1 file changed, 22 insertions(+), 15 deletions(-)
+
+diff --git a/src/pages/Campaigns.jsx b/src/pages/Campaigns.jsx
+index ef3c598..9fdf120 100644
+--- a/src/pages/Campaigns.jsx
++++ b/src/pages/Campaigns.jsx
+@@ -64,6 +64,13 @@ function rewardFmt(n, currency) {
+   const prefix = CURRENCY_PREFIX[currency] || 'RM'
+   return prefix+' '+num.toLocaleString('en-MY', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
+ }
++// Streak/percentage bonuses — always show 2 decimal places (e.g. RM 496.50)
++function bonusFmt(n, currency) {
++  if (!n && n!==0) return '—'
++  const num = parseFloat(n)||0
++  const prefix = CURRENCY_PREFIX[currency] || 'RM'
++  return prefix+' '+num.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
++}
+ const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-MY',{day:'numeric',month:'short',year:'numeric'}) : '—'
+ 
+ // ── Styles ────────────────────────────────────────────────────────────────────
+@@ -2481,7 +2488,7 @@ export default function Campaigns() {
+                                         ? <span style={{ fontSize:10, background:'rgba(255,165,0,.1)', color:'#f59e0b', borderRadius:4, padding:'1px 5px', fontWeight:600 }}>🔥 Streak ON</span>
+                                         : <>
+                                             {paidStreaks.length > 0 && <span style={{ fontSize:10, background:'rgba(63,185,80,.15)', color:'#3fb950', borderRadius:4, padding:'1px 5px', fontWeight:600 }}>🔥×{paidStreaks.length} paid</span>}
+-                                            {pendingStreaks.map(sb => <span key={sb.streak_number} style={{ fontSize:10, background:'rgba(245,158,11,.15)', color:'#f59e0b', borderRadius:4, padding:'1px 5px', fontWeight:600 }}>🔥#{sb.streak_number} {rmFmt(sb.bonus_amount, campCurrency)}</span>)}
++                                            {pendingStreaks.map(sb => <span key={sb.streak_number} style={{ fontSize:10, background:'rgba(245,158,11,.15)', color:'#f59e0b', borderRadius:4, padding:'1px 5px', fontWeight:600 }}>🔥#{sb.streak_number} {bonusFmt(sb.bonus_amount, campCurrency)}</span>)}
+                                           </>
+                                       }
+                                     </div>
+@@ -2849,7 +2856,7 @@ export default function Campaigns() {
+                       <div style={{ padding:'10px 24px', display:'flex', alignItems:'center', gap:10, background:'rgba(245,158,11,.04)' }}>
+                         <span style={{ fontSize:13, fontWeight:800 }}>🔥 Streak Bonuses</span>
+                         {streakBonusesLoading && <span style={{ fontSize:11, color:'var(--muted)' }}>Loading…</span>}
+-                        {!streakBonusesLoading && <span style={{ fontSize:11, color:'var(--muted)' }}>{allStreakRows.length} bonus{allStreakRows.length !== 1 ? 'es' : ''} · {allStreakRows.filter(r=>r.payout_status==='paid').length} paid · {rmFmt(allStreakRows.filter(r=>r.payout_status!=='paid').reduce((s,r)=>s+(parseFloat(r.bonus_amount)||0),0), campCurrency)} pending</span>}
++                        {!streakBonusesLoading && <span style={{ fontSize:11, color:'var(--muted)' }}>{allStreakRows.length} bonus{allStreakRows.length !== 1 ? 'es' : ''} · {allStreakRows.filter(r=>r.payout_status==='paid').length} paid · {bonusFmt(allStreakRows.filter(r=>r.payout_status!=="paid").reduce((s,r)=>s+(parseFloat(r.bonus_amount)||0),0), campCurrency)} pending</span>}
+                         <button onClick={()=>loadStreakBonuses(selected.id)} style={{ marginLeft:'auto', background:'var(--surface2)', border:'1px solid var(--border)', color:'var(--muted)', padding:'3px 10px', borderRadius:5, fontSize:11, cursor:'pointer' }}>↺ Refresh</button>
+                       </div>
+                       {allStreakRows.length > 0 && (
+@@ -2878,7 +2885,7 @@ export default function Campaigns() {
+                                   <td style={{ ...s.td, color:'#f59e0b', fontWeight:700 }}>🔥 #{sb.streak_number}</td>
+                                   <td style={{ ...s.td, fontSize:11, color:'var(--muted)' }}>{fmtDate(sb.period_start)} → {fmtDate(sb.period_end)}</td>
+                                   <td style={{ ...s.td, color:'#3fb950', fontWeight:600 }}>{rmFmt(sb.period_deposit, campCurrency)}</td>
+-                                  <td style={{ ...s.td, color:'#f59e0b', fontWeight:800 }}>{rmFmt(sb.bonus_amount, campCurrency)}</td>
++                                  <td style={{ ...s.td, color:'#f59e0b', fontWeight:800 }}>{bonusFmt(sb.bonus_amount, campCurrency)}</td>
+                                   <td style={{ ...s.td, fontSize:11, color:'var(--muted)' }}>{sb.payout_date ? fmtDate(sb.payout_date) : '—'}</td>
+                                   <td style={s.td}>
+                                     <button onClick={async () => {
+@@ -2898,9 +2905,9 @@ export default function Campaigns() {
+                             })}
+                             <tr style={{ background:'var(--surface2)', fontWeight:700 }}>
+                               <td colSpan={5} style={s.td}>Total streak bonuses</td>
+-                              <td style={{ ...s.td, color:'#f59e0b', fontWeight:800 }}>{rmFmt(allStreakRows.reduce((s,r)=>s+(parseFloat(r.bonus_amount)||0),0), campCurrency)}</td>
++                              <td style={{ ...s.td, color:'#f59e0b', fontWeight:800 }}>{bonusFmt(allStreakRows.reduce((s,r)=>s+(parseFloat(r.bonus_amount)||0),0), campCurrency)}</td>
+                               <td style={s.td} />
+-                              <td style={s.td}><span style={{color:'#3fb950'}}>{rmFmt(allStreakRows.filter(r=>r.payout_status==='paid').reduce((s,r)=>s+(parseFloat(r.bonus_amount)||0),0), campCurrency)} paid</span><span style={{color:'#f85149',marginLeft:8}}>{rmFmt(allStreakRows.filter(r=>r.payout_status!=='paid').reduce((s,r)=>s+(parseFloat(r.bonus_amount)||0),0), campCurrency)} pending</span></td>
++                              <td style={s.td}><span style={{color:'#3fb950'}}>{bonusFmt(allStreakRows.filter(r=>r.payout_status==="paid").reduce((s,r)=>s+(parseFloat(r.bonus_amount)||0),0), campCurrency)} paid</span><span style={{color:'#f85149',marginLeft:8}}>{bonusFmt(allStreakRows.filter(r=>r.payout_status!=="paid").reduce((s,r)=>s+(parseFloat(r.bonus_amount)||0),0), campCurrency)} pending</span></td>
+                               <td style={s.td} />
+                             </tr>
+                           </tbody>
+@@ -3105,7 +3112,7 @@ export default function Campaigns() {
+                       <span style={{ fontSize:13, fontWeight:800 }}>💸 Streak Bonus Payout</span>
+                       {streakBonusesLoading && <span style={{ fontSize:11, color:'var(--muted)' }}>Loading…</span>}
+                       {!streakBonusesLoading && <span style={{ fontSize:11, color:'var(--muted)' }}>
+-                        {allStreakRows.length} bonus{allStreakRows.length !== 1 ? 'es' : ''} · {allStreakRows.filter(r=>r.payout_status==='paid').length} paid · {rmFmt(allStreakRows.filter(r=>r.payout_status!=='paid').reduce((s,r)=>s+(parseFloat(r.bonus_amount)||0),0), campCurrency)} pending
++                        {allStreakRows.length} bonus{allStreakRows.length !== 1 ? 'es' : ''} · {allStreakRows.filter(r=>r.payout_status==='paid').length} paid · {bonusFmt(allStreakRows.filter(r=>r.payout_status!=="paid").reduce((s,r)=>s+(parseFloat(r.bonus_amount)||0),0), campCurrency)} pending
+                       </span>}
+                       <button onClick={() => loadStreakBonuses(selected.id)} style={{ marginLeft:'auto', background:'var(--surface2)', border:'1px solid var(--border)', color:'var(--muted)', padding:'3px 10px', borderRadius:5, fontSize:11, cursor:'pointer' }}>↺ Refresh</button>
+                     </div>
+@@ -3142,7 +3149,7 @@ export default function Campaigns() {
+                                 <td style={{ ...s.td, color:'#f59e0b', fontWeight:700 }}>🔥 #{sb.streak_number}</td>
+                                 <td style={{ ...s.td, fontSize:11, color:'var(--muted)' }}>{fmtDate(sb.period_start)} → {fmtDate(sb.period_end)}</td>
+                                 <td style={{ ...s.td, color:'#3fb950', fontWeight:600 }}>{rmFmt(sb.period_deposit, campCurrency)}</td>
+-                                <td style={{ ...s.td, color:'#f59e0b', fontWeight:800 }}>{rmFmt(sb.bonus_amount, campCurrency)}</td>
++                                <td style={{ ...s.td, color:'#f59e0b', fontWeight:800 }}>{bonusFmt(sb.bonus_amount, campCurrency)}</td>
+                                 <td style={{ ...s.td, fontSize:11, color:'var(--muted)' }}>{sb.payout_date ? fmtDate(sb.payout_date) : '—'}</td>
+                                 <td style={s.td}>
+                                   <button onClick={async () => {
+@@ -3162,11 +3169,11 @@ export default function Campaigns() {
+                           })}
+                           <tr style={{ background:'var(--surface2)', fontWeight:700 }}>
+                             <td colSpan={6} style={s.td}>Total streak bonuses</td>
+-                            <td style={{ ...s.td, color:'#f59e0b', fontWeight:800 }}>{rmFmt(allStreakRows.reduce((s,r)=>s+(parseFloat(r.bonus_amount)||0),0), campCurrency)}</td>
++                            <td style={{ ...s.td, color:'#f59e0b', fontWeight:800 }}>{bonusFmt(allStreakRows.reduce((s,r)=>s+(parseFloat(r.bonus_amount)||0),0), campCurrency)}</td>
+                             <td style={s.td} />
+                             <td style={s.td}>
+-                              <span style={{color:'#3fb950'}}>{rmFmt(allStreakRows.filter(r=>r.payout_status==='paid').reduce((s,r)=>s+(parseFloat(r.bonus_amount)||0),0), campCurrency)} paid</span>
+-                              <span style={{color:'#f85149',marginLeft:8}}>{rmFmt(allStreakRows.filter(r=>r.payout_status!=='paid').reduce((s,r)=>s+(parseFloat(r.bonus_amount)||0),0), campCurrency)} pending</span>
++                              <span style={{color:'#3fb950'}}>{bonusFmt(allStreakRows.filter(r=>r.payout_status==="paid").reduce((s,r)=>s+(parseFloat(r.bonus_amount)||0),0), campCurrency)} paid</span>
++                              <span style={{color:'#f85149',marginLeft:8}}>{bonusFmt(allStreakRows.filter(r=>r.payout_status!=="paid").reduce((s,r)=>s+(parseFloat(r.bonus_amount)||0),0), campCurrency)} pending</span>
+                             </td>
+                             <td style={s.td} />
+                           </tr>
+@@ -3355,7 +3362,7 @@ export default function Campaigns() {
+                                       : <div style={{ display:'flex', flexDirection:'column', gap:2 }}>
+                                           {pPaid.length > 0 && <span style={{ fontSize:10, background:'rgba(63,185,80,.15)', color:'#3fb950', borderRadius:4, padding:'1px 5px', fontWeight:600 }}>🔥×{pPaid.length} paid</span>}
+                                           {pPending.length > 0 && <span style={{ fontSize:10, background:'rgba(245,158,11,.15)', color:'#f59e0b', borderRadius:4, padding:'1px 5px', fontWeight:600 }}>🔥×{pPending.length} pending</span>}
+-                                          <span style={{ fontSize:10, color:'var(--muted)' }}>{rmFmt(pTotal, campCurrency)}</span>
++                                          <span style={{ fontSize:10, color:'var(--muted)' }}>{bonusFmt(pTotal, campCurrency)}</span>
+                                         </div>
+                                     }
+                                   </td>
+@@ -3449,8 +3456,8 @@ export default function Campaigns() {
+                                   ['Streak Days Target', selected.streak_days, '#f59e0b'],
+                                   ['Players with Streak', playersWithStreak, '#a78bfa'],
+                                   ['Total Bonuses', allSRows.length, '#c9a961'],
+-                                  ['Paid Amount', rmFmt(paidStreakAmt, campCurrency), '#3fb950'],
+-                                  ['Pending Amount', rmFmt(pendingStreakAmt, campCurrency), '#f85149'],
++                                  ['Paid Amount', bonusFmt(paidStreakAmt, campCurrency), '#3fb950'],
++                                  ['Pending Amount', bonusFmt(pendingStreakAmt, campCurrency), '#f85149'],
+                                 ].map(([label,val,color]) => (
+                                   <div key={label} style={{ background:'var(--bg)', border:'1px solid var(--border)', borderRadius:8, padding:14 }}>
+                                     <div style={{ fontSize:18, fontWeight:700, color }}>{val}</div>
+@@ -3471,7 +3478,7 @@ export default function Campaigns() {
+                                     <tr key={i} onMouseEnter={e=>e.currentTarget.style.background='var(--surface2)'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+                                       <td style={{ ...s.td, fontWeight:700 }}>{sb.username}</td>
+                                       <td style={s.td}><span style={{ fontSize:12, fontWeight:700, color:'#f59e0b' }}>🔥 #{sb.streak_number}</span></td>
+-                                      <td style={{ ...s.td, color:'#c9a961', fontWeight:700 }}>{rmFmt(sb.bonus_amount, campCurrency)}</td>
++                                      <td style={{ ...s.td, color:'#c9a961', fontWeight:700 }}>{bonusFmt(sb.bonus_amount, campCurrency)}</td>
+                                       <td style={s.td}>
+                                         <span style={{ ...s.tag(sb.payout_status==='paid'?'#3fb950':'#f59e0b'), fontSize:10 }}>
+                                           {sb.payout_status==='paid' ? '✓ Paid' : 'Pending'}
+@@ -3484,7 +3491,7 @@ export default function Campaigns() {
+                                   ))}
+                                 </tbody>
+                               </table>
+-                              <div style={{ fontSize:11, color:'var(--muted)' }}>Total streak bonus cost: {rmFmt(totalStreakAmt, campCurrency)} ({paidSRows.length} paid · {pendingSRows.length} pending)</div>
++                              <div style={{ fontSize:11, color:'var(--muted)' }}>Total streak bonus cost: {bonusFmt(totalStreakAmt, campCurrency)} ({paidSRows.length} paid · {pendingSRows.length} pending)</div>
+                             </>
+                       }
+                     </div>
+-- 
+2.43.0
+

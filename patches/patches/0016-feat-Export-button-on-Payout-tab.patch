@@ -1,0 +1,61 @@
+From b584e44f28574fdf8674b01300ff60f554fbc79b Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Tue, 22 Sep 2026 04:21:24 +0000
+Subject: [PATCH 16/39] feat: Export button on Payout tab
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Downloads a plain text file with campaign name, date, and
+username - reward lines — respects current host filter and search.
+Also copies to clipboard automatically.
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01DqGp4gVeTBMvwho4pP8n8C
+---
+ src/pages/Campaigns.jsx | 29 +++++++++++++++++++++++++++++
+ 1 file changed, 29 insertions(+)
+
+diff --git a/src/pages/Campaigns.jsx b/src/pages/Campaigns.jsx
+index 9fdf120..36cdf9c 100644
+--- a/src/pages/Campaigns.jsx
++++ b/src/pages/Campaigns.jsx
+@@ -2699,6 +2699,35 @@ export default function Campaigns() {
+                       </button>
+                     ))}
+                     <span style={{ marginLeft:'auto', fontSize:11, color:'var(--muted)' }}>{filteredPayoutList.length} of {(isDailyMode?dailyAchieved:achieved).length} players</span>
++                    <button onClick={() => {
++                      const campName = selected?.campaign_name || 'Campaign'
++                      const dateStr = isDailyMode && entryDate ? entryDate : new Date().toLocaleDateString('en-MY',{day:'numeric',month:'short',year:'numeric'})
++                      const lines = filteredPayoutList.map(p => {
++                        const entry = isDailyMode ? dailyEntries[p.id] : null
++                        const dep = isDailyMode ? (parseFloat(entry?.deposit_amount)||0) : playerDeposit(p)
++                        let rewardAmt = ''
++                        if (isDailyMode && selected?.is_multi_level) {
++                          const metric = buildMultiLevelPlayerMetrics(p.id, dailyEntries, campaignLevels)
++                          rewardAmt = metric?.totalCreditReward > 0 ? `RM ${metric.totalCreditReward.toLocaleString('en-MY')} Credit` : ''
++                        } else if (isDailyMode) {
++                          const cr = parseFloat(entry?.credit_reward)||0
++                          const wr = parseFloat(entry?.wcash_reward)||0
++                          rewardAmt = [cr>0&&`RM ${cr.toLocaleString('en-MY')} Credit`, wr>0&&`RM ${wr.toLocaleString('en-MY')} WCash`].filter(Boolean).join(' + ')
++                        } else {
++                          const r = calcReward(campType,dep,rewardPct,rewardFixed,goldVal,rewardCap,rewardTiers,campaignLevels,selected?.is_multi_level)
++                          rewardAmt = rewardFmt(r, campCurrency)
++                        }
++                        return `${p.username} - ${rewardAmt}`
++                      })
++                      const text = `${campName}\n${dateStr}\n\n${lines.join('\n')}`
++                      navigator.clipboard.writeText(text).catch(()=>{})
++                      const el = document.createElement('a')
++                      el.href = 'data:text/plain;charset=utf-8,' + encodeURIComponent(text)
++                      el.download = `payout_${campName.replace(/\s+/g,'_')}_${dateStr.replace(/\s+/g,'_')}.txt`
++                      el.click()
++                    }} style={{ background:'var(--surface2)', border:'1px solid var(--border)', color:'var(--text)', padding:'4px 12px', borderRadius:6, fontSize:11, cursor:'pointer', whiteSpace:'nowrap' }}>
++                      ⬇ Export
++                    </button>
+                   </div>
+                   <table style={s.tbl}>
+                     <thead><tr>
+-- 
+2.43.0
+

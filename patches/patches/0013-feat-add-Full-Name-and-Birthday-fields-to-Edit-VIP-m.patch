@@ -1,0 +1,50 @@
+From 7a3451acfe1a6cb8b982b6d032b678d6d7f5d013 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Tue, 22 Sep 2026 02:44:26 +0000
+Subject: [PATCH 13/39] feat: add Full Name and Birthday fields to Edit VIP
+ modal
+
+- Add full_name and birthday inputs at top of Edit VIP form
+- Initialize both fields in editForm from vip data
+- Also initialize telegram, address, special_requests in editForm
+  (were missing from initializer, causing blanking on save)
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01DqGp4gVeTBMvwho4pP8n8C
+---
+ src/pages/VIP360.jsx | 12 +++++++++++-
+ 1 file changed, 11 insertions(+), 1 deletion(-)
+
+diff --git a/src/pages/VIP360.jsx b/src/pages/VIP360.jsx
+index 4b27e38..2d22054 100644
+--- a/src/pages/VIP360.jsx
++++ b/src/pages/VIP360.jsx
+@@ -119,7 +119,7 @@ supabase.from('profiles').select('full_name').in('role',['admin','host']).order(
+ ])
+ if (vipRes.error) throw vipRes.error
+ setVip(vipRes.data)
+-setEditForm({ host_assigned: vipRes.data.host_assigned||'', tier: vipRes.data.tier||'', activity_status: vipRes.data.activity_status||'', phone: vipRes.data.phone||'', whatsapp: vipRes.data.whatsapp||'', email: vipRes.data.email||'', churn_risk: vipRes.data.churn_risk||'', notes: vipRes.data.notes||'' })
++setEditForm({ full_name: vipRes.data.full_name||'', birthday: vipRes.data.birthday||'', host_assigned: vipRes.data.host_assigned||'', tier: vipRes.data.tier||'', activity_status: vipRes.data.activity_status||'', phone: vipRes.data.phone||'', whatsapp: vipRes.data.whatsapp||'', email: vipRes.data.email||'', telegram: vipRes.data.telegram||'', churn_risk: vipRes.data.churn_risk||'', address: vipRes.data.address||'', special_requests: vipRes.data.special_requests||'', notes: vipRes.data.notes||'' })
+ setMonthly(montRes.data || [])
+ setDaily(dailyRes.data || [])
+ setContacts(contRes.data || [])
+@@ -732,6 +732,16 @@ AI insights are labeled and separate from confirmed CRM data.
+ <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+ <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
+ <div>
++<label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>Full Name</label>
++<Input value={editForm.full_name||''} onChange={e => setEditForm(f=>({...f,full_name:e.target.value}))} placeholder="Real name" />
++</div>
++<div>
++<label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>Birthday</label>
++<Input type="date" value={editForm.birthday||''} onChange={e => setEditForm(f=>({...f,birthday:e.target.value}))} />
++</div>
++</div>
++<div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
++<div>
+ <label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>Tier</label>
+ <Select value={editForm.tier} onChange={e => setEditForm(f=>({...f,tier:e.target.value}))} style={{ width:'100%' }}>
+ {TIERS.map(t => <option key={t} value={t}>{t}</option>)}
+-- 
+2.43.0
+

@@ -1,0 +1,32 @@
+From 7d63b315b923fef9b9d16250e5aea94deae83ffa Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Tue, 22 Sep 2026 05:35:09 +0000
+Subject: [PATCH 18/39] fix: logContact ReferenceError - user is not defined,
+ use profile instead
+
+user variable was never declared in Campaigns.jsx component scope.
+The component uses useAuth() which returns profile, not user.
+Fix: host: user?.email -> host: profile?.email
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01DqGp4gVeTBMvwho4pP8n8C
+---
+ src/pages/Campaigns.jsx | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/pages/Campaigns.jsx b/src/pages/Campaigns.jsx
+index df8342d..ad07646 100644
+--- a/src/pages/Campaigns.jsx
++++ b/src/pages/Campaigns.jsx
+@@ -820,7 +820,7 @@ export default function Campaigns() {
+       campaign_player_id: playerId,
+       contacted_at: new Date().toISOString(),
+       contact_type: type,
+-      host: user?.email || null,
++      host: profile?.email || null,
+       notes: note || null,
+     })
+     if (error) { console.error('logContact error', error); return }
+-- 
+2.43.0
+

@@ -1,0 +1,1119 @@
+From b94a6a4d9c56980e5df3ea930b568730ed9c29d8 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Mon, 21 Sep 2026 03:00:53 +0000
+Subject: [PATCH 10/39] feat: fix streak bonus formula, All Players deposit,
+ and new tabs
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- Streak tab: fix Est. Bonus formula to use periodDeposit × bonusPct / 100
+  (was incorrectly using totalReward × bonusPct); fix header to show
+  "X% of period deposit" instead of "100% of total reward"
+- All Players tab: show total campaign deposit in daily mode using
+  depositByPlayer map aggregated from all daily_turnover_entries;
+  previously showed "—" for most players because it read real platform data
+- loadCampaignSummary: add depositByPlayer aggregation from raw entries
+  (all entries, not just qualifying ones) and expose via summaryData
+- Add Streak tab (per-player streak progress + bonus payout table) and
+  Inactive tab (players with zero qualifying days across campaign period)
+- Add per-date payout tracking via daily_turnover_entries payout_status /
+  payout_date columns (updateDailyPayout); streak bonus badge in Payout tab
+- campaignEditor: extend buildCampaignUpdate with turnover_multiplier and
+  payout templates (en/my/cn)
+- Migration: add turnover_multiplier column to campaigns table
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01DqGp4gVeTBMvwho4pP8n8C
+---
+ src/lib/campaignEditor.js                     |   4 +
+ src/pages/Campaigns.jsx                       | 803 +++++++++++++++++-
+ ...919000000_campaign_turnover_multiplier.sql |   8 +
+ 3 files changed, 776 insertions(+), 39 deletions(-)
+ create mode 100644 supabase/migrations/20260919000000_campaign_turnover_multiplier.sql
+
+diff --git a/src/lib/campaignEditor.js b/src/lib/campaignEditor.js
+index 0d04098..1f08354 100644
+--- a/src/lib/campaignEditor.js
++++ b/src/lib/campaignEditor.js
+@@ -159,6 +159,10 @@ export function buildCampaignUpdate(form) {
+     streak_bonus_cap: form.streak_bonus_cap != null ? Number(form.streak_bonus_cap) : 0,
+     whatsapp_template: form.whatsapp_template || null,
+     whatsapp_template_zh: form.whatsapp_template_zh || null,
++    turnover_multiplier: numeric(form.turnover_multiplier),
++    payout_template_en: form.payout_template_en || null,
++    payout_template_my: form.payout_template_my || null,
++    payout_template_cn: form.payout_template_cn || null,
+   }
+ }
+ 
+diff --git a/src/pages/Campaigns.jsx b/src/pages/Campaigns.jsx
+index 57985d0..7af4500 100644
+--- a/src/pages/Campaigns.jsx
++++ b/src/pages/Campaigns.jsx
+@@ -156,6 +156,70 @@ function calcLevelFixedReward(deposit, levels) {
+   return reward
+ }
+ 
++// For dual_tier + daily + is_multi_level campaigns: returns the highest campaign_level
++// the deposit qualifies for, and that level's credit reward.
++function calcLevelTierForDeposit(dep, levels) {
++  const deposit = parseFloat(dep) || 0
++  const sorted = [...(levels || [])].sort((a, b) => Number(b.deposit_threshold) - Number(a.deposit_threshold))
++  const bestLevel = sorted.find(l => deposit >= (Number(l.deposit_threshold) || 0))
++  if (!bestLevel) return { levelOrder: null, creditReward: 0 }
++  return { levelOrder: bestLevel.level_order ?? null, creditReward: Number(bestLevel.reward_amount) || 0 }
++}
++
++// WhatsApp notification helpers
++// Substitutes {username} {campaign} {agent} {reward} {turnover} in a custom template
++function applyPayoutTemplate(tpl, username, campaignName, rewardFormatted, agent, turnoverRequired) {
++  return tpl
++    .replace(/\{username\}/g, username || '')
++    .replace(/\{campaign\}/g, campaignName || '')
++    .replace(/\{agent\}/g, agent || '')
++    .replace(/\{reward\}/g, rewardFormatted || '')
++    .replace(/\{turnover\}/g, turnoverRequired || '')
++}
++
++// agent = host_assigned name; turnoverRequired = reward × multiplier (null if no requirement)
++const WA_MSGS = {
++  en: (u, c, r, agent, turnoverRequired) => {
++    const intro = agent ? `Hi ${u}! 🎉 I'm ${agent} from SureWin VIP Team.` : `Hi ${u}! 🎉`
++    const body = `\nYour "${c}" reward of ${r} Credit has been credited to your account. Please check your balance!`
++    const turnover = turnoverRequired ? `\n\n⚠️ Please note: A ${turnoverRequired} turnover is required before you can make a withdrawal.` : ''
++    return intro + body + turnover
++  },
++  my: (u, c, r, agent, turnoverRequired) => {
++    const intro = agent ? `Hi ${u}! 🎉 Saya ${agent} dari Pasukan SureWin VIP.` : `Hi ${u}! 🎉`
++    const body = `\nHadiah kempen "${c}" sebanyak ${r} Kredit telah dikreditkan ke akaun anda. Sila semak baki anda!`
++    const turnover = turnoverRequired ? `\n\n⚠️ Harap maklum: Turnover sebanyak ${turnoverRequired} diperlukan sebelum pengeluaran boleh dibuat.` : ''
++    return intro + body + turnover
++  },
++  cn: (u, c, r, agent, turnoverRequired) => {
++    const intro = agent ? `你好 ${u}！🎉我是SureWin VIP部门的${agent}` : `你好 ${u}！🎉`
++    const body = `\n你的"${c}"奖励 ${r} 积分已成功存入你的账户，请查看余额！`
++    const turnover = turnoverRequired ? `\n\n⚠️ 温馨提示：领取奖励后需完成 ${turnoverRequired} 的流水要求，方可申请提款。` : ''
++    return intro + body + turnover
++  },
++}
++function buildWaMsgText(username, campaignName, rewardFormatted, lang, agent, turnoverRequired, campaign) {
++  // Use campaign's custom payout template if set for this language
++  const templateKey = { en: 'payout_template_en', my: 'payout_template_my', cn: 'payout_template_cn' }[lang]
++  const customTpl = campaign && templateKey ? campaign[templateKey] : null
++  if (customTpl && customTpl.trim()) {
++    return applyPayoutTemplate(customTpl, username, campaignName, rewardFormatted, agent, turnoverRequired)
++  }
++  const fn = WA_MSGS[lang]
++  if (fn) return fn(username, campaignName, rewardFormatted, agent, turnoverRequired)
++  return Object.values(WA_MSGS).map(f => f(username, campaignName, rewardFormatted, agent, turnoverRequired)).join('\n\n')
++}
++function buildWaMsg(username, campaignName, rewardFormatted, lang, agent, turnoverRequired, campaign) {
++  return encodeURIComponent(buildWaMsgText(username, campaignName, rewardFormatted, lang, agent, turnoverRequired, campaign))
++}
++function waHref(phone, encodedMsg) {
++  if (!phone) return null
++  const clean = String(phone).replace(/\D/g, '')
++  if (!clean) return null
++  const intl = clean.startsWith('60') ? clean : clean.startsWith('0') ? '6' + clean : '60' + clean
++  return `https://wa.me/${intl}?text=${encodedMsg}`
++}
++
+ function calcReward(type, deposit, rewardPct, rewardFixed, goldBarValue, rewardCap, rewardTiers, rewardLevels = [], isMultiLevel = false) {
+   let reward = 0
+   if (type === 'pct_reward') reward = (parseFloat(deposit)||0) * (parseFloat(rewardPct)||0) / 100
+@@ -186,6 +250,13 @@ export default function Campaigns() {
+   const [activeTab,  setActiveTab]  = useState('chase')
+   const [chaseFilter, setChaseFilter] = useState('')
+   const [hostFilter, setHostFilter] = useState('all')
++  const [chaseSort, setChaseSort] = useState('deposit')
++  const [chaseSortDir, setChaseSortDir] = useState('desc')
++  const [payoutSearch, setPayoutSearch] = useState('')
++  const [payoutSort, setPayoutSort] = useState('deposit')
++  const [payoutSortDir, setPayoutSortDir] = useState('desc')
++  const [payoutHostFilter, setPayoutHostFilter] = useState('all')
++  const [waLang, setWaLang] = useState('en')
+   const [copiedId, setCopiedId] = useState(null)
+   const [entryDate, setEntryDate] = useState('')
+   const [dailyEntries, setDailyEntries] = useState({}) // player_id -> {turnover_amount, tier_achieved, credit_reward, wcash_reward}
+@@ -207,6 +278,9 @@ export default function Campaigns() {
+   const [streakBonusesLoading, setStreakBonusesLoading] = useState(false)
+   const [waPopup, setWaPopup] = useState(null)  // { rawNumber, message } — editable before opening WA
+   const [waCopied, setWaCopied] = useState(false)
++  // All daily entries for streak/inactive tabs — loaded on demand
++  const [allDailyEntries, setAllDailyEntries] = useState([])  // full flat list for campaign
++  const [allDailyEntriesLoading, setAllDailyEntriesLoading] = useState(false)
+ 
+   // VIP search
+   const [vipSearch,   setVipSearch]   = useState('')
+@@ -410,6 +484,10 @@ export default function Campaigns() {
+       rank_rewards:   form.campaign_type==='leaderboard' ? form.rank_rewards : null,
+       status:         form.status,
+       notes:          form.notes||null,
++      turnover_multiplier: form.turnover_multiplier ? parseFloat(form.turnover_multiplier) : null,
++      payout_template_en: form.payout_template_en||null,
++      payout_template_my: form.payout_template_my||null,
++      payout_template_cn: form.payout_template_cn||null,
+       created_by:     profile?.id||null,
+       created_at:     new Date().toISOString(),
+     }).select().single()
+@@ -633,7 +711,7 @@ export default function Campaigns() {
+   async function loadDailyEntries(campaignId, date) {
+     setDailyLoading(true)
+     const { data, error } = await supabase.from('daily_turnover_entries')
+-      .select('player_id, deposit_amount, turnover_amount, tier_achieved, credit_reward, wcash_reward')
++      .select('player_id, deposit_amount, turnover_amount, tier_achieved, credit_reward, wcash_reward, payout_status, payout_date')
+       .eq('campaign_id', campaignId).eq('entry_date', date)
+     if (error) { console.error('loadDailyEntries error', error); setDailyEntries({}); setDailyLoading(false); return }
+     const map = {}
+@@ -642,18 +720,45 @@ export default function Campaigns() {
+     setDailyLoading(false)
+   }
+ 
++  // Updates payout_status on the daily_turnover_entries row for the current date.
++  // This is the per-date payout toggle for daily-mode campaigns.
++  async function updateDailyPayout(playerId, newStatus) {
++    const newDate = newStatus === 'paid' ? new Date().toISOString() : null
++    const { error } = await supabase.from('daily_turnover_entries')
++      .update({ payout_status: newStatus, payout_date: newDate })
++      .eq('campaign_id', selected.id)
++      .eq('player_id', playerId)
++      .eq('entry_date', entryDate)
++    if (error) { console.error('updateDailyPayout error', error); return }
++    setDailyEntries(prev => ({
++      ...prev,
++      [playerId]: { ...(prev[playerId] || {}), payout_status: newStatus, payout_date: newDate }
++    }))
++  }
++
+   // Upserts a player's turnover for the currently-selected date only — every
+   // other date's row for this player is untouched. This IS the "doesn't carry
+   // over to the next day" behavior: each date is its own independent record.
+   async function saveDailyEntry(playerId, depositAmount, turnoverAmount) {
+-    // Both deposit AND turnover must meet a tier's thresholds to qualify.
+-    const dualReward = calcDualTierReward(depositAmount, turnoverAmount, rewardTiers)
++    let tier_achieved_val = null, credit_reward_val = 0, wcash_reward_val = 0
++    if (selected?.is_multi_level && campaignLevels?.length > 0) {
++      // Multi-level daily: qualify by deposit against campaign_levels thresholds
++      const { levelOrder, creditReward } = calcLevelTierForDeposit(depositAmount, campaignLevels)
++      tier_achieved_val = levelOrder
++      credit_reward_val = creditReward
++    } else {
++      // Standard dual-tier: both deposit AND turnover must meet tier thresholds
++      const dualReward = calcDualTierReward(depositAmount, turnoverAmount, rewardTiers)
++      tier_achieved_val = dualReward.tierIndex >= 0 ? dualReward.tierIndex : null
++      credit_reward_val = dualReward.creditAmount
++      wcash_reward_val = dualReward.wcashAmount
++    }
+     const payload = {
+       campaign_id: selected.id, player_id: playerId, entry_date: entryDate,
+       deposit_amount: depositAmount,
+       turnover_amount: turnoverAmount,
+-      tier_achieved: dualReward.tierIndex >= 0 ? dualReward.tierIndex : null,
+-      credit_reward: dualReward.creditAmount, wcash_reward: dualReward.wcashAmount,
++      tier_achieved: tier_achieved_val,
++      credit_reward: credit_reward_val, wcash_reward: wcash_reward_val,
+       entered_by: profile?.full_name || null,
+       updated_at: new Date().toISOString(),
+     }
+@@ -681,6 +786,46 @@ export default function Campaigns() {
+     setStreakBonusesLoading(false)
+   }
+ 
++  // Load ALL daily entries for the campaign (used by Streak + Inactive tabs)
++  async function loadAllDailyEntries(campaignId) {
++    setAllDailyEntriesLoading(true)
++    const { data, error } = await supabase
++      .from('daily_turnover_entries')
++      .select('player_id, entry_date, deposit_amount, credit_reward')
++      .eq('campaign_id', campaignId)
++      .order('entry_date', { ascending: true })
++    if (error) { console.error('loadAllDailyEntries error', error); setAllDailyEntries([]); setAllDailyEntriesLoading(false); return }
++    setAllDailyEntries(data || [])
++    setAllDailyEntriesLoading(false)
++  }
++
++  // Retroactively fixes tier_achieved + credit_reward for ALL daily_turnover_entries of this campaign.
++  // Needed for is_multi_level daily campaigns where entries were saved with the wrong calc.
++  async function recalcDailyRewards() {
++    if (!selected?.is_multi_level || !campaignLevels?.length) return
++    setDailyLoading(true)
++    const { data, error } = await supabase.from('daily_turnover_entries')
++      .select('id, player_id, deposit_amount, entry_date')
++      .eq('campaign_id', selected.id)
++    if (error) { alert('Load failed: ' + error.message); setDailyLoading(false); return }
++    const rows = data || []
++    if (!rows.length) { alert('No entries to recalculate.'); setDailyLoading(false); return }
++    // Use individual .update() calls — never .upsert() here, which would try to INSERT
++    // a new row when the id doesn't match, triggering the campaign_id not-null constraint.
++    const now = new Date().toISOString()
++    for (const row of rows) {
++      const { levelOrder, creditReward } = calcLevelTierForDeposit(row.deposit_amount, campaignLevels)
++      const { error: upErr } = await supabase.from('daily_turnover_entries')
++        .update({ tier_achieved: levelOrder, credit_reward: creditReward, wcash_reward: 0, updated_at: now })
++        .eq('id', row.id)
++      if (upErr) { alert('Recalc failed: ' + upErr.message); setDailyLoading(false); return }
++    }
++    await loadDailyEntries(selected.id, entryDate)
++    await loadCampaignSummary(selected.id)
++    alert(`✅ Recalculated rewards for ${rows.length} entries.`)
++    setDailyLoading(false)
++  }
++
+   async function checkAndAwardStreak(playerId, afterEntryDate) {
+     if (!selected?.streak_enabled || !isDailyMode) return
+     // Minimum qualifying deposit = lowest level threshold, or deposit_target as fallback
+@@ -835,16 +980,26 @@ export default function Campaigns() {
+         const snap = byUsername[username]
+         const dep = Math.round(snap.deposit)
+         const to  = Math.round(snap.validBet)
+-        const dualReward = calcDualTierReward(dep, to, rewardTiers)
++        let tier_achieved_val = null, credit_reward_val = 0, wcash_reward_val = 0
++        if (selected?.is_multi_level && campaignLevels?.length > 0) {
++          const { levelOrder, creditReward } = calcLevelTierForDeposit(dep, campaignLevels)
++          tier_achieved_val = levelOrder
++          credit_reward_val = creditReward
++        } else {
++          const dualReward = calcDualTierReward(dep, to, rewardTiers)
++          tier_achieved_val = dualReward.tierIndex >= 0 ? dualReward.tierIndex : null
++          credit_reward_val = dualReward.creditAmount
++          wcash_reward_val = dualReward.wcashAmount
++        }
+         return {
+           campaign_id: selected.id,
+           player_id: p.id,
+           entry_date: entryDate,
+           deposit_amount: dep,
+           turnover_amount: to,
+-          tier_achieved: dualReward.tierIndex >= 0 ? dualReward.tierIndex : null,
+-          credit_reward: dualReward.creditAmount,
+-          wcash_reward: dualReward.wcashAmount,
++          tier_achieved: tier_achieved_val,
++          credit_reward: credit_reward_val,
++          wcash_reward: wcash_reward_val,
+           entered_by: (profile?.full_name || 'Import') + ' (auto)',
+           updated_at: new Date().toISOString(),
+         }
+@@ -972,6 +1127,13 @@ export default function Campaigns() {
+     if (isDailyMode && selected?.id && entryDate) loadDailyEntries(selected.id, entryDate)
+   }, [isDailyMode, selected?.id, entryDate])
+ 
++  // Load all daily entries when switching to streak or inactive tab
++  useEffect(() => {
++    if (isDailyMode && selected?.id && (activeTab === 'streak' || activeTab === 'inactive')) {
++      loadAllDailyEntries(selected.id)
++    }
++  }, [isDailyMode, selected?.id, activeTab])
++
+   useEffect(() => {
+     if (isDailyMode && selected?.id) loadCampaignSummary(selected.id)
+   }, [isDailyMode, activeTab, selected?.id])
+@@ -992,21 +1154,44 @@ export default function Campaigns() {
+ 
+     // Always recompute credit/wcash fresh from deposit_amount + turnover_amount
+     // against the campaign's CURRENT tier settings — never trust the stored
+-    // credit_reward/wcash_reward columns. Both conditions must be met; older
+-    // rows that predate the deposit_amount column will have null/0 deposit and
+-    // will only qualify if their tier's depositThreshold is also 0.
++    // credit_reward/wcash_reward columns. For is_multi_level campaigns, use
++    // campaign_levels thresholds (deposit only). For standard dual_tier, both
++    // deposit and turnover must meet the tier thresholds.
++    const isMultiLevelDaily = selected?.is_multi_level && campaignLevels?.length > 0
+     const entries = (data || [])
+-      .filter(e => (parseFloat(e.turnover_amount) || 0) > 0)
++      .filter(e => isMultiLevelDaily
++        ? (parseFloat(e.deposit_amount) || 0) > 0
++        : (parseFloat(e.turnover_amount) || 0) > 0)
+       .map(e => {
+         const dep = parseFloat(e.deposit_amount) || 0
++        if (isMultiLevelDaily) {
++          const { levelOrder, creditReward } = calcLevelTierForDeposit(dep, campaignLevels)
++          return { ...e, tier_achieved: levelOrder, credit_reward: creditReward, wcash_reward: 0 }
++        }
+         const r = calcDualTierReward(dep, e.turnover_amount, rewardTiers)
+         return { ...e, tier_achieved: r.tierIndex >= 0 ? r.tierIndex : null, credit_reward: r.creditAmount, wcash_reward: r.wcashAmount }
+       })
+ 
+-    const uniqueParticipants = new Set(entries.map(e => e.player_id)).size
++    const qualifyingEntries = entries.filter(e => (e.credit_reward || 0) > 0).length
++    const uniqueParticipants = new Set(entries.filter(e => (e.credit_reward || 0) > 0).map(e => e.player_id)).size
+     const totalCredit = entries.reduce((s, e) => s + e.credit_reward, 0)
+     const totalWcash = entries.reduce((s, e) => s + e.wcash_reward, 0)
+ 
++    // Per-level player counts for is_multi_level daily campaigns
++    const levelPlayerCounts = {}
++    if (isMultiLevelDaily) {
++      const sortedLevels = [...campaignLevels].sort((a, b) => Number(a.deposit_threshold) - Number(b.deposit_threshold))
++      sortedLevels.forEach(level => { levelPlayerCounts[level.id] = new Set() })
++      entries.forEach(e => {
++        sortedLevels.forEach(level => {
++          if ((parseFloat(e.deposit_amount) || 0) >= (Number(level.deposit_threshold) || 0)) {
++            levelPlayerCounts[level.id].add(e.player_id)
++          }
++        })
++      })
++      sortedLevels.forEach(level => { levelPlayerCounts[level.id] = levelPlayerCounts[level.id].size })
++    }
++
+     const tierHitCounts = {}
+     ;(rewardTiers || []).forEach((t, i) => { tierHitCounts[i] = 0 })
+     entries.forEach(e => { if (e.tier_achieved !== null) tierHitCounts[e.tier_achieved] = (tierHitCounts[e.tier_achieved] || 0) + 1 })
+@@ -1014,6 +1199,13 @@ export default function Campaigns() {
+     const playerMap = {}
+     players.forEach(p => { playerMap[p.id] = p })
+ 
++    // Deposit totals from ALL raw entries (not just qualifying ones)
++    const depositByPlayer = {}
++    ;(data || []).forEach(e => {
++      if (!depositByPlayer[e.player_id]) depositByPlayer[e.player_id] = 0
++      depositByPlayer[e.player_id] += parseFloat(e.deposit_amount) || 0
++    })
++
+     const byPlayer = {}
+     entries.forEach(e => {
+       if (!byPlayer[e.player_id]) byPlayer[e.player_id] = { credit: 0, wcash: 0, days: 0 }
+@@ -1035,7 +1227,7 @@ export default function Campaigns() {
+     const pendingCredit = playerRows.filter(r => !r.paid).reduce((s, r) => s + r.credit, 0)
+     const pendingWcash = playerRows.filter(r => !r.paid).reduce((s, r) => s + r.wcash, 0)
+ 
+-    setSummaryData({ uniqueParticipants, totalCredit, totalWcash, tierHitCounts, playerRows, totalEntryDays: new Set(entries.map(e => e.entry_date)).size, paidCredit, paidWcash, pendingCredit, pendingWcash })
++    setSummaryData({ uniqueParticipants, qualifyingEntries, totalCredit, totalWcash, tierHitCounts, playerRows, totalEntryDays: new Set(entries.map(e => e.entry_date)).size, paidCredit, paidWcash, pendingCredit, pendingWcash, levelPlayerCounts, depositByPlayer })
+     setSummaryLoading(false)
+   }
+ 
+@@ -1246,11 +1438,41 @@ export default function Campaigns() {
+   const pendingPay = Math.max(0,totalReward-paidOut)
+   const chaseList = campType==='leaderboard' ? lbRanked : [...players].sort((a,b)=>playerDeposit(b)-playerDeposit(a))
+   const chaseHosts = ['all', ...Array.from(new Set(chaseList.map(p => p.host_assigned).filter(Boolean))).sort()]
+-  const filteredChaseList = chaseList.filter(p => {
+-    const matchesHost = hostFilter === 'all' || p.host_assigned === hostFilter
+-    const matchesSearch = !chaseFilter.trim() || (p.username||'').toLowerCase().includes(chaseFilter.toLowerCase()) || (p.full_name||'').toLowerCase().includes(chaseFilter.toLowerCase())
+-    return matchesHost && matchesSearch
+-  })
++  const filteredChaseList = (() => {
++    const filtered = chaseList.filter(p => {
++      const matchesHost = hostFilter === 'all' || p.host_assigned === hostFilter
++      const matchesSearch = !chaseFilter.trim() || (p.username||'').toLowerCase().includes(chaseFilter.toLowerCase()) || (p.full_name||'').toLowerCase().includes(chaseFilter.toLowerCase())
++      return matchesHost && matchesSearch
++    })
++    const sm = chaseSortDir === 'asc' ? 1 : -1
++    return [...filtered].sort((a, b) => {
++      if (chaseSort === 'name') return sm * (a.username||'').localeCompare(b.username||'')
++      if (chaseSort === 'reward') {
++        const rA = isDailyMode ? (dailyEntries[a.id]?.credit_reward || 0) : calcLevelTierForDeposit(playerDeposit(a), campaignLevels).creditReward
++        const rB = isDailyMode ? (dailyEntries[b.id]?.credit_reward || 0) : calcLevelTierForDeposit(playerDeposit(b), campaignLevels).creditReward
++        return sm * (rA - rB)
++      }
++      return sm * (playerDeposit(a) - playerDeposit(b))
++    })
++  })()
++  const filteredPayoutList = (() => {
++    const base = isDailyMode ? dailyAchieved : achieved
++    const hostFiltered = payoutHostFilter === 'all' ? base : base.filter(p => p.host_assigned === payoutHostFilter)
++    const srch = payoutSearch.trim().toLowerCase()
++    const filtered = srch ? hostFiltered.filter(p => (p.username||'').toLowerCase().includes(srch) || (p.full_name||'').toLowerCase().includes(srch)) : hostFiltered
++    const sm = payoutSortDir === 'asc' ? 1 : -1
++    return [...filtered].sort((a, b) => {
++      if (payoutSort === 'name') return sm * (a.username||'').localeCompare(b.username||'')
++      if (payoutSort === 'reward') {
++        const rA = isDailyMode ? (dailyEntries[a.id]?.credit_reward || 0) : calcReward(campType, playerDeposit(a), rewardPct, rewardFixed, goldVal, rewardCap, rewardTiers, campaignLevels, selected?.is_multi_level)
++        const rB = isDailyMode ? (dailyEntries[b.id]?.credit_reward || 0) : calcReward(campType, playerDeposit(b), rewardPct, rewardFixed, goldVal, rewardCap, rewardTiers, campaignLevels, selected?.is_multi_level)
++        return sm * (rA - rB)
++      }
++      const dA = isDailyMode ? (parseFloat(dailyEntries[a.id]?.deposit_amount) || 0) : playerDeposit(a)
++      const dB = isDailyMode ? (parseFloat(dailyEntries[b.id]?.deposit_amount) || 0) : playerDeposit(b)
++      return sm * (dA - dB)
++    })
++  })()
+   function copyUsername(id, username) {
+     navigator.clipboard.writeText(username).catch(()=>{})
+     setCopiedId(id)
+@@ -1591,6 +1813,7 @@ export default function Campaigns() {
+                 </div>
+               </div>
+               <div style={s.frow}><div style={s.flbl}>Offer Description</div><textarea style={s.fta} rows={2} value={form.offer_desc} onChange={e=>setForm({...form,offer_desc:e.target.value})} placeholder="What's being offered?" /></div>
++              <div style={s.frow}><div style={s.flbl}>Turnover Multiplier <span style={{ fontWeight:400, color:'var(--muted)', fontSize:10 }}>(WA message — e.g. 3 means reward × 3 required before withdrawal)</span></div><input type="number" min="1" step="0.5" style={s.finput} value={form.turnover_multiplier??''} onChange={e=>setForm({...form,turnover_multiplier:e.target.value})} placeholder="e.g. 3 (leave blank = no requirement)" /></div>
+               <div style={s.frow}><div style={s.flbl}>Notes</div><textarea style={s.fta} rows={2} value={form.notes} onChange={e=>setForm({...form,notes:e.target.value})} /></div>
+               {msg.text && <div style={{ color:msg.ok?'#3fb950':'#f85149', fontSize:12, marginBottom:10 }}>{msg.text}</div>}
+               <div style={{ display:'flex', gap:8 }}>
+@@ -1837,6 +2060,11 @@ export default function Campaigns() {
+                   </div>
+                 </div>
+ 
++                <div style={{ borderTop:'1px solid var(--border)', paddingTop:14, marginBottom:14 }}>
++                  <div style={s.flbl}>Turnover Multiplier <span style={{ fontWeight:400, color:'var(--muted)', fontSize:10 }}>(WA payout message — e.g. 3 means reward × 3 required before withdrawal)</span></div>
++                  <input type="number" min="1" step="0.5" style={{ ...s.finput, width:180, marginTop:4 }} value={editCampForm.turnover_multiplier??''} onChange={e=>setEditCampForm(f=>({...f,turnover_multiplier:e.target.value}))} placeholder="e.g. 3 (leave blank = no requirement)" />
++                </div>
++
+                 <div style={{ borderTop:'1px solid var(--border)', paddingTop:14, marginBottom:14 }}>
+                   <div style={{ fontSize:11, fontWeight:800, color:'var(--muted)', marginBottom:6, letterSpacing:'.5px' }}>💬 WHATSAPP MESSAGE TEMPLATE</div>
+                   <div style={{ fontSize:11, color:'var(--muted)', marginBottom:8 }}>Optional — overrides the auto-generated message. Variables: <code>{'{username}'}</code> <code>{'{campaign}'}</code> <code>{'{agent}'}</code> <code>{'{gap}'}</code></div>
+@@ -1852,6 +2080,47 @@ export default function Campaigns() {
+                   </div>
+                 </div>
+ 
++                {/* ── PAYOUT WA MESSAGE TEMPLATES ── */}
++                <div style={{ borderTop:'1px solid var(--border)', paddingTop:14, marginBottom:14 }}>
++                  <div style={{ fontSize:11, fontWeight:800, color:'#25d366', marginBottom:4, letterSpacing:'.5px' }}>📲 PAYOUT NOTIFICATION MESSAGE</div>
++                  <div style={{ fontSize:11, color:'var(--muted)', marginBottom:10 }}>
++                    Edit the message sent when a player qualifies for payout. Leave blank to use the default. Variables: <code style={{ background:'var(--surface2)', padding:'1px 4px', borderRadius:3 }}>{'{username}'}</code> <code style={{ background:'var(--surface2)', padding:'1px 4px', borderRadius:3 }}>{'{campaign}'}</code> <code style={{ background:'var(--surface2)', padding:'1px 4px', borderRadius:3 }}>{'{agent}'}</code> <code style={{ background:'var(--surface2)', padding:'1px 4px', borderRadius:3 }}>{'{reward}'}</code> <code style={{ background:'var(--surface2)', padding:'1px 4px', borderRadius:3 }}>{'{turnover}'}</code>
++                  </div>
++                  {[
++                    ['en', '🇬🇧 English', 'payout_template_en', `Hi {username}! 🎉 I'm {agent} from SureWin VIP Team.\nYour "{campaign}" reward of {reward} Credit has been credited to your account. Please check your balance!\n\n⚠️ A {turnover} turnover is required before withdrawal.`],
++                    ['my', '🇲🇾 Malay', 'payout_template_my', `Hi {username}! 🎉 Saya {agent} dari Pasukan SureWin VIP.\nHadiah kempen "{campaign}" sebanyak {reward} Kredit telah dikreditkan ke akaun anda. Sila semak baki anda!\n\n⚠️ Turnover sebanyak {turnover} diperlukan sebelum pengeluaran boleh dibuat.`],
++                    ['cn', '🇨🇳 中文', 'payout_template_cn', `你好 {username}！🎉我是SureWin VIP部门的{agent}\n你的"{campaign}"奖励 {reward} 积分已成功存入你的账户，请查看余额！\n\n⚠️ 温馨提示：领取奖励后需完成 {turnover} 的流水要求，方可申请提款。`],
++                  ].map(([lang, label, field, placeholder]) => {
++                    const tpl = editCampForm[field] || ''
++                    const sampleAgent = 'Marcus'
++                    const sampleReward = 'RM 800'
++                    const sampleTurnover = editCampForm.turnover_multiplier ? `RM ${800 * Number(editCampForm.turnover_multiplier)}` : 'RM 2400'
++                    const preview = applyPayoutTemplate(
++                      tpl || placeholder,
++                      'haur2972', editCampForm.campaign_name || selected?.campaign_name || 'Campaign',
++                      sampleReward, sampleAgent, sampleTurnover
++                    )
++                    return (
++                      <div key={lang} style={{ marginBottom:16 }}>
++                        <div style={{ fontSize:11, color:'var(--muted)', fontWeight:700, marginBottom:6 }}>{label}</div>
++                        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
++                          <textarea
++                            style={{ ...s.fta, width:'100%', fontFamily:'monospace', fontSize:12 }}
++                            rows={5}
++                            value={tpl}
++                            onChange={e=>setEditCampForm(f=>({...f,[field]:e.target.value}))}
++                            placeholder={placeholder}
++                          />
++                          <div style={{ background:'rgba(37,211,102,.06)', border:'1px solid rgba(37,211,102,.2)', borderRadius:8, padding:'10px 12px', fontSize:12, color:'var(--text)', whiteSpace:'pre-wrap', lineHeight:1.6 }}>
++                            <div style={{ fontSize:10, color:'#25d366', fontWeight:700, marginBottom:6 }}>👁 Preview</div>
++                            {preview}
++                          </div>
++                        </div>
++                      </div>
++                    )
++                  })}
++                </div>
++
+                 <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+                   <button style={s.btnG} onClick={editCampaign} disabled={saving}>{saving?'Saving…':'💾 Save Campaign'}</button>
+                   <button style={s.btnSm} onClick={()=>{setEditingCamp(false);setCampaignLevelsEdit([])}} disabled={saving}>Cancel</button>
+@@ -1903,6 +2172,8 @@ export default function Campaigns() {
+               {[
+                 ['chase',    `🏃 Chase List (${players.length})`],
+                 ['payout',   `💰 Payout (${selected?.is_multi_level ? multiPayoutRows.length : achieved.length} rewards)`],
++                ...(isDailyMode ? [['streak', `🔥 Streak${selected?.streak_enabled ? '' : ' (off)'}`]] : []),
++                ...(isDailyMode ? [['inactive', `😴 Inactive`]] : []),
+                 ['register', '📋 All Players'],
+                 ...(campType==='leaderboard' ? [['leaderboard','[TOP] Leaderboard']] : []),
+                 ['summary', '📊 Summary'],
+@@ -1930,18 +2201,26 @@ export default function Campaigns() {
+                     ))}
+                   </div>
+                 )}
+-                {/* Chase list search filter */}
+-                <div style={{ padding:'8px 24px', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', gap:8 }}>
++                {/* Chase list search + sort filter */}
++                <div style={{ padding:'8px 24px', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
+                   <input
+                     value={chaseFilter}
+                     onChange={e => setChaseFilter(e.target.value)}
+                     placeholder={`🔍 Filter ${filteredChaseList.length} players by username…`}
+-                    style={{ ...s.smInput, width:280, fontSize:12 }}
++                    style={{ ...s.smInput, width:240, fontSize:12 }}
+                   />
+                   {chaseFilter && (
+                     <button onClick={() => setChaseFilter('')} style={{ fontSize:11, color:'var(--muted)', background:'none', border:'none', cursor:'pointer', padding:'2px 6px' }}>✕ Clear</button>
+                   )}
+                   {chaseFilter && <span style={{ fontSize:11, color:'var(--muted)' }}>{filteredChaseList.length} match{filteredChaseList.length !== 1 ? 'es' : ''}</span>}
++                  <span style={{ fontSize:11, color:'var(--muted)', marginLeft:4 }}>Sort:</span>
++                  {[['deposit','Deposit'],['reward','Reward'],['name','Name']].map(([key,lbl])=>(
++                    <button key={key} onClick={()=>{ if(chaseSort===key){setChaseSortDir(d=>d==='asc'?'desc':'asc')}else{setChaseSort(key);setChaseSortDir('desc')} }}
++                      style={{ padding:'3px 10px', borderRadius:14, fontSize:11, fontWeight:600, border:'1px solid var(--border)', cursor:'pointer',
++                        background: chaseSort===key ? 'var(--accent)' : 'var(--surface2)', color: chaseSort===key ? '#fff' : 'var(--muted)' }}>
++                      {lbl} {chaseSort===key ? (chaseSortDir==='asc' ? '↑' : '↓') : ''}
++                    </button>
++                  ))}
+                   <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:8 }}>
+                     {campType !== 'leaderboard' && (
+                       <button
+@@ -1963,6 +2242,13 @@ export default function Campaigns() {
+                       style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:6, padding:'6px 10px', fontSize:12, color:'var(--text)' }} />
+                     <span style={{ fontSize:11, color:'var(--muted)' }}>Each day settles independently — entering turnover for this date does not affect any other date's record.</span>
+                     {dailyLoading && <span style={{ fontSize:11, color:'var(--muted)' }}>Loading…</span>}
++                    {selected?.is_multi_level && campaignLevels?.length > 0 && (
++                      <button onClick={recalcDailyRewards} disabled={dailyLoading}
++                        style={{ marginLeft:'auto', background:'rgba(201,169,97,.12)', border:'1px solid rgba(201,169,97,.3)', color:'#c9a961', padding:'5px 12px', borderRadius:6, fontSize:11, fontWeight:700, cursor:'pointer' }}
++                        title="Recalculate tier_achieved and credit_reward for ALL entries of this campaign using campaign level thresholds">
++                        🔄 Recalculate All Rewards
++                      </button>
++                    )}
+                   </div>
+                 )}
+                 <table style={s.tbl}>
+@@ -2110,9 +2396,11 @@ export default function Campaigns() {
+                               pr = getProgress(playerDeposit(p), depTarget)
+                             }
+                             const reward = multi
+-                              ? (multiMetric?.qualifiedRewardTotal || 0)
++                              ? (isDailyMode ? (dailyEntry?.credit_reward || 0) : (multiMetric?.qualifiedRewardTotal || 0))
+                               : campType==='dual_tier' ? (dualReward.creditAmount + dualReward.wcashAmount) : calcReward(campType, playerDeposit(p), rewardPct, rewardFixed, goldVal, rewardCap, rewardTiers, campaignLevels, selected?.is_multi_level)
+-                            const qualified = multi ? (multiMetric?.completedCount > 0) : campType==='dual_tier' ? dualReward.tierIndex >= 0 : playerDeposit(p) >= depTarget
++                            const qualified = multi
++                              ? (isDailyMode ? (dailyEntry?.credit_reward || 0) > 0 : (multiMetric?.completedCount > 0))
++                              : campType==='dual_tier' ? dualReward.tierIndex >= 0 : playerDeposit(p) >= depTarget
+                             const playerStreaks = streakBonuses[p.id] || []
+                             const pendingStreaks = playerStreaks.filter(sb => sb.payout_status !== 'paid')
+                             const paidStreaks = playerStreaks.filter(sb => sb.payout_status === 'paid')
+@@ -2173,11 +2461,35 @@ export default function Campaigns() {
+                                     </div>
+                                     <span style={{ fontSize:11, color:pr.color, fontWeight:700, minWidth:36 }}>{pr.pct}%</span>
+                                   </div>
+-                                  {multi && <div style={{ fontSize:10, color:'var(--muted)', marginTop:4 }}>{multiMetric?.allCompleted ? 'All campaign levels unlocked' : multiMetric?.nextLevel ? `Next: ${multiMetric.nextLevel.level_name} · ${rmFmt(Math.max(0, Number(multiMetric.nextLevel.deposit_threshold)-playerDeposit(p)), campCurrency)} more` : '—'}</div>}
++                                  {multi && <div style={{ fontSize:10, color:'var(--muted)', marginTop:4 }}>
++                                    {isDailyMode
++                                      ? (() => {
++                                          const dep = dailyEntry?.deposit_amount || 0
++                                          const sortedLvls = [...campaignLevels].sort((a,b)=>(parseFloat(a.deposit_threshold)||0)-(parseFloat(b.deposit_threshold)||0))
++                                          const nextLvl = sortedLvls.find(l => dep < (parseFloat(l.deposit_threshold)||0))
++                                          return nextLvl ? `Next: ${nextLvl.level_name || ('Level '+nextLvl.level_order)} · ${rmFmt(Math.max(0, Number(nextLvl.deposit_threshold)-dep), campCurrency)} more` : dep > 0 ? 'All levels unlocked today' : '—'
++                                        })()
++                                      : (multiMetric?.allCompleted ? 'All campaign levels unlocked' : multiMetric?.nextLevel ? `Next: ${multiMetric.nextLevel.level_name} · ${rmFmt(Math.max(0, Number(multiMetric.nextLevel.deposit_threshold)-playerDeposit(p)), campCurrency)} more` : '—')
++                                    }
++                                  </div>}
+                                 </td>
+                                 <td style={{ ...s.td, color: qualified ? typeInfo.color : 'var(--muted)', fontWeight: qualified ? 700 : 400, fontSize:12 }}>
+                                   {multi ? (
+-                                    <span>{rmFmt(reward, campCurrency)} total<br /><span style={{ fontSize:10, color:'var(--muted)' }}>{multiMetric?.completedCount || 0}/{campaignLevels.length} levels unlocked</span></span>
++                                    isDailyMode ? (
++                                      <span>
++                                        {reward > 0 ? rmFmt(reward, campCurrency) : '—'} today
++                                        <br />
++                                        <span style={{ fontSize:10, color:'var(--muted)' }}>
++                                          {(() => {
++                                            if (dailyEntry?.tier_achieved == null) return 'No level yet'
++                                            const lvl = campaignLevels.find(l => l.level_order === dailyEntry.tier_achieved)
++                                            return lvl ? `${lvl.level_name || ('Level '+lvl.level_order)} achieved` : `Level ${dailyEntry.tier_achieved} achieved`
++                                          })()}
++                                        </span>
++                                      </span>
++                                    ) : (
++                                      <span>{rmFmt(reward, campCurrency)} total<br /><span style={{ fontSize:10, color:'var(--muted)' }}>{multiMetric?.completedCount || 0}/{campaignLevels.length} levels unlocked</span></span>
++                                    )
+                                   ) : !qualified ? '—' : campType==='dual_tier'
+                                       ? <span>{rmFmt(dualReward.creditAmount, campCurrency)} Credit<br/><span style={{fontSize:10,color:'var(--muted)'}}>+ {rmFmt(dualReward.wcashAmount, campCurrency)} WCash</span></span>
+                                       : rmFmt(reward, campCurrency)}
+@@ -2204,16 +2516,21 @@ export default function Campaigns() {
+                 <div style={{ padding:'8px 24px', fontSize:11, color:'var(--muted)', background:'rgba(63,185,80,.04)', borderBottom:'1px solid var(--border)' }}>
+                   {selected?.is_multi_level ? (selected?.payout_mode === 'highest_only' ? 'Payout mode: Highest level only — one reward per player. Mark paid only after it is actually issued.' : 'Payout mode: All levels — each unlocked level earns its own reward. Mark the individual reward paid only after it is actually issued.') : isDailyMode ? <>Showing players who qualified on <strong style={{ color:'#c9a961' }}>{entryDate}</strong>.</> : 'Only showing players who reached the campaign target.'}
+                 </div>
+-                {selected?.is_multi_level ? (
++                {selected?.is_multi_level && !isDailyMode ? (
+                   multiPayoutRows.length === 0 ? <div style={{ padding:32, textAlign:'center', color:'var(--muted)' }}>No unlocked rewards are ready for payout yet.</div> : (
+                     <table style={s.tbl}>
+-                      <thead><tr><th style={s.th}>#</th><th style={s.th}>Player</th><th style={s.th}>Tier</th><th style={s.th}>Level</th><th style={s.th}>Campaign Deposit</th><th style={s.th}>Reward</th><th style={s.th}>Payout Status</th><th style={s.th}>Paid At</th><th style={s.th}>Notes</th></tr></thead>
++                      <thead><tr><th style={s.th}>#</th><th style={s.th}>Player</th><th style={s.th}>Tier</th><th style={s.th}>Level</th><th style={s.th}>Campaign Deposit</th><th style={s.th}>Reward</th><th style={s.th}>Payout Status</th><th style={s.th}>Paid At</th><th style={s.th}>Phone / WA</th><th style={s.th}>Notes</th></tr></thead>
+                       <tbody>
+                         {multiPayoutRows.map((row,i)=>{
+                           const paid = row.status === 'paid'
+                           const payoutLabel = paid ? '✅ Paid' : row.status === 'approved' ? '🟦 Approved' : '⏳ Pending'
+                           const player = players.find(p=>p.id===row.playerId)
+                           const note = campaignRewards.find(r=>r.id===row.rewardId)?.notes || ''
++                          const waMultiAgent = player?.host_assigned || null
++                          const waMultiMult = selected?.turnover_multiplier ? Number(selected.turnover_multiplier) : null
++                          const waMultiTurnover = waMultiMult && row.rewardAmount > 0 ? rewardFmt(row.rewardAmount * waMultiMult, campCurrency) : null
++                          const waMultiText = buildWaMsgText(row.username, selected?.campaign_name||'Campaign', rewardFmt(row.rewardAmount,campCurrency), waLang, waMultiAgent, waMultiTurnover, selected)
++                          const waUrl = player?.whatsapp ? waHref(player.whatsapp, buildWaMsg(row.username, selected?.campaign_name||'Campaign', rewardFmt(row.rewardAmount,campCurrency), waLang, waMultiAgent, waMultiTurnover, selected)) : null
+                           return <tr key={row.rewardId} style={{ background:paid?'rgba(63,185,80,.04)':'transparent' }}>
+                             <td style={{ ...s.td, color:'var(--muted)', fontSize:11 }}>{i+1}</td>
+                             <td style={{ ...s.td, fontWeight:700 }}>{row.username}</td>
+@@ -2223,20 +2540,157 @@ export default function Campaigns() {
+                             <td style={{ ...s.td, color:typeInfo.color, fontWeight:700 }}>{rewardFmt(row.rewardAmount,campCurrency)} Credit</td>
+                             <td style={s.td}><button onClick={()=>toggleCampaignReward(row.rewardId,!paid)} style={{ ...s.tag(paid?'#3fb950':'#f59e0b',paid?'rgba(63,185,80,.15)':'rgba(245,158,11,.15)'),cursor:'pointer',border:`1px solid ${paid?'rgba(63,185,80,.3)':'rgba(245,158,11,.3)'}` }}>{payoutLabel}</button></td>
+                             <td style={{ ...s.td, fontSize:11, color:'var(--muted)' }}>{row.paidAt ? new Date(row.paidAt).toLocaleDateString('en-MY',{day:'numeric',month:'short',year:'numeric'}) : '—'}</td>
++                            <td style={{...s.td,minWidth:130}}>
++                              <div style={{fontSize:12,color:'var(--muted)',marginBottom:4}}>{player?.whatsapp||'—'}</div>
++                              <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
++                                {waUrl && <a href={waUrl} target="_blank" rel="noreferrer" style={{ display:'inline-flex', alignItems:'center', gap:4, background:'rgba(37,211,102,.15)', color:'#25d366', border:'1px solid rgba(37,211,102,.3)', borderRadius:6, padding:'3px 8px', fontSize:11, fontWeight:700, textDecoration:'none' }}>📲 WA</a>}
++                                <button onClick={()=>navigator.clipboard.writeText(waMultiText).catch(()=>{})} style={{ background:'rgba(88,166,255,.12)', color:'#58a6ff', border:'1px solid rgba(88,166,255,.3)', borderRadius:6, padding:'3px 8px', fontSize:11, fontWeight:700, cursor:'pointer' }}>📋 Copy</button>
++                                {!waUrl && <span style={{fontSize:10,color:'var(--muted)'}}>No number</span>}
++                              </div>
++                            </td>
+                             <td style={s.td}><input defaultValue={note} onBlur={async e=>{const v=e.target.value;if(v!==note){const {error}=await supabase.from('campaign_rewards').update({notes:v}).eq('id',row.rewardId);if(error)console.error(error)}}} style={{ ...s.editInput,width:140 }} placeholder="Add note..." /></td>
+                           </tr>
+                         })}
+-                        <tr style={{ background:'var(--surface2)',fontWeight:700 }}><td colSpan={5} style={s.td}>Total unlocked rewards</td><td style={{ ...s.td,color:typeInfo.color,fontWeight:800 }}>{rewardFmt(totalReward,campCurrency)} Credit</td><td style={s.td}><span style={{color:'#3fb950'}}>{rewardFmt(paidOut,campCurrency)} paid</span><span style={{color:'#f85149',marginLeft:8}}>{rewardFmt(pendingPay,campCurrency)} pending</span></td><td colSpan={2} style={s.td}/></tr>
++                        <tr style={{ background:'var(--surface2)',fontWeight:700 }}><td colSpan={5} style={s.td}>Total unlocked rewards</td><td style={{ ...s.td,color:typeInfo.color,fontWeight:800 }}>{rewardFmt(totalReward,campCurrency)} Credit</td><td style={s.td}><span style={{color:'#3fb950'}}>{rewardFmt(paidOut,campCurrency)} paid</span><span style={{color:'#f85149',marginLeft:8}}>{rewardFmt(pendingPay,campCurrency)} pending</span></td><td colSpan={3} style={s.td}/></tr>
+                       </tbody>
+                     </table>
+                   )
+                 ) : (isDailyMode ? dailyAchieved : achieved).length === 0 ? (
+                   <div style={{ padding:32,textAlign:'center',color:'var(--muted)' }}>{isDailyMode?'No players qualified on this date yet.':'No players have reached the target yet.'}</div>
+                 ) : (
++                  <>
++                  {/* Payout host filter */}
++                  {chaseHosts.length > 1 && (
++                    <div style={{ padding:'6px 24px', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', gap:6, flexWrap:'wrap' }}>
++                      <span style={{ fontSize:11, color:'var(--muted)', fontWeight:600 }}>Host:</span>
++                      {chaseHosts.map(h => (
++                        <button key={h} onClick={()=>setPayoutHostFilter(h)}
++                          style={{ padding:'3px 10px', borderRadius:14, fontSize:11, fontWeight:600, border:'1px solid var(--border)', cursor:'pointer',
++                            background: payoutHostFilter===h ? 'var(--accent)' : 'var(--surface2)',
++                            color: payoutHostFilter===h ? '#fff' : 'var(--muted)' }}>
++                          {h === 'all' ? '🌐 All' : h}
++                        </button>
++                      ))}
++                    </div>
++                  )}
++                  {/* Payout search + sort controls */}
++                  <div style={{ padding:'8px 24px', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
++                    <input value={payoutSearch} onChange={e=>setPayoutSearch(e.target.value)}
++                      placeholder={`🔍 Search ${filteredPayoutList.length} players…`}
++                      style={{ ...s.smInput, width:220, fontSize:12 }} />
++                    {payoutSearch && <button onClick={()=>setPayoutSearch('')} style={{ fontSize:11, color:'var(--muted)', background:'none', border:'none', cursor:'pointer', padding:'2px 6px' }}>✕</button>}
++                    <span style={{ fontSize:11, color:'var(--muted)', marginLeft:4 }}>Sort:</span>
++                    {[['deposit','Deposit'],['reward','Reward'],['name','Name']].map(([key,lbl])=>(
++                      <button key={key} onClick={()=>{ if(payoutSort===key){setPayoutSortDir(d=>d==='asc'?'desc':'asc')}else{setPayoutSort(key);setPayoutSortDir('desc')} }}
++                        style={{ padding:'3px 10px', borderRadius:14, fontSize:11, fontWeight:600, border:'1px solid var(--border)', cursor:'pointer',
++                          background: payoutSort===key ? 'var(--accent)' : 'var(--surface2)', color: payoutSort===key ? '#fff' : 'var(--muted)' }}>
++                        {lbl} {payoutSort===key ? (payoutSortDir==='asc' ? '↑' : '↓') : ''}
++                      </button>
++                    ))}
++                    <span style={{ fontSize:11, color:'var(--muted)', marginLeft:8 }}>WA Lang:</span>
++                    {[['en','EN'],['my','MY'],['cn','中文']].map(([key,lbl])=>(
++                      <button key={key} onClick={()=>setWaLang(key)}
++                        style={{ padding:'3px 10px', borderRadius:14, fontSize:11, fontWeight:700, border:'1px solid var(--border)', cursor:'pointer',
++                          background: waLang===key ? '#25d366' : 'var(--surface2)', color: waLang===key ? '#fff' : 'var(--muted)' }}>
++                        {lbl}
++                      </button>
++                    ))}
++                    <span style={{ marginLeft:'auto', fontSize:11, color:'var(--muted)' }}>{filteredPayoutList.length} of {(isDailyMode?dailyAchieved:achieved).length} players</span>
++                  </div>
+                   <table style={s.tbl}>
+-                    <thead><tr><th style={s.th}>#</th><th style={s.th}>Player</th><th style={s.th}>Tier</th><th style={s.th}>{isDailyMode&&campType==='dual_tier'?'Deposit / Turnover (this date)':isDailyMode?'Turnover (this date)':'Deposit'}</th><th style={s.th}>Reward</th><th style={s.th}>Payout Status</th><th style={s.th}>Notes</th></tr></thead>
+-                    <tbody>{(isDailyMode?dailyAchieved:achieved).map((p,i)=>{const dualReward=isDailyMode?calcDualTierReward(dailyEntries[p.id]?.deposit_amount||0,dailyEntries[p.id]?.turnover_amount||0,rewardTiers):campType==='dual_tier'?calcDualTierReward(playerDeposit(p),p.valid_bet,rewardTiers):null;const reward=campType==='dual_tier'?(dualReward.creditAmount+dualReward.wcashAmount):calcReward(campType,playerDeposit(p),rewardPct,rewardFixed,goldVal,rewardCap,rewardTiers,campaignLevels,selected?.is_multi_level);const paid=p.payout_status==='paid';return <tr key={p.id}><td style={{...s.td,color:'var(--muted)',fontSize:11}}>{i+1}</td><td style={{...s.td,fontWeight:700}}>{p.username}</td><td style={s.td}>{p.tier||'—'}</td><td style={{...s.td,color:'#3fb950',fontWeight:600}}>{isDailyMode&&campType==='dual_tier'?<span>{rmFmt(dailyEntries[p.id]?.deposit_amount||0,campCurrency)}<br/><span style={{fontSize:10,color:'var(--muted)'}}>{rmFmt(dailyEntries[p.id]?.turnover_amount||0,campCurrency)} TO</span></span>:isDailyMode?rmFmt(dailyEntries[p.id]?.turnover_amount||0,campCurrency):rmFmt(playerDeposit(p),campCurrency)}</td><td style={{...s.td,color:typeInfo.color,fontWeight:700}}>{campType==='dual_tier'?<span>{rmFmt(dualReward.creditAmount,campCurrency)} Credit<br/><span style={{fontSize:10,color:'var(--muted)'}}>+ {rmFmt(dualReward.wcashAmount,campCurrency)} WCash</span></span>:rmFmt(reward,campCurrency)}</td><td style={s.td}><button onClick={()=>updatePlayer(p.id,{payout_status:paid?'pending':'paid',payout_date:paid?null:new Date().toISOString()})} style={{...s.tag(paid?'#3fb950':'#f59e0b',paid?'rgba(63,185,80,.15)':'rgba(245,158,11,.15)'),cursor:'pointer'}}>{paid?'✅ Paid':'⏳ Pending'}</button></td><td style={s.td}><input defaultValue={p.notes||''} onBlur={e=>{if(e.target.value!==(p.notes||''))updatePlayer(p.id,{notes:e.target.value})}} style={{...s.editInput,width:140}} placeholder="Add note..."/></td></tr>})}</tbody>
++                    <thead><tr>
++                      <th style={s.th}>#</th>
++                      <th style={s.th}>Player</th>
++                      <th style={s.th}>{isDailyMode&&selected?.is_multi_level ? 'Level' : 'Tier'}</th>
++                      <th style={s.th}>{isDailyMode&&campType==='dual_tier'&&!selected?.is_multi_level?'Deposit / Turnover (this date)':isDailyMode?'Deposit (this date)':'Deposit'}</th>
++                      <th style={s.th}>Reward</th>
++                      <th style={s.th}>Payout Status</th>
++                      <th style={s.th}>Host</th>
++                      <th style={s.th}>Phone / WA</th>
++                      <th style={s.th}>Notes</th>
++                    </tr></thead>
++                    <tbody>{filteredPayoutList.map((p,i)=>{
++                      const isDailyMulti = isDailyMode && selected?.is_multi_level
++                      const entry = dailyEntries[p.id]
++                      const dualReward = !isDailyMulti && campType==='dual_tier'
++                        ? (isDailyMode ? calcDualTierReward(entry?.deposit_amount||0, entry?.turnover_amount||0, rewardTiers) : calcDualTierReward(playerDeposit(p), p.valid_bet, rewardTiers))
++                        : null
++                      const creditReward = isDailyMulti
++                        ? (entry?.credit_reward || 0)
++                        : campType==='dual_tier' ? dualReward.creditAmount : calcReward(campType, playerDeposit(p), rewardPct, rewardFixed, goldVal, rewardCap, rewardTiers, campaignLevels, selected?.is_multi_level)
++                      const wcashReward = isDailyMulti ? 0 : campType==='dual_tier' ? dualReward.wcashAmount : 0
++                      const lvlAchieved = isDailyMulti ? entry?.tier_achieved : null
++                      const lvlObj = lvlAchieved != null ? campaignLevels.find(l=>l.level_order===lvlAchieved) : null
++                      const lvlName = lvlObj ? (lvlObj.level_name || `Level ${lvlObj.level_order}`) : lvlAchieved != null ? `Level ${lvlAchieved}` : '—'
++                      const paid = isDailyMode ? (dailyEntries[p.id]?.payout_status === 'paid') : (p.payout_status === 'paid')
++                      const playerStreakBonuses = streakBonuses[p.id] || []
++                      const pendingStreakBonus = playerStreakBonuses.filter(r => r.payout_status !== 'paid').reduce((s,r) => s + (parseFloat(r.bonus_amount)||0), 0)
++                      const waAgent = p.host_assigned || null
++                      const waTurnoverMult = selected?.turnover_multiplier ? Number(selected.turnover_multiplier) : null
++                      const waTurnoverReq = waTurnoverMult && creditReward > 0 ? rmFmt(creditReward * waTurnoverMult, campCurrency) : null
++                      const waMsgText = buildWaMsgText(p.username, selected?.campaign_name||'Campaign', rmFmt(creditReward,campCurrency), waLang, waAgent, waTurnoverReq, selected)
++                      const waUrl = p.whatsapp ? waHref(p.whatsapp, buildWaMsg(p.username, selected?.campaign_name||'Campaign', rmFmt(creditReward,campCurrency), waLang, waAgent, waTurnoverReq, selected)) : null
++                      return <tr key={p.id}>
++                        <td style={{...s.td,color:'var(--muted)',fontSize:11}}>{i+1}</td>
++                        <td style={{...s.td,fontWeight:700}}>{p.username}</td>
++                        <td style={s.td}>{isDailyMulti
++                          ? <span style={{ fontSize:11, color:'#c9a961', fontWeight:600 }}>{lvlName}</span>
++                          : (p.tier ? <span style={{ ...s.badge, background:TIER_BG[p.tier]||'transparent', color:TIER_COLOR[p.tier]||'var(--muted)' }}>{p.tier}</span> : '—')
++                        }</td>
++                        <td style={{...s.td,color:'#3fb950',fontWeight:600}}>{isDailyMode
++                          ? (campType==='dual_tier'&&!isDailyMulti
++                            ? <span>{rmFmt(entry?.deposit_amount||0,campCurrency)}<br/><span style={{fontSize:10,color:'var(--muted)'}}>{rmFmt(entry?.turnover_amount||0,campCurrency)} TO</span></span>
++                            : rmFmt(entry?.deposit_amount||0,campCurrency))
++                          : rmFmt(playerDeposit(p),campCurrency)
++                        }</td>
++                        <td style={{...s.td,color:typeInfo.color,fontWeight:700}}>{isDailyMulti
++                          ? <span>{rmFmt(creditReward,campCurrency)} Credit</span>
++                          : campType==='dual_tier'
++                            ? <span>{rmFmt(dualReward.creditAmount,campCurrency)} Credit<br/><span style={{fontSize:10,color:'var(--muted)'}}>+ {rmFmt(dualReward.wcashAmount,campCurrency)} WCash</span></span>
++                            : rmFmt(creditReward,campCurrency)
++                        }</td>
++                        <td style={s.td}>
++                          <button onClick={()=> isDailyMode ? updateDailyPayout(p.id, paid?'pending':'paid') : updatePlayer(p.id,{payout_status:paid?'pending':'paid',payout_date:paid?null:new Date().toISOString()})} style={{...s.tag(paid?'#3fb950':'#f59e0b',paid?'rgba(63,185,80,.15)':'rgba(245,158,11,.15)'),cursor:'pointer'}}>{paid?'✅ Paid':'⏳ Pending'}</button>
++                          {selected?.streak_enabled && pendingStreakBonus > 0 && (
++                            <div style={{ marginTop:3, fontSize:10, color:'#f59e0b', fontWeight:700, whiteSpace:'nowrap' }}>🔥 +{rmFmt(pendingStreakBonus, campCurrency)} streak</div>
++                          )}
++                        </td>
++                        <td style={{...s.td,fontSize:12,color:'var(--muted)',fontWeight:600}}>{p.host_assigned||<span style={{color:'var(--surface2)'}}>—</span>}</td>
++                        <td style={{...s.td,minWidth:130}}>
++                          <div style={{fontSize:12,color:'var(--muted)',marginBottom:4}}>{p.whatsapp||<span style={{color:'var(--surface2)'}}>—</span>}</div>
++                          <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
++                            {waUrl && <a href={waUrl} target="_blank" rel="noreferrer" style={{ display:'inline-flex', alignItems:'center', gap:4, background:'rgba(37,211,102,.15)', color:'#25d366', border:'1px solid rgba(37,211,102,.3)', borderRadius:6, padding:'3px 8px', fontSize:11, fontWeight:700, textDecoration:'none' }}>📲 WA</a>}
++                            <button onClick={()=>navigator.clipboard.writeText(waMsgText).catch(()=>{})} style={{ background:'rgba(88,166,255,.12)', color:'#58a6ff', border:'1px solid rgba(88,166,255,.3)', borderRadius:6, padding:'3px 8px', fontSize:11, fontWeight:700, cursor:'pointer' }}>📋 Copy</button>
++                            {!waUrl && <span style={{fontSize:10,color:'var(--muted)'}}>No number</span>}
++                          </div>
++                        </td>
++                        <td style={s.td}><input defaultValue={p.notes||''} onBlur={e=>{if(e.target.value!==(p.notes||''))updatePlayer(p.id,{notes:e.target.value})}} style={{...s.editInput,width:140}} placeholder="Add note..."/></td>
++                      </tr>
++                    })}
++                    {(() => {
++                      const sumDep = filteredPayoutList.reduce((s,p) => s + (isDailyMode ? (parseFloat(dailyEntries[p.id]?.deposit_amount)||0) : playerDeposit(p)), 0)
++                      const sumReward = filteredPayoutList.reduce((s,p) => {
++                        if (isDailyMode && selected?.is_multi_level) return s + (dailyEntries[p.id]?.credit_reward || 0)
++                        if (campType==='dual_tier' && !selected?.is_multi_level) {
++                          const dr = isDailyMode ? calcDualTierReward(dailyEntries[p.id]?.deposit_amount||0, dailyEntries[p.id]?.turnover_amount||0, rewardTiers) : calcDualTierReward(playerDeposit(p), p.valid_bet, rewardTiers)
++                          return s + dr.creditAmount + dr.wcashAmount
++                        }
++                        return s + calcReward(campType, playerDeposit(p), rewardPct, rewardFixed, goldVal, rewardCap, rewardTiers, campaignLevels, selected?.is_multi_level)
++                      }, 0)
++                      const paidCount = filteredPayoutList.filter(p=> isDailyMode ? dailyEntries[p.id]?.payout_status==='paid' : p.payout_status==='paid').length
++                      return (
++                        <tr style={{ background:'var(--surface2)', fontWeight:700, borderTop:'2px solid var(--border)' }}>
++                          <td colSpan={2} style={{ ...s.td, color:'var(--muted)', fontSize:12 }}>Total ({filteredPayoutList.length} players · {paidCount} paid)</td>
++                          <td style={s.td}/>
++                          <td style={{ ...s.td, color:'#3fb950', fontWeight:800 }}>{rmFmt(sumDep, campCurrency)}</td>
++                          <td style={{ ...s.td, color:typeInfo.color, fontWeight:800 }}>{rmFmt(sumReward, campCurrency)}</td>
++                          <td colSpan={4} style={s.td}/>
++                        </tr>
++                      )
++                    })()}
++                    </tbody>
+                   </table>
++                  </>
+                 )}
+ 
+                 {/* ── STREAK BONUSES PAYOUT SECTION ── */}
+@@ -2323,6 +2777,261 @@ export default function Campaigns() {
+             )}
+ 
+             {/* ── ALL PLAYERS TAB ── */}
++            {/* ── INACTIVE TAB ── */}
++            {activeTab === 'inactive' && (() => {
++              // Players with zero qualifying entries (credit_reward > 0) across the whole campaign
++              const qualifiedPlayerIds = new Set(
++                allDailyEntries.filter(e => (parseFloat(e.credit_reward) || 0) > 0).map(e => e.player_id)
++              )
++              const inactivePlayers = players.filter(p => !qualifiedPlayerIds.has(p.id))
++              return (
++                <div style={{ overflowX:'auto' }}>
++                  <div style={{ padding:'8px 24px', fontSize:11, color:'var(--muted)', background:'rgba(88,166,255,.04)', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', gap:12 }}>
++                    <span>😴 Players enrolled but never qualified for a reward across the entire campaign period</span>
++                    {allDailyEntriesLoading && <span style={{ color:'#f59e0b' }}>Loading…</span>}
++                    <button onClick={() => loadAllDailyEntries(selected.id)} style={{ marginLeft:'auto', background:'var(--surface2)', border:'1px solid var(--border)', color:'var(--muted)', padding:'3px 10px', borderRadius:5, fontSize:11, cursor:'pointer' }}>↺ Refresh</button>
++                  </div>
++                  {!allDailyEntriesLoading && inactivePlayers.length === 0 && (
++                    <div style={{ padding:'32px 24px', textAlign:'center', color:'var(--muted)', fontSize:13 }}>🎉 All enrolled players have qualified at least once!</div>
++                  )}
++                  {inactivePlayers.length > 0 && (
++                    <table style={s.tbl}>
++                      <thead><tr>
++                        <th style={s.th}>#</th>
++                        <th style={s.th}>Player</th>
++                        <th style={s.th}>Tier</th>
++                        <th style={s.th}>Host</th>
++                        <th style={s.th}>WhatsApp</th>
++                        <th style={s.th}>Enrolled</th>
++                        <th style={s.th}>Days in Campaign</th>
++                      </tr></thead>
++                      <tbody>
++                        {inactivePlayers.map((p, i) => {
++                          const enrolledDate = p.added_at ? new Date(p.added_at).toLocaleDateString('en-MY', { day:'numeric', month:'short' }) : '—'
++                          // how many days this player has any entry (even non-qualifying)
++                          const playerEntryDates = allDailyEntries.filter(e => e.player_id === p.id)
++                          return (
++                            <tr key={p.id}>
++                              <td style={{ ...s.td, color:'var(--muted)', fontSize:11 }}>{i+1}</td>
++                              <td style={{ ...s.td, fontWeight:700 }}>{p.username}</td>
++                              <td style={s.td}>{p.tier ? <span style={{ ...s.badge, background:TIER_BG[p.tier]||'transparent', color:TIER_COLOR[p.tier]||'var(--muted)' }}>{p.tier}</span> : '—'}</td>
++                              <td style={{ ...s.td, fontSize:12, color:'var(--muted)' }}>{p.host_assigned || '—'}</td>
++                              <td style={{ ...s.td, fontSize:12 }}>{p.whatsapp || <span style={{ color:'var(--surface2)' }}>—</span>}</td>
++                              <td style={{ ...s.td, fontSize:11, color:'var(--muted)' }}>{enrolledDate}</td>
++                              <td style={{ ...s.td, fontSize:12, color: playerEntryDates.length > 0 ? '#f59e0b' : '#f85149' }}>
++                                {playerEntryDates.length > 0 ? `${playerEntryDates.length} entries (0 qualifying)` : 'No entries at all'}
++                              </td>
++                            </tr>
++                          )
++                        })}
++                      </tbody>
++                    </table>
++                  )}
++                  <div style={{ padding:'8px 24px', fontSize:11, color:'var(--muted)' }}>
++                    {inactivePlayers.length} inactive · {players.length - inactivePlayers.length} active
++                  </div>
++                </div>
++              )
++            })()}
++
++            {/* ── STREAK TAB ── */}
++            {activeTab === 'streak' && (() => {
++              const streakDays = Number(selected?.streak_days) || 3
++              const bonusType = selected?.streak_bonus_type || 'pct'
++              const bonusPct = Number(selected?.streak_bonus_pct) || 1.0
++              const bonusFixed = Number(selected?.streak_bonus_fixed) || 0
++              const bonusCap = Number(selected?.streak_bonus_cap) || 0
++
++              // Compute min qualifying deposit (lowest level threshold or deposit_target)
++              const sortedLvls = [...campaignLevels].sort((a, b) => (parseFloat(a.deposit_threshold)||0) - (parseFloat(b.deposit_threshold)||0))
++              const minThreshold = sortedLvls.length > 0 ? (parseFloat(sortedLvls[0].deposit_threshold)||0) : (parseFloat(selected?.deposit_target)||5000)
++
++              // Build per-player streak data from allDailyEntries
++              const perPlayer = {}
++              for (const e of allDailyEntries) {
++                if (!perPlayer[e.player_id]) perPlayer[e.player_id] = []
++                perPlayer[e.player_id].push(e)
++              }
++
++              const playerStreakRows = players.map(p => {
++                const entries = (perPlayer[p.id] || []).filter(e => (parseFloat(e.deposit_amount)||0) >= minThreshold)
++                const dates = entries.map(e => e.entry_date).sort()
++                // Find all consecutive runs
++                const runs = []
++                if (dates.length > 0) {
++                  let cur = [dates[0]]
++                  for (let i = 1; i < dates.length; i++) {
++                    const prev = new Date(dates[i-1] + 'T00:00:00Z')
++                    const next = new Date(dates[i] + 'T00:00:00Z')
++                    if (Math.round((next - prev) / 86400000) === 1) { cur.push(dates[i]) }
++                    else { runs.push(cur); cur = [dates[i]] }
++                  }
++                  runs.push(cur)
++                }
++                const maxStreak = runs.length > 0 ? Math.max(...runs.map(r => r.length)) : 0
++                const currentRun = runs.length > 0 ? runs[runs.length - 1] : []
++                const achieved = maxStreak >= streakDays
++                // Total deposit across qualifying entries for bonus calc
++                const totalDeposit = entries.reduce((s, e) => s + (parseFloat(e.deposit_amount)||0), 0)
++                const totalReward = (perPlayer[p.id]||[]).reduce((s, e) => s + (parseFloat(e.credit_reward)||0), 0)
++                // Compute bonus
++                let bonusAmt = 0
++                if (achieved) {
++                  bonusAmt = bonusType === 'pct' ? totalDeposit * bonusPct / 100 : bonusFixed
++                  if (bonusCap > 0) bonusAmt = Math.min(bonusAmt, bonusCap)
++                }
++                // Streak bonus records already in DB
++                const awardedBonuses = streakBonuses[p.id] || []
++                return { p, dates, runs, maxStreak, currentRun, achieved, bonusAmt, totalReward, awardedBonuses }
++              }).sort((a, b) => b.maxStreak - a.maxStreak || a.p.username.localeCompare(b.p.username))
++
++              // Flatten streak bonus rows for payout section
++              const allStreakRows = Object.entries(streakBonuses).flatMap(([playerId, rows]) => {
++                const player = players.find(p => p.id === playerId)
++                return rows.map(sb => ({ ...sb, username: player?.username || playerId, tier: player?.tier, host: player?.host_assigned }))
++              }).sort((a, b) => a.username.localeCompare(b.username) || a.streak_number - b.streak_number)
++
++              return (
++                <div style={{ overflowX:'auto' }}>
++                  {/* Header */}
++                  <div style={{ padding:'8px 24px', fontSize:11, color:'var(--muted)', background:'rgba(245,158,11,.04)', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', gap:12 }}>
++                    <span>🔥 Streak target: <strong>{streakDays} consecutive days</strong> · Bonus: {bonusType === 'pct' ? `${bonusPct}% of period deposit` : `RM ${bonusFixed} fixed`}{bonusCap > 0 ? ` (cap: ${rmFmt(bonusCap, campCurrency)})` : ''}</span>
++                    {allDailyEntriesLoading && <span style={{ color:'#f59e0b' }}>Loading…</span>}
++                    {!selected?.streak_enabled && <span style={{ background:'rgba(248,81,73,.15)', color:'#f85149', borderRadius:4, padding:'1px 8px', fontSize:10, fontWeight:700 }}>STREAK DISABLED</span>}
++                    <button onClick={() => { loadAllDailyEntries(selected.id); loadStreakBonuses(selected.id) }} style={{ marginLeft:'auto', background:'var(--surface2)', border:'1px solid var(--border)', color:'var(--muted)', padding:'3px 10px', borderRadius:5, fontSize:11, cursor:'pointer' }}>↺ Refresh</button>
++                  </div>
++
++                  {/* Streak progress table */}
++                  <table style={s.tbl}>
++                    <thead><tr>
++                      <th style={s.th}>#</th>
++                      <th style={s.th}>Player</th>
++                      <th style={s.th}>Tier</th>
++                      <th style={s.th}>Host</th>
++                      <th style={s.th}>Qualifying Days</th>
++                      <th style={s.th}>Max Streak</th>
++                      <th style={s.th}>Current Run</th>
++                      <th style={s.th}>Target ({streakDays}d)</th>
++                      <th style={s.th}>Est. Bonus</th>
++                      <th style={s.th}>Awarded</th>
++                    </tr></thead>
++                    <tbody>
++                      {playerStreakRows.map(({ p, dates, maxStreak, currentRun, achieved, bonusAmt, awardedBonuses }, i) => {
++                        const awardedTotal = awardedBonuses.reduce((s, r) => s + (parseFloat(r.bonus_amount)||0), 0)
++                        const awardedPaid = awardedBonuses.filter(r => r.payout_status === 'paid').length
++                        return (
++                          <tr key={p.id} style={{ background: achieved ? 'rgba(63,185,80,.04)' : 'transparent' }}>
++                            <td style={{ ...s.td, color:'var(--muted)', fontSize:11 }}>{i+1}</td>
++                            <td style={{ ...s.td, fontWeight:700 }}>{p.username}</td>
++                            <td style={s.td}>{p.tier ? <span style={{ ...s.badge, background:TIER_BG[p.tier]||'transparent', color:TIER_COLOR[p.tier]||'var(--muted)' }}>{p.tier}</span> : '—'}</td>
++                            <td style={{ ...s.td, fontSize:12, color:'var(--muted)' }}>{p.host_assigned || '—'}</td>
++                            <td style={{ ...s.td, color:'#58a6ff', fontWeight:600 }}>{dates.length}</td>
++                            <td style={{ ...s.td, color: maxStreak >= streakDays ? '#3fb950' : maxStreak >= Math.ceil(streakDays * 0.6) ? '#f59e0b' : 'var(--muted)', fontWeight:700, fontSize:15 }}>
++                              {maxStreak > 0 ? `🔥 ${maxStreak}` : '—'}
++                            </td>
++                            <td style={{ ...s.td, fontSize:12, color: currentRun.length >= streakDays ? '#3fb950' : 'var(--muted)' }}>
++                              {currentRun.length > 0 ? `${currentRun.length}d (${fmtDate(currentRun[0])}→${fmtDate(currentRun[currentRun.length-1])})` : '—'}
++                            </td>
++                            <td style={s.td}>
++                              {achieved
++                                ? <span style={{ color:'#3fb950', fontWeight:700 }}>✅ Hit</span>
++                                : <span style={{ color:'#f85149', fontWeight:600 }}>❌ {streakDays - maxStreak}d short</span>
++                              }
++                            </td>
++                            <td style={{ ...s.td, color: achieved ? '#f59e0b' : 'var(--muted)', fontWeight: achieved ? 700 : 400 }}>
++                              {achieved ? rmFmt(bonusAmt, campCurrency) : '—'}
++                            </td>
++                            <td style={{ ...s.td, fontSize:11 }}>
++                              {awardedBonuses.length > 0
++                                ? <span>{awardedBonuses.length} bonus{awardedBonuses.length>1?'es':''} · {rmFmt(awardedTotal, campCurrency)} · {awardedPaid}/{awardedBonuses.length} paid</span>
++                                : <span style={{ color:'var(--surface2)' }}>—</span>
++                              }
++                            </td>
++                          </tr>
++                        )
++                      })}
++                    </tbody>
++                  </table>
++
++                  {/* Streak Bonus Payout section */}
++                  <div style={{ borderTop:'2px solid var(--border)', marginTop:8 }}>
++                    <div style={{ padding:'10px 24px', display:'flex', alignItems:'center', gap:10, background:'rgba(245,158,11,.04)' }}>
++                      <span style={{ fontSize:13, fontWeight:800 }}>💸 Streak Bonus Payout</span>
++                      {streakBonusesLoading && <span style={{ fontSize:11, color:'var(--muted)' }}>Loading…</span>}
++                      {!streakBonusesLoading && <span style={{ fontSize:11, color:'var(--muted)' }}>
++                        {allStreakRows.length} bonus{allStreakRows.length !== 1 ? 'es' : ''} · {allStreakRows.filter(r=>r.payout_status==='paid').length} paid · {rmFmt(allStreakRows.filter(r=>r.payout_status!=='paid').reduce((s,r)=>s+(parseFloat(r.bonus_amount)||0),0), campCurrency)} pending
++                      </span>}
++                      <button onClick={() => loadStreakBonuses(selected.id)} style={{ marginLeft:'auto', background:'var(--surface2)', border:'1px solid var(--border)', color:'var(--muted)', padding:'3px 10px', borderRadius:5, fontSize:11, cursor:'pointer' }}>↺ Refresh</button>
++                    </div>
++                    {allStreakRows.length === 0 && !streakBonusesLoading && (
++                      <div style={{ padding:'16px 24px', fontSize:12, color:'var(--muted)' }}>
++                        No streak bonuses awarded yet. Bonuses are triggered automatically when a player saves a qualifying entry that completes a {streakDays}-day streak.
++                      </div>
++                    )}
++                    {allStreakRows.length > 0 && (
++                      <table style={s.tbl}>
++                        <thead><tr>
++                          <th style={s.th}>#</th>
++                          <th style={s.th}>Player</th>
++                          <th style={s.th}>Host</th>
++                          <th style={s.th}>Streak #</th>
++                          <th style={s.th}>Period</th>
++                          <th style={s.th}>Period Deposit</th>
++                          <th style={s.th}>Bonus</th>
++                          <th style={s.th}>Pay Date</th>
++                          <th style={s.th}>Status</th>
++                          <th style={s.th}>Notes</th>
++                        </tr></thead>
++                        <tbody>
++                          {allStreakRows.map((sb, i) => {
++                            const paid = sb.payout_status === 'paid'
++                            return (
++                              <tr key={sb.id} style={{ background: paid ? 'rgba(63,185,80,.04)' : 'transparent' }}>
++                                <td style={{ ...s.td, color:'var(--muted)', fontSize:11 }}>{i+1}</td>
++                                <td style={{ ...s.td, fontWeight:700 }}>
++                                  {sb.username}
++                                  {sb.tier && <span style={{ ...s.badge, background:TIER_BG[sb.tier]||'transparent', color:TIER_COLOR[sb.tier]||'var(--muted)', fontSize:10, marginLeft:4 }}>{sb.tier}</span>}
++                                </td>
++                                <td style={{ ...s.td, fontSize:12, color:'var(--muted)' }}>{sb.host || '—'}</td>
++                                <td style={{ ...s.td, color:'#f59e0b', fontWeight:700 }}>🔥 #{sb.streak_number}</td>
++                                <td style={{ ...s.td, fontSize:11, color:'var(--muted)' }}>{fmtDate(sb.period_start)} → {fmtDate(sb.period_end)}</td>
++                                <td style={{ ...s.td, color:'#3fb950', fontWeight:600 }}>{rmFmt(sb.period_deposit, campCurrency)}</td>
++                                <td style={{ ...s.td, color:'#f59e0b', fontWeight:800 }}>{rmFmt(sb.bonus_amount, campCurrency)}</td>
++                                <td style={{ ...s.td, fontSize:11, color:'var(--muted)' }}>{sb.payout_date ? fmtDate(sb.payout_date) : '—'}</td>
++                                <td style={s.td}>
++                                  <button onClick={async () => {
++                                    const newStatus = paid ? 'pending' : 'paid'
++                                    const { error } = await supabase.from('campaign_streak_bonuses').update({ payout_status: newStatus, payout_date: newStatus === 'paid' ? new Date().toISOString().slice(0,10) : sb.payout_date }).eq('id', sb.id)
++                                    if (error) { console.error(error); return }
++                                    await loadStreakBonuses(selected.id)
++                                  }} style={{ ...s.tag(paid ? '#3fb950' : '#f59e0b', paid ? 'rgba(63,185,80,.15)' : 'rgba(245,158,11,.15)'), cursor:'pointer', border:`1px solid ${paid ? 'rgba(63,185,80,.3)' : 'rgba(245,158,11,.3)'}` }}>
++                                    {paid ? '✅ Paid' : '⏳ Pending'}
++                                  </button>
++                                </td>
++                                <td style={s.td}>
++                                  <input defaultValue={sb.notes||''} onBlur={async e => { const v=e.target.value; if(v!==(sb.notes||'')) { await supabase.from('campaign_streak_bonuses').update({notes:v}).eq('id',sb.id); await loadStreakBonuses(selected.id) }}} style={{ ...s.editInput, width:140 }} placeholder="Add note…" />
++                                </td>
++                              </tr>
++                            )
++                          })}
++                          <tr style={{ background:'var(--surface2)', fontWeight:700 }}>
++                            <td colSpan={6} style={s.td}>Total streak bonuses</td>
++                            <td style={{ ...s.td, color:'#f59e0b', fontWeight:800 }}>{rmFmt(allStreakRows.reduce((s,r)=>s+(parseFloat(r.bonus_amount)||0),0), campCurrency)}</td>
++                            <td style={s.td} />
++                            <td style={s.td}>
++                              <span style={{color:'#3fb950'}}>{rmFmt(allStreakRows.filter(r=>r.payout_status==='paid').reduce((s,r)=>s+(parseFloat(r.bonus_amount)||0),0), campCurrency)} paid</span>
++                              <span style={{color:'#f85149',marginLeft:8}}>{rmFmt(allStreakRows.filter(r=>r.payout_status!=='paid').reduce((s,r)=>s+(parseFloat(r.bonus_amount)||0),0), campCurrency)} pending</span>
++                            </td>
++                            <td style={s.td} />
++                          </tr>
++                        </tbody>
++                      </table>
++                    )}
++                  </div>
++                </div>
++              )
++            })()}
++
+             {activeTab === 'register' && (
+               <div style={{ overflowX:'auto' }}>
+                 <div style={{ padding:'8px 24px', fontSize:11, color:'var(--muted)', background:'rgba(88,166,255,.04)', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+@@ -2398,7 +3107,7 @@ export default function Campaigns() {
+                               <td style={{ ...s.td, fontSize:12 }}>{p.whatsapp||'—'}</td>
+                               <td style={{ ...s.td, color:'#3fb950' }}>
+                                 {isDailyMode
+-                                  ? (real ? rmFmt(real.deposit, campCurrency) : <span style={{ color:'var(--muted)' }}>—</span>)
++                                  ? rmFmt(summaryData?.depositByPlayer?.[p.id] ?? null, campCurrency)
+                                   : rmFmt(playerDeposit(p), campCurrency)}
+                               </td>
+                               <td style={{ ...s.td, color:'var(--accent)' }}>{real ? rmFmt(real.validBet, campCurrency) : <span style={{ color:'var(--muted)' }}>—</span>}</td>
+@@ -2458,7 +3167,7 @@ export default function Campaigns() {
+                 <div style={{ display:'grid', gridTemplateColumns:'repeat(6,1fr)', gap:12, marginBottom:18 }}>
+                   {[
+                     ['Players',players.length,'#a78bfa'],['Qualified',achieved.length,'#3fb950'],
+-                    ['Reward Rows',selected?.is_multi_level?multiSummary.rewardRows:achieved.length,'#c9a961'],
++                    ['Reward Rows', isDailyMode && selected?.is_multi_level ? (summaryData?.qualifyingEntries ?? '…') : selected?.is_multi_level ? multiSummary.rewardRows : achieved.length, '#c9a961'],
+                     ['Total Reward',rewardFmt(totalReward,campCurrency),typeInfo.color],['Paid',rewardFmt(paidOut,campCurrency),'#3fb950'],['Pending',rewardFmt(pendingPay,campCurrency),'#f85149'],
+                   ].map(([label,val,color])=><div key={label} style={{background:'var(--bg)',border:'1px solid var(--border)',borderRadius:8,padding:14}}><div style={{fontSize:18,fontWeight:700,color}}>{val}</div><div style={{fontSize:11,color:'var(--muted)',marginTop:2}}>{label}</div></div>)}
+                 </div>
+@@ -2466,12 +3175,28 @@ export default function Campaigns() {
+                 {selected?.is_multi_level && <>
+                   <div style={{fontSize:13,fontWeight:700,marginBottom:8}}>🏆 Multi-Level Progress</div>
+                   <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12,marginBottom:18}}>
+-                    {[
+-                      ['Players with reward',multiSummary.playersWithReward,'#3fb950'],['Fully completed',multiSummary.fullyCompleted,'#a78bfa'],['Levels unlocked',multiSummary.unlockedLevels,'#c9a961'],['Full completion rate',multiSummary.successRate+'%','#3fb950'],
+-                    ].map(([label,val,color])=><div key={label} style={{background:'var(--bg)',border:'1px solid var(--border)',borderRadius:8,padding:14}}><div style={{fontSize:20,fontWeight:700,color}}>{val}</div><div style={{fontSize:11,color:'var(--muted)',marginTop:2}}>{label}</div></div>)}
++                    {(()=>{
++                      const sortedLvls = [...campaignLevels].sort((a,b)=>Number(b.deposit_threshold)-Number(a.deposit_threshold))
++                      const highestLvlId = sortedLvls[0]?.id
++                      const dailyPlayersWithReward = isDailyMode ? (summaryData?.uniqueParticipants || 0) : multiSummary.playersWithReward
++                      const dailyFullyCompleted = isDailyMode ? (summaryData?.levelPlayerCounts?.[highestLvlId] || 0) : multiSummary.fullyCompleted
++                      const dailyUnlockedLevels = isDailyMode ? Object.values(summaryData?.levelPlayerCounts || {}).reduce((s,v)=>s+v,0) : multiSummary.unlockedLevels
++                      const dailySuccessRate = isDailyMode ? (players.length ? Math.round(dailyFullyCompleted/players.length*100) : 0) : multiSummary.successRate
++                      return [
++                        ['Players with reward',dailyPlayersWithReward,'#3fb950'],['Fully completed',dailyFullyCompleted,'#a78bfa'],['Levels unlocked',dailyUnlockedLevels,'#c9a961'],['Full completion rate',dailySuccessRate+'%','#3fb950'],
++                      ]
++                    })().map(([label,val,color])=><div key={label} style={{background:'var(--bg)',border:'1px solid var(--border)',borderRadius:8,padding:14}}><div style={{fontSize:20,fontWeight:700,color}}>{val}</div><div style={{fontSize:11,color:'var(--muted)',marginTop:2}}>{label}</div></div>)}
+                   </div>
+-                  <table style={{...s.tbl,marginBottom:24}}><thead><tr><th style={s.th}>Level</th><th style={s.th}>Target</th><th style={s.th}>Unlocked Players</th><th style={s.th}>Reward Each</th><th style={s.th}>Reward Rows</th></tr></thead><tbody>
+-                    {campaignLevels.map(level=>{const unlockedCount=campaignPlayerLevels.filter(pl=>pl.campaign_level_id===level.id&&['unlocked','claimed','issued','paid','approved'].includes(pl.status)).length;const rewardRows=campaignRewards.filter(r=>r.campaign_level_id===level.id).length;return <tr key={level.id}><td style={{...s.td,fontWeight:700}}>{level.level_name}</td><td style={s.td}>{rmFmt(level.deposit_threshold,campCurrency)}</td><td style={{...s.td,color:'#3fb950',fontWeight:700}}>{unlockedCount}</td><td style={{...s.td,color:typeInfo.color,fontWeight:700}}>{rmFmt(level.reward_amount,campCurrency)} Credit</td><td style={s.td}>{rewardRows}</td></tr>})}
++                  <table style={{...s.tbl,marginBottom:24}}><thead><tr><th style={s.th}>Level</th><th style={s.th}>Target</th><th style={s.th}>Qualified Players</th><th style={s.th}>Reward Each</th><th style={s.th}>{isDailyMode?'Player-Days':'Reward Rows'}</th></tr></thead><tbody>
++                    {campaignLevels.map(level=>{
++                      const unlockedCount=isDailyMode
++                        ? (summaryData?.levelPlayerCounts?.[level.id] || 0)
++                        : campaignPlayerLevels.filter(pl=>pl.campaign_level_id===level.id&&['unlocked','claimed','issued','paid','approved'].includes(pl.status)).length
++                      const rewardRows=isDailyMode
++                        ? Object.values(summaryData?.tierHitCounts||{}).reduce((s,v)=>s+v,0) // placeholder — not meaningful for multi-level daily
++                        : campaignRewards.filter(r=>r.campaign_level_id===level.id).length
++                      return <tr key={level.id}><td style={{...s.td,fontWeight:700}}>{level.level_name}</td><td style={s.td}>{rmFmt(level.deposit_threshold,campCurrency)}</td><td style={{...s.td,color:'#3fb950',fontWeight:700}}>{unlockedCount}</td><td style={{...s.td,color:typeInfo.color,fontWeight:700}}>{rmFmt(level.reward_amount,campCurrency)} Credit</td><td style={s.td}>{isDailyMode?'—':rewardRows}</td></tr>
++                    })}
+                   </tbody></table>
+                 </>}
+ 
+diff --git a/supabase/migrations/20260919000000_campaign_turnover_multiplier.sql b/supabase/migrations/20260919000000_campaign_turnover_multiplier.sql
+new file mode 100644
+index 0000000..464d828
+--- /dev/null
++++ b/supabase/migrations/20260919000000_campaign_turnover_multiplier.sql
+@@ -0,0 +1,8 @@
++-- Add turnover_multiplier to campaigns table
++-- Used to display wagering requirement in WA notification messages
++-- e.g. turnover_multiplier = 3 means reward × 3 = required turnover before withdrawal
++
++ALTER TABLE campaigns
++  ADD COLUMN IF NOT EXISTS turnover_multiplier numeric(6,2) DEFAULT NULL;
++
++COMMENT ON COLUMN campaigns.turnover_multiplier IS 'Wagering multiplier for reward payout. E.g. 3 means players must wager reward_amount × 3 before they can withdraw.';
+-- 
+2.43.0
+

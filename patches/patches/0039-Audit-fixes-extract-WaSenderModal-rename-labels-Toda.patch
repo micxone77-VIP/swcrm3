@@ -1,0 +1,369 @@
+From a20794cc33a5b6a522e152d9e105567ba4815a42 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sun, 27 Sep 2026 03:11:35 +0000
+Subject: [PATCH 39/39] Audit fixes: extract WaSenderModal, rename labels,
+ Today tabs, split Intelligence
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- Extract WaSenderModal into src/components/WaSenderModal.jsx (shared)
+  Remove local duplicate from AtRisk.jsx and FollowUp.jsx
+- Sidebar renames: At Risk → Active Risk, Churn Alerts → Churn Urgency,
+  Monthly Churn → Churn Analysis (in NAV_GROUPS + i18n EN + ZH)
+- Today.jsx: add tab bar — Today / Follow Up / Retention Queue
+  Lazy-imports FollowUp and RetentionQueue for in-page tab switching
+- Split Intelligence sidebar section into Analytics (admin/readonly) and
+  Performance (all roles: KPI, Host Performance, Ask Data)
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01DqGp4gVeTBMvwho4pP8n8C
+---
+ src/components/Sidebar.jsx       | 20 +++++++++-------
+ src/components/WaSenderModal.jsx | 39 +++++++++++++++++++++++++++++++
+ src/lib/i18n.js                  | 12 +++++-----
+ src/pages/AtRisk.jsx             | 40 ++------------------------------
+ src/pages/FollowUp.jsx           | 38 +-----------------------------
+ src/pages/Today.jsx              | 40 +++++++++++++++++++++++++++++++-
+ 6 files changed, 98 insertions(+), 91 deletions(-)
+ create mode 100644 src/components/WaSenderModal.jsx
+
+diff --git a/src/components/Sidebar.jsx b/src/components/Sidebar.jsx
+index ebfa766..d7814ca 100644
+--- a/src/components/Sidebar.jsx
++++ b/src/components/Sidebar.jsx
+@@ -14,7 +14,7 @@ const NAV_GROUPS = [
+   ] },
+   { key: 'vip', label: 'VIP Operations', icon: '👑', items: [
+     { to: '/vips', label: 'All VIPs', icon: '👥', roles: ['admin','host'] },
+-    { to: '/at-risk', label: 'At Risk', icon: '⚠️', roles: ['admin','host'] },
++    { to: '/at-risk', label: 'Active Risk', icon: '⚠️', roles: ['admin','host'] },
+     { to: '/active-tracker', label: 'Active Tracker', icon: '📡', roles: ['admin','host'] },
+     { to: '/follow-up', label: 'Follow Up', icon: '📞', roles: ['admin','host'] },
+     { to: '/birthdays', label: 'Birthdays', icon: '🎂', roles: ['admin','host','readonly'] },
+@@ -22,9 +22,9 @@ const NAV_GROUPS = [
+     { to: '/transfer', label: 'Transfers', icon: '🔄', roles: ['admin'] },
+   ] },
+   { key: 'retention', label: 'Retention', icon: '📉', items: [
+-    { to: '/retention', label: 'Monthly Churn', icon: '📉', roles: ['admin','host','readonly'] },
++    { to: '/retention', label: 'Churn Analysis', icon: '📉', roles: ['admin','host','readonly'] },
+     { to: '/retention-queue', label: 'Daily Work Queue', icon: '🎯', roles: ['admin','host','readonly'] },
+-    { to: '/churn', label: 'Churn Alerts', icon: '🚨', roles: ['admin','host'] },
++    { to: '/churn', label: 'Churn Urgency', icon: '🚨', roles: ['admin','host'] },
+     { to: '/contacts', label: 'Contact Log', icon: '📝', roles: ['admin','host'] },
+     { to: '/weekly-outcome', label: 'Weekly Outcome', icon: '📋', roles: ['admin','host','readonly'] },
+     { to: '/retention-analytics', label: 'Retention Analytics', icon: '📊', roles: ['admin','readonly'] },
+@@ -34,15 +34,17 @@ const NAV_GROUPS = [
+     { to: '/lucky-spin-admin', label: 'Lucky Spin', icon: '🎰', roles: ['admin','host'] },
+     { to: '/budget', label: 'Budget', icon: '💰', roles: ['admin'] },
+   ] },
+-  { key: 'intelligence', label: 'Intelligence', icon: '📊', items: [
++  { key: 'analytics', label: 'Analytics', icon: '📈', items: [
+     { to: '/analytics', label: 'Analytics', icon: '📈', roles: ['admin','readonly'] },
+-    { to: '/kpi', label: 'KPI', icon: '🏆', roles: ['admin','host','readonly'] },
+-    { to: '/period-report', label: 'Reports', icon: '📅', roles: ['admin','readonly'] },
+-    { to: '/profiling', label: 'Player Insights', icon: '🧠', roles: ['admin','readonly'] },
+     { to: '/tier-analytics', label: 'Tier Analytics', icon: '🔬', roles: ['admin','readonly'] },
+-    { to: '/ask', label: 'Ask Data', icon: '💬', roles: ['admin','host'] },
++    { to: '/profiling', label: 'Player Insights', icon: '🧠', roles: ['admin','readonly'] },
++    { to: '/period-report', label: 'Reports', icon: '📅', roles: ['admin','readonly'] },
+     { to: '/monthly-report', label: 'Monthly PPT', icon: '📊', roles: ['admin'] },
+-    { to: '/host-performance', label: 'Host Performance', icon: '🏆', roles: ['admin','host','readonly'] },
++  ] },
++  { key: 'performance', label: 'Performance', icon: '🏆', items: [
++    { to: '/kpi', label: 'KPI', icon: '🏆', roles: ['admin','host','readonly'] },
++    { to: '/host-performance', label: 'Host Performance', icon: '📋', roles: ['admin','host','readonly'] },
++    { to: '/ask', label: 'Ask Data', icon: '💬', roles: ['admin','host'] },
+   ] },
+   { key: 'system', label: 'System', icon: '⚙️', items: [
+     { to: '/wa-numbers', label: 'WA Numbers', icon: '📱', roles: ['admin','host'] },
+diff --git a/src/components/WaSenderModal.jsx b/src/components/WaSenderModal.jsx
+new file mode 100644
+index 0000000..4df2911
+--- /dev/null
++++ b/src/components/WaSenderModal.jsx
+@@ -0,0 +1,39 @@
++// src/components/WaSenderModal.jsx — shared WhatsApp sender modal
++import { useState } from 'react'
++
++export default function WaSenderModal({ vip, waNumbers, myName, onClose }) {
++  const [sender, setSender] = useState(waNumbers[0]?.codename || '')
++  const rawWa = (vip.whatsapp || vip.phone || '').replace(/[\s\-()]/g, '')
++  const waNumber = rawWa.startsWith('+') ? rawWa.slice(1) : rawWa
++  function openWA() {
++    const text = `Hi ${vip.username}, this is ${myName || 'your VIP host'} from SureWin.`
++    window.open(`https://wa.me/${waNumber}?text=${encodeURIComponent(text)}`, '_blank')
++    onClose()
++  }
++  return (
++    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.6)', zIndex:2000, display:'flex', alignItems:'center', justifyContent:'center' }} onClick={onClose}>
++      <div style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:12, padding:24, width:340, boxShadow:'0 16px 48px rgba(0,0,0,.5)' }} onClick={e => e.stopPropagation()}>
++        <div style={{ fontWeight:700, marginBottom:12, fontSize:15 }}>💬 WhatsApp {vip.username}</div>
++        {waNumbers.length > 0 ? (
++          <>
++            <div style={{ fontSize:12, color:'var(--muted)', marginBottom:6 }}>Send as (codename)</div>
++            <select value={sender} onChange={e => setSender(e.target.value)}
++              style={{ width:'100%', background:'var(--surface2)', border:'1px solid var(--border)', color:'var(--text)', padding:'8px 12px', borderRadius:8, fontSize:13, outline:'none', marginBottom:14 }}>
++              {waNumbers.map(n => <option key={n.id} value={n.codename}>{n.codename} — {n.number}{n.telco?' ('+n.telco+')':''}</option>)}
++            </select>
++          </>
++        ) : (
++          <div style={{ fontSize:12, color:'var(--muted)', marginBottom:14 }}>No active WA numbers. <a href="/wa-numbers" style={{ color:'var(--accent)' }}>Add one</a></div>
++        )}
++        {!waNumber && <div style={{ fontSize:12, color:'#d29922', marginBottom:12 }}>⚠️ No phone/WhatsApp on file for this VIP.</div>}
++        <div style={{ display:'flex', gap:8, justifyContent:'flex-end' }}>
++          <button onClick={onClose} style={{ background:'var(--surface2)', border:'1px solid var(--border)', color:'var(--text)', padding:'8px 16px', borderRadius:8, cursor:'pointer', fontSize:13 }}>Cancel</button>
++          <button onClick={openWA} disabled={!waNumber}
++            style={{ background:'#25D366', border:'none', color:'#fff', padding:'8px 18px', borderRadius:8, fontWeight:700, fontSize:13, cursor:waNumber?'pointer':'not-allowed', opacity:waNumber?1:0.5 }}>
++            Open WhatsApp
++          </button>
++        </div>
++      </div>
++    </div>
++  )
++}
+diff --git a/src/lib/i18n.js b/src/lib/i18n.js
+index 65f70c0..e1abe0a 100644
+--- a/src/lib/i18n.js
++++ b/src/lib/i18n.js
+@@ -85,7 +85,7 @@ export const translations = {
+         analytics: 'Analytics',
+         playerProfiling: 'Player Profiling',
+         contactLog: 'Contact Log',
+-        churnAlerts: 'Churn Alerts',
++        churnAlerts: 'Churn Urgency',
+         dailyTargets: 'Daily Targets',
+         birthdayReminder: 'Birthday Reminder',
+         campaigns: 'Campaigns',
+@@ -752,7 +752,7 @@ export const translations = {
+       viewAll: 'View All',
+     },
+     atRisk: {
+-      title: 'At Risk VIPs',
++      title: 'Active Risk VIPs',
+       subtitle: 'VIPs with active churn risk signals',
+       colVip: 'VIP',
+       colRiskLevel: 'Risk Level',
+@@ -993,7 +993,7 @@ export const translations = {
+       cancel: 'Cancel',
+     },
+     retentionWorkspace: {
+-      title: 'Retention Workspace',
++      title: 'Churn Analysis',
+       subtitle: 'Monthly churn snapshot & team analysis',
+       saveSnapshot: 'Save Snapshot to DB',
+       saving: 'Saving…',
+@@ -1107,7 +1107,7 @@ export const translations = {
+         analytics: '数据分析',
+         playerProfiling: '玩家画像',
+         contactLog: '联系记录',
+-        churnAlerts: '流失预警',
++        churnAlerts: '流失紧急',
+         dailyTargets: '每日目标',
+         birthdayReminder: '生日提醒',
+         campaigns: '活动管理',
+@@ -1774,7 +1774,7 @@ export const translations = {
+       viewAll: '查看全部',
+     },
+     atRisk: {
+-      title: '风险VIP',
++      title: '活跃风险VIP',
+       subtitle: '存在流失风险信号的VIP',
+       colVip: 'VIP',
+       colRiskLevel: '风险等级',
+@@ -2015,7 +2015,7 @@ export const translations = {
+       retentionRate: '留存率',
+     },
+     retentionWorkspace: {
+-      title: '留存工作台',
++      title: '流失分析',
+       subtitle: '月度流失快照 & 团队分析',
+       saveSnapshot: '保存快照到数据库',
+       saving: '保存中…',
+diff --git a/src/pages/AtRisk.jsx b/src/pages/AtRisk.jsx
+index 5ff13f7..0ea14a5 100644
+--- a/src/pages/AtRisk.jsx
++++ b/src/pages/AtRisk.jsx
+@@ -1,4 +1,4 @@
+-// src/pages/AtRisk.jsx — VIP Operations / At Risk (V2)
++// src/pages/AtRisk.jsx — VIP Operations / Active Risk (V2)
+ import { useState, useEffect } from 'react'
+ import { useNavigate } from 'react-router-dom'
+ import { supabase } from '../lib/supabase'
+@@ -10,43 +10,7 @@ import { TierBadge, RiskBadge } from '../components/ui'
+ import { formatMoney } from '../lib/format'
+ import { useLanguage } from '../contexts/LanguageContext'
+ import { useAuth } from '../hooks/useAuth'
+-
+-function WaSenderModal({ vip, waNumbers, myName, onClose }) {
+-  const [sender, setSender] = useState(waNumbers[0]?.codename || '')
+-  const rawWa = (vip.whatsapp || vip.phone || '').replace(/[\s\-()]/g, '')
+-  const waNumber = rawWa.startsWith('+') ? rawWa.slice(1) : rawWa
+-  function openWA() {
+-    const text = `Hi ${vip.username}, this is ${myName || 'your VIP host'} from SureWin.`
+-    window.open(`https://wa.me/${waNumber}?text=${encodeURIComponent(text)}`, '_blank')
+-    onClose()
+-  }
+-  return (
+-    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.6)', zIndex:2000, display:'flex', alignItems:'center', justifyContent:'center' }} onClick={onClose}>
+-      <div style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:12, padding:24, width:340, boxShadow:'0 16px 48px rgba(0,0,0,.5)' }} onClick={e => e.stopPropagation()}>
+-        <div style={{ fontWeight:700, marginBottom:12, fontSize:15 }}>💬 WhatsApp {vip.username}</div>
+-        {waNumbers.length > 0 ? (
+-          <>
+-            <div style={{ fontSize:12, color:'var(--muted)', marginBottom:6 }}>Send as (codename)</div>
+-            <select value={sender} onChange={e => setSender(e.target.value)}
+-              style={{ width:'100%', background:'var(--surface2)', border:'1px solid var(--border)', color:'var(--text)', padding:'8px 12px', borderRadius:8, fontSize:13, outline:'none', marginBottom:14 }}>
+-              {waNumbers.map(n => <option key={n.id} value={n.codename}>{n.codename} — {n.number}{n.telco?' ('+n.telco+')':''}</option>)}
+-            </select>
+-          </>
+-        ) : (
+-          <div style={{ fontSize:12, color:'var(--muted)', marginBottom:14 }}>No active WA numbers. <a href="/wa-numbers" style={{ color:'var(--accent)' }}>Add one</a></div>
+-        )}
+-        {!waNumber && <div style={{ fontSize:12, color:'#d29922', marginBottom:12 }}>⚠️ No phone/WhatsApp on file for this VIP.</div>}
+-        <div style={{ display:'flex', gap:8, justifyContent:'flex-end' }}>
+-          <button onClick={onClose} style={{ background:'var(--surface2)', border:'1px solid var(--border)', color:'var(--text)', padding:'8px 16px', borderRadius:8, cursor:'pointer', fontSize:13 }}>Cancel</button>
+-          <button onClick={openWA} disabled={!waNumber}
+-            style={{ background:'#25D366', border:'none', color:'#fff', padding:'8px 18px', borderRadius:8, fontWeight:700, fontSize:13, cursor:waNumber?'pointer':'not-allowed', opacity:waNumber?1:0.5 }}>
+-            Open WhatsApp
+-          </button>
+-        </div>
+-      </div>
+-    </div>
+-  )
+-}
++import WaSenderModal from '../components/WaSenderModal'
+ 
+ function daysAgoLabel(d) {
+   if (!d) return '—'
+diff --git a/src/pages/FollowUp.jsx b/src/pages/FollowUp.jsx
+index ce26ae0..64e7fee 100644
+--- a/src/pages/FollowUp.jsx
++++ b/src/pages/FollowUp.jsx
+@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabase'
+ import { useAuth } from '../hooks/useAuth'
+ import { useLanguage } from '../contexts/LanguageContext'
+ import { PageHeader, Card, KpiCard, Btn, FilterPills, LoadingState, ErrorState, EmptyState, Modal, Select, Textarea, useToast, TierBadge, RiskBadge } from '../components/ui'
++import WaSenderModal from '../components/WaSenderModal'
+ 
+ function daysAgoLabel(d) {
+   if (!d) return '—'
+@@ -15,43 +16,6 @@ function daysAgoLabel(d) {
+ 
+ const OUTCOMES = ['Contacted', 'No Reply', 'Replied', 'Deposited', 'Reactivated']
+ 
+-function WaSenderModal({ vip, waNumbers, myName, onClose }) {
+-  const [sender, setSender] = useState(waNumbers[0]?.codename || '')
+-  const rawWa = (vip.whatsapp || vip.phone || '').replace(/[\s\-()]/g, '')
+-  const waNumber = rawWa.startsWith('+') ? rawWa.slice(1) : rawWa
+-  function openWA() {
+-    const text = `Hi ${vip.username}, this is ${myName || 'your VIP host'} from SureWin.`
+-    window.open(`https://wa.me/${waNumber}?text=${encodeURIComponent(text)}`, '_blank')
+-    onClose()
+-  }
+-  return (
+-    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.6)', zIndex:2000, display:'flex', alignItems:'center', justifyContent:'center' }} onClick={onClose}>
+-      <div style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:12, padding:24, width:340, boxShadow:'0 16px 48px rgba(0,0,0,.5)' }} onClick={e => e.stopPropagation()}>
+-        <div style={{ fontWeight:700, marginBottom:12, fontSize:15 }}>💬 WhatsApp {vip.username}</div>
+-        {waNumbers.length > 0 ? (
+-          <>
+-            <div style={{ fontSize:12, color:'var(--muted)', marginBottom:6 }}>Send as (codename)</div>
+-            <select value={sender} onChange={e => setSender(e.target.value)}
+-              style={{ width:'100%', background:'var(--surface2)', border:'1px solid var(--border)', color:'var(--text)', padding:'8px 12px', borderRadius:8, fontSize:13, outline:'none', marginBottom:14 }}>
+-              {waNumbers.map(n => <option key={n.id} value={n.codename}>{n.codename} — {n.number}{n.telco?' ('+n.telco+')':''}</option>)}
+-            </select>
+-          </>
+-        ) : (
+-          <div style={{ fontSize:12, color:'var(--muted)', marginBottom:14 }}>No active WA numbers. <a href="/wa-numbers" style={{ color:'var(--accent)' }}>Add one</a></div>
+-        )}
+-        {!waNumber && <div style={{ fontSize:12, color:'#d29922', marginBottom:12 }}>⚠️ No phone/WhatsApp on file for this VIP.</div>}
+-        <div style={{ display:'flex', gap:8, justifyContent:'flex-end' }}>
+-          <button onClick={onClose} style={{ background:'var(--surface2)', border:'1px solid var(--border)', color:'var(--text)', padding:'8px 16px', borderRadius:8, cursor:'pointer', fontSize:13 }}>Cancel</button>
+-          <button onClick={openWA} disabled={!waNumber}
+-            style={{ background:'#25D366', border:'none', color:'#fff', padding:'8px 18px', borderRadius:8, fontWeight:700, fontSize:13, cursor:waNumber?'pointer':'not-allowed', opacity:waNumber?1:0.5 }}>
+-            Open WhatsApp
+-          </button>
+-        </div>
+-      </div>
+-    </div>
+-  )
+-}
+-
+ const TIER_FILTERS = ['ALL','BLACK','DIAMOND','PLATINUM','GOLD','SILVER','BRONZE']
+ 
+ export default function FollowUp() {
+diff --git a/src/pages/Today.jsx b/src/pages/Today.jsx
+index 5af7aee..1723ce3 100644
+--- a/src/pages/Today.jsx
++++ b/src/pages/Today.jsx
+@@ -1,5 +1,5 @@
+ // src/pages/Today.jsx — Command Center / Today (V2)
+-import { useState, useEffect } from 'react'
++import { useState, useEffect, lazy, Suspense } from 'react'
+ import { useNavigate } from 'react-router-dom'
+ import { useAuth } from '../hooks/useAuth'
+ import { useDashboard } from '../hooks/useDashboard'
+@@ -14,6 +14,28 @@ import { formatMoney } from '../lib/format'
+ import VipQuickSearch from '../components/VipQuickSearch'
+ import { useLanguage } from '../contexts/LanguageContext'
+ 
++const FollowUpTab = lazy(() => import('./FollowUp'))
++const RetentionQueueTab = lazy(() => import('./RetentionQueue'))
++
++const MAIN_TABS = [
++  { key: 'today',     label: '📅 Today' },
++  { key: 'followup',  label: '📞 Follow Up' },
++  { key: 'retention', label: '🎯 Retention Queue' },
++]
++
++function TabBar({ active, onChange }) {
++  return (
++    <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border)', marginBottom: 20 }}>
++      {MAIN_TABS.map(tab => (
++        <button key={tab.key} onClick={() => onChange(tab.key)}
++          style={{ padding: '9px 18px', background: 'none', border: 'none', borderBottom: active === tab.key ? '2px solid var(--accent)' : '2px solid transparent', color: active === tab.key ? 'var(--accent)' : 'var(--muted)', fontWeight: active === tab.key ? 700 : 400, fontSize: 13, cursor: 'pointer', marginBottom: -1, transition: 'color .15s' }}>
++          {tab.label}
++        </button>
++      ))}
++    </div>
++  )
++}
++
+ const OUTCOMES = ['Contacted', 'No Reply', 'Replied', 'Deposited', 'Reactivated']
+ const TIER_ORDER = { BLACK:0, DIAMOND:1, PLATINUM:2, GOLD:3, SILVER:4, BRONZE:5 }
+ 
+@@ -30,6 +52,7 @@ export default function Today() {
+   const { profile } = useAuth()
+   const { toast, ToastContainer } = useToast()
+   const { t } = useLanguage()
++  const [mainTab, setMainTab] = useState('today')
+   const [host, setHost] = useState('All')
+   const [tierFilter, setTierFilter] = useState(['PLATINUM','DIAMOND'])
+   const [activeQueue, setActiveQueue] = useState('all')
+@@ -154,9 +177,24 @@ export default function Today() {
+   if (loading) return <div style={{ padding: 32 }}><LoadingState message="Loading today's work…" /></div>
+   if (error) return <div style={{ padding: 32 }}><ErrorState message={error} onRetry={refresh} /></div>
+ 
++  // Sub-tab shortcut renders — bypass dashboard data for non-today tabs
++  if (mainTab === 'followup') return (
++    <div style={{ padding: '24px 28px' }}>
++      <TabBar active={mainTab} onChange={setMainTab} />
++      <Suspense fallback={<LoadingState />}><FollowUpTab /></Suspense>
++    </div>
++  )
++  if (mainTab === 'retention') return (
++    <div style={{ padding: '24px 28px' }}>
++      <TabBar active={mainTab} onChange={setMainTab} />
++      <Suspense fallback={<LoadingState />}><RetentionQueueTab /></Suspense>
++    </div>
++  )
++
+   return (
+     <div style={{ padding: '24px 28px', maxWidth: 1200 }}>
+       <ToastContainer />
++      <TabBar active={mainTab} onChange={setMainTab} />
+ 
+       {/* ── Header ── */}
+       <div style={{ marginBottom: 24 }}>
+-- 
+2.43.0
+

@@ -1,0 +1,40 @@
+From 7f0363059a9349b67af4c18084077c94491e9b02 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Tue, 22 Sep 2026 06:01:01 +0000
+Subject: [PATCH 21/39] =?UTF-8?q?feat:=20add=20WA=20language=20toggle=20(E?=
+ =?UTF-8?q?N/MY/=E4=B8=AD=E6=96=87)=20to=20chase=20list=20toolbar?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+WA button in chase list now respects the selected language.
+Toggle sits in the search/sort bar alongside Sort buttons.
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01DqGp4gVeTBMvwho4pP8n8C
+---
+ src/pages/Campaigns.jsx | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/src/pages/Campaigns.jsx b/src/pages/Campaigns.jsx
+index 9661f27..ce11e46 100644
+--- a/src/pages/Campaigns.jsx
++++ b/src/pages/Campaigns.jsx
+@@ -2285,6 +2285,14 @@ export default function Campaigns() {
+                       {lbl} {chaseSort===key ? (chaseSortDir==='asc' ? '↑' : '↓') : ''}
+                     </button>
+                   ))}
++                  <span style={{ fontSize:11, color:'var(--muted)', marginLeft:4 }}>WA:</span>
++                  {[['en','EN'],['my','MY'],['cn','中文']].map(([key,lbl])=>(
++                    <button key={key} onClick={()=>setWaLang(key)}
++                      style={{ padding:'3px 10px', borderRadius:14, fontSize:11, fontWeight:700, border:'1px solid var(--border)', cursor:'pointer',
++                        background: waLang===key ? '#25d366' : 'var(--surface2)', color: waLang===key ? '#fff' : 'var(--muted)' }}>
++                      {lbl}
++                    </button>
++                  ))}
+                   <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:8 }}>
+                     {campType !== 'leaderboard' && (
+                       <button
+-- 
+2.43.0
+

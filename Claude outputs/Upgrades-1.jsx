@@ -1,0 +1,1977 @@
+import { useEffect, useState, useCallback } from 'react'
+import { useAuth } from '../hooks/useAuth'
+import { useNavigate } from 'react-router-dom'
+import { supabase } from '../lib/supabase'
+import { formatMoney } from '../lib/format'
+import { useLanguage } from '../contexts/LanguageContext'
+import { useUrlParam, useUrlParamNumber } from '../hooks/useUrlParam'
+import { TIER_COLOR, TIER_BG } from '../lib/constants'
+
+// ── Tier config ───────────────────────────────────────────────────────────────
+const TIER_ORDER = ['BRONZE', 'SILVER', 'GOLD', 'PLATINUM', 'DIAMOND', 'BLACK']
+
+// VIP upgrade thresholds (monthly valid bet)
+const VIP_THRESHOLDS = {
+  GOLD:     2000000,
+  PLATINUM: 6000000,
+}
+
+function getVipUpgradeTarget(tier, validBet) {
+  const vb = parseFloat(validBet) || 0
+  if (tier === 'GOLD') {
+    if (vb >= 8000000) return { tier: 'DIAMOND',  threshold: 8000000 }
+    if (vb >= 2000000) return { tier: 'PLATINUM', threshold: 2000000 }
+    return null
+  }
+  if (tier === 'PLATINUM') {
+    if (vb >= 6000000) return { tier: 'DIAMOND', threshold: 6000000 }
+    return null
+  }
+  return null
+}
+
+// Potential upgrade thresholds
+function getPotentialUpgradeTarget(tier, validBet, allThresholds) {
+  const vb = parseFloat(validBet) || 0
+  // Find the highest tier this player qualifies for right now
+  const targets = allThresholds.filter(t => t.from_tier === tier && vb >= t.threshold)
+  if (targets.length === 0) return null
+  // Return highest qualifying target
+  targets.sort((a, b) => TIER_ORDER.indexOf(b.to_tier) - TIER_ORDER.indexOf(a.to_tier))
+  return targets[0]
+}
+
+// Get next immediate upgrade target (for progress bar — lowest threshold)
+function getNextUpgradeTarget(tier, allThresholds) {
+  const targets = allThresholds.filter(t => t.from_tier === tier)
+  if (targets.length === 0) return null
+  targets.sort((a, b) => a.threshold - b.threshold)
+  return targets[0]
+}
+
+// Format numbers — pass a row's own `currency` where available (see lib/format.js)
+const fmt = (n, currency = 'MYR') => formatMoney(n, currency)
+const fmtDate = (d) => {
+  if (!d) return '—'
+  return new Date(d).toLocaleDateString('en-MY', { day: '2-digit', month: 'short', year: 'numeric' })
+}
+const monthsAgo = (dateStr) => {
+  if (!dateStr) return null
+  const reg = new Date(dateStr)
+  if (isNaN(reg.getTime())) return null
+  const now = new Date()
+  return (now.getFullYear() - reg.getFullYear()) * 12 + (now.getMonth() - reg.getMonth())
+}
+
+// ── Styles ────────────────────────────────────────────────────────────────────
+const s = {
+  page:    { padding: '28px 20px', color: 'var(--text)', maxWidth: 1600, margin: '0 auto' },
+  heading: { fontSize: 22, fontWeight: 700, marginBottom: 4 },
+  sub:     { fontSize: 13, color: 'var(--muted)', marginBottom: 22 },
+
+  tabBar: {
+    display: 'flex', gap: 4, marginBottom: 22,
+    borderBottom: '1px solid var(--border)', paddingBottom: 0,
+  },
+  tab: (active) => ({
+    padding: '8px 18px', borderRadius: '8px 8px 0 0',
+    border: '1px solid var(--border)', borderBottom: active ? '1px solid var(--surface)' : '1px solid var(--border)',
+    background: active ? 'var(--surface)' : 'transparent',
+    color: active ? 'var(--text)' : 'var(--muted)',
+    fontWeight: active ? 600 : 400, fontSize: 13,
+    cursor: 'pointer', marginBottom: -1,
+    transition: 'all 0.15s',
+  }),
+  tabBadge: (color) => ({
+    background: color, color: '#fff',
+    fontSize: 10, fontWeight: 700,
+    padding: '1px 6px', borderRadius: 10,
+    marginLeft: 6,
+  }),
+
+  filterRow: {
+    display: 'flex', gap: 10, flexWrap: 'wrap',
+    alignItems: 'center', marginBottom: 16,
+  },
+  select: {
+    padding: '6px 10px', borderRadius: 7,
+    border: '1px solid var(--border)',
+    background: 'var(--surface)', color: 'var(--text)',
+    fontSize: 13, cursor: 'pointer',
+  },
+  searchInput: {
+    padding: '6px 12px', borderRadius: 7,
+    border: '1px solid var(--border)',
+    background: 'var(--surface)', color: 'var(--text)',
+    fontSize: 13, width: 180,
+  },
+
+  table: { width: '100%', borderCollapse: 'collapse' },
+  th: {
+    padding: '10px 12px', textAlign: 'left',
+    fontSize: 11, fontWeight: 600, color: 'var(--muted)',
+    letterSpacing: '0.05em', textTransform: 'uppercase',
+    borderBottom: '1px solid var(--border)',
+    background: 'var(--surface)',
+  },
+  tr: (hover) => ({
+    borderBottom: '1px solid var(--border)',
+    background: hover ? 'var(--surface)' : 'transparent',
+    cursor: 'pointer', transition: 'background 0.1s',
+  }),
+  td: { padding: '11px 12px', fontSize: 13 },
+
+  tierBadge: (tier) => ({
+    display: 'inline-block',
+    background: TIER_BG[tier] || 'var(--surface)',
+    color: TIER_COLOR[tier] || 'var(--text)',
+    border: `1px solid ${TIER_COLOR[tier] || 'var(--border)'}`,
+    fontWeight: 700, fontSize: 11,
+    padding: '2px 8px', borderRadius: 20,
+    letterSpacing: '0.04em',
+  }),
+
+  progressWrap: { background: 'var(--border)', borderRadius: 4, height: 6, width: '100%', minWidth: 80 },
+  progressBar: (pct, color) => ({
+    height: 6, borderRadius: 4,
+    width: `${Math.min(100, pct)}%`,
+    background: color || 'var(--accent)',
+    transition: 'width 0.3s',
+  }),
+
+  btn: (color = 'var(--accent)', sm = false) => ({
+    padding: sm ? '4px 12px' : '7px 16px',
+    borderRadius: 7, border: 'none',
+    background: color, color: '#fff',
+    fontWeight: 600, fontSize: sm ? 11 : 13,
+    cursor: 'pointer',
+  }),
+  outlineBtn: (color = 'var(--accent)') => ({
+    padding: '4px 12px', borderRadius: 7,
+    border: `1px solid ${color}`, background: 'transparent',
+    color: color, fontWeight: 600, fontSize: 11, cursor: 'pointer',
+  }),
+
+  card: {
+    background: 'var(--surface)', border: '1px solid var(--border)',
+    borderRadius: 10, padding: '14px 18px',
+  },
+  statGrid: {
+    display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+    gap: 10, marginBottom: 18,
+  },
+  statCard: (color) => ({
+    background: 'var(--surface)', border: `1px solid var(--border)`,
+    borderLeft: `3px solid ${color}`,
+    borderRadius: 8, padding: '12px 14px',
+  }),
+  statNum: { fontSize: 22, fontWeight: 700, lineHeight: 1.2 },
+  statLabel: { fontSize: 11, color: 'var(--muted)', marginTop: 2 },
+
+  empty: {
+    textAlign: 'center', padding: '48px 20px',
+    color: 'var(--muted)', fontSize: 14,
+  },
+  loading: {
+    textAlign: 'center', padding: '40px',
+    color: 'var(--muted)', fontSize: 13,
+  },
+
+  modal: {
+    position: 'fixed', inset: 0,
+    background: 'rgba(0,0,0,0.6)', zIndex: 1000,
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+  },
+  modalBox: {
+    background: 'var(--surface)', border: '1px solid var(--border)',
+    borderRadius: 14, padding: '28px 32px',
+    width: 440, maxWidth: '90vw', maxHeight: '90vh', overflowY: 'auto',
+  },
+  modalTitle: { fontSize: 17, fontWeight: 700, marginBottom: 4 },
+  modalSub:   { fontSize: 13, color: 'var(--muted)', marginBottom: 20 },
+  row:        { display: 'flex', gap: 10, alignItems: 'center', marginBottom: 10 },
+  label:      { fontSize: 12, color: 'var(--muted)', minWidth: 130 },
+  value:      { fontSize: 13, fontWeight: 500 },
+}
+
+// ── Copy Button helper ────────────────────────────────────────────────────────
+function CopyBtn({ text, style }) {
+  const [done, setDone] = useState(false)
+  const copy = (e) => {
+    e.stopPropagation()
+    if (!text) return
+    navigator.clipboard.writeText(text).then(() => {
+      setDone(true)
+      setTimeout(() => setDone(false), 1500)
+    })
+  }
+  return (
+    <button
+      onClick={copy}
+      title={`Copy ${text}`}
+      style={{
+        border: 'none', background: 'transparent',
+        cursor: text ? 'pointer' : 'default',
+        color: done ? '#4ade80' : 'var(--muted)',
+        fontSize: 11, padding: '0 3px', lineHeight: 1,
+        opacity: text ? 1 : 0.3,
+        ...style,
+      }}
+    >
+      {done ? '✓' : '📋'}
+    </button>
+  )
+}
+
+// ── Confirm Upgrade Modal ─────────────────────────────────────────────────────
+function ConfirmUpgradeModal({ player, isPotential, onClose, onConfirm }) {
+  const { t } = useLanguage()
+  const [newTier, setNewTier] = useState('')
+  const [loading, setLoading] = useState(false)
+
+  const availableTiers = isPotential
+    ? TIER_ORDER.filter(t => TIER_ORDER.indexOf(t) > TIER_ORDER.indexOf(player.tier))
+    : TIER_ORDER.filter(t => TIER_ORDER.indexOf(t) > TIER_ORDER.indexOf(player.tier))
+
+  const handle = async () => {
+    if (!newTier) return
+    setLoading(true)
+    await onConfirm(player, newTier, isPotential)
+    setLoading(false)
+    onClose()
+  }
+
+  return (
+    <div style={s.modal} onClick={onClose}>
+      <div style={s.modalBox} onClick={e => e.stopPropagation()}>
+        <div style={s.modalTitle}>{t('upgrades.modal.confirmUpgrade', 'Confirm Upgrade')}</div>
+        <div style={s.modalSub}>
+          {isPotential
+            ? t('upgrades.modal.moveToPotential', `Move ${player.username} from potential_players to vip_members`)
+            : t('upgrades.modal.upgradeToNewTier', `Upgrade ${player.username} to a new VIP tier`)}
+        </div>
+
+        <div style={s.row}>
+          <span style={s.label}>{t('common.username', 'Username')}</span>
+          <span style={s.value}>{player.username}</span>
+        </div>
+        <div style={s.row}>
+          <span style={s.label}>{t('upgrades.modal.currentTier', 'Current tier')}</span>
+          <span style={s.tierBadge(player.tier)}>{player.tier}</span>
+        </div>
+        <div style={s.row}>
+          <span style={s.label}>{t('upgrades.modal.validBetMonth', 'Valid bet (this month)')}</span>
+          <span style={s.value}>{fmt(player.monthly_valid_bet, player.currency)}</span>
+        </div>
+        <div style={s.row}>
+          <span style={s.label}>{t('upgrades.modal.monthsActive', 'Months active')}</span>
+          <span style={s.value}>{player.months_active ?? monthsAgo(player.registration_date) ?? '—'}</span>
+        </div>
+        <div style={s.row}>
+          <span style={s.label}>{t('common.totalDeposit', 'Total deposit')}</span>
+          <span style={s.value}>{fmt(player.total_deposit, player.currency)}</span>
+        </div>
+
+        <div style={{ marginTop: 18, marginBottom: 20 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>{t('upgrades.modal.upgradeTo', 'Upgrade to tier:')}</div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {availableTiers.map(t => (
+              <button
+                key={t}
+                style={{
+                  padding: '6px 16px', borderRadius: 20,
+                  border: `2px solid ${TIER_COLOR[t]}`,
+                  background: newTier === t ? TIER_BG[t] : 'transparent',
+                  color: TIER_COLOR[t], fontWeight: 700,
+                  fontSize: 12, cursor: 'pointer',
+                }}
+                onClick={() => setNewTier(t)}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {isPotential && (
+          <div style={{
+            fontSize: 12, color: 'var(--muted)',
+            background: 'var(--bg)', borderRadius: 7,
+            padding: '10px 12px', marginBottom: 18,
+            border: '1px solid var(--border)',
+          }}>
+            ℹ️ Their deposit history, valid bet, and months active will carry over to vip_members automatically.
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+          <button style={s.outlineBtn('var(--muted)')} onClick={onClose}>{t('common.cancel', 'Cancel')}</button>
+          <button
+            style={{ ...s.btn(newTier ? TIER_COLOR[newTier] : 'var(--border)'), opacity: newTier ? 1 : 0.5 }}
+            disabled={!newTier || loading}
+            onClick={handle}
+          >
+            {loading ? t('upgrades.modal.upgrading', 'Upgrading…') : `${t('upgrades.modal.confirm', 'Confirm')} → ${newTier || '?'}`}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+
+// ── WhatsApp Template Modal ───────────────────────────────────────────────────
+function WhatsAppModal({ player, agentName, waNumbers = [], onClose }) {
+  const [lang, setLang]     = useState('en')
+  const [copied, setCopied] = useState(false)
+  const [sender, setSender] = useState(waNumbers[0]?.codename || '')
+
+  // Normalize stored whatsapp/phone number — strip spaces, dashes, leading +
+  const rawWa = (player.whatsapp || player.phone || '').replace(/[\s\-()]/g, '')
+  const waNumber = rawWa.startsWith('+') ? rawWa.slice(1) : rawWa
+
+  const currency = player.currency || 'MYR'
+  const turnover = fmt(player.monthly_valid_bet, currency)
+
+  // Fallback next-tier map so template always has a target even when player hasn't qualified
+  const FALLBACK_NEXT = {
+    GOLD:     { tier: 'PLATINUM', threshold: 2000000 },
+    PLATINUM: { tier: 'DIAMOND',  threshold: 6000000 },
+    DIAMOND:  { tier: null,       threshold: null     },
+  }
+  const fallback = FALLBACK_NEXT[player.tier] || {}
+  const nextTier   = player.upgrade?.tier   || player.next_tier   || fallback.tier   || null
+  const nextThresh = player.upgrade?.threshold || player.next_thresh || fallback.threshold || null
+  const gap = nextThresh
+    ? fmt(Math.max(0, nextThresh - (player.monthly_valid_bet || 0)), currency)
+    : null
+  const isReady = (player.upgrade != null) || player.gap_to_next === 0
+
+  const nextLabel = nextTier || '下一级别'
+  const nextLabelEn = nextTier || 'next tier'
+  const gapLabel = gap || '—'
+
+  const templates = {
+    en: isReady
+      ? `Hi *${player.username}*! 👋 This is ${agentName} from SureWin VIP Department.\n\nCongratulations! 🎉 Your monthly turnover of *${turnover}* has qualified you for *${nextLabelEn}* upgrade!\n\nWe would like to arrange your upgrade — please let us know when you're available! 💎`
+      : `Hi *${player.username}*! 👋 This is ${agentName} from SureWin VIP Department.\n\nYour current monthly turnover is *${turnover}*. You are just *${gapLabel}* away from reaching *${nextLabelEn}* tier! 🎯\n\nKeep it up, feel free to reach out anytime! 💎`,
+    cn: isReady
+      ? `您好 *${player.username}*！👋 我是SureWin VIP部门的${agentName}。\n\n恭喜您！🎉 您本月有效流水 *${turnover}* 已达到晋升 *${nextLabel}* 的要求！\n\n我们将为您安排升级，请告知您方便的时间。💎`
+      : `您好 *${player.username}*！👋 我是SureWin VIP部门的${agentName}。\n\n您本月有效流水为 *${turnover}*，距离晋升 *${nextLabel}* 还差 *${gapLabel}*！🎯\n\n继续加油，有任何需要请随时联系！💎`,
+  }
+
+  const message = templates[lang]
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(message).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    })
+  }
+
+  const handleWhatsApp = () => {
+    const base = waNumber ? `https://wa.me/${waNumber}` : 'https://wa.me/'
+    window.open(`${base}?text=${encodeURIComponent(message)}`, '_blank')
+  }
+
+  return (
+    <div style={s.modal} onClick={onClose}>
+      <div style={{ ...s.modalBox, width: 500 }} onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+          <span style={{ fontSize: 22 }}>💬</span>
+          <div>
+            <div style={s.modalTitle}>WhatsApp Template</div>
+            <div style={s.modalSub}>
+              <span style={s.tierBadge(player.tier)}>{player.tier}</span>
+              <span style={{ marginLeft: 8 }}>{player.username}</span>
+              <span style={{ marginLeft: 8 }}>· Turnover: {turnover}</span>
+              {nextTier && <span style={{ marginLeft: 8 }}>· Next: {nextTier}</span>}
+            </div>
+          </div>
+        </div>
+
+        {/* Lang toggle */}
+        <div style={{ display: 'flex', gap: 6, marginBottom: 14 }}>
+          {[['en','English'],['cn','中文']].map(([k, label]) => (
+            <button
+              key={k}
+              style={{
+                padding: '5px 16px', borderRadius: 20,
+                border: `1px solid ${lang === k ? 'var(--accent)' : 'var(--border)'}`,
+                background: lang === k ? 'var(--accent)' : 'transparent',
+                color: lang === k ? '#fff' : 'var(--muted)',
+                fontWeight: lang === k ? 700 : 400,
+                fontSize: 12, cursor: 'pointer',
+              }}
+              onClick={() => { setLang(k); setCopied(false) }}
+            >
+              {label}
+            </button>
+          ))}
+          {isReady && (
+            <span style={{
+              marginLeft: 'auto', fontSize: 11, fontWeight: 700,
+              color: '#4ade80', padding: '5px 10px',
+              background: 'rgba(74,222,128,0.1)', borderRadius: 20,
+              border: '1px solid rgba(74,222,128,0.3)',
+            }}>
+              ✓ Ready to Upgrade
+            </span>
+          )}
+        </div>
+
+        {/* Message preview */}
+        <div style={{
+          background: 'var(--bg)', border: '1px solid var(--border)',
+          borderRadius: 10, padding: '14px 16px',
+          fontSize: 13, lineHeight: 1.7,
+          whiteSpace: 'pre-wrap', color: 'var(--text)',
+          marginBottom: 14, minHeight: 120,
+          fontFamily: 'inherit',
+        }}>
+          {message.split('\n').map((line, i) => {
+            // Render *bold* text
+            const parts = line.split(/(\*[^*]+\*)/g)
+            return (
+              <span key={i}>
+                {parts.map((p, j) =>
+                  p.startsWith('*') && p.endsWith('*')
+                    ? <strong key={j}>{p.slice(1, -1)}</strong>
+                    : p
+                )}
+                {i < message.split('\n').length - 1 && <br />}
+              </span>
+            )
+          })}
+        </div>
+
+        {/* Actions */}
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button
+            style={{
+              ...s.btn(copied ? '#10b981' : 'var(--surface)'),
+              color: copied ? '#fff' : 'var(--text)',
+              border: `1px solid ${copied ? '#10b981' : 'var(--border)'}`,
+              flex: 1,
+            }}
+            onClick={handleCopy}
+          >
+            {copied ? '✓ Copied!' : '📋 Copy Message'}
+          </button>
+          <button
+            style={{ ...s.btn('#25D366'), flex: 1 }}
+            onClick={handleWhatsApp}
+          >
+            💬 Open WhatsApp
+          </button>
+          <button style={s.outlineBtn('var(--muted)')} onClick={onClose}>Close</button>
+        </div>
+
+        {waNumbers.length > 0 && (
+          <div style={{ marginTop: 12 }}>
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>📱 Send as (codename)</div>
+            <select value={sender} onChange={e => setSender(e.target.value)}
+              style={{ width:'100%', background:'var(--surface2)', border:'1px solid var(--border)', color:'var(--text)', padding:'7px 10px', borderRadius:8, fontSize:12, outline:'none' }}>
+              {waNumbers.map(n => <option key={n.id} value={n.codename}>{n.codename} — {n.number}{n.telco?' ('+n.telco+')':''}</option>)}
+            </select>
+          </div>
+        )}
+
+        <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 10, textAlign: 'center' }}>
+          {waNumber
+            ? <>📱 Will open chat with <strong>{rawWa}</strong> directly</>
+            : <>No phone number on file — select the contact manually.</>
+          }
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Upgrade Challenge Modal ────────────────────────────────────────────────────
+function ChallengeModal({ player, challenge, agentName, waNumbers = [], onClose, onSaved }) {
+  const [targetAmount, setTargetAmount] = useState(challenge?.target_amount ? String(challenge.target_amount) : '')
+  const [deadline, setDeadline]         = useState(challenge?.deadline ? challenge.deadline.slice(0, 10) : '')
+  const [notes, setNotes]               = useState(challenge?.notes || '')
+  const [saving, setSaving]             = useState(false)
+  const [copied, setCopied]             = useState(false)
+  const [lang, setLang]                 = useState('en')
+
+  const currency    = player.currency || 'MYR'
+  const baseline    = challenge?.baseline_bet ?? player.monthly_valid_bet ?? 0
+  const currentBet  = player.monthly_valid_bet ?? 0
+  const target      = parseFloat(targetAmount) || 0
+  const chProgress  = target > 0 ? Math.min(100, Math.max(0, ((currentBet - baseline) / target) * 100)) : 0
+  const achieved    = target > 0 && (currentBet - baseline) >= target
+
+  const deadlineDate = deadline ? new Date(deadline + 'T23:59:59') : null
+  const isExpired    = deadlineDate && deadlineDate < new Date()
+  const daysLeft     = deadlineDate ? Math.ceil((deadlineDate - new Date()) / (1000 * 60 * 60 * 24)) : null
+
+  const VIP_NEXT    = { GOLD: 'PLATINUM', PLATINUM: 'DIAMOND' }
+  const nextTier    = VIP_NEXT[player.tier] || 'next tier'
+
+  const targetFmt   = target > 0 ? fmt(target, currency) : '___'
+  const deadlineFmt = deadline ? new Date(deadline + 'T12:00:00').toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' }) : '___'
+  const progressFmt = fmt(Math.max(0, currentBet - baseline), currency)
+
+  const waTemplates = {
+    en: achieved
+      ? `Hi *${player.username}*! 🎉 Congratulations! You've completed our special upgrade challenge!\n\nYour valid bet has increased by *${progressFmt}*, meeting the *${targetFmt}* target! 🏆\n\nYou are now eligible for your *${nextTier}* upgrade! We will arrange it shortly. Thank you for your loyalty! 💎`
+      : `Hi *${player.username}*! 👋 This is ${agentName} from SureWin VIP Department.\n\nWe have a special offer just for you! 🎯\n\nComplete *${targetFmt}* in valid bet by *${deadlineFmt}*, and you will be eligible for an upgrade to *${nextTier}*!\n\n${challenge ? `📊 Your progress so far: *${progressFmt}* / ${targetFmt} (${chProgress.toFixed(0)}%)\n` : ''}Feel free to reach out anytime! 💎`,
+    cn: achieved
+      ? `您好 *${player.username}*！🎉 恭喜您完成了我们的特别升级挑战！\n\n您的有效流水增加了 *${progressFmt}*，达成了 *${targetFmt}* 的目标！🏆\n\n您现在有资格晋升到 *${nextTier}*！我们将尽快为您安排。感谢您的支持！💎`
+      : `您好 *${player.username}*！👋 我是SureWin VIP部门的${agentName}。\n\n我们为您提供一个特别升级优惠！🎯\n\n在 *${deadlineFmt}* 之前完成 *${targetFmt}* 的有效投注，即可获得晋升到 *${nextTier}* 的资格！\n\n${challenge ? `📊 您的当前进度：*${progressFmt}* / ${targetFmt} (${chProgress.toFixed(0)}%)\n` : ''}有任何需要请随时联系！💎`,
+  }
+  const message = waTemplates[lang]
+
+  const handleSave = async () => {
+    if (!targetAmount || !deadline) return
+    setSaving(true)
+    let error
+    if (challenge?.id) {
+      ;({ error } = await supabase.from('upgrade_challenges').update({
+        target_amount: target,
+        deadline,
+        notes: notes || null,
+        status: 'active',
+      }).eq('id', challenge.id))
+    } else {
+      ;({ error } = await supabase.from('upgrade_challenges').insert({
+        username:        player.username,
+        upgrade_to_tier: nextTier,
+        host_name:       agentName || null,
+        baseline_bet:    player.monthly_valid_bet ?? 0,
+        target_amount:   target,
+        deadline,
+        notes:           notes || null,
+        status:          'active',
+      }))
+    }
+    if (error) { alert('Save failed: ' + error.message); setSaving(false); return }
+    setSaving(false)
+    onSaved?.()
+    onClose()
+  }
+
+  const handleCancel = async () => {
+    if (!challenge?.id) return
+    if (!window.confirm('Cancel this challenge?')) return
+    await supabase.from('upgrade_challenges').update({ status: 'cancelled' }).eq('id', challenge.id)
+    onSaved?.()
+    onClose()
+  }
+
+  const openWa = () => {
+    const rawWa = (player.whatsapp || player.phone || '').replace(/[\s\-()+]/g, '')
+    const wa = rawWa ? rawWa : ''
+    window.open(`${wa ? `https://wa.me/${wa}` : 'https://wa.me/'}?text=${encodeURIComponent(message)}`, '_blank')
+  }
+
+  return (
+    <div style={s.modal} onClick={onClose}>
+      <div style={{ ...s.modalBox, width: 530 }} onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+          <span style={{ fontSize: 22 }}>🎯</span>
+          <div>
+            <div style={s.modalTitle}>Upgrade Challenge — {player.username}</div>
+            <div style={s.modalSub}>
+              <span style={s.tierBadge(player.tier)}>{player.tier}</span>
+              <span style={{ marginLeft: 8 }}>Valid Bet: {fmt(player.monthly_valid_bet, currency)}</span>
+              <span style={{ marginLeft: 8 }}>→ <span style={s.tierBadge(nextTier)}>{nextTier}</span></span>
+            </div>
+          </div>
+        </div>
+
+        {/* Existing challenge progress */}
+        {challenge && (
+          <div style={{
+            background: 'var(--bg)',
+            border: `1px solid ${achieved ? 'rgba(74,222,128,0.4)' : isExpired ? 'rgba(248,81,73,0.4)' : 'rgba(251,191,36,0.4)'}`,
+            borderRadius: 10, padding: '12px 16px', marginTop: 12, marginBottom: 16,
+          }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: achieved ? '#4ade80' : isExpired ? '#f85149' : '#fbbf24', marginBottom: 8 }}>
+              {achieved ? '✅ Challenge Completed!' : isExpired ? '⏰ Challenge Expired' : `🎯 Challenge Active · ${daysLeft}d left`}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+              <div style={{ flex: 1, height: 8, background: 'var(--border)', borderRadius: 4, overflow: 'hidden' }}>
+                <div style={{ width: `${chProgress}%`, height: '100%', background: achieved ? '#4ade80' : isExpired ? '#f85149' : '#fbbf24', borderRadius: 4, transition: 'width 0.3s' }} />
+              </div>
+              <span style={{ fontSize: 12, fontWeight: 700, color: achieved ? '#4ade80' : 'var(--text)', minWidth: 36 }}>{chProgress.toFixed(0)}%</span>
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--muted)', display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+              <span>Progress: <strong style={{ color: 'var(--text)' }}>{fmt(Math.max(0, currentBet - baseline), currency)}</strong> / {fmt(challenge.target_amount, currency)}</span>
+              <span>Deadline: <strong style={{ color: 'var(--text)' }}>{new Date(challenge.deadline + 'T12:00:00').toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })}</strong></span>
+            </div>
+          </div>
+        )}
+
+        {/* Form */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+          <div>
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>Custom Target Amount ({currency})</div>
+            <input
+              type="number"
+              value={targetAmount}
+              onChange={e => setTargetAmount(e.target.value)}
+              placeholder="e.g. 150000"
+              style={{ width: '100%', padding: '8px 10px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13, boxSizing: 'border-box' }}
+            />
+            {target > 0 && <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>= {fmt(target, currency)}</div>}
+          </div>
+          <div>
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>Deadline</div>
+            <input
+              type="date"
+              value={deadline}
+              onChange={e => setDeadline(e.target.value)}
+              style={{ width: '100%', padding: '8px 10px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13, boxSizing: 'border-box' }}
+            />
+          </div>
+        </div>
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>Notes (optional)</div>
+          <input
+            value={notes}
+            onChange={e => setNotes(e.target.value)}
+            placeholder="e.g. Special offer: 150k in 2 days for upgrade"
+            style={{ width: '100%', padding: '8px 10px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13, boxSizing: 'border-box' }}
+          />
+        </div>
+
+        {/* WhatsApp template */}
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6, fontWeight: 600 }}>💬 WhatsApp Message Template</div>
+          <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+            {[['en', 'English'], ['cn', '中文']].map(([k, label]) => (
+              <button key={k}
+                style={{ padding: '4px 12px', borderRadius: 20, border: `1px solid ${lang === k ? 'var(--accent)' : 'var(--border)'}`, background: lang === k ? 'var(--accent)' : 'transparent', color: lang === k ? '#fff' : 'var(--muted)', fontSize: 11, cursor: 'pointer', fontWeight: lang === k ? 700 : 400 }}
+                onClick={() => { setLang(k); setCopied(false) }}
+              >{label}</button>
+            ))}
+            {achieved && <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 700, color: '#4ade80', padding: '4px 10px', background: 'rgba(74,222,128,0.1)', borderRadius: 20, border: '1px solid rgba(74,222,128,0.3)' }}>✅ Achievement message</span>}
+          </div>
+          <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px', fontSize: 12, lineHeight: 1.7, whiteSpace: 'pre-wrap', color: 'var(--text)', maxHeight: 150, overflowY: 'auto', fontFamily: 'inherit' }}>
+            {message.split('\n').map((line, i) => {
+              const parts = line.split(/(\*[^*]+\*)/g)
+              return (
+                <span key={i}>
+                  {parts.map((p, j) => p.startsWith('*') && p.endsWith('*') ? <strong key={j}>{p.slice(1, -1)}</strong> : p)}
+                  {i < message.split('\n').length - 1 && <br />}
+                </span>
+              )
+            })}
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+            <button
+              style={{ ...s.btn(copied ? '#10b981' : 'var(--surface)'), color: copied ? '#fff' : 'var(--text)', border: `1px solid ${copied ? '#10b981' : 'var(--border)'}`, flex: 1, fontSize: 11 }}
+              onClick={() => navigator.clipboard.writeText(message).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000) })}
+            >
+              {copied ? '✓ Copied!' : '📋 Copy Message'}
+            </button>
+            <button style={{ ...s.btn('#25D366'), flex: 1, fontSize: 11 }} onClick={openWa}>
+              💬 Open WhatsApp
+            </button>
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          {challenge?.id && challenge.status === 'active' && (
+            <button style={{ ...s.outlineBtn('#f85149'), fontSize: 11 }} onClick={handleCancel}>
+              ✕ Cancel Challenge
+            </button>
+          )}
+          <button style={s.outlineBtn('var(--muted)')} onClick={onClose}>Close</button>
+          <button
+            style={{ ...s.btn('#fbbf24'), color: '#000', fontWeight: 700, opacity: (targetAmount && deadline) ? 1 : 0.5 }}
+            disabled={!targetAmount || !deadline || saving}
+            onClick={handleSave}
+          >
+            {saving ? 'Saving…' : challenge?.id ? '💾 Update Challenge' : '🎯 Set Challenge'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Inline Contact Log Form ────────────────────────────────────────────────────
+function ContactLogForm({ player, onClose }) {
+  const [channel, setChannel]   = useState('WhatsApp')
+  const [outcome, setOutcome]   = useState('Contacted')
+  const [notes, setNotes]       = useState('')
+  const [saving, setSaving]     = useState(false)
+
+  const CHANNELS = ['WhatsApp','Call','In-person','Other']
+  const OUTCOMES = ['Contacted','No Reply','Replied','Deposited','Reactivated']
+
+  const handleSave = async () => {
+    if (!notes.trim()) return
+    setSaving(true)
+    const { data: { user } } = await supabase.auth.getUser()
+    let hostName = 'Marcus'
+    if (user?.id) {
+      const { data: prof } = await supabase.from('profiles').select('full_name').eq('id', user.id).single()
+      if (prof?.full_name) hostName = prof.full_name
+    }
+    const { error } = await supabase.from('contact_logs').insert({
+      vip_id:          player.id || null,
+      username:        player.username,
+      tier:            player.tier || null,
+      channel,
+      outcome,
+      notes,
+      message_summary: notes,
+      host_name:       hostName,
+      host_id:         user?.id || null,
+      direction:       'outbound',
+      logged_at:       new Date().toISOString(),
+      log_month:       new Date().toISOString().slice(0,7),
+      log_week:        String(Math.ceil(new Date().getDate()/7)),
+    })
+    if (error) { alert('Save failed: ' + error.message); setSaving(false); return }
+    // Sync last_contacted on vip_members
+    const _now = new Date().toISOString()
+    await supabase.from('vip_members').update({ last_contacted: _now, last_contact_date: _now.slice(0,10) }).eq('username', player.username)
+    setSaving(false)
+    onClose()
+  }
+
+  return (
+    <div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+        <div>
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>Contact Type</div>
+          <select value={channel} onChange={e => setChannel(e.target.value)}
+            style={{ width: '100%', padding: '8px 10px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13 }}>
+            {CHANNELS.map(c => <option key={c}>{c}</option>)}
+          </select>
+        </div>
+        <div>
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>Outcome</div>
+          <select value={outcome} onChange={e => setOutcome(e.target.value)}
+            style={{ width: '100%', padding: '8px 10px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13 }}>
+            {OUTCOMES.map(o => <option key={o}>{o}</option>)}
+          </select>
+        </div>
+      </div>
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>Notes *</div>
+        <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3}
+          placeholder="What happened? Response, follow-up needed..."
+          style={{ width: '100%', padding: '9px 12px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13, resize: 'vertical', fontFamily: 'inherit', boxSizing: 'border-box' }} />
+      </div>
+      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+        <button style={s.outlineBtn('var(--muted)')} onClick={onClose}>Cancel</button>
+        <button
+          style={{ ...s.btn('#58a6ff'), opacity: notes.trim() ? 1 : 0.5 }}
+          disabled={saving || !notes.trim()} onClick={handleSave}>
+          {saving ? 'Saving…' : 'Save Log'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ── TAB 1: VIP Upgrade Candidates ─────────────────────────────────────────────
+function VIPCandidatesTab({ hostFilter = 'ALL' }) {
+  const navigate = useNavigate()
+  const { profile } = useAuth()
+  const { t } = useLanguage()
+  const myName = profile?.full_name || ''
+  const [vips, setVips]         = useState([])
+  const [loading, setLoading]   = useState(true)
+  const [tierF, setTierF]       = useUrlParam('vTier', 'ALL')
+  const [upgradeF, setUpgradeF] = useUrlParam('vUpgrade', 'ALL')
+  const [search, setSearch]     = useUrlParam('vSearch', '')
+  const [hovered, setHovered]   = useState(null)
+  const [modal, setModal]           = useState(null)
+  const [contactModal, setContactModal] = useState(null)
+  const [waModal, setWaModal]       = useState(null)
+  const [selectedMonth, setSelectedMonth] = useUrlParam('vMonth', '')
+  const [availableMonths, setAvailableMonths] = useState([])
+  const [waNumbers, setWaNumbers]         = useState([])
+  const [challengeMap, setChallengeMap]   = useState({})
+  const [challengeModal, setChallengeModal] = useState(null)
+
+  useEffect(() => {
+    if (!myName) return
+    supabase.from('wa_numbers').select('id,codename,number,telco').eq('host', myName).eq('status','Active')
+      .then(({ data }) => setWaNumbers(data || []))
+  }, [myName])
+
+  const reloadChallenges = async () => {
+    const { data } = await supabase.from('upgrade_challenges').select('*').in('status', ['active', 'expired'])
+    const cMap = {}
+    ;(data || []).forEach(c => { cMap[c.username] = c })
+    setChallengeMap(cMap)
+  }
+
+  useEffect(() => {
+    const init = async () => {
+      // Fetch oldest and newest snapshot dates (2 queries only), then generate all
+      // month labels between them in JS — avoids paginating all 26 000+ rows.
+      const [{ data: oldest }, { data: newest }] = await Promise.all([
+        supabase.from('vip_daily_snapshots').select('snapshot_date').order('snapshot_date', { ascending: true  }).limit(1),
+        supabase.from('vip_daily_snapshots').select('snapshot_date').order('snapshot_date', { ascending: false }).limit(1),
+      ])
+      const months = []
+      if (oldest?.[0] && newest?.[0]) {
+        let cur = new Date(oldest[0].snapshot_date)
+        cur = new Date(cur.getFullYear(), cur.getMonth(), 1)
+        const end = new Date(newest[0].snapshot_date)
+        const endM = new Date(end.getFullYear(), end.getMonth(), 1)
+        while (cur <= endM) {
+          months.push(`${cur.getFullYear()}-${String(cur.getMonth()+1).padStart(2,'0')}`)
+          cur.setMonth(cur.getMonth() + 1)
+        }
+        months.reverse()
+      }
+      setAvailableMonths(months)
+      setSelectedMonth(months[0] || '')
+    }
+    init()
+  }, [])
+
+  useEffect(() => {
+    if (!selectedMonth) return
+    const load = async () => {
+      setLoading(true)
+      const { data: vipData } = await supabase
+        .from('vip_members')
+        .select('id, username, tier, last_deposit_date, days_inactive, host_assigned, currency, phone, whatsapp')
+        .in('tier', ['GOLD', 'PLATINUM'])
+
+      if (!vipData || vipData.length === 0) { setVips([]); setLoading(false); return }
+
+      // Fetch selected month totals AND previous month totals for comparison
+      const monthIdx = availableMonths.indexOf(selectedMonth)
+      const prevMonth = availableMonths[monthIdx + 1] || null
+
+      const [{ data: totals }, { data: prevTotals }] = await Promise.all([
+        supabase.from('vip_monthly_totals').select('username, monthly_valid_bet').eq('snapshot_month', selectedMonth),
+        prevMonth
+          ? supabase.from('vip_monthly_totals').select('username, monthly_valid_bet').eq('snapshot_month', prevMonth)
+          : Promise.resolve({ data: [] }),
+      ])
+
+      const totalsMap = {}
+      ;(totals || []).forEach(t => { totalsMap[t.username] = parseFloat(t.monthly_valid_bet) || 0 })
+      const prevMap = {}
+      ;(prevTotals || []).forEach(t => { prevMap[t.username] = parseFloat(t.monthly_valid_bet) || 0 })
+
+      const merged = vipData
+        .map(v => ({
+          ...v,
+          monthly_valid_bet: totalsMap[v.username] ?? 0,
+          prev_valid_bet:    prevMap[v.username] ?? null,
+        }))
+
+      const withUpgrade = merged.map(v => ({
+        ...v,
+        upgrade: getVipUpgradeTarget(v.tier, v.monthly_valid_bet),
+      }))
+
+      // Sort by upgrade progress percentage descending — 100% (Ready) naturally floats to top,
+      // followed by those closest to qualifying, then by monthly_valid_bet for ties
+      withUpgrade.sort((a, b) => {
+        const VIP_NEXT = { GOLD: { threshold: 2000000 }, PLATINUM: { threshold: 6000000 } }
+        const aTarget = a.upgrade || VIP_NEXT[a.tier] || null
+        const bTarget = b.upgrade || VIP_NEXT[b.tier] || null
+        const aPct = aTarget ? (a.monthly_valid_bet||0) / aTarget.threshold : 0
+        const bPct = bTarget ? (b.monthly_valid_bet||0) / bTarget.threshold : 0
+        if (bPct !== aPct) return bPct - aPct
+        return (b.monthly_valid_bet||0) - (a.monthly_valid_bet||0)
+      })
+
+      setVips(withUpgrade)
+
+      // Load upgrade challenges alongside VIP data
+      const { data: challenges } = await supabase
+        .from('upgrade_challenges')
+        .select('*')
+        .in('status', ['active', 'expired'])
+      const cMap = {}
+      ;(challenges || []).forEach(c => { cMap[c.username] = c })
+      setChallengeMap(cMap)
+
+      setLoading(false)
+    }
+    load()
+  }, [selectedMonth, availableMonths])
+
+  const filtered = vips.filter(v => {
+    if (tierF !== 'ALL' && v.tier !== tierF) return false
+    if (search && !v.username.toLowerCase().includes(search.toLowerCase())) return false
+    if (hostFilter === 'UNASSIGNED' && v.host_assigned) return false
+    if (hostFilter !== 'ALL' && hostFilter !== 'UNASSIGNED' && v.host_assigned !== hostFilter) return false
+    if (upgradeF === 'QUALIFIES') return v.upgrade !== null
+    if (upgradeF === 'SKIP') return v.upgrade && TIER_ORDER.indexOf(v.upgrade.tier) - TIER_ORDER.indexOf(v.tier) > 1
+    if (upgradeF !== 'ALL') return v.upgrade?.tier === upgradeF
+    return true
+  })
+
+  const qualified = vips.filter(v => v.upgrade !== null).length
+
+  const handleConfirm = async (player, newTier) => {
+    await supabase.from('vip_members').update({ tier: newTier, updated_at: new Date().toISOString() }).eq('id', player.id)
+    setVips(prev => prev.map(v => v.id === player.id
+      ? { ...v, tier: newTier, upgrade: getVipUpgradeTarget(newTier, v.monthly_valid_bet) }
+      : v
+    ))
+  }
+
+  return (
+    <div>
+      {/* Stats */}
+      <div style={s.statGrid}>
+        {[
+          { label: 'Gold members',      val: vips.filter(v => v.tier === 'GOLD').length,      color: TIER_COLOR.GOLD },
+          { label: 'Platinum members',  val: vips.filter(v => v.tier === 'PLATINUM').length,  color: TIER_COLOR.PLATINUM },
+          { label: 'Qualify for upgrade', val: qualified, color: '#10b981' },
+          { label: 'Skip-tier upgrades',  val: vips.filter(v => v.upgrade && TIER_ORDER.indexOf(v.upgrade.tier) - TIER_ORDER.indexOf(v.tier) > 1).length, color: '#f59e0b' },
+        ].map((st, i) => (
+          <div key={i} style={s.statCard(st.color)}>
+            <div style={{ ...s.statNum, color: st.color }}>{st.val}</div>
+            <div style={s.statLabel}>{st.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Filters */}
+      <div style={s.filterRow}>
+        <input placeholder="Search username…" value={search} onChange={e => setSearch(e.target.value)} style={s.searchInput} />
+        <select value={tierF} onChange={e => setTierF(e.target.value)} style={s.select}>
+          <option value="ALL">All Tiers</option>
+          <option value="GOLD">Gold</option>
+          <option value="PLATINUM">Platinum</option>
+        </select>
+        <select value={upgradeF} onChange={e => setUpgradeF(e.target.value)} style={s.select}>
+          <option value="ALL">All</option>
+          <option value="QUALIFIES">✅ Qualifies Now</option>
+          <option value="SKIP">⚡ Skip-Tier</option>
+          <option value="PLATINUM">→ Platinum</option>
+          <option value="DIAMOND">→ Diamond</option>
+        </select>
+        <select value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} style={{ ...s.select, color: 'var(--accent)', fontWeight: 700 }}>
+          {availableMonths.map(m => (
+            <option key={m} value={m}>{m}</option>
+          ))}
+        </select>
+        <span style={{ fontSize: 12, color: 'var(--muted)', marginLeft: 'auto' }}>
+          {filtered.length} members shown
+        </span>
+      </div>
+
+      {loading ? <div style={s.loading}>Loading…</div> : (
+        <div style={{ overflowX: 'auto' }}>
+          <table style={s.table}>
+            <thead>
+              <tr>
+                {[t('common.username', 'Username'), t('upgrades.colCurrentTier', 'Current Tier'), t('upgrades.colValidBet', 'Valid Bet'), t('upgrades.colLastMonthTurnover'), t('upgrades.colProgress', 'Progress'), t('upgrades.colUpgradesTo', 'Upgrades To'), t('upgrades.colGap', 'Gap'), t('upgrades.colLastDeposit', 'Last Deposit'), t('upgrades.colHost', 'Host'), 'Phone / WA', ''].map(h => (
+                  <th key={h} style={s.th}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.length === 0
+                ? <tr><td colSpan={11}><div style={s.empty}>No members match this filter</div></td></tr>
+                : filtered.map(v => {
+                  const pct = v.upgrade ? Math.min(100, (v.monthly_valid_bet / v.upgrade.threshold) * 100) : 0
+                  const isSkip = v.upgrade && TIER_ORDER.indexOf(v.upgrade.tier) - TIER_ORDER.indexOf(v.tier) > 1
+                  // Next tier thresholds for "Not yet" gap display
+                  const VIP_NEXT = { GOLD: { tier: 'PLATINUM', threshold: 2000000 }, PLATINUM: { tier: 'DIAMOND', threshold: 6000000 } }
+                  const nextTarget = v.upgrade || VIP_NEXT[v.tier] || null
+                  const nextPct = nextTarget ? Math.min(100, (v.monthly_valid_bet / nextTarget.threshold) * 100) : 0
+                  return (
+                    <tr
+                      key={v.id}
+                      style={{ ...s.tr(hovered === v.id), borderLeft: (myName && v.host_assigned===myName) ? '3px solid var(--accent)' : '3px solid transparent', background: hovered===v.id ? 'var(--surface)' : (myName && v.host_assigned===myName) ? 'rgba(99,102,241,0.04)' : 'transparent' }}
+                      onMouseEnter={() => setHovered(v.id)}
+                      onMouseLeave={() => setHovered(null)}
+                      onClick={() => navigate(`/vips/${v.id}`)}
+                    >
+                      <td style={s.td}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                          <strong>{v.username}</strong>
+                          <CopyBtn text={v.username} />
+                        </div>
+                      </td>
+                      <td style={s.td}><span style={s.tierBadge(v.tier)}>{v.tier}</span></td>
+                      <td style={s.td}>{fmt(v.monthly_valid_bet, v.currency)}</td>
+                      <td style={s.td}>
+                        {v.prev_valid_bet !== null
+                          ? <span style={{ fontSize: 12, color: v.monthly_valid_bet >= v.prev_valid_bet ? '#3fb950' : '#f85149' }}>
+                              {fmt(v.prev_valid_bet)}
+                              <span style={{ fontSize: 10, marginLeft: 4 }}>
+                                {v.monthly_valid_bet >= v.prev_valid_bet ? '↑' : '↓'}
+                              </span>
+                            </span>
+                          : <span style={{ fontSize: 12, color: 'var(--muted)' }}>—</span>
+                        }
+                      </td>
+                      <td style={{ ...s.td, minWidth: 110 }}>
+                        {nextTarget
+                          ? <div>
+                              <div style={s.progressWrap}>
+                                <div style={s.progressBar(nextPct, TIER_COLOR[nextTarget.tier])} />
+                              </div>
+                              <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 3 }}>{nextPct.toFixed(0)}%</div>
+                              {(() => {
+                                const ch = challengeMap[v.username]
+                                if (!ch || ch.status !== 'active') return null
+                                const chPct = ch.target_amount > 0
+                                  ? Math.min(100, Math.max(0, ((v.monthly_valid_bet - ch.baseline_bet) / ch.target_amount) * 100))
+                                  : 0
+                                return (
+                                  <div style={{ marginTop: 5 }}>
+                                    <div style={{ height: 4, background: 'var(--border)', borderRadius: 2, overflow: 'hidden' }}>
+                                      <div style={{ width: `${chPct}%`, height: '100%', background: chPct >= 100 ? '#4ade80' : '#fbbf24', borderRadius: 2 }} />
+                                    </div>
+                                    <div style={{ fontSize: 9, color: '#fbbf24', marginTop: 2 }}>🎯 {chPct.toFixed(0)}% challenge</div>
+                                  </div>
+                                )
+                              })()}
+                            </div>
+                          : <span style={{ fontSize: 12, color: 'var(--muted)' }}>—</span>
+                        }
+                      </td>
+                      <td style={s.td}>
+                        {v.upgrade
+                          ? <span>
+                              <span style={s.tierBadge(v.upgrade.tier)}>{v.upgrade.tier}</span>
+                              {isSkip && <span style={{ marginLeft: 5, fontSize: 10, color: '#f59e0b', fontWeight: 700 }}>⚡SKIP</span>}
+                            </span>
+                          : <span style={{ fontSize: 12, color: 'var(--muted)' }}>Not yet</span>
+                        }
+                      </td>
+                      <td style={s.td}>
+                        {v.upgrade
+                          ? <span style={{ fontSize: 12, color: '#4ade80', fontWeight: 600 }}>✓ Ready</span>
+                          : nextTarget
+                            ? <span style={{ fontSize: 12, color: 'var(--muted)' }}>
+                                {fmt(nextTarget.threshold - v.monthly_valid_bet)}
+                                <span style={{ fontSize: 10, color: 'var(--muted)', marginLeft: 4 }}>to {nextTarget.tier}</span>
+                              </span>
+                            : '—'
+                        }
+                      </td>
+                      <td style={s.td}>{fmtDate(v.last_deposit_date)}</td>
+                      <td style={{ ...s.td, fontSize: 12, color: 'var(--muted)' }}>{v.host_assigned || '—'}</td>
+                      <td style={s.td} onClick={e => e.stopPropagation()}>
+                        {(v.phone || v.whatsapp)
+                          ? <div style={{ display: 'flex', alignItems: 'center', gap: 2, whiteSpace: 'nowrap' }}>
+                              <span style={{ fontSize: 12 }}>{v.whatsapp || v.phone}</span>
+                              <CopyBtn text={v.whatsapp || v.phone} />
+                            </div>
+                          : <span style={{ fontSize: 11, color: 'var(--muted)' }}>—</span>
+                        }
+                      </td>
+                      <td style={s.td} onClick={e => e.stopPropagation()}>
+                        <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
+                          {v.upgrade
+                            ? <button style={s.btn(TIER_COLOR[v.upgrade.tier], true)} onClick={() => setModal(v)}>
+                                {t('upgrades.btn.upgrade', 'Upgrade')}
+                              </button>
+                            : <>
+                                {challengeMap[v.username]
+                                  ? <button
+                                      style={{
+                                        ...s.outlineBtn(challengeMap[v.username].status === 'active' ? '#fbbf24' : '#f85149'),
+                                        fontSize: 11, fontWeight: 700,
+                                      }}
+                                      onClick={() => setChallengeModal(v)}
+                                    >
+                                      {challengeMap[v.username].status === 'active' ? '🎯 Challenge' : '⏰ Expired'}
+                                    </button>
+                                  : <button style={s.outlineBtn('#58a6ff')} onClick={() => setContactModal(v)}>
+                                      {t('upgrades.btn.contact', 'Contact')}
+                                    </button>
+                                }
+                                <button
+                                  title="Set / view upgrade challenge"
+                                  style={{ ...s.outlineBtn('#fbbf24'), padding: '3px 7px', fontSize: 12 }}
+                                  onClick={() => setChallengeModal(v)}
+                                >
+                                  {challengeMap[v.username] ? '✏' : '🎯'}
+                                </button>
+                              </>
+                          }
+                          <button
+                            title="Send WhatsApp message"
+                            style={{ ...s.btn('#25D366', true), padding: '4px 9px', fontSize: 14 }}
+                            onClick={() => setWaModal(v)}
+                          >💬</button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {modal && (
+        <ConfirmUpgradeModal
+          player={modal}
+          isPotential={false}
+          onClose={() => setModal(null)}
+          onConfirm={handleConfirm}
+        />
+      )}
+
+      {contactModal && (
+        <div style={s.modal} onClick={() => setContactModal(null)}>
+          <div style={s.modalBox} onClick={e => e.stopPropagation()}>
+            <div style={s.modalTitle}>Log Contact — {contactModal.username}</div>
+            <div style={s.modalSub}>
+              <span style={{ ...s.tierBadge(contactModal.tier), marginRight: 8 }}>{contactModal.tier}</span>
+              Valid Bet: {fmt(contactModal.monthly_valid_bet)} · Last Deposit: {fmtDate(contactModal.last_deposit_date)}
+            </div>
+            <ContactLogForm player={contactModal} onClose={() => setContactModal(null)} />
+          </div>
+        </div>
+      )}
+
+      {waModal && (
+        <WhatsAppModal
+          player={waModal}
+          agentName={myName || 'Agent'}
+          waNumbers={waNumbers}
+          onClose={() => setWaModal(null)}
+        />
+      )}
+
+      {challengeModal && (
+        <ChallengeModal
+          player={challengeModal}
+          challenge={challengeMap[challengeModal.username] || null}
+          agentName={myName || 'Agent'}
+          waNumbers={waNumbers}
+          onClose={() => setChallengeModal(null)}
+          onSaved={reloadChallenges}
+        />
+      )}
+    </div>
+  )
+}
+
+// ── Default thresholds (fallback if DB fetch fails) ───────────────────────────
+const DEFAULT_THRESHOLDS = { BRONZE: 500, SILVER: 3000 }
+
+// ── TAB 2: Potential Players ───────────────────────────────────────────────────
+function PotentialsTab({ hostFilter = 'ALL' }) {
+  const { t } = useLanguage()
+  const { profile } = useAuth()
+  const myName = profile?.full_name || ''
+  const [players, setPlayers]   = useState([])
+  const [thresholds, setThresh] = useState([])
+  const [threshMap, setThreshMap] = useState(DEFAULT_THRESHOLDS)
+  const [loading, setLoading]   = useState(true)
+  const [tierF, setTierF]       = useUrlParam('pTier', 'ALL')
+  const [flagF, setFlagF]       = useUrlParam('pFlag', 'ALL')
+  const [search, setSearch]     = useUrlParam('pSearch', '')
+  const [hovered, setHovered]   = useState(null)
+  const [modal, setModal]           = useState(null)
+  const [contactModal, setContactModal] = useState(null)
+  const [page, setPage]             = useUrlParamNumber('pPage', 0)
+  const PAGE = 50
+
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true)
+      // Fetch thresholds
+      const { data: thresh } = await supabase
+        .from('upgrade_thresholds')
+        .select('from_tier, to_tier, threshold')
+        .eq('is_active', true)
+      if (thresh) {
+        setThresh(thresh) // full array for skip-tier logic
+        const t = {}
+        // Use the LOWEST threshold per tier (next immediate upgrade target)
+        thresh.forEach(r => {
+          if (!t[r.from_tier] || r.threshold < t[r.from_tier]) {
+            t[r.from_tier] = r.threshold
+          }
+        })
+        setThreshMap({ ...DEFAULT_THRESHOLDS, ...t })
+      }
+      // Fetch active potentials (not graduated)
+      const { data } = await supabase
+        .from('potential_players')
+        .select('*')
+        .eq('is_graduated', false)
+
+      let merged = data || []
+      if (merged.length > 0) {
+        const now = new Date()
+        const thisMonthPot = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`
+        const { data: _potCheck } = await supabase.from('potential_monthly_totals').select('snapshot_month').eq('snapshot_month', thisMonthPot).limit(1)
+        const currentMonth = (_potCheck && _potCheck.length > 0) ? thisMonthPot : await (async () => {
+          const { data: _potLatest } = await supabase.from('potential_monthly_totals').select('snapshot_month').order('snapshot_month', { ascending: false }).limit(1)
+          return _potLatest?.[0]?.snapshot_month || thisMonthPot
+        })()
+        // NOTE: don't filter with .in('username', usernames) — potential_players can run into
+        // the thousands, which would make the URL query string exceed length limits. Fetch the
+        // whole month's totals instead (still a manageable dataset) and join client-side.
+        const { data: totals, error: totalsErr } = await supabase
+          .from('potential_monthly_totals')
+          .select('username, monthly_valid_bet')
+          .eq('snapshot_month', currentMonth)
+        if (totalsErr) console.error('PotentialsTab: potential_monthly_totals fetch error', totalsErr)
+        const totalsMap = {}
+        ;(totals || []).forEach(t => { totalsMap[t.username] = t.monthly_valid_bet })
+        merged = merged
+          .map(p => ({ ...p, monthly_valid_bet: totalsMap[p.username] ?? p.monthly_valid_bet ?? 0 }))
+          .sort((a, b) => (b.monthly_valid_bet||0) - (a.monthly_valid_bet||0))
+      }
+      setPlayers(merged)
+      setLoading(false)
+    }
+    load()
+  }, [])
+
+  const filtered = players.filter(p => {
+    if (p.is_graduated) return false
+    if (tierF !== 'ALL' && p.tier !== tierF) return false
+    if (flagF === 'FLAGGED' && !p.upgrade_flag) return false
+    if (flagF === 'CLEAN'   &&  p.upgrade_flag) return false
+    if (search && !p.username.toLowerCase().includes(search.toLowerCase())) return false
+    if (hostFilter === 'UNASSIGNED' && p.host_assigned) return false
+    if (hostFilter !== 'ALL' && hostFilter !== 'UNASSIGNED' && p.host_assigned !== hostFilter) return false
+    return true
+  })
+
+  const paginated = filtered.slice(page * PAGE, (page + 1) * PAGE)
+  const totalPages = Math.ceil(filtered.length / PAGE)
+
+  const handleConfirm = async (player, newTier) => {
+    const now = new Date().toISOString()
+    // Insert into vip_members
+    await supabase.from('vip_members').upsert({
+      username:         player.username,
+      tier:             newTier,
+      total_deposit:    player.total_deposit,
+      total_withdrawal: player.total_withdrawal,
+      total_rebate:     player.total_rebate,
+      monthly_valid_bet: player.monthly_valid_bet,
+      valid_bet_month:  player.valid_bet_month,
+      deposit_count:    player.deposit_count,
+      registration_date: player.registration_date,
+      region:           player.region,
+      created_at:       now,
+      updated_at:       now,
+    }, { onConflict: 'username' })
+    // Mark as graduated in potential_players
+    await supabase.from('potential_players').update({
+      is_graduated:     true,
+      upgraded_at:      now,
+      upgraded_to_tier: newTier,
+      upgrade_flag:     false,
+    }).eq('id', player.id)
+    // Remove from local state
+    setPlayers(prev => prev.filter(p => p.id !== player.id))
+  }
+
+  return (
+    <div>
+      {/* Stats */}
+      <div style={s.statGrid}>
+        {[
+          { label: 'Bronze players',  val: players.filter(p => p.tier === 'BRONZE').length, color: TIER_COLOR.BRONZE },
+          { label: 'Silver players',  val: players.filter(p => p.tier === 'SILVER').length, color: TIER_COLOR.SILVER },
+          { label: 'Upgrade flagged', val: players.filter(p => p.upgrade_flag).length,       color: '#10b981' },
+          { label: 'Total potentials', val: players.length,                                   color: 'var(--accent)' },
+        ].map((st, i) => (
+          <div key={i} style={s.statCard(st.color)}>
+            <div style={{ ...s.statNum, color: st.color }}>{st.val}</div>
+            <div style={s.statLabel}>{st.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Thresholds reminder */}
+      <div style={{
+        fontSize: 12, color: 'var(--muted)',
+        background: 'var(--surface)', border: '1px solid var(--border)',
+        borderRadius: 8, padding: '8px 14px', marginBottom: 14,
+        display: 'flex', gap: 20,
+      }}>
+        <span>🏅 Bronze → Silver at <strong style={{ color: TIER_COLOR.SILVER }}>{fmt(threshMap.BRONZE)}</strong> valid bet</span>
+        <span>🥈 Silver → Gold at <strong style={{ color: TIER_COLOR.GOLD }}>{fmt(threshMap.SILVER)}</strong> valid bet</span>
+      </div>
+
+      {/* Filters */}
+      <div style={s.filterRow}>
+        <input placeholder="Search username…" value={search} onChange={e => setSearch(e.target.value)} style={s.searchInput} />
+        <select value={tierF} onChange={e => setTierF(e.target.value)} style={s.select}>
+          <option value="ALL">All Tiers</option>
+          <option value="BRONZE">Bronze</option>
+          <option value="SILVER">Silver</option>
+        </select>
+        <select value={flagF} onChange={e => setFlagF(e.target.value)} style={s.select}>
+          <option value="ALL">All Status</option>
+          <option value="FLAGGED">🚀 Upgrade Flagged</option>
+          <option value="CLEAN">Active</option>
+        </select>
+        <span style={{ fontSize: 12, color: 'var(--muted)', marginLeft: 'auto' }}>
+          {filtered.length} players · page {page + 1}/{totalPages || 1}
+        </span>
+      </div>
+
+      {loading ? <div style={s.loading}>Loading…</div> : (
+        <>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={s.table}>
+              <thead>
+                <tr>
+                  {[t('common.username', 'Username'), t('upgrades.colTier', 'Tier'), t('upgrades.colValidBet', 'Valid Bet'), t('upgrades.colProgress', 'Progress'), t('upgrades.colGapToNext', 'Gap to Next'), t('common.totalDeposit', 'Total Deposit'), t('upgrades.colMemberSince', 'Member Since'), t('upgrades.colLastMonth', 'Last Month'), t('common.status', 'Status'), ''].map(h => (
+                    <th key={h} style={s.th}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {paginated.length === 0
+                  ? <tr><td colSpan={9}><div style={s.empty}>No players match this filter</div></td></tr>
+                  : paginated.map(p => {
+                    const target = getPotentialUpgradeTarget(p.tier, p.monthly_valid_bet, thresholds)
+                    const nextTarget = getNextUpgradeTarget(p.tier, thresholds)
+                    const thresh = nextTarget?.threshold ?? 99999999
+                    const pct = Math.min(100, ((p.monthly_valid_bet ?? 0) / thresh) * 100)
+                    return (
+                      <tr
+                        key={p.id}
+                        style={{ ...s.tr(hovered === p.id), borderLeft: '3px solid transparent' }}
+                        onMouseEnter={() => setHovered(p.id)}
+                        onMouseLeave={() => setHovered(null)}
+                      >
+                        <td style={s.td}><strong>{p.username}</strong></td>
+                        <td style={s.td}><span style={s.tierBadge(p.tier)}>{p.tier}</span></td>
+                        <td style={s.td}>{fmt(p.monthly_valid_bet, p.currency)}</td>
+                        <td style={{ ...s.td, minWidth: 100 }}>
+                          <div style={s.progressWrap}>
+                            <div style={s.progressBar(pct, target ? TIER_COLOR[target.tier] : TIER_COLOR[p.tier])} />
+                          </div>
+                          <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 3 }}>{pct.toFixed(0)}%</div>
+                        </td>
+                        <td style={s.td}>
+                          {target
+                            ? <span style={{ fontSize: 12, color: '#4ade80', fontWeight: 600 }}>
+                                ✓ →{' '}
+                                <span style={s.tierBadge(target.to_tier)}>{target.to_tier}</span>
+                                {TIER_ORDER.indexOf(target.to_tier) - TIER_ORDER.indexOf(p.tier) > 1 &&
+                                  <span style={{ fontSize: 10, color: '#f59e0b', fontWeight: 700, marginLeft: 4 }}>⚡SKIP</span>
+                                }
+                              </span>
+                            : nextTarget
+                              ? <span style={{ fontSize: 12, color: 'var(--muted)' }}>
+                                  {fmt(nextTarget.threshold - (p.monthly_valid_bet ?? 0))}
+                                  <span style={{ fontSize: 10, marginLeft: 3 }}>to {nextTarget.to_tier}</span>
+                                </span>
+                              : '—'
+                          }
+                        </td>
+                        <td style={s.td}>{fmt(p.total_deposit, p.currency)}</td>
+                        <td style={{ ...s.td, fontSize: 12, color: 'var(--muted)', textAlign: 'center' }}>
+                          {p.registration_date
+                            ? new Date(p.registration_date).toLocaleDateString('en-MY', { month: 'short', year: 'numeric' })
+                            : '—'
+                          }
+                        </td>
+                        <td style={{ ...s.td, fontSize: 12, color: 'var(--muted)' }}>{p.last_import_month || '—'}</td>
+                        <td style={s.td}>
+                          {p.upgrade_flag
+                            ? <span style={{ color: '#4ade80', fontWeight: 600, fontSize: 12 }}>🚀 Ready</span>
+                            : <span style={{ color: 'var(--muted)', fontSize: 12 }}>Active</span>
+                          }
+                        </td>
+                        <td style={s.td} onClick={e => e.stopPropagation()}>
+                          {p.upgrade_flag && target
+                            ? <button
+                                style={s.btn(TIER_COLOR[target.to_tier] || '#10b981', true)}
+                                onClick={() => setModal(p)}
+                              >
+                                {t('upgrades.btn.upgrade', 'Upgrade')}
+                              </button>
+                            : <button
+                                style={s.outlineBtn('#58a6ff')}
+                                onClick={() => setContactModal(p)}
+                              >
+                                {t('upgrades.btn.contact', 'Contact')}
+                              </button>
+                          }
+                        </td>
+                      </tr>
+                    )
+                  })}
+              </tbody>
+            </table>
+          </div>
+
+          {totalPages > 1 && (
+            <div style={{ display: 'flex', gap: 6, justifyContent: 'center', marginTop: 16 }}>
+              <button style={s.outlineBtn()} disabled={page === 0} onClick={() => setPage(p => p - 1)}>‹ Prev</button>
+              <span style={{ fontSize: 13, padding: '4px 8px', color: 'var(--muted)' }}>{page + 1} / {totalPages}</span>
+              <button style={s.outlineBtn()} disabled={page >= totalPages - 1} onClick={() => setPage(p => p + 1)}>Next ›</button>
+            </div>
+          )}
+        </>
+      )}
+
+      {modal && (
+        <ConfirmUpgradeModal
+          player={modal}
+          isPotential={true}
+          onClose={() => setModal(null)}
+          onConfirm={handleConfirm}
+        />
+      )}
+
+      {contactModal && (
+        <div style={s.modal} onClick={() => setContactModal(null)}>
+          <div style={s.modalBox} onClick={e => e.stopPropagation()}>
+            <div style={s.modalTitle}>Log Contact — {contactModal.username}</div>
+            <div style={s.modalSub}>
+              <span style={{ ...s.tierBadge(contactModal.tier), marginRight: 8 }}>{contactModal.tier}</span>
+              Valid Bet: {fmt(contactModal.monthly_valid_bet, contactModal.currency)} · Total Deposit: {fmt(contactModal.total_deposit, contactModal.currency)}
+            </div>
+            <ContactLogForm player={contactModal} onClose={() => setContactModal(null)} />
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── TAB 3: Graduated History ───────────────────────────────────────────────────
+function GraduatedTab({ hostFilter = 'ALL' }) {
+  const { t } = useLanguage()
+  const navigate = useNavigate()
+  const [players, setPlayers] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [search, setSearch]   = useUrlParam('gSearch', '')
+  const [hovered, setHovered] = useState(null)
+
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true)
+      const { data } = await supabase
+        .from('potential_players')
+        .select('*')
+        .eq('is_graduated', true)
+        .order('upgraded_at', { ascending: false })
+      setPlayers(data || [])
+      setLoading(false)
+    }
+    load()
+  }, [])
+
+  const filtered = players.filter(p => {
+    if (search && !p.username.toLowerCase().includes(search.toLowerCase())) return false
+    if (hostFilter === 'UNASSIGNED' && p.host_assigned) return false
+    if (hostFilter !== 'ALL' && hostFilter !== 'UNASSIGNED' && p.host_assigned !== hostFilter) return false
+    return true
+  })
+
+  return (
+    <div>
+      {/* Stats */}
+      <div style={s.statGrid}>
+        {[
+          { label: 'Total graduated',  val: players.length,                                                  color: '#10b981' },
+          { label: 'Bronze → VIP',     val: players.filter(p => p.tier === 'BRONZE').length,                 color: TIER_COLOR.BRONZE },
+          { label: 'Silver → VIP',     val: players.filter(p => p.tier === 'SILVER').length,                 color: TIER_COLOR.SILVER },
+          { label: 'Graduated to Gold', val: players.filter(p => p.upgraded_to_tier === 'GOLD').length,      color: TIER_COLOR.GOLD },
+        ].map((st, i) => (
+          <div key={i} style={s.statCard(st.color)}>
+            <div style={{ ...s.statNum, color: st.color }}>{st.val}</div>
+            <div style={s.statLabel}>{st.label}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={s.filterRow}>
+        <input placeholder="Search username…" value={search} onChange={e => setSearch(e.target.value)} style={s.searchInput} />
+        <span style={{ fontSize: 12, color: 'var(--muted)', marginLeft: 'auto' }}>
+          {filtered.length} graduated players
+        </span>
+      </div>
+
+      {loading ? <div style={s.loading}>Loading…</div> : (
+        <div style={{ overflowX: 'auto' }}>
+          <table style={s.table}>
+            <thead>
+              <tr>
+                {[t('common.username', 'Username'), t('upgrades.colWas', 'Was'), t('upgrades.colUpgradedTo', 'Upgraded To'), t('upgrades.colUpgradedOn', 'Upgraded On'), t('upgrades.colMonthsAsPotential', 'Months as Potential'), t('upgrades.colDepositAtUpgrade', 'Total Deposit at Upgrade'), t('upgrades.colValidBetAtUpgrade', 'Valid Bet at Upgrade'), t('upgrades.colViewVip', 'View VIP')].map(h => (
+                  <th key={h} style={s.th}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.length === 0
+                ? <tr><td colSpan={8}><div style={s.empty}>No graduated players yet</div></td></tr>
+                : filtered.map(p => (
+                  <tr
+                    key={p.id}
+                    style={s.tr(hovered === p.id)}
+                    onMouseEnter={() => setHovered(p.id)}
+                    onMouseLeave={() => setHovered(null)}
+                  >
+                    <td style={s.td}><strong>{p.username}</strong></td>
+                    <td style={s.td}><span style={s.tierBadge(p.tier)}>{p.tier}</span></td>
+                    <td style={s.td}>
+                      <span style={s.tierBadge(p.upgraded_to_tier || 'GOLD')}>
+                        {p.upgraded_to_tier || '—'}
+                      </span>
+                    </td>
+                    <td style={s.td}>{fmtDate(p.upgraded_at)}</td>
+                    <td style={{ ...s.td, textAlign: 'center' }}>{p.months_active ?? '—'}</td>
+                    <td style={s.td}>{fmt(p.total_deposit, p.currency)}</td>
+                    <td style={s.td}>{fmt(p.monthly_valid_bet, p.currency)}</td>
+                    <td style={s.td} onClick={e => e.stopPropagation()}>
+                      <button
+                        style={s.outlineBtn('var(--accent)')}
+                        onClick={async () => {
+                          const { data } = await supabase
+                            .from('vip_members')
+                            .select('id')
+                            .eq('username', p.username)
+                            .single()
+                          if (data) navigate(`/vips/${data.id}`)
+                        }}
+                      >
+                        {t('upgrades.btn.view', 'View →')}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── TAB 4: Tier History ───────────────────────────────────────────────────────
+function TierHistoryTab({ hostFilter = 'ALL' }) {
+  const navigate = useNavigate()
+  const { profile } = useAuth()
+  const myName = profile?.full_name || ''
+  const [players, setPlayers]       = useState([])
+  const [loading, setLoading]       = useState(true)
+  const [tierF, setTierF]           = useUrlParam('hTier', 'ALL')
+  const [search, setSearch]         = useUrlParam('hSearch', '')
+  const [sortCol, setSortCol]       = useUrlParam('hSort', 'days')
+  const [hovered, setHovered]       = useState(null)
+  const [waModal, setWaModal]       = useState(null)
+  const [currentMonth, setCurrentMonth] = useState('')
+  const [waNumbers, setWaNumbers] = useState([])
+  useEffect(() => {
+    if (!myName) return
+    supabase.from('wa_numbers').select('id,codename,number,telco').eq('host', myName).eq('status','Active')
+      .then(({ data }) => setWaNumbers(data || []))
+  }, [myName])
+
+  const NEXT_TIER   = { GOLD: 'PLATINUM', PLATINUM: 'DIAMOND', DIAMOND: null }
+  const NEXT_THRESH = { GOLD: 2000000,    PLATINUM: 6000000,   DIAMOND: null  }
+
+  const daysToStr = (days) => {
+    if (days === null || days === undefined) return '—'
+    if (days < 30) return `${days}d`
+    const months = Math.floor(days / 30)
+    const rem = days % 30
+    return rem > 0 ? `${months}mo ${rem}d` : `${months}mo`
+  }
+
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true)
+
+      // 1. Fetch all active Gold/Platinum/Diamond VIP members
+      const { data: vipData } = await supabase
+        .from('vip_members')
+        .select('id, username, tier, host_assigned, currency, phone, whatsapp')
+        .in('tier', ['GOLD', 'PLATINUM', 'DIAMOND'])
+
+      if (!vipData || vipData.length === 0) { setPlayers([]); setLoading(false); return }
+
+      // 2. Fetch tier change logs (accurate — only exists for CRM-recorded upgrades)
+      const { data: logs } = await supabase
+        .from('tier_change_logs')
+        .select('username, new_tier, changed_at')
+        .in('new_tier', ['GOLD', 'PLATINUM', 'DIAMOND'])
+        .order('changed_at', { ascending: false })
+
+      // Build map: `${username}|${new_tier}` → most recent log entry
+      const logMap = {}
+      for (const log of (logs || [])) {
+        const key = `${log.username}|${log.new_tier}`
+        if (!logMap[key]) logMap[key] = { date: log.changed_at, source: 'log' }
+      }
+
+      // 3. For players with no tier_change_log entry, fall back to earliest snapshot
+      //    at their current tier — gives an approximate "in this tier since" date.
+      const snapMap = {}
+      const missingUsernames = vipData.filter(v => !logMap[`${v.username}|${v.tier}`]).map(v => v.username)
+      if (missingUsernames.length > 0) {
+        // Fetch oldest snapshots first — first occurrence per (username, tier) = earliest known date in that tier
+        // Use batches of 1000 (Supabase default page size) until we've covered all players or run out of data
+        let offset = 0
+        const BATCH = 1000
+        let remaining = new Set(missingUsernames)
+        while (remaining.size > 0) {
+          const { data: snaps } = await supabase
+            .from('vip_daily_snapshots')
+            .select('username, tier, snapshot_date')
+            .in('username', [...remaining])
+            .in('tier', ['GOLD', 'PLATINUM', 'DIAMOND'])
+            .order('snapshot_date', { ascending: true })
+            .range(offset, offset + BATCH - 1)
+          if (!snaps || snaps.length === 0) break
+          for (const snap of snaps) {
+            const key = `${snap.username}|${snap.tier}`
+            if (!snapMap[key]) {
+              snapMap[key] = { date: snap.snapshot_date, source: 'snapshot' }
+            }
+          }
+          // Once we've seen a player's oldest snapshot, no need to keep paginating for them
+          for (const u of [...remaining]) {
+            const v = vipData.find(v => v.username === u)
+            if (v && snapMap[`${v.username}|${v.tier}`]) remaining.delete(u)
+          }
+          if (snaps.length < BATCH) break // no more pages
+          offset += BATCH
+        }
+      }
+
+      // 4. Resolve current VB month (latest available)
+      const now = new Date()
+      const thisMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`
+      const { data: monthCheck } = await supabase
+        .from('vip_monthly_totals')
+        .select('snapshot_month')
+        .eq('snapshot_month', thisMonth)
+        .limit(1)
+      let resolvedMonth = thisMonth
+      if (!monthCheck || monthCheck.length === 0) {
+        const { data: latestMonth } = await supabase
+          .from('vip_monthly_totals')
+          .select('snapshot_month')
+          .order('snapshot_month', { ascending: false })
+          .limit(1)
+        resolvedMonth = latestMonth?.[0]?.snapshot_month || thisMonth
+      }
+      setCurrentMonth(resolvedMonth)
+
+      const { data: totals } = await supabase
+        .from('vip_monthly_totals')
+        .select('username, monthly_valid_bet')
+        .eq('snapshot_month', resolvedMonth)
+
+      const totalsMap = {}
+      ;(totals || []).forEach(t => { totalsMap[t.username] = parseFloat(t.monthly_valid_bet) || 0 })
+
+      // 5. Enrich each VIP member — tier_change_log takes priority, snapshot is fallback
+      const today = new Date()
+      const enriched = vipData.map(v => {
+        const key = `${v.username}|${v.tier}`
+        const entry = logMap[key] || snapMap[key] || null
+        const upgradeDate = entry?.date || null
+        const isApprox    = entry?.source === 'snapshot'   // snapshot = "earliest seen", not exact
+        const daysInTier  = upgradeDate
+          ? Math.floor((today - new Date(upgradeDate)) / (1000 * 60 * 60 * 24))
+          : null
+        const monthlyVB  = totalsMap[v.username] || 0
+        const nextTier   = NEXT_TIER[v.tier]
+        const nextThresh = NEXT_THRESH[v.tier]
+        const gapToNext  = nextThresh ? Math.max(0, nextThresh - monthlyVB) : null
+        const progressPct = nextThresh ? Math.min(100, (monthlyVB / nextThresh) * 100) : 100
+        return { ...v, upgrade_date: upgradeDate, is_approx: isApprox, days_in_tier: daysInTier, monthly_valid_bet: monthlyVB, next_tier: nextTier, next_thresh: nextThresh, gap_to_next: gapToNext, progress_pct: progressPct }
+      })
+
+      setPlayers(enriched)
+      setLoading(false)
+    }
+    load()
+  }, [])
+
+  const filtered = players.filter(v => {
+    if (tierF !== 'ALL' && v.tier !== tierF) return false
+    if (search && !v.username.toLowerCase().includes(search.toLowerCase())) return false
+    if (hostFilter === 'UNASSIGNED' && v.host_assigned) return false
+    if (hostFilter !== 'ALL' && hostFilter !== 'UNASSIGNED' && v.host_assigned !== hostFilter) return false
+    return true
+  })
+
+  const sorted = [...filtered].sort((a, b) => {
+    if (sortCol === 'days')  return (b.days_in_tier ?? -1) - (a.days_in_tier ?? -1)
+    if (sortCol === 'vb')    return (b.monthly_valid_bet || 0) - (a.monthly_valid_bet || 0)
+    if (sortCol === 'date') {
+      if (!a.upgrade_date) return 1
+      if (!b.upgrade_date) return -1
+      return a.upgrade_date.localeCompare(b.upgrade_date) // oldest first = longest in tier
+    }
+    return 0
+  })
+
+  return (
+    <div>
+      {/* Stats */}
+      <div style={s.statGrid}>
+        {[
+          { label: 'Gold VIPs',     val: players.filter(v => v.tier === 'GOLD').length,     color: TIER_COLOR.GOLD },
+          { label: 'Platinum VIPs', val: players.filter(v => v.tier === 'PLATINUM').length, color: TIER_COLOR.PLATINUM },
+          { label: 'Diamond VIPs',  val: players.filter(v => v.tier === 'DIAMOND').length,  color: TIER_COLOR.DIAMOND },
+          { label: 'Total VIPs',    val: players.length,                                     color: 'var(--accent)' },
+        ].map((st, i) => (
+          <div key={i} style={s.statCard(st.color)}>
+            <div style={{ ...s.statNum, color: st.color }}>{st.val}</div>
+            <div style={s.statLabel}>{st.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Filters */}
+      <div style={s.filterRow}>
+        <input
+          placeholder="Search username…"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          style={s.searchInput}
+        />
+        <select value={tierF} onChange={e => setTierF(e.target.value)} style={s.select}>
+          <option value="ALL">All Tiers</option>
+          <option value="GOLD">Gold</option>
+          <option value="PLATINUM">Platinum</option>
+          <option value="DIAMOND">Diamond</option>
+        </select>
+        <select value={sortCol} onChange={e => setSortCol(e.target.value)} style={s.select}>
+          <option value="days">Sort: Longest in Tier</option>
+          <option value="date">Sort: Upgrade Date (oldest)</option>
+          <option value="vb">Sort: Monthly VB</option>
+        </select>
+        <span style={{ fontSize: 12, color: 'var(--muted)', marginLeft: 'auto' }}>
+          {filtered.length} VIPs{currentMonth ? ` · VB: ${currentMonth}` : ''}
+        </span>
+      </div>
+
+      {loading ? <div style={s.loading}>Loading…</div> : (
+        <div style={{ overflowX: 'auto' }}>
+          <table style={s.table}>
+            <thead>
+              <tr>
+                {['Username', 'Tier', 'Upgraded On', 'Time in Tier', 'Monthly VB', 'Progress', 'Gap to Next', 'Host', 'Phone / WA', ''].map(h => (
+                  <th key={h} style={s.th}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {sorted.length === 0
+                ? <tr><td colSpan={10}><div style={s.empty}>No VIPs match this filter</div></td></tr>
+                : sorted.map(v => (
+                  <tr
+                    key={v.id}
+                    style={s.tr(hovered === v.id)}
+                    onMouseEnter={() => setHovered(v.id)}
+                    onMouseLeave={() => setHovered(null)}
+                    onClick={() => navigate(`/vips/${v.id}`)}
+                  >
+                    <td style={s.td}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                        <strong>{v.username}</strong>
+                        <CopyBtn text={v.username} />
+                      </div>
+                    </td>
+                    <td style={s.td}><span style={s.tierBadge(v.tier)}>{v.tier}</span></td>
+                    <td style={s.td}>
+                      {v.upgrade_date
+                        ? <span>
+                            {v.is_approx && (
+                              <span title="Estimated from earliest snapshot — exact upgrade date not recorded" style={{ fontSize: 10, color: 'var(--muted)', marginRight: 4 }}>~</span>
+                            )}
+                            {fmtDate(v.upgrade_date)}
+                            {v.is_approx && (
+                              <span style={{ fontSize: 10, color: 'var(--muted)', marginLeft: 4 }}>est.</span>
+                            )}
+                          </span>
+                        : <span style={{ color: 'var(--muted)', fontSize: 12 }}>No data</span>
+                      }
+                    </td>
+                    <td style={s.td}>
+                      {v.days_in_tier !== null
+                        ? <span style={{
+                            fontWeight: v.days_in_tier > 365 ? 700 : 400,
+                            color: v.days_in_tier > 365 ? '#f59e0b' : 'var(--text)',
+                          }}>
+                            {daysToStr(v.days_in_tier)}
+                            {v.is_approx && <span style={{ fontSize: 10, color: 'var(--muted)', marginLeft: 4 }}>+</span>}
+                          </span>
+                        : <span style={{ color: 'var(--muted)', fontSize: 12 }}>No data</span>
+                      }
+                    </td>
+                    <td style={s.td}>{fmt(v.monthly_valid_bet, v.currency)}</td>
+                    <td style={{ ...s.td, minWidth: 110 }}>
+                      {v.next_tier
+                        ? <div>
+                            <div style={s.progressWrap}>
+                              <div style={s.progressBar(v.progress_pct, TIER_COLOR[v.next_tier])} />
+                            </div>
+                            <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 3 }}>
+                              {v.progress_pct.toFixed(0)}% to {v.next_tier}
+                            </div>
+                          </div>
+                        : <span style={{ fontSize: 12, color: TIER_COLOR.DIAMOND || '#a78bfa', fontWeight: 700 }}>
+                            ★ MAX
+                          </span>
+                      }
+                    </td>
+                    <td style={s.td}>
+                      {v.next_tier
+                        ? v.gap_to_next === 0
+                          ? <span style={{ fontSize: 12, color: '#4ade80', fontWeight: 600 }}>✓ Ready</span>
+                          : <span style={{ fontSize: 12, color: 'var(--muted)' }}>
+                              {fmt(v.gap_to_next, v.currency)}
+                              <span style={{ fontSize: 10, marginLeft: 4 }}>to {v.next_tier}</span>
+                            </span>
+                        : <span style={{ fontSize: 12, color: 'var(--muted)' }}>Max tier</span>
+                      }
+                    </td>
+                    <td style={{ ...s.td, fontSize: 12, color: 'var(--muted)' }}>{v.host_assigned || '—'}</td>
+                    <td style={s.td} onClick={e => e.stopPropagation()}>
+                      {(v.phone || v.whatsapp)
+                        ? <div style={{ display: 'flex', alignItems: 'center', gap: 2, whiteSpace: 'nowrap' }}>
+                            <span style={{ fontSize: 12 }}>{v.whatsapp || v.phone}</span>
+                            <CopyBtn text={v.whatsapp || v.phone} />
+                          </div>
+                        : <span style={{ fontSize: 11, color: 'var(--muted)' }}>—</span>
+                      }
+                    </td>
+                    <td style={s.td} onClick={e => e.stopPropagation()}>
+                      <button
+                        title="Send WhatsApp message"
+                        style={{ ...s.btn('#25D366', true), padding: '4px 9px', fontSize: 14 }}
+                        onClick={() => setWaModal(v)}
+                      >💬</button>
+                    </td>
+                  </tr>
+                ))
+              }
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {waModal && (
+        <WhatsAppModal
+          player={waModal}
+          agentName={myName || 'Agent'}
+          waNumbers={waNumbers}
+          onClose={() => setWaModal(null)}
+        />
+      )}
+    </div>
+  )
+}
+
+// ── MAIN ──────────────────────────────────────────────────────────────────────
+export default function Upgrades() {
+  const { t } = useLanguage()
+  const { profile } = useAuth()
+  const [tab, setTab] = useUrlParam('tab', 'vip')
+  const [hostFilter, setHostFilter] = useUrlParam('hHost', 'ALL')
+  const [hosts, setHosts] = useState([])
+  const [counts, setCounts] = useState({ vipReady: 0, potFlagged: 0, graduated: 0 })
+
+  useEffect(() => {
+    const loadCounts = async () => {
+      const [{ count: vipReady }, { count: potFlagged }, { count: graduated }, { data: hostData }] = await Promise.all([
+        supabase.from('vip_members').select('*', { count: 'exact', head: true })
+          .in('tier', ['GOLD', 'PLATINUM']),
+        supabase.from('potential_players').select('*', { count: 'exact', head: true })
+          .eq('upgrade_flag', true).eq('is_graduated', false),
+        supabase.from('potential_players').select('*', { count: 'exact', head: true })
+          .eq('is_graduated', true),
+        supabase.from('vip_members').select('host_assigned')
+          .not('host_assigned', 'is', null).neq('host_assigned', ''),
+      ])
+      setCounts({ vipReady: vipReady || 0, potFlagged: potFlagged || 0, graduated: graduated || 0 })
+      if (hostData) {
+        const unique = [...new Set(hostData.map(r => r.host_assigned))].sort()
+        setHosts(unique)
+      }
+    }
+    loadCounts()
+  }, [])
+
+  // "My players" quick shortcut — auto-detect current user's name
+  const myName = profile?.full_name || ''
+
+  return (
+    <div style={s.page}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 4 }}>
+        <div>
+          <div style={s.heading}>{t('upgrades.heading', 'Upgrades')}</div>
+          <div style={s.sub}>{t('upgrades.sub', 'Track VIP tier upgrades and promote Bronze/Silver players to VIP status')}</div>
+        </div>
+
+        {/* ── Global Host Filter ── */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+          <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 500 }}>Host:</span>
+          <select
+            value={hostFilter}
+            onChange={e => setHostFilter(e.target.value)}
+            style={{
+              ...s.select,
+              fontWeight: hostFilter !== 'ALL' ? 700 : 400,
+              color: hostFilter !== 'ALL' ? 'var(--accent)' : 'var(--text)',
+              minWidth: 160,
+            }}
+          >
+            <option value="ALL">All Hosts</option>
+            {myName && <option value={myName}>👤 My Players ({myName})</option>}
+            {hosts.filter(h => h !== myName).map(h => (
+              <option key={h} value={h}>{h}</option>
+            ))}
+            <option value="UNASSIGNED">— Unassigned —</option>
+          </select>
+          {hostFilter !== 'ALL' && (
+            <button
+              style={{ ...s.outlineBtn('var(--muted)'), fontSize: 11, padding: '4px 10px' }}
+              onClick={() => setHostFilter('ALL')}
+            >
+              ✕ Clear
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div style={s.tabBar}>
+        <button style={s.tab(tab === 'vip')} onClick={() => setTab('vip')}>
+          {t('upgrades.tabVip', 'VIP Candidates')}
+          {counts.vipReady > 0 && <span style={s.tabBadge(TIER_COLOR.GOLD)}>{counts.vipReady}</span>}
+        </button>
+        <button style={s.tab(tab === 'potentials')} onClick={() => setTab('potentials')}>
+          {t('upgrades.tabPotentials', 'Potential Players')}
+          {counts.potFlagged > 0 && <span style={s.tabBadge('#10b981')}>{counts.potFlagged} {t('upgrades.ready', 'ready')}</span>}
+        </button>
+        <button style={s.tab(tab === 'graduated')} onClick={() => setTab('graduated')}>
+          {t('upgrades.tabGraduated', 'Graduated')}
+          {counts.graduated > 0 && <span style={s.tabBadge('var(--muted)')}>{counts.graduated}</span>}
+        </button>
+        <button style={s.tab(tab === 'history')} onClick={() => setTab('history')}>
+          Tier History
+        </button>
+      </div>
+
+      {tab === 'vip'        && <VIPCandidatesTab hostFilter={hostFilter} />}
+      {tab === 'potentials' && <PotentialsTab    hostFilter={hostFilter} />}
+      {tab === 'graduated'  && <GraduatedTab     hostFilter={hostFilter} />}
+      {tab === 'history'    && <TierHistoryTab   hostFilter={hostFilter} />}
+    </div>
+  )
+}

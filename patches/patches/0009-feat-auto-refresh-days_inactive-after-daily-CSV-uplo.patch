@@ -1,0 +1,34 @@
+From 4fece3c26edf615ab22c2a12fd04b14173444af6 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sat, 19 Sep 2026 02:24:51 +0000
+Subject: [PATCH 09/39] feat: auto-refresh days_inactive after daily CSV upload
+
+Call refresh_days_inactive() immediately after each daily CSV import
+so days_inactive, activity_status and churn_risk update on the spot
+instead of waiting for the 1am pg_cron job.
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01DqGp4gVeTBMvwho4pP8n8C
+---
+ src/pages/CSVImport.jsx | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/src/pages/CSVImport.jsx b/src/pages/CSVImport.jsx
+index d12e520..b6ad475 100644
+--- a/src/pages/CSVImport.jsx
++++ b/src/pages/CSVImport.jsx
+@@ -1264,6 +1264,11 @@ export default function CSVImport() {
+       const dailySnapResult = await saveDailySnapshot(snapshotDate, setRawProgress)
+       const potDailySnapResult = await savePotentialDailySnapshot(snapshotDate, setRawProgress)
+       const reactivationResult = await autoDetectReactivations(snapshotDate, setRawProgress)
++
++      // Recalculate days_inactive / activity_status / churn_risk immediately after upload
++      setRawProgress('Recalculating days inactive…')
++      await supabase.rpc('refresh_days_inactive')
++
+       setHistoryRefresh(n => n + 1) // also refresh the missing-days indicator
+ 
+       setRawResult({
+-- 
+2.43.0
+
