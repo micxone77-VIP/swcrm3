@@ -53,12 +53,11 @@ async function fetchVIPs(supabase) {
   const { data, error } = await supabase
     .from('vip_members')
     .select('id, username, full_name, tier, host_assigned')
-    .in('tier', ['DIAMOND', 'Platinum', 'PLATINUM', 'Diamond'])
+    .in('tier', ['DIAMOND', 'PLATINUM'])
     .order('tier')
     .order('username')
   if (error) throw new Error(`fetchVIPs: ${error.message}`)
 
-  // Normalise tier casing
   return (data || []).map(v => ({
     ...v,
     tier: v.tier.toUpperCase()
@@ -97,12 +96,6 @@ function buildCoverageMap(logs, months) {
   }
   return map
 }
-
-// ─── Excel styles (SheetJS CE only supports basic style via utils) ────────────
-
-// SheetJS Community Edition doesn't support rich cell styles out of the box.
-// We use XLSX.utils to set cell types/values, and rely on header rows + value
-// encoding (✓ / ✗) for human readability. Bold headers are added via aoa.
 
 // ─── sheet builders ──────────────────────────────────────────────────────────
 
