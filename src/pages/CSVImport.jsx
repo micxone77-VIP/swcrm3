@@ -894,6 +894,24 @@ export default function CSVImport() {
   const [historyRefresh, setHistoryRefresh] = useState(0)
   const [missingDays, setMissingDays] = useState(null) // { daysWithData: Set, totalDaysSoFar, monthLabel }
 
+  // Auto-sync snapshot date when import month changes:
+  // - current month → today
+  // - past month → last day of that month (so the snapshot covers the full period)
+  useEffect(() => {
+    const [y, m] = importMonth.split('-').map(Number)
+    const today = new Date()
+    const isCurrentMonth = today.getFullYear() === y && (today.getMonth() + 1) === m
+    if (isCurrentMonth) {
+      setSnapshotDate(
+        `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`
+      )
+    } else {
+      // Past month: use the last calendar day so the snapshot reflects end-of-month data
+      const lastDay = new Date(y, m, 0).getDate()
+      setSnapshotDate(`${y}-${String(m).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`)
+    }
+  }, [importMonth])
+
   useEffect(() => { checkMissingDays(importMonth) }, [importMonth, historyRefresh])
 
   async function checkMissingDays(yearMonth) {
