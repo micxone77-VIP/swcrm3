@@ -179,14 +179,17 @@ function slide03_tier_overview(pptx, d) {
 
 function slide04_trend(pptx, d) {
   const sl = pptx.addSlide(); bg(sl)
-  header(sl, '3-Month Retention Trend', `${mLabel(d.prev2Month)} → ${mLabel(d.month)}`)
+  header(sl, '3-Month Performance Trend', `${mLabel(d.prev2Month)} → ${mLabel(d.month)}`)
   const months = [d.prev2Month, d.prevMonth, d.month]
-  const allRows = [d.prev3Rows, d.prev2Rows, d.prevRows]
-  const results = months.map((m,i) => retention(allRows[i]||[], i>0?(allRows[i-1]||[]):[], []))
-  // Trend table
+  // Fix: currAllRows = [Jul, Aug, Sep], prevAllRows = [Jun, Jul, Aug] to match months correctly
+  const currAllRows = [d.prev2Rows, d.prevRows, d.currRows]
+  const prevAllRows = [d.prev3Rows, d.prev2Rows, d.prevRows]
+  const results = months.map((m,i) => retention(currAllRows[i]||[], prevAllRows[i]||[], []))
+  const deposits = currAllRows.map(rows => active(rows).reduce((s,r)=>s+(r.total_deposit||0),0))
+  // Trend table — includes deposit + retention metrics
   const hRow = [hdr('METRIC'), ...months.map(m=>hdr(mLabel(m)))]
   const dataRows = [
-    ['Opening VIPs',    ...results.map(r=>r.pa.length)],
+    ['Total Deposit',   ...deposits.map(d=>fmt(d))],
     ['Active VIPs',     ...results.map(r=>r.ca.length)],
     ['Retained',        ...results.map(r=>r.retained.length)],
     ['Churned',         ...results.map(r=>r.churned.length)],
@@ -198,7 +201,7 @@ function slide04_trend(pptx, d) {
     cell(row[0], { bold:true, ...altRow(ri) }),
     ...row.slice(1).map(v=>cell(v, { align:'center', ...altRow(ri) })),
   ])
-  sl.addTable([hRow,...dataRows], { x:0.25,y:0.75,w:9.5,colW:[2.8,2.2,2.2,2.3],rowH:0.4, border:{type:'solid',color:'2A3F6F',pt:0.5} })
+  sl.addTable([hRow,...dataRows], { x:0.25,y:0.75,w:9.5,colW:[2.8,2.2,2.2,2.3],rowH:0.38, border:{type:'solid',color:'2A3F6F',pt:0.5} })
 }
 
 function slide05_deposit_behavior(pptx, d) {
@@ -456,20 +459,18 @@ function slide16_17_campaign(pptx, d, campIdx=0) {
   if(!camp) { placeholder(sl,`Campaign #${campIdx+1} data not found`); return }
   header(sl, camp.campaign_name||'Campaign Report', `${camp.campaign_type||''}  |  ${mLabel(d.month)}`)
   const players = camp.campaign_players||[]
-  const paid = players.reduce((s,p)=>{
-    const rewards = p.campaign_rewards||[]
-    return s + rewards.filter(r=>r.status==='paid').reduce((ss,r)=>ss+(r.reward_amount||0),0)
-  },0)
-  const approved = players.reduce((s,p)=>{
-    const rewards = p.campaign_rewards||[]
-    return s + rewards.filter(r=>['paid','approved'].includes(r.status)).reduce((ss,r)=>ss+(r.reward_amount||0),0)
-  },0)
-  const paidCount = players.filter(p=>(p.campaign_rewards||[]).some(r=>r.status==='paid')).length
-  kpiTile(sl, 0.25,0.72,2.2,0.85,'Total Players', String(players.length), 'Enrolled', C.WHITE)
-  kpiTile(sl, 2.55,0.72,2.2,0.85,'Completed',    String(paidCount),       `${pct(players.length?paidCount/players.length*100:0)} rate`, C.GREEN)
-  kpiTile(sl, 4.85,0.72,2.2,0.85,'Paid Out',     fmt(paid),               'Rewards paid', C.AMBER)
-  kpiTile(sl, 7.15,0.72,2.2,0.85,'Total Approved',fmt(approved),          'Incl. pending', C.ACC)
-  const topPlayers = players.sort((a,b)=>{
+  // Show ALL rewards regardless of status (not just 'paid') — rewards may be pending/approved
+  const totalRewards = players.reduce((s,p)=>s+(p.campaign_rewards||[]).reduce((ss,r)=>ss+(r.reward_amount||0),0),0)
+  const paidRewards  = players.reduce((s,p)=>s+(p.campaign_rewards||[]).filter(r=>r.status==='paid').reduce((ss,r)=>ss+(r.reward_amount||0),0),0)
+  // Completed = player payout_status is paid OR has any paid/approved reward
+  const completedCount = players.filter(p=>
+    p.payout_status==='paid' || (p.campaign_rewards||[]).some(r=>r.status==='paid'||r.status==='approved')
+  ).length
+  kpiTile(sl, 0.25,0.72,2.2,0.85,'Total Players',  String(players.length), 'Enrolled', C.WHITE)
+  kpiTile(sl, 2.55,0.72,2.2,0.85,'Completed/Paid', String(completedCount), `${pct(players.length?completedCount/players.length*100:0)} rate`, C.GREEN)
+  kpiTile(sl, 4.85,0.72,2.2,0.85,'Total Rewards',  fmt(totalRewards), 'All reward amounts', C.AMBER)
+  kpiTile(sl, 7.15,0.72,2.2,0.85,'Confirmed Paid', fmt(paidRewards),  'Status = paid only', C.ACC)
+  const topPlayers = [...players].sort((a,b)=>{
     const ra=(a.campaign_rewards||[]).reduce((s,r)=>s+(r.reward_amount||0),0)
     const rb=(b.campaign_rewards||[]).reduce((s,r)=>s+(r.reward_amount||0),0)
     return rb-ra
@@ -477,12 +478,16 @@ function slide16_17_campaign(pptx, d, campIdx=0) {
   const rows = topPlayers.map((p,ri)=>{
     const rewards=p.campaign_rewards||[]
     const amount=rewards.reduce((s,r)=>s+(r.reward_amount||0),0)
-    const status=rewards.some(r=>r.status==='paid')?'Paid':rewards.some(r=>r.status==='approved')?'Approved':'Pending'
+    // Derive display status: use payout_status first, then rewards status
+    const status = p.payout_status==='paid'?'Paid'
+      : rewards.some(r=>r.status==='paid')?'Paid'
+      : rewards.some(r=>r.status==='approved')?'Approved'
+      : rewards.length>0?'Pending':'—'
     return [
       cell(ri+1, { align:'center', ...altRow(ri) }),
       cell(p.username||'—', { bold:true, ...altRow(ri) }),
       cell(fmt(amount), { align:'right', bold:true, ...altRow(ri) }),
-      cell(status, { align:'center', color:status==='Paid'?C.GREEN:status==='Approved'?C.ACC:C.MUTED, bold:true, ...altRow(ri) }),
+      cell(status, { align:'center', color:status==='Paid'?C.GREEN:status==='Approved'?C.ACC:status==='Pending'?C.AMBER:C.MUTED, bold:true, ...altRow(ri) }),
     ]
   })
   sl.addTable([[hdr('#'),hdr('USERNAME'),hdr('Reward Amount'),hdr('Status')], ...rows], {
@@ -496,34 +501,75 @@ function slide18_19_campaigns_summary(pptx, d) {
   if(!d.campaigns.length) { placeholder(sl,'No campaigns found for this month'); return }
   const rows = d.campaigns.map((c,ri)=>{
     const players=c.campaign_players||[]
-    const paid=players.reduce((s,p)=>{
-      return s+(p.campaign_rewards||[]).filter(r=>r.status==='paid').reduce((ss,r)=>ss+(r.reward_amount||0),0)
-    },0)
-    const paidCnt=players.filter(p=>(p.campaign_rewards||[]).some(r=>r.status==='paid')).length
+    // Show ALL rewards (any status), not just paid — avoids showing RM 0 when rewards are pending
+    const totalRew=players.reduce((s,p)=>s+(p.campaign_rewards||[]).reduce((ss,r)=>ss+(r.reward_amount||0),0),0)
+    const completedCnt=players.filter(p=>
+      p.payout_status==='paid'||(p.campaign_rewards||[]).some(r=>r.status==='paid'||r.status==='approved')
+    ).length
     return [
       cell(c.campaign_name||'—', { bold:true, ...altRow(ri) }),
       cell(c.campaign_type||'—', { color:C.MUTED, ...altRow(ri) }),
       cell(Array.isArray(c.target_tier)?c.target_tier.join(','): (c.target_tier||'ALL'), { color:TIER_C[String(c.target_tier||'').toUpperCase()]||C.MUTED, bold:true, ...altRow(ri) }),
       cell(players.length, { align:'center', ...altRow(ri) }),
-      cell(paidCnt, { align:'center', color:C.GREEN, ...altRow(ri) }),
-      cell(fmt(paid), { align:'right', color:C.AMBER, bold:true, ...altRow(ri) }),
+      cell(completedCnt, { align:'center', color:C.GREEN, ...altRow(ri) }),
+      cell(fmt(totalRew), { align:'right', color:C.AMBER, bold:true, ...altRow(ri) }),
       cell(c.status||'—', { align:'center', color:c.status==='active'?C.GREEN:c.status==='ended'?C.MUTED:C.ACC, ...altRow(ri) }),
     ]
   })
-  sl.addTable([[hdr('CAMPAIGN'),hdr('TYPE'),hdr('TIER'),hdr('Players'),hdr('Paid'),hdr('Payout'),hdr('Status')], ...rows], {
+  sl.addTable([[hdr('CAMPAIGN'),hdr('TYPE'),hdr('TIER'),hdr('Players'),hdr('Done'),hdr('Rewards'),hdr('Status')], ...rows], {
     x:0.25,y:0.75,w:9.5,colW:[2.8,1.6,1.0,0.9,0.9,1.6,0.7],rowH:0.38, border:{type:'solid',color:'2A3F6F',pt:0.5},
   })
-  const totalPaid=d.campaigns.reduce((s,c)=>{
+  const totalAllRew=d.campaigns.reduce((s,c)=>{
     const ps=c.campaign_players||[]
-    return s+ps.reduce((s2,p)=>(p.campaign_rewards||[]).filter(r=>r.status==='paid').reduce((s3,r)=>s3+(r.reward_amount||0),s2),0)
+    return s+ps.reduce((s2,p)=>(p.campaign_rewards||[]).reduce((s3,r)=>s3+(r.reward_amount||0),s2),0)
   },0)
-  sl.addText(`Total campaign payout this month: ${fmt(totalPaid)}`, { x:0.25,y:5.05,w:9.5,h:0.35, fontSize:11,bold:true,color:C.AMBER,isTextBox:true })
+  sl.addText(`Total campaign rewards (all statuses) this month: ${fmt(totalAllRew)}`, { x:0.25,y:5.05,w:9.5,h:0.35, fontSize:11,bold:true,color:C.AMBER,isTextBox:true })
 }
 
 function slide20_review(pptx, d) {
   const sl = pptx.addSlide(); bg(sl)
   header(sl, 'Monthly Review & Highlights', mLabel(d.month))
-  placeholder(sl, '📝  Monthly narrative — fill in highlights,\n\nkey wins, challenges, and team commentary\n\nafter reviewing the data in this report.')
+  const ca=active(d.currRows), pa=active(d.prevRows)
+  const totDep =ca.reduce((s,r)=>s+(r.total_deposit||0),0)
+  const prevDep=pa.reduce((s,r)=>s+(r.total_deposit||0),0)
+  const totWL  =ca.reduce((s,r)=>s+(r.win_loss||0),0)
+  const totBet =ca.reduce((s,r)=>s+(r.monthly_valid_bet||0),0)
+  const holdPct=totBet>0?totWL/totBet*100:0
+  const ret=retention(d.currRows,d.prevRows,d.reactLogs)
+  const depChgPct=chg(totDep,prevDep)
+  const cntChgPct=chg(ca.length,pa.length)
+  const campTotal=d.campaigns.reduce((s,c)=>{
+    const ps=c.campaign_players||[]
+    return s+ps.reduce((s2,p)=>(p.campaign_rewards||[]).reduce((s3,r)=>s3+(r.reward_amount||0),s2),0)
+  },0)
+  // KPI tiles at top
+  kpiTile(sl,0.25,0.72,2.2,0.85,'Active VIPs',    String(ca.length),         `${arw(cntChgPct)} ${pct(Math.abs(cntChgPct))} MoM`, cntChgPct>=0?C.GREEN:C.AMBER)
+  kpiTile(sl,2.55,0.72,2.2,0.85,'Total Deposit',  fmt(totDep),               `${arw(depChgPct)} ${pct(Math.abs(depChgPct))} MoM`, depChgPct>=0?C.GREEN:C.RED)
+  kpiTile(sl,4.85,0.72,2.2,0.85,'Retention Rate', pct(ret.retentionRate),    `${ret.retained.length} retained`,                   ret.retentionRate>=70?C.GREEN:ret.retentionRate>=50?C.AMBER:C.RED)
+  kpiTile(sl,7.15,0.72,2.2,0.85,'House Hold%',    pct(holdPct),              `Win/Loss ${fmt(totWL)}`,                            holdPct>=3?C.GREEN:holdPct>=0?C.AMBER:C.RED)
+  // Auto-generated highlights banner
+  sl.addShape('rect', { x:0.25,y:1.72,w:9.5,h:0.28, fill:{ color:C.STRIP } })
+  sl.addText('AUTO-GENERATED HIGHLIGHTS  (review and add management commentary before presenting)', { x:0.35,y:1.72,w:9.3,h:0.28, fontSize:8.5,bold:true,color:C.MUTED,valign:'middle',isTextBox:true })
+  // Build highlight lines from data
+  const lines = []
+  if(depChgPct>=5)         lines.push(`🟢  Deposits up ${pct(depChgPct)} MoM to ${fmt(totDep)} — strong player activity`)
+  else if(depChgPct<=-20)  lines.push(`🔴  Significant deposit drop ${pct(Math.abs(depChgPct))} MoM — review deposit-drop and churned VIP lists`)
+  else if(depChgPct<0)     lines.push(`🟡  Deposits dipped ${pct(Math.abs(depChgPct))} MoM — monitor closely; trigger recovery if trend continues`)
+  else                     lines.push(`⚪  Deposits stable ${depChgPct>=0?'+':''}${pct(depChgPct)} MoM at ${fmt(totDep)}`)
+  if(holdPct<0)            lines.push(`🔴  Negative hold this month (${pct(holdPct)}) — players won ${fmt(Math.abs(totWL))} — review GGR concentration by tier`)
+  else if(holdPct<2)       lines.push(`🟡  Hold% below target at ${pct(holdPct)} — house edge is thin; review game mix`)
+  else                     lines.push(`🟢  Hold% healthy at ${pct(holdPct)} — house edge ${fmt(totWL)}`)
+  if(ret.churnRate>20)     lines.push(`🔴  High churn: ${ret.churned.length} VIPs lost (${pct(ret.churnRate)}) — activate recovery plan for top churned immediately`)
+  else if(ret.churnRate>10)lines.push(`🟡  Moderate churn: ${ret.churned.length} VIPs (${pct(ret.churnRate)}) — host team to follow up this week`)
+  else                     lines.push(`🟢  Retention strong: only ${ret.churned.length} churned (${pct(ret.churnRate)} churn rate)`)
+  if(ret.reactivated.length>0) lines.push(`✅  Reactivated ${ret.reactivated.length} VIPs this month — great recovery effort`)
+  if(d.campaigns.length>0)     lines.push(`📣  ${d.campaigns.length} campaign(s) ran — total rewards committed: ${fmt(campTotal)}`)
+  if(ca.length>pa.length)      lines.push(`📈  VIP base grew by +${ca.length-pa.length} active VIPs MoM`)
+  lines.slice(0,6).forEach((line,i)=>{
+    sl.addShape('rect', { x:0.25,y:2.05+i*0.49,w:9.5,h:0.44, fill:{ color:i%2===0?C.BG2:C.BG }, line:{color:'2A3F6F',width:0.5} })
+    sl.addText(line, { x:0.4,y:2.07+i*0.49,w:9.2,h:0.4, fontSize:10,color:C.WHITE,valign:'middle',isTextBox:true })
+  })
+  sl.addText('✏  Add team wins, key decisions, and next-month focus here before presenting to management', { x:0.25,y:5.22,w:9.5,h:0.22, fontSize:8.5,color:C.MUTED,isTextBox:true })
 }
 
 function slide21_churn_calibration(pptx, d) {
@@ -657,10 +703,41 @@ function slide26_action_plan(pptx, d) {
   sl.addText(`Total ${ret.churned.length} churned VIPs — reactivation goal: at least ${Math.ceil(ret.churned.length*0.3)} = 30%`, { x:0.25,y:5.05,w:9.5,h:0.3, fontSize:10,color:C.MUTED,isTextBox:true })
 }
 
-function slide27_strategy(pptx) {
+function slide27_strategy(pptx, d) {
   const sl = pptx.addSlide(); bg(sl)
-  header(sl, 'Strategic Direction & Focus Areas', 'Management Input Required')
-  placeholder(sl, '🎯  Strategic Direction\n\nFill in: quarterly objectives, focus tiers,\ncampaign strategy, team priorities\n\nand key initiatives for the coming month.')
+  header(sl, 'Strategic Direction & Focus Areas', `${mLabel(d.month)} Review → ${mLabel(d.nextMonth)} Plan`)
+  const ca=active(d.currRows)
+  const ret=retention(d.currRows,d.prevRows,d.reactLogs)
+  const medDep=[...ca].sort((a,b)=>(b.total_deposit||0)-(a.total_deposit||0))[Math.floor(ca.length/2)]?.total_deposit||0
+  const medBet=[...ca].sort((a,b)=>(b.monthly_valid_bet||0)-(a.monthly_valid_bet||0))[Math.floor(ca.length/2)]?.monthly_valid_bet||0
+  let atRisk=0; ca.forEach(r=>{ if((r.total_deposit||0)<medDep&&(r.monthly_valid_bet||0)<medBet)atRisk++ })
+  const upcomingCount=(d.upcoming||[]).filter(c=>c.status==='upcoming').length
+  // Data signals section
+  sl.addShape('rect', { x:0.25,y:0.72,w:9.5,h:0.28, fill:{ color:C.STRIP } })
+  sl.addText('DATA SIGNALS  — use these to anchor the strategic discussion:', { x:0.35,y:0.72,w:9.3,h:0.28, fontSize:8.5,bold:true,color:C.MUTED,valign:'middle',isTextBox:true })
+  const signals=[
+    `At-Risk VIPs (low bet + low deposit): ${atRisk} of ${ca.length} active (${pct(ca.length?atRisk/ca.length*100:0)})`,
+    `Churned this month: ${ret.churned.length} VIPs  |  Churn Rate: ${pct(ret.churnRate)}  |  Reactivated: ${ret.reactivated.length}`,
+    `Retention Rate: ${pct(ret.retentionRate)}  |  Opening: ${ret.pa.length} VIPs  |  Closing: ${ret.ca.length} VIPs`,
+    `Upcoming campaigns: ${upcomingCount} planned for ${mLabel(d.nextMonth)}`,
+  ]
+  signals.forEach((sig,i)=>{
+    sl.addShape('rect', { x:0.25,y:1.05+i*0.37,w:9.5,h:0.32, fill:{ color:i%2===0?C.BG2:C.BG }, line:{color:'2A3F6F',width:0.5} })
+    sl.addText(`→  ${sig}`, { x:0.4,y:1.08+i*0.37,w:9.2,h:0.27, fontSize:10,color:C.WHITE,valign:'middle',isTextBox:true })
+  })
+  // Management input section
+  sl.addShape('rect', { x:0.25,y:2.58,w:9.5,h:0.28, fill:{ color:C.STRIP } })
+  sl.addText('MANAGEMENT INPUT  — fill in during meeting:', { x:0.35,y:2.58,w:9.3,h:0.28, fontSize:8.5,bold:true,color:C.MUTED,valign:'middle',isTextBox:true })
+  const inputs=[
+    `Focus tier for ${mLabel(d.nextMonth)}: _______________________________________________`,
+    'Campaign / promotion strategy: _______________________________________',
+    'Host team priorities / reassignments: ________________________________',
+    'Key decision or initiative from this meeting: ________________________',
+  ]
+  inputs.forEach((inp,i)=>{
+    sl.addShape('rect', { x:0.25,y:2.91+i*0.42,w:9.5,h:0.37, fill:{ color:C.BG2 }, line:{color:'2A3F6F',width:0.5,dashType:'dash'} })
+    sl.addText(inp, { x:0.4,y:2.94+i*0.42,w:9.2,h:0.31, fontSize:10,color:C.MUTED,valign:'middle',isTextBox:true })
+  })
 }
 
 function slide28_upcoming_campaigns(pptx, d) {
@@ -730,16 +807,42 @@ function slide31_budget(pptx, d) {
   const sl = pptx.addSlide(); bg(sl)
   header(sl, `Budget Planning — ${mLabel(d.nextMonth)}`, 'Review & Update in Budget Module')
   const actual=d.expenses.reduce((s,e)=>s+(e.amount||0),0)
-  kpiTile(sl,0.25,0.72,4.5,0.85,'This Month Actual Spend', fmt(actual), mLabel(d.month), C.AMBER)
-  placeholder(sl, '💰  Budget Planning\n\nUpdate next month\'s budget allocation\nin the Budget module → /budget\n\nData will auto-populate here once budgets are set.')
+  kpiTile(sl,0.25,0.72,4.6,0.85,'This Month Actual Spend', fmt(actual), `${mLabel(d.month)} total expenses`, C.AMBER)
+  kpiTile(sl,5.0, 0.72,4.75,0.85,'Next Month Budget', '— set in Budget module —', `/budget → ${mLabel(d.nextMonth)}`, C.MUTED)
+  if(d.expenses.length>0) {
+    // Build per-category breakdown with blank next-month column for manual entry during meeting
+    const byCat={}
+    d.expenses.forEach(e=>{ const k=e.category||'Other'; if(!byCat[k])byCat[k]=0; byCat[k]+=(e.amount||0) })
+    const catEntries=Object.entries(byCat).sort((a,b)=>b[1]-a[1])
+    const rows=catEntries.map(([cat,amt],ri)=>[
+      cell(cat, { bold:true, ...altRow(ri) }),
+      cell(fmt(amt), { align:'right', color:C.AMBER, bold:true, ...altRow(ri) }),
+      cell(actual?pct(amt/actual*100):'—', { align:'center', ...altRow(ri) }),
+      cell('___________', { color:'2A3F6F', align:'right', fontSize:9, ...altRow(ri) }),
+    ])
+    rows.push([
+      cell('TOTAL', { bold:true, color:C.WHITE }),
+      cell(fmt(actual), { align:'right', bold:true, color:C.AMBER }),
+      cell('100%', { align:'center', bold:true }),
+      cell('___________', { color:'2A3F6F', align:'right', fontSize:9 }),
+    ])
+    sl.addTable([[hdr('CATEGORY'),hdr(`${mLabel(d.month)} Actual`),hdr('% Share'),hdr(`${mLabel(d.nextMonth)} Budget`)], ...rows], {
+      x:0.25,y:1.72,w:9.5,colW:[3.2,2.2,1.7,2.4],rowH:0.44, border:{type:'solid',color:'2A3F6F',pt:0.5},
+    })
+    sl.addText('✏  Fill in the next month budget column during the meeting — or update via Budget module at /budget', { x:0.25,y:5.22,w:9.5,h:0.22, fontSize:8.5,color:C.MUTED,isTextBox:true })
+  } else {
+    placeholder(sl, `💰  No expense records for ${mLabel(d.month)}.\n\nAdd expenses via the Expenses module first.\n\nBreakdown by category will appear here automatically.`)
+  }
 }
 
 function slide32_health_summary(pptx, d) {
   const sl = pptx.addSlide(); bg(sl)
   header(sl, 'Member Health — 3-Month Summary', `${mLabel(d.prev2Month)} → ${mLabel(d.month)}`)
   const months=[d.prev2Month,d.prevMonth,d.month]
-  const allRows=[d.prev3Rows,d.prev2Rows,d.prevRows]
-  const results=months.map((m,i)=>retention(allRows[i]||[],i>0?allRows[i-1]||[]:[], []))
+  // Fix: currAllRows = [Jul, Aug, Sep], prevAllRows = [Jun, Jul, Aug]
+  const currAllRows=[d.prev2Rows,d.prevRows,d.currRows]
+  const prevAllRows=[d.prev3Rows,d.prev2Rows,d.prevRows]
+  const results=months.map((m,i)=>retention(currAllRows[i]||[],prevAllRows[i]||[], []))
   const hRow=[hdr('METRIC'),...months.map(m=>hdr(mLabel(m)))]
   const dataRows=[
     ['Active VIPs',      ...results.map(r=>r.ca.length)],
@@ -811,7 +914,7 @@ export async function generateMonthlyPPT(month, supabase) {
   slide24_ggr_concentration(pptx, d)
   slide25_intramonth_trend(pptx, d)
   slide26_action_plan(pptx, d)
-  slide27_strategy(pptx)
+  slide27_strategy(pptx, d)
   slide28_upcoming_campaigns(pptx, d)
   slide29_hold_pct(pptx, d)
   slide30_expense_report(pptx, d)
