@@ -863,9 +863,11 @@ export default function Campaigns() {
       .eq('campaign_id', selected.id)
       .eq('player_id', playerId)
     if (allEntries) {
-      const allPaid = allEntries.length > 0 && allEntries.every(e => e.payout_status === 'paid')
+      // Only consider entries that actually have a reward (non-qualifiers have 0 reward and should not block paid status)
+      const qualifyingEntries = allEntries.filter(e => (parseFloat(e.credit_reward) || 0) + (parseFloat(e.wcash_reward) || 0) > 0)
+      const allPaid = qualifyingEntries.length > 0 && qualifyingEntries.every(e => e.payout_status === 'paid')
       const totalReward = allPaid
-        ? allEntries.reduce((s, e) => s + (parseFloat(e.credit_reward) || 0) + (parseFloat(e.wcash_reward) || 0), 0)
+        ? qualifyingEntries.reduce((s, e) => s + (parseFloat(e.credit_reward) || 0) + (parseFloat(e.wcash_reward) || 0), 0)
         : 0
       const { error: cpErr } = await supabase
         .from('campaign_players')
