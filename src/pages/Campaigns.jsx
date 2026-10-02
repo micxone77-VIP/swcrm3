@@ -855,6 +855,33 @@ export default function Campaigns() {
       ...prev,
       [playerId]: { ...(prev[playerId] || {}), payout_status: newStatus, payout_date: newDate }
     }))
+
+    // Sync campaign_players: check if ALL daily entries for this player are now paid
+    const { data: allEntries } = await supabase
+      .from('daily_turnover_entries')
+      .select('payout_status, credit_reward, wcash_reward')
+      .eq('campaign_id', selected.id)
+      .eq('player_id', playerId)
+    if (allEntries) {
+      const allPaid = allEntries.length > 0 && allEntries.every(e => e.payout_status === 'paid')
+      const totalReward = allPaid
+        ? allEntries.reduce((s, e) => s + (parseFloat(e.credit_reward) || 0) + (parseFloat(e.wcash_reward) || 0), 0)
+        : 0
+      const { error: cpErr } = await supabase
+        .from('campaign_players')
+        .update({ payout_status: allPaid ? 'paid' : 'pending', reward_amount: totalReward })
+        .eq('id', playerId)
+      if (cpErr) {
+        console.error('campaign_players daily sync error:', cpErr)
+      } else {
+        // Patch players immediately so the header (paidCredit/paidWcash) updates right away
+        const patchedPlayers = players.map(p =>
+          p.id === playerId ? { ...p, payout_status: allPaid ? 'paid' : 'pending' } : p
+        )
+        await loadCampaignSummary(selected.id, patchedPlayers)
+        loadPlayers(selected.id) // background refresh for full DB sync
+      }
+    }
   }
 
   // Upserts a player's turnover for the currently-selected date only — every
@@ -1344,7 +1371,7 @@ export default function Campaigns() {
     }
   }, [selected?.id, selected?.start_date, selected?.end_date, players.length])
 
-  async function loadCampaignSummary(campaignId) {
+  async function loadCampaignSummary(campaignId, playersOverride = null) {
     setSummaryLoading(true)
     const { data, error } = await supabase.from('daily_turnover_entries')
       .select('player_id, entry_date, deposit_amount, turnover_amount')
@@ -1397,7 +1424,7 @@ export default function Campaigns() {
     entries.forEach(e => { if (e.tier_achieved !== null) tierHitCounts[e.tier_achieved] = (tierHitCounts[e.tier_achieved] || 0) + 1 })
 
     const playerMap = {}
-    players.forEach(p => { playerMap[p.id] = p })
+    ;(playersOverride || players).forEach(p => { playerMap[p.id] = p })
 
     // Deposit totals from ALL raw entries (not just qualifying ones)
     const depositByPlayer = {}
@@ -2914,8 +2941,8 @@ export default function Campaigns() {
             {/* ── PAYOUT TAB ── */}
             {activeTab === 'payout' && (
               <div style={{ overflowX:'auto' }}>
-                <div style={{ padding:'8px 24px', fontSize:11, color:'var(--muted)', background:'rgba(63,185,80,.04)', borderBottom:'1px solid var(--border)' }}>
-                  {selected?.is_multi_level ? (selected?.payout_mode === 'highest_only' ? 'Payout mode: Highest level only — one reward per player. Mark paid only after it is actually issued.' : 'Payout mode: All levels — each unlocked level earns its own reward. Mark the individual reward paid only after it is actually issued.') : isDailyMode ? <>Showing players who qualified on <strong style={{ color:'#c9a961' }}>{entryDate}</strong>.</> : 'Only showing players who reached the campaign target.'}
+                <div style={{ padding:'8px 24px', fontSize:11, color:'var(--muted)', background:'rgba(63,185,80,.04)', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', gap:12, flexWrap:'wrap' }}>
+                  {selected?.is_multi_level ? (selected?.payout_mode === 'highest_only' ? 'Payout mode: Highest level only — one reward per player. Mark paid only after it is actually issued.' : 'Payout mode: All levels — each unlocked level earns its own reward. Mark the individual reward paid only after it is actually issued.') : isDailyMode ? <><span>Showing players who qualified on</span><input type="date" value={entryDate} min={selected?.start_date||undefined} max={selected?.end_date||undefined} onChange={e=>setEntryDate(e.target.value)} style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:6, padding:'3px 8px', fontSize:11, color:'#c9a961', fontWeight:700, cursor:'pointer' }} /></> : 'Only showing players who reached the campaign target.'}
                 </div>
                 {selected?.is_multi_level && !isDailyMode ? (
                   multiPayoutRows.length === 0 ? <div style={{ padding:32, textAlign:'center', color:'var(--muted)' }}>No unlocked rewards are ready for payout yet.</div> : (
