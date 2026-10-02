@@ -113,6 +113,33 @@ export default function ChurnAlerts() {
   // ── Monthly churn overlay: surface Diamond/Platinum who churned last COMPLETE month ──
   try{const{data:latestMonthRows}=await supabase.from('vip_monthly_totals').select('snapshot_month').in('tier',['DIAMOND','PLATINUM']).order('snapshot_month',{ascending:false}).limit(2);const monthRows=(latestMonthRows||[]).map(r=>r.snapshot_month).filter(Boolean);const[latestM,prevM]=[...new Set(monthRows)];if(latestM&&prevM){const[{data:currRows},{data:prevRows}]=await Promise.all([supabase.from('vip_monthly_totals').select('username,tier,total_deposit,host_assigned,currency').eq('snapshot_month',latestM).in('tier',['DIAMOND','PLATINUM']),supabase.from('vip_monthly_totals').select('username,tier,total_deposit,host_assigned,currency').eq('snapshot_month',prevM).in('tier',['DIAMOND','PLATINUM'])]);const currMap={};(currRows||[]).forEach(r=>{currMap[r.username]=r});const alreadyInResults=new Set(results.map(x=>x.username));(prevRows||[]).forEach(r=>{if(alreadyInResults.has(r.username))return;const prevDep=Number(r.total_deposit)||0;const currDep=Number(currMap[r.username]?.total_deposit)||0;if(prevDep<=0||currDep>0)return;// This player churned: had deposits prevM, zero in latestM
   const vip=vipMap[r.username]||{};const contactedToday=Boolean(latestContact[r.username]?.logged_at&&new Date(latestContact[r.username].logged_at).toISOString().slice(0,10)===todayStr);results.push({id:vip.id||r.username,username:r.username,tier:r.tier||vip.tier,currency:r.currency||vip.currency||'MYR',host:r.host_assigned||vip.host_assigned,phone:vip.phone||null,whatsapp:vip.whatsapp||null,last_deposit_date:vip.last_deposit_date||null,days_since_deposit:Number(vip.days_inactive)||null,decline_pct:-100,net_win_loss_3d:0,reasons:[`Churned: deposited in ${prevM} but zero deposit in ${latestM} — needs reactivation`],urgency_score:4,follow_up_due:true,last_contact:latestContact[r.username]?.logged_at||null,contacted_today:contactedToday})})}}catch(monthlyErr){console.error('loadPriorityContacts monthly churn overlay error',monthlyErr)}
+  // ── Enrich with gaming labels ──────────────────────────────────────────────
+  try {
+    const usernames = results.map(r => r.username)
+    if (usernames.length) {
+      const { data: gamingRows } = await supabase
+        .from('player_gaming_labels')
+        .select('username, player_type, player_type_icon, offer_recommendation, snapshot_month')
+        .in('username', usernames)
+        .order('snapshot_month', { ascending: false })
+      if (gamingRows && gamingRows.length) {
+        // Take most recent label per username
+        const gamingMap = {}
+        gamingRows.forEach(g => { if (!gamingMap[g.username]) gamingMap[g.username] = g })
+        results.forEach(r => {
+          const g = gamingMap[r.username]
+          if (g && g.player_type) {
+            r.player_type = g.player_type
+            r.player_type_icon = g.player_type_icon || '🎮'
+            r.offer_recommendation = g.offer_recommendation
+            // Add gaming context as the FIRST reason so hosts see it immediately
+            const gamingReason = `${g.player_type_icon || '🎮'} ${g.player_type} — ${g.offer_recommendation || 'personalised offer recommended'}`
+            r.reasons = [gamingReason, ...r.reasons]
+          }
+        })
+      }
+    }
+  } catch (gamingErr) { console.error('loadPriorityContacts gaming labels error', gamingErr) }
   results.sort((a,b)=>getRetentionTierRank(a.tier)-getRetentionTierRank(b.tier)||Number(b.follow_up_due)-Number(a.follow_up_due)||b.urgency_score-a.urgency_score||String(a.username).localeCompare(String(b.username)));setPriorityList(results)}finally{setPriorityLoading(false)}}
 
   async function loadAll(){setLoading(true);try{const{data:members}=await supabase.from('vip_members').select('*').eq('is_excluded',false);const{data:logs}=await supabase.from('reactivation_logs').select('*').eq('reactivated_month',monthStr);const logSet=new Set((logs||[]).map(x=>x.username));setReactivated(logs||[]);setReactivatedSet(logSet);setVips(members||[]);setStats({high:(members||[]).filter(x=>x.churn_risk==='HIGH').length,medium:(members||[]).filter(x=>x.churn_risk==='MEDIUM').length,dormant:(members||[]).filter(x=>(x.days_inactive||0)>=dormantDays).length,atRisk:(members||[]).filter(x=>(x.churn_risk==='HIGH'||x.churn_risk==='MEDIUM')&&!logSet.has(x.username)).length});
@@ -142,7 +169,19 @@ export default function ChurnAlerts() {
           <td style={{...s.td,fontSize:12,color:'var(--muted)'}}>{v.whatsapp||v.phone||'—'}</td>
           <td style={{...s.td,fontVariantNumeric:'tabular-nums'}}>{v.days_since_deposit!=null?v.days_since_deposit+'d':'—'}</td>
           <td style={s.td}>{v.last_contact?new Date(v.last_contact).toLocaleDateString('en-MY',{day:'2-digit',month:'short'}):'Never'}</td>
-          <td style={{...s.td,maxWidth:220,fontSize:12}}>{v.reasons.join(' • ')}</td>
+          <td style={{...s.td,maxWidth:240,fontSize:12}}>
+            {v.player_type && (
+              <div style={{display:'inline-flex',alignItems:'center',gap:4,background:'rgba(139,92,246,.12)',border:'1px solid rgba(139,92,246,.3)',borderRadius:8,padding:'2px 8px',marginBottom:4,fontSize:11,fontWeight:700,color:'#a78bfa'}}>
+                {v.player_type_icon||'🎮'} {v.player_type}
+              </div>
+            )}
+            <div style={{color:'var(--muted)',lineHeight:1.4}}>
+              {(v.player_type ? v.reasons.slice(1) : v.reasons).join(' • ')}
+            </div>
+            {v.offer_recommendation && (
+              <div style={{marginTop:3,fontSize:10,color:'#34D399',fontWeight:600}}>💡 {v.offer_recommendation}</div>
+            )}
+          </td>
           <td style={s.td}><div style={{display:'flex',gap:5,flexWrap:'wrap'}}>
             <button style={{background:'#25D366',color:'#fff',border:'none',padding:'4px 10px',borderRadius:6,fontSize:12,fontWeight:700,cursor:'pointer'}} onClick={()=>setChurnWaModal(v)}>💬 WA</button>
             <button style={s.btnSm} onClick={()=>navigate(`/vips/${v.id}`)}>Open</button>

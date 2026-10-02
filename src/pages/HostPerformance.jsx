@@ -28,8 +28,25 @@ function weekRanges() {
   return [
     { label: 'This Week', start: toDateStr(mon0), end: toDateStr(today) },
     { label: 'Last Week', start: toDateStr(mon1), end: toDateStr(addDays(mon0, -1)) },
-    { label: '2 Weeks Ago', start: toDateStr(mon2), end: toDateStr(addDays(mon1, -1)) },
+    { label: '2 Wks Ago', start: toDateStr(mon2), end: toDateStr(addDays(mon1, -1)) },
   ]
+}
+
+function monthRanges() {
+  const today = new Date()
+  const months = []
+  for (let i = 0; i < 6; i++) {
+    const d = new Date(today.getFullYear(), today.getMonth() - i, 1)
+    const year = d.getFullYear()
+    const month = d.getMonth()
+    const start = toDateStr(new Date(year, month, 1))
+    const end = i === 0
+      ? toDateStr(today)
+      : toDateStr(new Date(year, month + 1, 0))
+    const label = d.toLocaleDateString('en-MY', { month: 'short', year: '2-digit' })
+    months.push({ label, start, end })
+  }
+  return months
 }
 
 /* ─── Data fetch helpers ─── */
@@ -190,11 +207,17 @@ async function exportExcel(rows, periodLabel, prevLabel) {
    Main component
 ════════════════════════════════════════════════ */
 export default function HostPerformance() {
-  const weeks = useMemo(() => weekRanges(), [])
+  const weeks  = useMemo(() => weekRanges(), [])
+  const months = useMemo(() => monthRanges(), [])
 
-  // Period selection
-  const [periodA, setPeriodA] = useState(0) // index into weeks[] OR -1 for custom
+  // Mode: 'week' or 'month'
+  const [periodMode, setPeriodMode] = useState('week')
+  const periods = periodMode === 'week' ? weeks : months
+
+  // Period selection — index into periods[] or -1 for custom
+  const [periodA, setPeriodA] = useState(0)
   const [periodB, setPeriodB] = useState(1)
+  const [periodC, setPeriodC] = useState(null) // month mode only: 3rd period
   const [customA, setCustomA] = useState({ start: '', end: '' })
   const [customB, setCustomB] = useState({ start: '', end: '' })
   const [showCustom, setShowCustom] = useState(false)
@@ -212,51 +235,51 @@ export default function HostPerformance() {
   const [contactStats, setContactStats] = useState([])
   const [hosts, setHosts] = useState([]) // discovered host list
 
-  const periodARange = periodA === -1 ? customA : weeks[periodA]
-  const periodBRange = periodB === -1 ? customB : weeks[periodB]
+  const periodARange = periodA === -1 ? customA : periods[periodA]
+  const periodBRange = periodB != null ? (periodB === -1 ? customB : periods[periodB]) : null
+  const periodCRange = periodC != null ? periods[periodC] : null
 
   const load = useCallback(async () => {
     if (!periodARange?.start || !periodARange?.end) return
     setLoading(true)
     try {
       const tiers = selectedTiers.length ? selectedTiers : TIERS
+      // Determine overall date window covering all active periods
+      const allRanges = [periodARange, periodBRange, periodCRange].filter(Boolean)
+      const minDate = allRanges.map(r => r.start).sort()[0]
+      const maxDate = allRanges.map(r => r.end).sort().reverse()[0]
+
       const [snaps, members, contacts] = await Promise.all([
-        fetchSnapshots(tiers, periodARange.start, periodARange.end,
-          periodBRange?.start || periodARange.start, periodBRange?.end || periodARange.end),
+        fetchSnapshots(tiers, minDate, maxDate, minDate, maxDate),
         fetchVipMembers(tiers),
         fetchContactStats(periodARange.start, periodARange.end),
       ])
 
       setContactStats(contacts)
 
-      // Index members by username
       const memberMap = {}
       members.forEach(m => { memberMap[m.username] = m })
 
-      // Collect unique hosts
       const hostSet = new Set()
       members.forEach(m => { if (m.host_assigned) hostSet.add(m.host_assigned) })
       setHosts([...hostSet].sort())
 
-      // Get metrics per period
-      const curMetrics = metricsInPeriod(snaps, periodARange.start, periodARange.end)
-      const prevMetrics = periodBRange
-        ? metricsInPeriod(snaps, periodBRange.start, periodBRange.end)
-        : {}
+      const curMetrics  = metricsInPeriod(snaps, periodARange.start, periodARange.end)
+      const prevMetrics = periodBRange ? metricsInPeriod(snaps, periodBRange.start, periodBRange.end) : {}
+      const thirdMetrics = periodCRange ? metricsInPeriod(snaps, periodCRange.start, periodCRange.end) : {}
 
-      // Build rows — one per player
       const rows = []
       const allUsernames = new Set([...Object.keys(curMetrics), ...members.map(m => m.username)])
       allUsernames.forEach(uname => {
         const m = memberMap[uname]
-        if (!m) return // no member record
+        if (!m) return
         if (!tiers.includes(m.tier)) return
-        const cur = curMetrics[uname]
-        const prev = prevMetrics[uname]
-        // monthVb = running monthly total at end of current period (for tier progress)
-        // weekVb  = VB earned ONLY in the selected period = current minus previous period's total
-        const monthVb = cur?.monthly_valid_bet || 0
+        const cur   = curMetrics[uname]
+        const prev  = prevMetrics[uname]
+        const third = thirdMetrics[uname]
+        const monthVb     = cur?.monthly_valid_bet || 0
         const prevMonthVb = prev?.monthly_valid_bet || 0
+        const thirdMonthVb = third?.monthly_valid_bet || 0
         const weekVb = Math.max(0, monthVb - prevMonthVb)
         rows.push({
           username: uname,
@@ -264,13 +287,15 @@ export default function HostPerformance() {
           host: m.host_assigned || '-',
           daysInactive: m.days_inactive,
           lastDeposit: m.last_deposit_date,
-          deposit: cur?.total_deposit || 0,
-          prevDeposit: prev?.total_deposit || 0,
-          weekVb,          // this period's VB only
-          monthVb,         // running monthly total (for tier upgrade bar)
-          prevMonthVb,     // previous period's running total
+          deposit:      cur?.total_deposit || 0,
+          prevDeposit:  prev?.total_deposit || 0,
+          thirdDeposit: third?.total_deposit || 0,
+          weekVb,
+          monthVb,
+          prevMonthVb,
+          thirdMonthVb,
           betCount: cur?.bet_count || 0,
-          winLoss: cur?.win_loss || 0,
+          winLoss:  cur?.win_loss || 0,
           isExcluded: m.is_excluded,
           whatsapp: m.whatsapp,
         })
@@ -279,7 +304,7 @@ export default function HostPerformance() {
     } finally {
       setLoading(false)
     }
-  }, [periodARange?.start, periodARange?.end, periodBRange?.start, periodBRange?.end, selectedTiers])
+  }, [periodARange?.start, periodARange?.end, periodBRange?.start, periodBRange?.end, periodCRange?.start, periodCRange?.end, selectedTiers])
 
   useEffect(() => { load() }, [load])
 
@@ -329,8 +354,10 @@ export default function HostPerformance() {
     return map
   }, [contactStats])
 
-  const labelA = periodA === -1 ? 'Custom A' : weeks[periodA]?.label
-  const labelB = periodB === -1 ? 'Custom B' : weeks[periodB]?.label
+  const labelA = periodA === -1 ? 'Custom A' : periods[periodA]?.label
+  const labelB = periodB != null ? (periodB === -1 ? 'Custom B' : periods[periodB]?.label) : null
+  const labelC = periodC != null ? periods[periodC]?.label : null
+  const periodLabel = periodMode === 'month' ? 'Month VB' : 'Week VB'
 
   function toggleTier(t) {
     setSelectedTiers(prev =>
@@ -354,7 +381,7 @@ export default function HostPerformance() {
         <div>
           <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800 }}>🏆 Host Performance</h1>
           <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--muted)' }}>
-            Compare VIP player performance across hosts, week-over-week
+            Compare VIP player performance across hosts — week or month view
           </p>
         </div>
         <button
@@ -371,13 +398,29 @@ export default function HostPerformance() {
       {/* ─── Filters ─── */}
       <div style={{ ...sectionStyle, display: 'flex', gap: 20, flexWrap: 'wrap', alignItems: 'flex-end' }}>
 
+        {/* Mode toggle */}
+        <div>
+          <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '.5px' }}>View Mode</label>
+          <div style={{ display: 'flex', gap: 4 }}>
+            {[['week','📅 Week'],['month','📆 Month']].map(([mode, lbl]) => (
+              <button key={mode} onClick={() => { setPeriodMode(mode); setPeriodA(0); setPeriodB(1); setPeriodC(null); setShowCustom(false) }}
+                style={{
+                  padding: '6px 12px', fontSize: 12, borderRadius: 6, cursor: 'pointer', fontWeight: 700,
+                  border: '1px solid ' + (periodMode === mode ? 'var(--brand)' : 'var(--border)'),
+                  background: periodMode === mode ? 'rgba(255,106,0,.15)' : 'var(--surface2)',
+                  color: periodMode === mode ? 'var(--brand)' : 'var(--muted)',
+                }}>{lbl}</button>
+            ))}
+          </div>
+        </div>
+
         {/* Period A */}
         <div>
           <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '.5px' }}>
-            Current Period
+            {periodMode === 'month' ? 'Month A (Primary)' : 'Current Period'}
           </label>
-          <div style={{ display: 'flex', gap: 4 }}>
-            {weeks.map((w, i) => (
+          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+            {periods.map((w, i) => (
               <button key={i} onClick={() => { setPeriodA(i); setShowCustom(false) }}
                 style={{
                   padding: '6px 10px', fontSize: 12, borderRadius: 6, cursor: 'pointer', fontWeight: 600,
@@ -388,13 +431,15 @@ export default function HostPerformance() {
                 {w.label}
               </button>
             ))}
-            <button onClick={() => { setPeriodA(-1); setShowCustom(true) }}
-              style={{
-                padding: '6px 10px', fontSize: 12, borderRadius: 6, cursor: 'pointer', fontWeight: 600,
-                border: '1px solid ' + (periodA === -1 ? 'var(--brand)' : 'var(--border)'),
-                background: periodA === -1 ? 'rgba(255,106,0,.12)' : 'var(--surface2)',
-                color: periodA === -1 ? 'var(--brand)' : 'var(--muted)',
-              }}>Custom</button>
+            {periodMode === 'week' && (
+              <button onClick={() => { setPeriodA(-1); setShowCustom(true) }}
+                style={{
+                  padding: '6px 10px', fontSize: 12, borderRadius: 6, cursor: 'pointer', fontWeight: 600,
+                  border: '1px solid ' + (periodA === -1 ? 'var(--brand)' : 'var(--border)'),
+                  background: periodA === -1 ? 'rgba(255,106,0,.12)' : 'var(--surface2)',
+                  color: periodA === -1 ? 'var(--brand)' : 'var(--muted)',
+                }}>Custom</button>
+            )}
           </div>
           {showCustom && periodA === -1 && (
             <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
@@ -410,17 +455,17 @@ export default function HostPerformance() {
         {/* Period B (compare to) */}
         <div>
           <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '.5px' }}>
-            Compare To
+            {periodMode === 'month' ? 'Month B' : 'Compare To'}
           </label>
-          <div style={{ display: 'flex', gap: 4 }}>
+          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
             <button onClick={() => setPeriodB(null)}
               style={{
                 padding: '6px 10px', fontSize: 12, borderRadius: 6, cursor: 'pointer', fontWeight: 600,
-                border: '1px solid ' + (periodB === null ? 'var(--border)' : 'var(--border)'),
+                border: '1px solid var(--border)',
                 background: periodB === null ? 'var(--surface)' : 'var(--surface2)',
                 color: 'var(--muted)',
               }}>None</button>
-            {weeks.map((w, i) => (
+            {periods.map((w, i) => (
               <button key={i} onClick={() => setPeriodB(i)}
                 style={{
                   padding: '6px 10px', fontSize: 12, borderRadius: 6, cursor: 'pointer', fontWeight: 600,
@@ -433,6 +478,35 @@ export default function HostPerformance() {
             ))}
           </div>
         </div>
+
+        {/* Period C (month mode only) */}
+        {periodMode === 'month' && (
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '.5px' }}>
+              Month C (3rd Compare)
+            </label>
+            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+              <button onClick={() => setPeriodC(null)}
+                style={{
+                  padding: '6px 10px', fontSize: 12, borderRadius: 6, cursor: 'pointer', fontWeight: 600,
+                  border: '1px solid var(--border)',
+                  background: periodC === null ? 'var(--surface)' : 'var(--surface2)',
+                  color: 'var(--muted)',
+                }}>None</button>
+              {months.map((m, i) => (
+                <button key={i} onClick={() => setPeriodC(i)}
+                  style={{
+                    padding: '6px 10px', fontSize: 12, borderRadius: 6, cursor: 'pointer', fontWeight: 600,
+                    border: '1px solid ' + (periodC === i ? '#34D399' : 'var(--border)'),
+                    background: periodC === i ? '#34D39918' : 'var(--surface2)',
+                    color: periodC === i ? '#34D399' : 'var(--muted)',
+                  }}>
+                  {m.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Tier filter */}
         <div>
@@ -519,11 +593,11 @@ export default function HostPerformance() {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
         <div style={{ fontSize: 13, color: 'var(--muted)' }}>
           Showing <strong style={{ color: 'var(--text)' }}>{visibleRows.length}</strong> players
-          {periodBRange ? <> · comparing <span style={{ color: '#818CF8' }}>{labelA}</span> vs <span style={{ color: '#818CF8' }}>{labelB}</span></> : null}
+          {periodBRange ? <> · <span style={{ color: 'var(--brand)' }}>{labelA}</span> vs <span style={{ color: '#818CF8' }}>{labelB}</span>{periodCRange ? <> vs <span style={{ color: '#34D399' }}>{labelC}</span></> : null}</> : null}
         </div>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
           <span style={{ fontSize: 12, color: 'var(--muted)' }}>Sort:</span>
-          {[['vb', '📊 Week VB'], ['monthly', '📅 Monthly VB'], ['deposit', '💰 Deposit'], ['days', '💤 Inactive']].map(([k, lbl]) => (
+          {[['vb', `📊 ${periodLabel}`], ['monthly', '📅 Monthly VB'], ['deposit', '💰 Deposit'], ['days', '💤 Inactive']].map(([k, lbl]) => (
             <button key={k} onClick={() => setSortBy(k)}
               style={{
                 fontSize: 12, padding: '4px 9px', borderRadius: 6, cursor: 'pointer', fontWeight: 600,
@@ -545,11 +619,13 @@ export default function HostPerformance() {
                 ['Tier', '80px'],
                 ['Host', '120px'],
                 ['Days Inactive', '90px'],
-                [labelA + ' Deposit', '130px'],
-                [labelB ? labelB + ' Deposit' : null, '130px'],
-                ['This Week VB', '130px'],
-                [labelB ? labelB + ' Wk VB' : null, '120px'],
-                ['Monthly Progress → Next Tier', '220px'],
+                [labelA + ' Deposit', '120px'],
+                [labelB ? labelB + ' Deposit' : null, '120px'],
+                [labelC ? labelC + ' Deposit' : null, '120px'],
+                [labelA + ' ' + periodLabel, '120px'],
+                [labelB ? labelB + ' ' + periodLabel : null, '110px'],
+                [labelC ? labelC + ' ' + periodLabel : null, '110px'],
+                ['Monthly Progress → Next Tier', '200px'],
               ].filter(([h]) => h != null).map(([h, w]) => (
                 <th key={h} style={{ padding: '10px 14px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '.4px', whiteSpace: 'nowrap', width: w }}>{h}</th>
               ))}
@@ -593,22 +669,30 @@ export default function HostPerformance() {
                       {r.daysInactive != null ? r.daysInactive + 'd' : '—'}
                     </span>
                   </td>
-                  {/* Current deposit */}
+                  {/* Period A deposit */}
                   <td style={{ padding: '10px 14px', fontWeight: 700 }}>
                     {fmtNum(r.deposit)}
                     {periodBRange && <DeltaBadge curr={r.deposit} prev={r.prevDeposit} />}
                   </td>
-                  {/* Prev deposit */}
+                  {/* Period B deposit */}
                   {periodBRange && (
-                    <td style={{ padding: '10px 14px', color: 'var(--muted)' }}>{fmtNum(r.prevDeposit)}</td>
+                    <td style={{ padding: '10px 14px', color: '#818CF8' }}>{fmtNum(r.prevDeposit)}</td>
                   )}
-                  {/* This week VB */}
+                  {/* Period C deposit */}
+                  {periodCRange && (
+                    <td style={{ padding: '10px 14px', color: '#34D399' }}>{fmtNum(r.thirdDeposit)}</td>
+                  )}
+                  {/* Period A VB */}
                   <td style={{ padding: '10px 14px', fontWeight: 700 }}>
                     {fmtNum(r.weekVb)}
                   </td>
-                  {/* Prev week VB (prevMonthVb - the week before that isn't stored, so show prevMonthVb label) */}
+                  {/* Period B VB */}
                   {periodBRange && (
-                    <td style={{ padding: '10px 14px', color: 'var(--muted)' }}>{fmtNum(r.prevMonthVb)}</td>
+                    <td style={{ padding: '10px 14px', color: '#818CF8' }}>{fmtNum(r.prevMonthVb)}</td>
+                  )}
+                  {/* Period C VB */}
+                  {periodCRange && (
+                    <td style={{ padding: '10px 14px', color: '#34D399' }}>{fmtNum(r.thirdMonthVb)}</td>
                   )}
                   {/* Monthly tier progress */}
                   <td style={{ padding: '10px 14px' }}>
