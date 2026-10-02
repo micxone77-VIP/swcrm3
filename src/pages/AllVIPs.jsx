@@ -95,6 +95,9 @@ export default function AllVIPs() {
   const [assigningVip, setAssigningVip] = useState(null)
   const [assignBusy, setAssignBusy] = useState(null)
   const searchRef = useRef(null)
+  // Gaming labels (username -> { player_type, player_type_icon })
+  const [gamingLabels, setGamingLabels] = useState({})
+  const [playerTypeFilter, setPlayerTypeFilter] = useState('ALL')
 
   const TIER_ORDER = { BLACK:0, DIAMOND:1, PLATINUM:2, GOLD:3, SILVER:4, BRONZE:5 }
 
@@ -111,6 +114,17 @@ export default function AllVIPs() {
       setVips(vipRes.data || [])
       const hostNames = ['ALL', '__unassigned__', ...(hostRes.data||[]).map(h => h.full_name).filter(Boolean)]
       setHosts(hostNames)
+      // Load gaming labels (latest month per player)
+      supabase.from('player_gaming_labels')
+        .select('username,player_type,player_type_icon')
+        .order('snapshot_month', { ascending: false })
+        .then(({ data }) => {
+          if (!data) return
+          // Keep latest entry per username
+          const map = {}
+          data.forEach(r => { if (!map[r.username]) map[r.username] = r })
+          setGamingLabels(map)
+        })
     } catch(e) { setError(e.message || String(e)) }
     setLoading(false)
   }, [])
@@ -186,6 +200,10 @@ export default function AllVIPs() {
     if (region !== 'ALL' && v.region !== region) return false
     if (host === '__unassigned__') { if (v.host_assigned) return false }
     else if (host !== 'ALL' && v.host_assigned !== host) return false
+    if (playerTypeFilter !== 'ALL') {
+      const gl = gamingLabels[v.username]
+      if (!gl || gl.player_type !== playerTypeFilter) return false
+    }
     if (view === 'noctact') {
       const lastC = v.last_contacted || v.last_contact_date
       if (lastC && Math.floor((now - new Date(lastC)) / 86400000) < 7) return false
@@ -297,8 +315,18 @@ export default function AllVIPs() {
         <Select value={host} onChange={e => { setHost(e.target.value); setPage(1) }} style={{ minWidth: 130 }}>
           {hosts.map(h => <option key={h} value={h}>{h === 'ALL' ? t('allVips.allHosts') : h === '__unassigned__' ? '⚠️ Unassigned' : h}</option>)}
         </Select>
-        {(search || tier !== 'ALL' || status !== 'ALL' || region !== 'ALL' || host !== 'ALL') && (
-          <Btn size="sm" variant="ghost" onClick={() => { setSearch(''); setTier('ALL'); setStatus('ALL'); setRegion('ALL'); setHost('ALL'); setPage(1) }}>
+        <Select value={playerTypeFilter} onChange={e => { setPlayerTypeFilter(e.target.value); setPage(1) }} style={{ minWidth: 150 }}>
+          <option value="ALL">🎮 All Player Types</option>
+          <option value="Slots King">🎰 Slots King</option>
+          <option value="Live Casino VIP">🎲 Live Casino VIP</option>
+          <option value="Sports Punter">⚽ Sports Punter</option>
+          <option value="Slots + Live">🎰🎲 Slots + Live</option>
+          <option value="Live + Sports">🎲⚽ Live + Sports</option>
+          <option value="Multi-Platform">🎯 Multi-Platform</option>
+          <option value="Casual">🃏 Casual</option>
+        </Select>
+        {(search || tier !== 'ALL' || status !== 'ALL' || region !== 'ALL' || host !== 'ALL' || playerTypeFilter !== 'ALL') && (
+          <Btn size="sm" variant="ghost" onClick={() => { setSearch(''); setTier('ALL'); setStatus('ALL'); setRegion('ALL'); setHost('ALL'); setPlayerTypeFilter('ALL'); setPage(1) }}>
             {t('allVips.clearFilters')}
           </Btn>
         )}
@@ -358,6 +386,13 @@ export default function AllVIPs() {
                       <td style={{ padding:'9px 12px', borderBottom:'1px solid var(--border)' }}>
                         <div style={{ fontWeight:600, color:'var(--text)' }}>{v.username}</div>
                         <div style={{ fontSize:11, color:'var(--muted)' }}>{v.full_name || ''}</div>
+                        {gamingLabels[v.username] && (
+                          <div style={{ marginTop:3 }}>
+                            <span style={{ fontSize:10, fontWeight:700, padding:'1px 6px', borderRadius:10, background:'rgba(139,92,246,.12)', color:'#a78bfa', border:'1px solid rgba(139,92,246,.25)' }}>
+                              {gamingLabels[v.username].player_type_icon} {gamingLabels[v.username].player_type}
+                            </span>
+                          </div>
+                        )}
                       </td>
                       <td style={{ padding:'9px 12px', borderBottom:'1px solid var(--border)' }}>
                         {v.tng_verify_status === 'verified' ? (

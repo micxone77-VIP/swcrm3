@@ -8,7 +8,7 @@ export function countryFromPlayer(player) {
   return null
 }
 
-export function buildFilteredCampaignAudience(players = [], countries = [], tiers = [], manualUserIds = []) {
+export function buildFilteredCampaignAudience(players = [], countries = [], tiers = [], manualUserIds = [], playerTypeFilter = '', gamingLabels = {}) {
   const allowedCountries = new Set((countries || []).map(v => String(v).trim().toUpperCase()).filter(Boolean))
   const allowedTiers = new Set((tiers || []).map(v => String(v).trim().toUpperCase()).filter(Boolean))
   const manual = new Set((manualUserIds || []).map(v => String(v).trim().toLowerCase()).filter(Boolean))
@@ -19,7 +19,14 @@ export function buildFilteredCampaignAudience(players = [], countries = [], tier
     const username = String(player.username || '').trim()
     if (!username) return false
     const country = countryFromPlayer(player)
-    return allowedCountries.has(country) && allowedTiers.has(String(player.tier || '').trim().toUpperCase())
+    if (!allowedCountries.has(country)) return false
+    if (!allowedTiers.has(String(player.tier || '').trim().toUpperCase())) return false
+    // Optional gaming label filter
+    if (playerTypeFilter) {
+      const gl = gamingLabels[username] || gamingLabels[username.toLowerCase()]
+      if (!gl || gl.player_type !== playerTypeFilter) return false
+    }
+    return true
   }
 
   for (const player of players) {

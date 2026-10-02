@@ -85,6 +85,13 @@ const n = new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padSta
 const [calData, setCalData] = useState([])
 const [calLoading, setCalLoading] = useState(false)
 
+// Gaming tab state
+const [gaming, setGaming] = useState([])          // provider_player_stats rows
+const [gamingLabel, setGamingLabel] = useState(null) // player_gaming_labels row
+const [gamingLoading, setGamingLoading] = useState(false)
+const [gamingAI, setGamingAI] = useState(null)
+const [gamingAILoading, setGamingAILoading] = useState(false)
+
 const load = useCallback(async () => {
 setLoading(true); setError(null)
 try {
@@ -126,6 +133,16 @@ setContacts(contRes.data || [])
 setCampaigns(campRes.data || [])
 setTierLogs(tierRes.data || [])
 setHosts((hostRes.data||[]).map(h => h.full_name).filter(Boolean))
+// Load gaming label eagerly for badge display (lightweight, single row)
+if (vipRes.data.username) {
+  supabase.from('player_gaming_labels')
+    .select('player_type,player_type_icon,offer_recommendation,snapshot_month')
+    .eq('username', vipRes.data.username)
+    .order('snapshot_month', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+    .then(({ data }) => { if (data) setGamingLabel(data) })
+}
 } catch(e) { setError(e.message || String(e)) }
 setLoading(false)
 }, [id])
@@ -148,6 +165,29 @@ supabase.from('vip_daily_snapshots')
 .order('snapshot_date', { ascending: true })
 .then(({ data }) => { setCalData(data || []); setCalLoading(false) })
 }, [tab, calMonth, id])
+
+// Lazy-load full gaming stats when tab switches to 'gaming'
+useEffect(() => {
+if (tab !== 'gaming' || !vip?.username) return
+if (gaming.length > 0 || gamingLoading) return
+setGamingLoading(true)
+Promise.all([
+  supabase.from('provider_player_stats')
+    .select('*')
+    .eq('username', vip.username)
+    .order('valid_turnover', { ascending: false }),
+  supabase.from('player_gaming_labels')
+    .select('*')
+    .eq('username', vip.username)
+    .order('snapshot_month', { ascending: false })
+    .limit(1)
+    .maybeSingle(),
+]).then(([provRes, labelRes]) => {
+  setGaming(provRes.data || [])
+  if (labelRes.data) setGamingLabel(labelRes.data)
+  setGamingLoading(false)
+})
+}, [tab, vip?.username, gaming.length, gamingLoading])
 
 // Period-filtered monthly data
 const now = new Date()
@@ -213,9 +253,28 @@ setAiInsight(result)
 setAiLoading(false)
 }
 
+async function getGamingAI() {
+setGamingAILoading(true)
+try {
+const gl = gamingLabel
+const topProviders = gaming.slice(0,5).map(p => `${p.provider}(turnover:${p.valid_turnover?.toFixed(0)||0},wl:${p.win_loss?.toFixed(0)||0})`).join(', ')
+const summary = `Player: ${vip.username}, Type: ${gl?.player_type||'Unknown'}, Tier: ${vip.tier}.
+Category split: Slots ${gl?.slots_pct||0}%, Live Casino ${gl?.live_pct||0}%, Sports ${gl?.sports_pct||0}%.
+Top providers by turnover: ${topProviders||'none'}.
+Best provider (player wins): ${gl?.best_provider||'none'}.
+Worst provider (house wins): ${gl?.worst_provider||'none'}.
+Active providers: ${gl?.active_providers||0}.
+System suggestion: ${gl?.offer_recommendation||'N/A'}.`
+const result = await callAI(`Based on this VIP player's gaming data, provide a specific campaign offer recommendation with reasoning. Be concise and actionable (2-3 sentences): ${summary}`)
+setGamingAI(result)
+} catch(e) { toast('AI unavailable', 'error') }
+setGamingAILoading(false)
+}
+
 const TABS = [
 { key: 'overview', label: t('vip360.tabOverview') },
 { key: 'financial', label: t('vip360.tabFinancial') },
+{ key: 'gaming', label: '🎮 Gaming' },
 { key: 'activity', label: t('vip360.tabActivity') },
 { key: 'campaigns', label: t('vip360.tabCampaigns'), count: campaigns.length },
 { key: 'contact', label: t('vip360.tabContact'), count: contacts.length },
@@ -274,6 +333,21 @@ onMouseLeave={e => e.currentTarget.style.opacity=.6}
 {vip.host_assigned && <span> · Host: {vip.host_assigned}</span>}
 {vip.currency && <span> · {vip.currency}</span>}
 </div>
+{gamingLabel && (
+<div style={{ marginTop:6 }}>
+  <span
+    onClick={() => setTab('gaming')}
+    title="Click to view Gaming tab"
+    style={{
+      display:'inline-flex', alignItems:'center', gap:5,
+      fontSize:11, fontWeight:700, padding:'3px 10px', borderRadius:20, cursor:'pointer',
+      background:'rgba(139,92,246,.15)', border:'1px solid rgba(139,92,246,.35)', color:'#a78bfa',
+    }}
+  >
+    {gamingLabel.player_type_icon} {gamingLabel.player_type}
+  </span>
+</div>
+)}
 </div>
 </div>
 <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
@@ -437,6 +511,188 @@ onMouseLeave={e => e.currentTarget.style.background='transparent'}
 )}
 </div>
 )}
+
+{/* GAMING */}
+{tab === 'gaming' && (() => {
+const fmtK = v => !v ? '0' : Math.abs(v) >= 1000000 ? (v/1000000).toFixed(2)+'M' : Math.abs(v) >= 1000 ? (v/1000).toFixed(1)+'K' : Number(v).toFixed(0)
+const fmtKAbs = v => !v ? '0' : Math.abs(v) >= 1000000 ? (Math.abs(v)/1000000).toFixed(2)+'M' : Math.abs(v) >= 1000 ? (Math.abs(v)/1000).toFixed(1)+'K' : Math.abs(v).toFixed(0)
+
+// Provider category map
+const LIVE_PROVIDERS = new Set(['Evo','DG','SA','MTL','AES2','PPL'])
+const SLOTS_PROVIDERS = new Set(['PP Slot','JL','NS','FC','PT4','MEGA','SG','BNG','SCR2','PTL4'])
+const SPORTS_PROVIDERS = new Set(['CBX','IBC','CMD','L365','BTI2'])
+const getCat = p => LIVE_PROVIDERS.has(p) ? 'live' : SLOTS_PROVIDERS.has(p) ? 'slots' : SPORTS_PROVIDERS.has(p) ? 'sports' : 'other'
+const CAT_COLOR = { live:'#f59e0b', slots:'#8b5cf6', sports:'#22c55e', other:'var(--muted)' }
+const CAT_LABEL = { live:'Live Casino', slots:'Slots', sports:'Sports', other:'Other' }
+const CAT_ICON  = { live:'🎲', slots:'🎰', sports:'⚽', other:'🃏' }
+
+// Sort by turnover
+const sortedProviders = [...gaming].sort((a,b) => (b.valid_turnover||0) - (a.valid_turnover||0))
+const maxTurnover = sortedProviders[0]?.valid_turnover || 1
+
+// Category totals from label
+const gl = gamingLabel
+const PLAYER_TYPE_COLOR = {
+  'Slots King': '#8b5cf6',
+  'Live Casino VIP': '#f59e0b',
+  'Sports Punter': '#22c55e',
+  'Slots + Live': '#a855f7',
+  'Live + Sports': '#f97316',
+  'Multi-Platform': '#3b82f6',
+  'Casual': 'var(--muted)',
+}
+const ptColor = gl ? (PLAYER_TYPE_COLOR[gl.player_type] || 'var(--muted)') : 'var(--muted)'
+
+return (
+<div>
+  {gamingLoading ? (
+    <LoadingState message="Loading gaming data…" />
+  ) : gaming.length === 0 ? (
+    <EmptyState icon="🎮" title="No gaming data" message="No provider stats found for this player. Upload gaming data via CSV Import." />
+  ) : (
+    <div>
+      {/* Player Type Badge + Category Summary */}
+      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16, marginBottom:20 }}>
+        {/* Player Type */}
+        <div style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:10, padding:'16px 18px' }}>
+          <div style={{ fontSize:11, fontWeight:700, color:'var(--muted)', letterSpacing:'.5px', textTransform:'uppercase', marginBottom:10 }}>Player Type</div>
+          {gl ? (
+            <div>
+              <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:8 }}>
+                <span style={{ fontSize:28 }}>{gl.player_type_icon}</span>
+                <span style={{ fontSize:18, fontWeight:800, color: ptColor }}>{gl.player_type}</span>
+              </div>
+              <div style={{ fontSize:12, color:'var(--muted)', marginBottom:8 }}>
+                {gl.snapshot_month} · {gl.active_providers} active provider{gl.active_providers !== 1 ? 's':''}</div>
+              {/* Category bars */}
+              {[
+                { label:'Slots', pct: gl.slots_pct, color: CAT_COLOR.slots },
+                { label:'Live Casino', pct: gl.live_pct, color: CAT_COLOR.live },
+                { label:'Sports', pct: gl.sports_pct, color: CAT_COLOR.sports },
+              ].filter(b => b.pct > 0).map(b => (
+                <div key={b.label} style={{ marginBottom:6 }}>
+                  <div style={{ display:'flex', justifyContent:'space-between', fontSize:11, marginBottom:2 }}>
+                    <span style={{ color:'var(--muted)' }}>{b.label}</span>
+                    <span style={{ fontWeight:700, color: b.color }}>{b.pct}%</span>
+                  </div>
+                  <div style={{ height:5, background:'var(--border)', borderRadius:3 }}>
+                    <div style={{ height:5, borderRadius:3, background: b.color, width:`${b.pct}%`, transition:'width .4s' }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div style={{ fontSize:13, color:'var(--muted)' }}>Label not yet computed. Run the SQL migration first.</div>
+          )}
+        </div>
+
+        {/* Good at / Bad at */}
+        <div style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:10, padding:'16px 18px' }}>
+          <div style={{ fontSize:11, fontWeight:700, color:'var(--muted)', letterSpacing:'.5px', textTransform:'uppercase', marginBottom:10 }}>Strengths & Weaknesses</div>
+          {gl?.best_provider && (
+            <div style={{ marginBottom:12 }}>
+              <div style={{ fontSize:11, color:'var(--success)', fontWeight:700, marginBottom:4 }}>✅ Best at (player wins)</div>
+              <div style={{ fontSize:14, fontWeight:700 }}>{gl.best_provider}</div>
+              <div style={{ fontSize:11, color:'var(--muted)' }}>
+                {CAT_ICON[getCat(gl.best_provider)]} {CAT_LABEL[getCat(gl.best_provider)]}
+              </div>
+            </div>
+          )}
+          {gl?.worst_provider && (
+            <div style={{ marginBottom:12 }}>
+              <div style={{ fontSize:11, color:'var(--danger)', fontWeight:700, marginBottom:4 }}>⚠️ Worst at (house wins most)</div>
+              <div style={{ fontSize:14, fontWeight:700 }}>{gl.worst_provider}</div>
+              <div style={{ fontSize:11, color:'var(--muted)' }}>
+                {CAT_ICON[getCat(gl.worst_provider)]} {CAT_LABEL[getCat(gl.worst_provider)]}
+              </div>
+            </div>
+          )}
+          {!gl?.best_provider && !gl?.worst_provider && (
+            <div style={{ fontSize:13, color:'var(--muted)' }}>No win/loss data available yet.</div>
+          )}
+          {gl?.top_providers && (
+            <div style={{ marginTop:4 }}>
+              <div style={{ fontSize:11, color:'var(--muted)', fontWeight:700, marginBottom:4 }}>TOP PROVIDERS (by turnover)</div>
+              <div style={{ fontSize:12 }}>{gl.top_providers}</div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Offer Recommendation */}
+      {gl?.offer_recommendation && (
+        <div style={{ background:'rgba(59,130,246,.07)', border:'1px solid rgba(59,130,246,.2)', borderRadius:10, padding:'14px 18px', marginBottom:20 }}>
+          <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:16 }}>
+            <div style={{ flex:1 }}>
+              <div style={{ fontSize:11, fontWeight:700, color:'var(--info)', letterSpacing:'.5px', textTransform:'uppercase', marginBottom:6 }}>💡 Suggested Offer</div>
+              <div style={{ fontSize:13, fontWeight:500 }}>{gl.offer_recommendation}</div>
+            </div>
+            <Btn size="sm" variant="secondary" onClick={getGamingAI} disabled={gamingAILoading} style={{ flexShrink:0 }}>
+              {gamingAILoading ? 'Thinking…' : '🤖 AI Recommendation'}
+            </Btn>
+          </div>
+          {gamingAI && (
+            <div style={{ marginTop:12, paddingTop:12, borderTop:'1px solid rgba(59,130,246,.2)', fontSize:13, lineHeight:1.6, color:'var(--text)' }}>
+              <span style={{ fontSize:11, fontWeight:700, color:'var(--info)', marginRight:8 }}>AI:</span>{gamingAI}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Provider Breakdown Table */}
+      <div>
+        <SectionLabel>Provider Breakdown</SectionLabel>
+        <div style={{ overflowX:'auto' }}>
+          <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12 }}>
+            <thead>
+              <tr>
+                {['Provider','Category','Turnover','Win/Loss','Rebate','Bonus','Sessions'].map(h => (
+                  <th key={h} style={{ padding:'8px 10px', textAlign: h==='Provider'||h==='Category'?'left':'right', background:'var(--surface)', color:'var(--muted)', fontWeight:600, fontSize:11, borderBottom:'1px solid var(--border)' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {sortedProviders.map(p => {
+                const cat = getCat(p.provider)
+                const wl = parseFloat(p.win_loss)||0
+                return (
+                  <tr key={p.provider + (p.snapshot_month||'')}
+                    onMouseEnter={e => e.currentTarget.style.background='var(--surface2)'}
+                    onMouseLeave={e => e.currentTarget.style.background='transparent'}
+                  >
+                    <td style={{ padding:'8px 10px', borderBottom:'1px solid var(--border)', fontWeight:600 }}>
+                      <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                        {/* Turnover bar */}
+                        <div style={{ width:40, height:4, background:'var(--border)', borderRadius:2, flexShrink:0 }}>
+                          <div style={{ height:4, borderRadius:2, background: CAT_COLOR[cat], width:`${Math.round((p.valid_turnover||0)/maxTurnover*100)}%` }} />
+                        </div>
+                        {p.provider}
+                      </div>
+                    </td>
+                    <td style={{ padding:'8px 10px', borderBottom:'1px solid var(--border)' }}>
+                      <span style={{ fontSize:11, fontWeight:700, padding:'1px 7px', borderRadius:10, background: `${CAT_COLOR[cat]}22`, color: CAT_COLOR[cat] }}>
+                        {CAT_ICON[cat]} {CAT_LABEL[cat]}
+                      </span>
+                    </td>
+                    <td style={{ padding:'8px 10px', borderBottom:'1px solid var(--border)', textAlign:'right', fontWeight:600 }}>{fmtK(p.valid_turnover)}</td>
+                    <td style={{ padding:'8px 10px', borderBottom:'1px solid var(--border)', textAlign:'right', fontWeight:700, color: wl>0?'var(--success)':wl<0?'var(--danger)':'var(--muted)' }}>
+                      {wl>0?'+':''}{fmtK(wl)}
+                    </td>
+                    <td style={{ padding:'8px 10px', borderBottom:'1px solid var(--border)', textAlign:'right', color:'var(--muted)' }}>{fmtK(p.total_rebate)}</td>
+                    <td style={{ padding:'8px 10px', borderBottom:'1px solid var(--border)', textAlign:'right', color:'var(--muted)' }}>{fmtK(p.total_bonus)}</td>
+                    <td style={{ padding:'8px 10px', borderBottom:'1px solid var(--border)', textAlign:'right', color:'var(--muted)' }}>{p.transfer_in_count||0}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  )}
+</div>
+)
+})()}
 
 {/* ACTIVITY (contact logs as timeline) */}
 {tab === 'activity' && (
