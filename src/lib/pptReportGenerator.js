@@ -97,15 +97,20 @@ export async function fetchPPTData(month, supabase) {
     supabase.from('vip_monthly_totals').select('*').eq('snapshot_month',m2),
     supabase.from('vip_monthly_totals').select('*').eq('snapshot_month',m3),
   ])
-  const [rL,daily,campsR,expR,upcomR] = await Promise.all([
+  const [rL,daily,campsR,expR,upcomR,excR] = await Promise.all([
     supabase.from('reactivation_logs').select('*').eq('reactivated_month',month),
     supabase.from('vip_daily_snapshots').select('username,snapshot_date,total_deposit,monthly_valid_bet,win_loss,tier,bet_count').gte('snapshot_date',`${month}-01`).lt('snapshot_date',`${nM}-01`),
     supabase.from('campaigns').select('id,campaign_name,campaign_type,target_tier,start_date,end_date,status,campaign_players(username,payout_status,campaign_rewards(reward_amount,status))').gte('start_date',`${month}-01`).lt('start_date',`${nM}-01`),
     supabase.from('department_expenses').select('*').eq('month',month),
     supabase.from('campaigns').select('id,campaign_name,campaign_type,target_tier,start_date,end_date,status').in('status',['upcoming','active']).order('start_date').limit(10),
+    supabase.from('exclude_list').select('username'),
   ])
+  // PPT scope: host-assigned VIPs only, excluding Exclusion List players
+  const excludedSet = new Set((excR.data||[]).map(r=>r.username))
+  const pptFilter = r => r.host_assigned && r.host_assigned.trim() !== '' && !excludedSet.has(r.username)
+  const filterRows = rows => (rows||[]).filter(pptFilter)
   return {
-    month, currRows:r0.data||[], prevRows:r1.data||[], prev2Rows:r2.data||[], prev3Rows:r3.data||[],
+    month, currRows:filterRows(r0.data), prevRows:filterRows(r1.data), prev2Rows:filterRows(r2.data), prev3Rows:filterRows(r3.data),
     reactLogs:rL.data||[], dailySnaps:daily.data||[], campaigns:campsR.data||[], expenses:expR.data||[], upcoming:upcomR.data||[],
     prevMonth:m1, prev2Month:m2, prev3Month:m3, nextMonth:nM,
   }

@@ -277,6 +277,21 @@ export default function MonthlyReportExport() {
             </div>
           )}
 
+          {/* PPT Scope Filters */}
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#8B9BB8', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              PPT Report Scope
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <div style={{ padding: '6px 12px', borderRadius: 6, background: '#1A3D2B', border: '1px solid #3FB950', fontSize: 12, color: '#3FB950' }}>
+                ✓ Host-Assigned VIPs Only
+              </div>
+              <div style={{ padding: '6px 12px', borderRadius: 6, background: '#1A3D2B', border: '1px solid #3FB950', fontSize: 12, color: '#3FB950' }}>
+                ✓ Exclusion List Removed
+              </div>
+            </div>
+          </div>
+
           {/* Data source indicators */}
           <div style={{ marginBottom: 24 }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: '#8B9BB8', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
