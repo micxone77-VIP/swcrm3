@@ -280,7 +280,29 @@ export default function HostPerformance() {
         const monthVb     = cur?.monthly_valid_bet || 0
         const prevMonthVb = prev?.monthly_valid_bet || 0
         const thirdMonthVb = third?.monthly_valid_bet || 0
-        const weekVb = Math.max(0, monthVb - prevMonthVb)
+        // weekVb = delta contributed in Period A vs Period B, but only when:
+        // - there is actual prev data (prevMonthVb > 0), AND
+        // - in week mode, both snapshots are in the same calendar month
+        // Otherwise show 0 (unknown / not comparable)
+        let weekVb = 0
+        if (prev && prevMonthVb > 0) {
+          if (periodMode === 'week') {
+            // Only valid delta when both snapshots fall in the same calendar month
+            const curMonth  = cur?.snapshot_date?.slice(0, 7)
+            const prevMonth = prev?.snapshot_date?.slice(0, 7)
+            if (curMonth && prevMonth && curMonth === prevMonth) {
+              weekVb = Math.max(0, monthVb - prevMonthVb)
+            } else {
+              // Prev snapshot is from a different month — monthVb already is the weekly contribution
+              // (monthly_valid_bet resets each month, so cur value IS the week's total)
+              weekVb = monthVb
+            }
+          }
+          // In month mode weekVb stays 0 — not meaningful across months
+        } else if (periodMode === 'week' && cur) {
+          // No previous snapshot at all: this week's contribution = full monthly VB so far
+          weekVb = monthVb
+        }
         rows.push({
           username: uname,
           tier: m.tier,
@@ -304,7 +326,7 @@ export default function HostPerformance() {
     } finally {
       setLoading(false)
     }
-  }, [periodARange?.start, periodARange?.end, periodBRange?.start, periodBRange?.end, periodCRange?.start, periodCRange?.end, selectedTiers])
+  }, [periodARange?.start, periodARange?.end, periodBRange?.start, periodBRange?.end, periodCRange?.start, periodCRange?.end, selectedTiers, periodMode])
 
   useEffect(() => { load() }, [load])
 
@@ -682,9 +704,9 @@ export default function HostPerformance() {
                   {periodCRange && (
                     <td style={{ padding: '10px 14px', color: '#34D399' }}>{fmtNum(r.thirdDeposit)}</td>
                   )}
-                  {/* Period A VB */}
+                  {/* Period A VB — month mode shows full monthly total; week mode shows weekly delta */}
                   <td style={{ padding: '10px 14px', fontWeight: 700 }}>
-                    {fmtNum(r.weekVb)}
+                    {fmtNum(periodMode === 'month' ? r.monthVb : r.weekVb)}
                   </td>
                   {/* Period B VB */}
                   {periodBRange && (
