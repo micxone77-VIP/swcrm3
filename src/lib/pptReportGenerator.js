@@ -97,20 +97,15 @@ export async function fetchPPTData(month, supabase) {
     supabase.from('vip_monthly_totals').select('*').eq('snapshot_month',m2),
     supabase.from('vip_monthly_totals').select('*').eq('snapshot_month',m3),
   ])
-  const [rL,daily,campsR,expR,upcomR,excR] = await Promise.all([
+  const [rL,daily,campsR,expR,upcomR] = await Promise.all([
     supabase.from('reactivation_logs').select('*').eq('reactivated_month',month),
     supabase.from('vip_daily_snapshots').select('username,snapshot_date,total_deposit,monthly_valid_bet,win_loss,tier,bet_count').gte('snapshot_date',`${month}-01`).lt('snapshot_date',`${nM}-01`),
-    supabase.from('campaigns').select('id,campaign_name,campaign_type,target_tier,start_date,end_date,status,campaign_players(username,payout_status,campaign_rewards(reward_amount,status))').gte('start_date',`${month}-01`).lt('start_date',`${nM}-01`),
+    supabase.from('campaigns').select('id,campaign_name,campaign_type,target_tier,start_date,end_date,status,campaign_players(username,payout_status,reward_amount)').gte('start_date',`${month}-01`).lt('start_date',`${nM}-01`),
     supabase.from('department_expenses').select('*').eq('month',month),
     supabase.from('campaigns').select('id,campaign_name,campaign_type,target_tier,start_date,end_date,status').in('status',['upcoming','active']).order('start_date').limit(10),
-    supabase.from('exclude_list').select('username'),
   ])
-  // PPT scope: host-assigned VIPs only, excluding Exclusion List players
-  const excludedSet = new Set((excR.data||[]).map(r=>r.username))
-  const pptFilter = r => r.host_assigned && r.host_assigned.trim() !== '' && !excludedSet.has(r.username)
-  const filterRows = rows => (rows||[]).filter(pptFilter)
   return {
-    month, currRows:filterRows(r0.data), prevRows:filterRows(r1.data), prev2Rows:filterRows(r2.data), prev3Rows:filterRows(r3.data),
+    month, currRows:r0.data||[], prevRows:r1.data||[], prev2Rows:r2.data||[], prev3Rows:r3.data||[],
     reactLogs:rL.data||[], dailySnaps:daily.data||[], campaigns:campsR.data||[], expenses:expR.data||[], upcoming:upcomR.data||[],
     prevMonth:m1, prev2Month:m2, prev3Month:m3, nextMonth:nM,
   }
@@ -464,30 +459,21 @@ function slide16_17_campaign(pptx, d, campIdx=0) {
   if(!camp) { placeholder(sl,`Campaign #${campIdx+1} data not found`); return }
   header(sl, camp.campaign_name||'Campaign Report', `${camp.campaign_type||''}  |  ${mLabel(d.month)}`)
   const players = camp.campaign_players||[]
-  // Show ALL rewards regardless of status (not just 'paid') — rewards may be pending/approved
-  const totalRewards = players.reduce((s,p)=>s+(p.campaign_rewards||[]).reduce((ss,r)=>ss+(r.reward_amount||0),0),0)
-  const paidRewards  = players.reduce((s,p)=>s+(p.campaign_rewards||[]).filter(r=>r.status==='paid').reduce((ss,r)=>ss+(r.reward_amount||0),0),0)
-  // Completed = player payout_status is paid OR has any paid/approved reward
-  const completedCount = players.filter(p=>
-    p.payout_status==='paid' || (p.campaign_rewards||[]).some(r=>r.status==='paid'||r.status==='approved')
-  ).length
+  // Rewards are stored in campaign_players.reward_amount (saved when CRM marks paid)
+  const totalRewards = players.reduce((s,p)=>s+(p.reward_amount||0),0)
+  const paidRewards  = players.filter(p=>p.payout_status==='paid').reduce((s,p)=>s+(p.reward_amount||0),0)
+  // Completed = player payout_status is paid
+  const completedCount = players.filter(p=>p.payout_status==='paid').length
   kpiTile(sl, 0.25,0.72,2.2,0.85,'Total Players',  String(players.length), 'Enrolled', C.WHITE)
   kpiTile(sl, 2.55,0.72,2.2,0.85,'Completed/Paid', String(completedCount), `${pct(players.length?completedCount/players.length*100:0)} rate`, C.GREEN)
   kpiTile(sl, 4.85,0.72,2.2,0.85,'Total Rewards',  fmt(totalRewards), 'All reward amounts', C.AMBER)
   kpiTile(sl, 7.15,0.72,2.2,0.85,'Confirmed Paid', fmt(paidRewards),  'Status = paid only', C.ACC)
-  const topPlayers = [...players].sort((a,b)=>{
-    const ra=(a.campaign_rewards||[]).reduce((s,r)=>s+(r.reward_amount||0),0)
-    const rb=(b.campaign_rewards||[]).reduce((s,r)=>s+(r.reward_amount||0),0)
-    return rb-ra
-  }).slice(0,10)
+  const topPlayers = [...players].sort((a,b)=>(b.reward_amount||0)-(a.reward_amount||0)).slice(0,10)
   const rows = topPlayers.map((p,ri)=>{
-    const rewards=p.campaign_rewards||[]
-    const amount=rewards.reduce((s,r)=>s+(r.reward_amount||0),0)
-    // Derive display status: use payout_status first, then rewards status
+    const amount=p.reward_amount||0
+    // Derive display status from payout_status
     const status = p.payout_status==='paid'?'Paid'
-      : rewards.some(r=>r.status==='paid')?'Paid'
-      : rewards.some(r=>r.status==='approved')?'Approved'
-      : rewards.length>0?'Pending':'—'
+      : amount>0?'Pending':'—'
     return [
       cell(ri+1, { align:'center', ...altRow(ri) }),
       cell(p.username||'—', { bold:true, ...altRow(ri) }),
@@ -506,11 +492,9 @@ function slide18_19_campaigns_summary(pptx, d) {
   if(!d.campaigns.length) { placeholder(sl,'No campaigns found for this month'); return }
   const rows = d.campaigns.map((c,ri)=>{
     const players=c.campaign_players||[]
-    // Show ALL rewards (any status), not just paid — avoids showing RM 0 when rewards are pending
-    const totalRew=players.reduce((s,p)=>s+(p.campaign_rewards||[]).reduce((ss,r)=>ss+(r.reward_amount||0),0),0)
-    const completedCnt=players.filter(p=>
-      p.payout_status==='paid'||(p.campaign_rewards||[]).some(r=>r.status==='paid'||r.status==='approved')
-    ).length
+    // Rewards stored in campaign_players.reward_amount (saved by CRM when marking paid)
+    const totalRew=players.reduce((s,p)=>s+(p.reward_amount||0),0)
+    const completedCnt=players.filter(p=>p.payout_status==='paid').length
     return [
       cell(c.campaign_name||'—', { bold:true, ...altRow(ri) }),
       cell(c.campaign_type||'—', { color:C.MUTED, ...altRow(ri) }),
@@ -526,7 +510,7 @@ function slide18_19_campaigns_summary(pptx, d) {
   })
   const totalAllRew=d.campaigns.reduce((s,c)=>{
     const ps=c.campaign_players||[]
-    return s+ps.reduce((s2,p)=>(p.campaign_rewards||[]).reduce((s3,r)=>s3+(r.reward_amount||0),s2),0)
+    return s+ps.reduce((s2,p)=>s2+(p.reward_amount||0),0)
   },0)
   sl.addText(`Total campaign rewards (all statuses) this month: ${fmt(totalAllRew)}`, { x:0.25,y:5.05,w:9.5,h:0.35, fontSize:11,bold:true,color:C.AMBER,isTextBox:true })
 }
@@ -545,7 +529,7 @@ function slide20_review(pptx, d) {
   const cntChgPct=chg(ca.length,pa.length)
   const campTotal=d.campaigns.reduce((s,c)=>{
     const ps=c.campaign_players||[]
-    return s+ps.reduce((s2,p)=>(p.campaign_rewards||[]).reduce((s3,r)=>s3+(r.reward_amount||0),s2),0)
+    return s+ps.reduce((s2,p)=>s2+(p.reward_amount||0),0)
   },0)
   // KPI tiles at top
   kpiTile(sl,0.25,0.72,2.2,0.85,'Active VIPs',    String(ca.length),         `${arw(cntChgPct)} ${pct(Math.abs(cntChgPct))} MoM`, cntChgPct>=0?C.GREEN:C.AMBER)

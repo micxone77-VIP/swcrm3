@@ -618,11 +618,16 @@ export default function Campaigns() {
     await loadPlayers(selected.id)
   }
 
-  async function toggleCampaignReward(rewardId, makePaid) {
+  async function toggleCampaignReward(rewardId, makePaid, playerId, newPlayerTotal) {
     if (!rewardId) return
     const patch = makePaid ? { status:'paid', paid_at:new Date().toISOString() } : { status:'pending', paid_at:null }
     const { error } = await supabase.from('campaign_rewards').update(patch).eq('id', rewardId)
     if (error) { alert('Reward update failed: ' + error.message); console.error(error); return }
+    // Sync total paid reward amount back to campaign_players so PPT and DB stay in sync
+    if (playerId != null && newPlayerTotal != null) {
+      const { error: cpErr } = await supabase.from('campaign_players').update({ reward_amount: newPlayerTotal }).eq('id', playerId)
+      if (cpErr) console.error('campaign_players reward_amount sync failed:', cpErr)
+    }
     await loadPlayers(selected.id)
   }
 
@@ -2934,7 +2939,7 @@ export default function Campaigns() {
                             <td style={{ ...s.td, fontWeight:600 }}>{row.levelName}</td>
                             <td style={{ ...s.td, color:'#3fb950', fontWeight:600 }}>{player ? rmFmt(playerDeposit(player), campCurrency) : '—'}</td>
                             <td style={{ ...s.td, color:typeInfo.color, fontWeight:700 }}>{rewardFmt(row.rewardAmount,campCurrency)} Credit</td>
-                            <td style={s.td}><button onClick={()=>toggleCampaignReward(row.rewardId,!paid)} style={{ ...s.tag(paid?'#3fb950':'#f59e0b',paid?'rgba(63,185,80,.15)':'rgba(245,158,11,.15)'),cursor:'pointer',border:`1px solid ${paid?'rgba(63,185,80,.3)':'rgba(245,158,11,.3)'}` }}>{payoutLabel}</button></td>
+                            <td style={s.td}><button onClick={()=>{const newTotal=multiPayoutRows.filter(r=>r.playerId===row.playerId).filter(r=>r.rewardId===row.rewardId?!paid:r.status==='paid').reduce((s,r)=>s+r.rewardAmount,0);toggleCampaignReward(row.rewardId,!paid,row.playerId,newTotal)}} style={{ ...s.tag(paid?'#3fb950':'#f59e0b',paid?'rgba(63,185,80,.15)':'rgba(245,158,11,.15)'),cursor:'pointer',border:`1px solid ${paid?'rgba(63,185,80,.3)':'rgba(245,158,11,.3)'}` }}>{payoutLabel}</button></td>
                             <td style={{ ...s.td, fontSize:11, color:'var(--muted)' }}>{row.paidAt ? new Date(row.paidAt).toLocaleDateString('en-MY',{day:'numeric',month:'short',year:'numeric'}) : '—'}</td>
                             <td style={{...s.td,minWidth:130}}>
                               <div style={{fontSize:12,color:'var(--muted)',marginBottom:4}}>{player?.whatsapp||'—'}</div>
@@ -3113,7 +3118,7 @@ export default function Campaigns() {
                             : rmFmt(creditReward,campCurrency)
                         }</td>
                         <td style={s.td}>
-                          <button onClick={()=> isDailyMode ? updateDailyPayout(p.id, paid?'pending':'paid') : updatePlayer(p.id,{payout_status:paid?'pending':'paid',payout_date:paid?null:new Date().toISOString()})} style={{...s.tag(paid?'#3fb950':'#f59e0b',paid?'rgba(63,185,80,.15)':'rgba(245,158,11,.15)'),cursor:'pointer'}}>{paid?'✅ Paid':'⏳ Pending'}</button>
+                          <button onClick={()=> isDailyMode ? updateDailyPayout(p.id, paid?'pending':'paid') : updatePlayer(p.id,{payout_status:paid?'pending':'paid',payout_date:paid?null:new Date().toISOString(),reward_amount:paid?0:creditReward+wcashReward})} style={{...s.tag(paid?'#3fb950':'#f59e0b',paid?'rgba(63,185,80,.15)':'rgba(245,158,11,.15)'),cursor:'pointer'}}>{paid?'✅ Paid':'⏳ Pending'}</button>
                           {selected?.streak_enabled && pendingStreakBonus > 0 && (
                             <div style={{ marginTop:3, fontSize:10, color:'#f59e0b', fontWeight:700, whiteSpace:'nowrap' }}>🔥 +{rmFmt(pendingStreakBonus, campCurrency)} streak</div>
                           )}
