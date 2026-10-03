@@ -1878,6 +1878,203 @@ function TierHistoryTab({ hostFilter = 'ALL' }) {
   )
 }
 
+// ── TAB 5: Downgrade Risk ─────────────────────────────────────────────────────
+function DowngradeRiskTab({ hostFilter = 'ALL' }) {
+  const navigate = useNavigate()
+  const [rows, setRows]       = useState([])
+  const [loading, setLoading] = useState(true)
+  const [tierF, setTierF]     = useUrlParam('drTier', 'ALL')
+  const [riskF, setRiskF]     = useUrlParam('drRisk', 'AT RISK')
+  const [search, setSearch]   = useUrlParam('drSearch', '')
+  const [hovered, setHovered] = useState(null)
+
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true)
+      const [{ data: riskData }, { data: vipData }] = await Promise.all([
+        supabase.from('v_tier_downgrade_risk').select('*'),
+        supabase.from('vip_members').select('id, username, host_assigned'),
+      ])
+      const vipMap = {}
+      ;(vipData || []).forEach(v => { vipMap[v.username.toLowerCase()] = v })
+      const merged = (riskData || []).map(r => ({
+        ...r,
+        id:            vipMap[r.username.toLowerCase()]?.id || null,
+        host_assigned: vipMap[r.username.toLowerCase()]?.host_assigned || null,
+      }))
+      const TIER_ORD = { DIAMOND: 0, PLATINUM: 1, GOLD: 2 }
+      merged.sort((a, b) => {
+        if (a.risk_status !== b.risk_status) return a.risk_status === 'AT RISK' ? -1 : 1
+        const td = (TIER_ORD[a.tier] ?? 9) - (TIER_ORD[b.tier] ?? 9)
+        if (td !== 0) return td
+        return (a.vb_gap ?? 0) - (b.vb_gap ?? 0)
+      })
+      setRows(merged)
+      setLoading(false)
+    }
+    load()
+  }, [])
+
+  const filtered = rows.filter(r => {
+    if (tierF !== 'ALL' && r.tier !== tierF) return false
+    if (riskF !== 'ALL' && r.risk_status !== riskF) return false
+    if (search && !r.username.toLowerCase().includes(search.toLowerCase())) return false
+    if (hostFilter === 'UNASSIGNED' && r.host_assigned) return false
+    if (hostFilter !== 'ALL' && hostFilter !== 'UNASSIGNED' && r.host_assigned !== hostFilter) return false
+    return true
+  })
+
+  const atRisk   = rows.filter(r => r.risk_status === 'AT RISK')
+  const diamond  = atRisk.filter(r => r.tier === 'DIAMOND').length
+  const platinum = atRisk.filter(r => r.tier === 'PLATINUM').length
+  const gold     = atRisk.filter(r => r.tier === 'GOLD').length
+  const safe     = rows.filter(r => r.risk_status === 'SAFE').length
+  const period   = rows[0] ? `${rows[0].period_start} → ${rows[0].period_end}` : ''
+
+  return (
+    <div>
+      {period && (
+        <div style={{
+          fontSize: 12, color: 'var(--muted)', marginBottom: 14,
+          padding: '8px 14px', background: 'var(--surface)',
+          border: '1px solid var(--border)', borderRadius: 7,
+          display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
+        }}>
+          <span>📅 Rolling quarter: <strong style={{ color: 'var(--text)' }}>{period}</strong></span>
+          <span style={{ color: 'var(--border)' }}>·</span>
+          <span>Maintenance quota: <strong style={{ color: TIER_COLOR.GOLD }}>Gold 250K</strong> / <strong style={{ color: TIER_COLOR.PLATINUM }}>Platinum 1M</strong> / <strong style={{ color: TIER_COLOR.DIAMOND }}>Diamond 3M</strong> quarterly VB</span>
+        </div>
+      )}
+
+      <div style={s.statGrid}>
+        {[
+          { label: 'Diamond at risk',  val: diamond,  color: TIER_COLOR.DIAMOND  || '#a78bfa' },
+          { label: 'Platinum at risk', val: platinum, color: TIER_COLOR.PLATINUM || '#e5e7eb' },
+          { label: 'Gold at risk',     val: gold,     color: TIER_COLOR.GOLD     || '#f59e0b' },
+          { label: 'Met quota (safe)', val: safe,     color: '#10b981' },
+        ].map((st, i) => (
+          <div key={i} style={s.statCard(st.color)}>
+            <div style={{ ...s.statNum, color: st.color }}>{st.val}</div>
+            <div style={s.statLabel}>{st.label}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={s.filterRow}>
+        <input
+          placeholder="Search username…"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          style={s.searchInput}
+        />
+        <select value={tierF} onChange={e => setTierF(e.target.value)} style={s.select}>
+          <option value="ALL">All Tiers</option>
+          <option value="DIAMOND">Diamond</option>
+          <option value="PLATINUM">Platinum</option>
+          <option value="GOLD">Gold</option>
+        </select>
+        <select value={riskF} onChange={e => setRiskF(e.target.value)} style={s.select}>
+          <option value="AT RISK">⚠️ At Risk Only</option>
+          <option value="ALL">All (incl. Safe)</option>
+          <option value="SAFE">✅ Safe Only</option>
+        </select>
+        <span style={{ fontSize: 12, color: 'var(--muted)', marginLeft: 'auto' }}>
+          {filtered.length} players shown
+        </span>
+      </div>
+
+      {loading ? <div style={s.loading}>Loading…</div> : (
+        <div style={{ overflowX: 'auto' }}>
+          <table style={s.table}>
+            <thead>
+              <tr>
+                {['Username', 'Tier', 'Quarterly VB', 'Quota', 'Gap', 'Months', 'Downgrade To', 'Host', 'Status'].map(h => (
+                  <th key={h} style={s.th}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.length === 0
+                ? <tr><td colSpan={9}><div style={s.empty}>No players match this filter</div></td></tr>
+                : filtered.map(r => {
+                  const pct = r.maintenance_threshold > 0
+                    ? Math.min(100, (r.quarterly_vb / r.maintenance_threshold) * 100)
+                    : 0
+                  const isAtRisk = r.risk_status === 'AT RISK'
+                  const barColor = isAtRisk
+                    ? (pct < 30 ? '#f85149' : pct < 70 ? '#f59e0b' : '#fbbf24')
+                    : '#10b981'
+                  return (
+                    <tr
+                      key={r.username}
+                      style={{
+                        ...s.tr(hovered === r.username),
+                        borderLeft: isAtRisk ? '3px solid #f85149' : '3px solid #10b981',
+                        background: hovered === r.username
+                          ? 'var(--surface)'
+                          : isAtRisk ? 'rgba(248,81,73,0.03)' : 'transparent',
+                        cursor: r.id ? 'pointer' : 'default',
+                      }}
+                      onMouseEnter={() => setHovered(r.username)}
+                      onMouseLeave={() => setHovered(null)}
+                      onClick={() => r.id && navigate(`/vips/${r.id}`)}
+                    >
+                      <td style={s.td}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                          <strong>{r.username}</strong>
+                          <CopyBtn text={r.username} />
+                        </div>
+                      </td>
+                      <td style={s.td}><span style={s.tierBadge(r.tier)}>{r.tier}</span></td>
+                      <td style={{ ...s.td, minWidth: 130 }}>
+                        <div style={{ fontWeight: 600, marginBottom: 3 }}>{fmt(r.quarterly_vb)}</div>
+                        <div style={s.progressWrap}>
+                          <div style={s.progressBar(pct, barColor)} />
+                        </div>
+                        <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>
+                          {pct.toFixed(0)}% of quota
+                        </div>
+                      </td>
+                      <td style={{ ...s.td, color: 'var(--muted)', fontSize: 12 }}>
+                        {fmt(r.maintenance_threshold)}
+                      </td>
+                      <td style={s.td}>
+                        <span style={{ fontWeight: 600, color: isAtRisk ? '#f85149' : '#10b981' }}>
+                          {isAtRisk ? '' : '+'}{fmt(r.vb_gap)}
+                        </span>
+                      </td>
+                      <td style={{ ...s.td, textAlign: 'center' }}>
+                        <span style={{ fontWeight: 700, color: (r.months_covered || 0) < 3 ? '#f59e0b' : 'var(--text)' }}>
+                          {r.months_covered ?? 0}/3
+                        </span>
+                      </td>
+                      <td style={s.td}>
+                        {r.downgrade_to
+                          ? <span style={s.tierBadge(r.downgrade_to)}>{r.downgrade_to}</span>
+                          : <span style={{ color: '#10b981', fontSize: 12 }}>✓ Safe</span>}
+                      </td>
+                      <td style={{ ...s.td, fontSize: 12, color: 'var(--muted)' }}>
+                        {r.host_assigned || '—'}
+                      </td>
+                      <td style={s.td}>
+                        {isAtRisk ? (
+                          <span style={{ fontSize: 11, fontWeight: 700, color: '#f85149', background: 'rgba(248,81,73,0.1)', border: '1px solid rgba(248,81,73,0.3)', borderRadius: 20, padding: '2px 8px' }}>⚠️ AT RISK</span>
+                        ) : (
+                          <span style={{ fontSize: 11, fontWeight: 700, color: '#10b981', background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: 20, padding: '2px 8px' }}>✓ SAFE</span>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })
+              }
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── MAIN ──────────────────────────────────────────────────────────────────────
 export default function Upgrades() {
   const { t } = useLanguage()
@@ -1885,11 +2082,11 @@ export default function Upgrades() {
   const [tab, setTab] = useUrlParam('tab', 'vip')
   const [hostFilter, setHostFilter] = useUrlParam('hHost', 'ALL')
   const [hosts, setHosts] = useState([])
-  const [counts, setCounts] = useState({ vipReady: 0, potFlagged: 0, graduated: 0 })
+  const [counts, setCounts] = useState({ vipReady: 0, potFlagged: 0, graduated: 0, downgradeAtRisk: 0 })
 
   useEffect(() => {
     const loadCounts = async () => {
-      const [{ count: vipReady }, { count: potFlagged }, { count: graduated }, { data: hostData }] = await Promise.all([
+      const [{ count: vipReady }, { count: potFlagged }, { count: graduated }, { data: hostData }, { count: downgradeAtRisk }] = await Promise.all([
         supabase.from('vip_members').select('*', { count: 'exact', head: true })
           .in('tier', ['GOLD', 'PLATINUM']),
         supabase.from('potential_players').select('*', { count: 'exact', head: true })
@@ -1898,8 +2095,10 @@ export default function Upgrades() {
           .eq('is_graduated', true),
         supabase.from('vip_members').select('host_assigned')
           .not('host_assigned', 'is', null).neq('host_assigned', ''),
+        supabase.from('v_tier_downgrade_risk').select('*', { count: 'exact', head: true })
+          .eq('risk_status', 'AT RISK'),
       ])
-      setCounts({ vipReady: vipReady || 0, potFlagged: potFlagged || 0, graduated: graduated || 0 })
+      setCounts({ vipReady: vipReady || 0, potFlagged: potFlagged || 0, graduated: graduated || 0, downgradeAtRisk: downgradeAtRisk || 0 })
       if (hostData) {
         const unique = [...new Set(hostData.map(r => r.host_assigned))].sort()
         setHosts(unique)
@@ -1966,12 +2165,19 @@ export default function Upgrades() {
         <button style={s.tab(tab === 'history')} onClick={() => setTab('history')}>
           Tier History
         </button>
+        <button style={s.tab(tab === 'downgrade')} onClick={() => setTab('downgrade')}>
+          Downgrade Risk
+          {counts.downgradeAtRisk > 0 && (
+            <span style={s.tabBadge('#f85149')}>{counts.downgradeAtRisk}</span>
+          )}
+        </button>
       </div>
 
       {tab === 'vip'        && <VIPCandidatesTab hostFilter={hostFilter} />}
       {tab === 'potentials' && <PotentialsTab    hostFilter={hostFilter} />}
       {tab === 'graduated'  && <GraduatedTab     hostFilter={hostFilter} />}
       {tab === 'history'    && <TierHistoryTab   hostFilter={hostFilter} />}
+      {tab === 'downgrade'  && <DowngradeRiskTab  hostFilter={hostFilter} />}
     </div>
   )
 }
