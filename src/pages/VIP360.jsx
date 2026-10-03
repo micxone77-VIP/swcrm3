@@ -1,6 +1,6 @@
 // src/pages/VIP360.jsx — VIP 360 (V2) — replaces VIPDetail.jsx
 import { useState, useEffect, useCallback } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { formatMoney, fmtDate } from '../lib/format'
@@ -47,6 +47,8 @@ return (
 
 export default function VIP360() {
 const { id } = useParams()
+const [searchParams] = useSearchParams()
+const playerQuery = searchParams.get('player')
 const navigate = useNavigate()
 const { profile } = useAuth()
 const { toast, ToastContainer } = useToast()
@@ -92,39 +94,55 @@ const [gamingLoading, setGamingLoading] = useState(false)
 const [gamingAI, setGamingAI] = useState(null)
 const [gamingAILoading, setGamingAILoading] = useState(false)
 
+// Department spending state
+const [vipExpenses, setVipExpenses] = useState([])
+const [expensesLoading, setExpensesLoading] = useState(false)
+
 const load = useCallback(async () => {
 setLoading(true); setError(null)
 try {
 const now = new Date()
 const thisMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`
-const [vipRes, montRes, dailyRes, contRes, campRes, tierRes, hostRes] = await Promise.all([
-supabase.from('vip_members').select('*').eq('id', id).single(),
+
+// Step 1: Resolve VIP — by UUID (path param) or by username (query param from ExpenseTracker link)
+let vipRes
+if (id) {
+  vipRes = await supabase.from('vip_members').select('*').eq('id', id).single()
+} else if (playerQuery) {
+  vipRes = await supabase.from('vip_members').select('*').eq('username', playerQuery).single()
+} else {
+  throw new Error('No VIP identifier provided')
+}
+if (vipRes.error) throw vipRes.error
+const resolvedId = vipRes.data.id
+
+// Step 2: Load related data in parallel using resolved UUID
+const [montRes, dailyRes, contRes, campRes, tierRes, hostRes] = await Promise.all([
 supabase.from('vip_monthly_totals')
 .select('snapshot_month,total_deposit,total_withdrawal,monthly_valid_bet,win_loss,total_rebate,bonus_amount')
-.eq('vip_id', id)
+.eq('vip_id', resolvedId)
 .order('snapshot_month', { ascending: false })
 .limit(24),
 supabase.from('vip_daily_snapshots')
 .select('snapshot_date,total_deposit,total_withdrawal,monthly_valid_bet,win_loss')
-.eq('vip_id', id)
+.eq('vip_id', resolvedId)
 .order('snapshot_date', { ascending: false })
 .limit(90),
 supabase.from('contact_logs')
 .select('*')
-.eq('vip_id', id)
+.eq('vip_id', resolvedId)
 .order('logged_at', { ascending: false })
 .limit(100),
 supabase.from('campaign_players')
 .select('*, campaigns(campaign_name,start_date,end_date,status)')
-.eq('vip_id', id)
+.eq('vip_id', resolvedId)
 .order('added_at', { ascending: false }),
 supabase.from('tier_change_logs')
 .select('*')
-.eq('vip_id', id)
+.eq('vip_id', resolvedId)
 .order('changed_at', { ascending: false }),
 supabase.from('profiles').select('full_name').in('role',['admin','host']).order('full_name'),
 ])
-if (vipRes.error) throw vipRes.error
 setVip(vipRes.data)
 setEditForm({ full_name: vipRes.data.full_name||'', birthday: vipRes.data.birthday||'', host_assigned: vipRes.data.host_assigned||'', tier: vipRes.data.tier||'', activity_status: vipRes.data.activity_status||'', phone: vipRes.data.phone||'', whatsapp: vipRes.data.whatsapp||'', email: vipRes.data.email||'', telegram: vipRes.data.telegram||'', churn_risk: vipRes.data.churn_risk||'', address: vipRes.data.address||'', special_requests: vipRes.data.special_requests||'', tng_verified_name: vipRes.data.tng_verified_name||'', tng_verify_status: vipRes.data.tng_verify_status||'', tng_verified_at: vipRes.data.tng_verified_at||'' })
 setMonthly(montRes.data || [])
@@ -145,7 +163,7 @@ if (vipRes.data.username) {
 }
 } catch(e) { setError(e.message || String(e)) }
 setLoading(false)
-}, [id])
+}, [id, playerQuery])
 
 useEffect(() => { load() }, [load])
 
@@ -188,6 +206,18 @@ Promise.all([
   setGamingLoading(false)
 })
 }, [tab, vip?.username, gaming.length, gamingLoading])
+
+// Lazy-load department expenses when spending tab opens
+useEffect(() => {
+if (tab !== 'spending' || !vip?.username) return
+if (vipExpenses.length > 0 || expensesLoading) return
+setExpensesLoading(true)
+supabase.from('department_expenses')
+  .select('id,category,item_name,platform,currency,amount,expense_type,notes,created_at')
+  .eq('vip_username', vip.username)
+  .order('created_at', { ascending: false })
+  .then(({ data }) => { setVipExpenses(data || []); setExpensesLoading(false) })
+}, [tab, vip?.username, vipExpenses.length, expensesLoading])
 
 // Period-filtered monthly data
 const now = new Date()
@@ -281,6 +311,7 @@ const TABS = [
 { key: 'calendar', label: t('vip360.tabCalendar') },
 { key: 'notes', label: t('vip360.tabNotes') },
 { key: 'insights', label: t('vip360.tabInsights') },
+{ key: 'spending', label: '💸 Dept Spending' },
 ]
 
 if (loading) return <div style={{ padding: 32 }}><LoadingState message={t('vip360.loadingMsg')} /></div>
@@ -964,6 +995,89 @@ AI insights are labeled and separate from confirmed CRM data.
 )}
 </div>
 )}
+
+{/* DEPT SPENDING */}
+{tab === 'spending' && (() => {
+function fmtExact(n, currency) {
+  if (n === null || n === undefined || n === '') return '—'
+  const sym = currency==='SGD'?'SGD ':currency==='USD'?'USD ':currency==='KHUSD'?'USD ':'RM '
+  return sym + parseFloat(n).toLocaleString('en-MY', { minimumFractionDigits:2, maximumFractionDigits:2 })
+}
+// Group totals by currency
+const totals = vipExpenses.reduce((acc, e) => {
+  const cur = e.currency || 'MYR'
+  acc[cur] = (acc[cur] || 0) + (parseFloat(e.amount) || 0)
+  return acc
+}, {})
+const TYPE_COLOR = { online: 'var(--info)', offline: '#f59e0b' }
+
+return (
+<div>
+  <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
+    <SectionLabel>Department Spending on {vip.username}</SectionLabel>
+  </div>
+  {expensesLoading ? (
+    <LoadingState message="Loading spending records…" />
+  ) : vipExpenses.length === 0 ? (
+    <EmptyState icon="💸" title="No spending records" message="No department expenses have been linked to this VIP yet. Add expenses in the Expense Tracker and tag this player's username." />
+  ) : (
+    <div>
+      {/* Lifetime total cards */}
+      <div style={{ display:'flex', gap:12, marginBottom:20, flexWrap:'wrap' }}>
+        {Object.entries(totals).map(([cur, total]) => (
+          <div key={cur} style={{ background:'linear-gradient(135deg,rgba(249,97,103,.12),rgba(249,97,103,.05))', border:'1px solid rgba(249,97,103,.25)', borderRadius:10, padding:'14px 20px', minWidth:160 }}>
+            <div style={{ fontSize:11, fontWeight:700, color:'var(--muted)', letterSpacing:'.5px', textTransform:'uppercase', marginBottom:6 }}>Total Spent ({cur})</div>
+            <div style={{ fontSize:22, fontWeight:800, color:'#f96167' }}>{fmtExact(total, cur)}</div>
+            <div style={{ fontSize:11, color:'var(--muted)', marginTop:3 }}>{vipExpenses.filter(e=>(e.currency||'MYR')===cur).length} record{vipExpenses.filter(e=>(e.currency||'MYR')===cur).length!==1?'s':''} · all time</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Expense rows */}
+      <div style={{ overflowX:'auto' }}>
+        <table style={{ width:'100%', borderCollapse:'collapse', fontSize:13 }}>
+          <thead>
+            <tr>
+              {['Date','Category','Item','Platform','Type','Amount','Notes'].map(h => (
+                <th key={h} style={{ padding:'9px 12px', textAlign: h==='Amount'?'right':'left', background:'var(--surface)', color:'var(--muted)', fontWeight:600, fontSize:11, borderBottom:'1px solid var(--border)', whiteSpace:'nowrap' }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {vipExpenses.map(e => (
+              <tr key={e.id}
+                onMouseEnter={ev => ev.currentTarget.style.background='var(--surface2)'}
+                onMouseLeave={ev => ev.currentTarget.style.background='transparent'}
+              >
+                <td style={{ padding:'9px 12px', borderBottom:'1px solid var(--border)', whiteSpace:'nowrap', color:'var(--muted)', fontSize:12 }}>
+                  {e.created_at ? e.created_at.slice(0,10) : '—'}
+                </td>
+                <td style={{ padding:'9px 12px', borderBottom:'1px solid var(--border)', fontWeight:600 }}>{e.category || '—'}</td>
+                <td style={{ padding:'9px 12px', borderBottom:'1px solid var(--border)', color:'var(--muted)', fontSize:12 }}>{e.item_name || '—'}</td>
+                <td style={{ padding:'9px 12px', borderBottom:'1px solid var(--border)' }}>
+                  <span style={{ fontSize:11, fontWeight:700, padding:'1px 7px', borderRadius:10, background:'var(--surface2)', color:'var(--text)' }}>{e.platform || '—'}</span>
+                </td>
+                <td style={{ padding:'9px 12px', borderBottom:'1px solid var(--border)' }}>
+                  <span style={{ fontSize:11, fontWeight:700, padding:'1px 7px', borderRadius:10, background: e.expense_type==='online'?'rgba(59,130,246,.12)':'rgba(245,158,11,.12)', color: TYPE_COLOR[e.expense_type] || 'var(--muted)' }}>
+                    {e.expense_type || '—'}
+                  </span>
+                </td>
+                <td style={{ padding:'9px 12px', borderBottom:'1px solid var(--border)', textAlign:'right', fontWeight:700, whiteSpace:'nowrap' }}>
+                  {fmtExact(e.amount, e.currency)}
+                </td>
+                <td style={{ padding:'9px 12px', borderBottom:'1px solid var(--border)', color:'var(--muted)', fontSize:12, maxWidth:200 }}>
+                  {e.notes || '—'}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )}
+</div>
+)
+})()}
 </div>
 </div>
 

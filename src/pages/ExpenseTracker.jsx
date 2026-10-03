@@ -1,5 +1,6 @@
 // ExpenseTracker.jsx — Department expense tracking with MY/SG/KH breakdown
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { useLanguage } from '../contexts/LanguageContext'
@@ -14,12 +15,19 @@ const PLATFORMS  = ['MY', 'SG', 'KH', 'BOTH']
 const EXP_TYPES  = ['online', 'offline']
 const CURRENCIES = ['MYR', 'SGD', 'USD', 'KHUSD']
 
+// Abbreviated format for summary tiles (1.5K, 2.3M)
 function fmt(n, currency='MYR') {
   if (!n && n!==0) return '—'
   const sym = currency==='SGD'?'SGD ':currency==='USD'?'USD ':currency==='KHUSD'?'USD ':'RM '
   if (n>=1000000) return sym+(n/1000000).toFixed(2)+'M'
   if (n>=1000)    return sym+(n/1000).toFixed(1)+'K'
   return sym+Math.round(n).toLocaleString()
+}
+// Exact format with cents for individual expense rows
+function fmtExact(n, currency='MYR') {
+  if (n === null || n === undefined || n === '') return '—'
+  const sym = currency==='SGD'?'SGD ':currency==='USD'?'USD ':currency==='KHUSD'?'USD ':'RM '
+  return sym + parseFloat(n).toLocaleString('en-MY', { minimumFractionDigits:2, maximumFractionDigits:2 })
 }
 
 const currentYearMonth = () => {
@@ -69,6 +77,7 @@ const TYPE_COLOR = { online:'#58a6ff', offline:'#cd7f32' }
 export default function ExpenseTracker() {
   const { profile } = useAuth()
   const { t } = useLanguage()
+  const navigate = useNavigate()
   const isAdmin = profile?.role === 'admin'
 
   const [month,    setMonth]    = useUrlParam('month', currentYearMonth())
@@ -78,7 +87,7 @@ export default function ExpenseTracker() {
   const [saving,   setSaving]   = useState(false)
   const [editId,   setEditId]   = useState(null)
 
-  const [form, setForm] = useState({
+  const FORM_DEFAULT = {
     category:         'Bonus 红包',
     item_name:        '',
     platform:         'MY',
@@ -87,7 +96,9 @@ export default function ExpenseTracker() {
     expense_type:     'online',
     linked_campaign:  '',
     notes:            '',
-  })
+    vip_username:     '',
+  }
+  const [form, setForm] = useState(FORM_DEFAULT)
 
   useEffect(() => { loadExpenses() }, [month])
 
@@ -115,6 +126,7 @@ export default function ExpenseTracker() {
       expense_type:    form.expense_type,
       linked_campaign: form.linked_campaign || null,
       notes:           form.notes || null,
+      vip_username:    form.vip_username.trim() || null,
       created_by:      profile?.id || null,
     }
     if (editId) {
@@ -122,7 +134,7 @@ export default function ExpenseTracker() {
     } else {
       await supabase.from('department_expenses').insert(record)
     }
-    setForm({ category:'Bonus 红包', item_name:'', platform:'MY', currency:'MYR', amount:'', expense_type:'online', linked_campaign:'', notes:'' })
+    setForm(FORM_DEFAULT)
     setShowForm(false)
     setEditId(null)
     setSaving(false)
@@ -145,6 +157,7 @@ export default function ExpenseTracker() {
       expense_type:    exp.expense_type,
       linked_campaign: exp.linked_campaign || '',
       notes:           exp.notes || '',
+      vip_username:    exp.vip_username || '',
     })
     setEditId(exp.id)
     setShowForm(true)
@@ -192,7 +205,7 @@ export default function ExpenseTracker() {
           <input type="month" value={month} onChange={e => setMonth(e.target.value)}
             style={{ ...s.input, width:160 }} />
           {isAdmin && (
-            <button style={s.btn()} onClick={() => { setShowForm(s => !s); setEditId(null); setForm({ category:'Bonus 红包', item_name:'', platform:'MY', currency:'MYR', amount:'', expense_type:'online', linked_campaign:'', notes:'' }) }}>
+            <button style={s.btn()} onClick={() => { setShowForm(s => !s); setEditId(null); setForm(FORM_DEFAULT) }}>
               {showForm ? t('common.cancel') : t('expenseTracker.addExpenseBtn')}
             </button>
           )}
@@ -308,6 +321,16 @@ export default function ExpenseTracker() {
                   placeholder={t('expenseTracker.notesOptionalPlaceholder')} />
               </div>
             </div>
+            {/* VIP Username — full-width row below the grid */}
+            <div style={{ marginBottom:14 }}>
+              <div style={{ ...s.lbl, display:'flex', alignItems:'center', gap:6 }}>
+                <span>VIP Username</span>
+                <span style={{ fontSize:10, background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:4, padding:'1px 6px', color:'var(--muted)' }}>Optional — link to VIP 360</span>
+              </div>
+              <input style={{ ...s.input, maxWidth:320 }} value={form.vip_username}
+                onChange={e => setForm({...form, vip_username:e.target.value})}
+                placeholder="e.g. jacky88, mralien23" />
+            </div>
             <div style={{ display:'flex', gap:8 }}>
               <button style={s.btn('var(--accent)', !form.item_name.trim()||!form.amount)} disabled={saving||!form.item_name.trim()||!form.amount} onClick={handleSave}>
                 {saving ? t('common.saving') : editId ? t('expenseTracker.updateBtn') : t('expenseTracker.addExpenseFormBtn')}
@@ -343,6 +366,7 @@ export default function ExpenseTracker() {
                     <th style={s.th}>{t('expenseTracker.colItemName')}</th>
                     <th style={s.th}>{t('common.currency')}</th>
                     <th style={s.th}>{t('expenseTracker.colAmount')}</th>
+                    <th style={s.th}>VIP Player</th>
                     <th style={s.th}>{t('expenseTracker.colLinkedCampaign')}</th>
                     <th style={s.th}>{t('common.notes')}</th>
                     {isAdmin && <th style={s.th}>{t('common.actions')}</th>}
@@ -363,8 +387,17 @@ export default function ExpenseTracker() {
                         )}
                       </td>
                       <td style={s.td}><span style={s.tag(sec.color)}>{exp.currency}</span></td>
-                      <td style={{ ...s.td, fontWeight:700, color:sec.color, fontFamily:'monospace' }}>
-                        {fmt(exp.amount, exp.currency)}
+                      <td style={{ ...s.td, fontWeight:700, color:sec.color, fontFamily:'monospace', whiteSpace:'nowrap' }}>
+                        {fmtExact(exp.amount, exp.currency)}
+                      </td>
+                      <td style={s.td}>
+                        {exp.vip_username ? (
+                          <button
+                            onClick={() => navigate(`/vip360?player=${encodeURIComponent(exp.vip_username)}`)}
+                            style={{ background:'none', border:'1px solid var(--accent)', borderRadius:6, padding:'2px 9px', fontSize:11, fontWeight:700, color:'var(--accent)', cursor:'pointer', whiteSpace:'nowrap' }}>
+                            👑 {exp.vip_username}
+                          </button>
+                        ) : <span style={{ color:'var(--muted)', fontSize:12 }}>—</span>}
                       </td>
                       <td style={{ ...s.td, fontSize:12, color:'var(--muted)' }}>{exp.linked_campaign||'—'}</td>
                       <td style={{ ...s.td, fontSize:12, color:'var(--muted)', maxWidth:200 }}>
@@ -382,10 +415,11 @@ export default function ExpenseTracker() {
                   ))}
                   {/* Subtotal row */}
                   <tr style={{ background:'var(--surface2)' }}>
-                    <td colSpan={isAdmin?3:3} style={{ ...s.td, fontWeight:700, color:'var(--muted)', fontSize:12 }}>{t('expenseTracker.subtotal')}</td>
-                    <td colSpan={isAdmin?4:3} style={{ ...s.td, fontWeight:800, color:sec.color, fontFamily:'monospace' }}>
-                      {fmt(sec.total, sec.currency)}
+                    <td colSpan={3} style={{ ...s.td, fontWeight:700, color:'var(--muted)', fontSize:12 }}>{t('expenseTracker.subtotal')}</td>
+                    <td style={{ ...s.td, fontWeight:800, color:sec.color, fontFamily:'monospace', whiteSpace:'nowrap' }}>
+                      {fmtExact(sec.total, sec.currency)}
                     </td>
+                    <td colSpan={isAdmin?4:3} style={s.td}></td>
                   </tr>
                 </tbody>
               </table>
