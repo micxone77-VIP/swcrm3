@@ -434,6 +434,7 @@ color: m.isWL ? (m.wl <= 0 ? 'var(--success)' : 'var(--danger)') : 'var(--text)'
 <div style={{ padding:'20px' }}>
 {/* OVERVIEW */}
 {tab === 'overview' && (
+<>
 <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:20 }}>
 {/* Left: profile summary */}
 <div>
@@ -602,6 +603,7 @@ color: m.isWL ? (m.wl <= 0 ? 'var(--success)' : 'var(--danger)') : 'var(--text)'
     </div>
   </div>
 )}
+</>
 )}
 
 {/* FINANCIAL */}
