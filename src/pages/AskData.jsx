@@ -7,6 +7,7 @@ import { useNavigate } from 'react-router-dom'
 import { callAI } from '../lib/aiApi'
 import { useAuth } from '../hooks/useAuth'
 import { useLanguage } from '../contexts/LanguageContext'
+import { supabase } from '../lib/supabase'
 
 const s = {
   page:      { padding:'24px 28px', minHeight:'100vh', color:'var(--text)', display:'flex', flexDirection:'column', height:'100vh' },
@@ -199,9 +200,22 @@ export default function AskData() {
     if (userId) localStorage.removeItem(storageKey(userId))
   }
 
-  function handleVipClick(username) {
-    // Navigate to VIP360 — try to find by username
-    navigate(`/vips?search=${encodeURIComponent(username)}`)
+  async function handleVipClick(username) {
+    // Look up vip_id by username, then navigate to VIP360
+    try {
+      const { data } = await supabase
+        .from('vip_members')
+        .select('id')
+        .eq('username', username)
+        .limit(1)
+      if (data && data.length > 0) {
+        navigate(`/vip360/${data[0].id}`)
+      } else {
+        navigate(`/vips?search=${encodeURIComponent(username)}`)
+      }
+    } catch {
+      navigate(`/vips?search=${encodeURIComponent(username)}`)
+    }
   }
 
   async function send(text) {
