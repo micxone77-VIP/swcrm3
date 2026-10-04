@@ -22,8 +22,8 @@ export function useDashboard({ host = 'All' } = {}) {
           .neq('is_excluded', true),
         supabase.from('contact_logs')
           .select('username,outcome')
-          .gte('created_at', todayStart())
-          .lte('created_at', todayEnd()),
+          .gte('logged_at', todayStart())
+          .lte('logged_at', todayEnd()),
       ])
       if (vipRes.error) throw vipRes.error
       setVips(vipRes.data || [])
