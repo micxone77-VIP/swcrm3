@@ -209,7 +209,7 @@ export default function AskData() {
         .eq('username', username)
         .limit(1)
       if (data && data.length > 0) {
-        navigate(`/vip360/${data[0].id}`)
+        navigate(`/vips/${data[0].id}`)
       } else {
         navigate(`/vips?search=${encodeURIComponent(username)}`)
       }
