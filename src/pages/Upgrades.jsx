@@ -1697,7 +1697,7 @@ function TierHistoryTab({ hostFilter = 'ALL' }) {
                   <tr key={log.id || i}
                     onMouseEnter={() => setHovered(i)}
                     onMouseLeave={() => setHovered(null)}
-                    onClick={() => log.vip_id && navigate(`/vip360/${log.vip_id}`)}
+                    onClick={() => log.vip_id && navigate(`/vips/${log.vip_id}`)}
                     style={{
                       borderBottom: '1px solid var(--border)',
                       background: hovered === i ? 'var(--surface2)' : 'transparent',
