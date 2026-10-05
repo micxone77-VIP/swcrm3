@@ -138,7 +138,15 @@ export async function loadKpiAutoData(monthStr) {
     .eq('snapshot_month', monthStr)
     .eq('currency', 'MYR')
     .in('tier', ['PLATINUM', 'DIAMOND', 'BLACK'])
-  const totalTurnover = (vips || []).reduce((s, v) => s + (parseFloat(v.monthly_valid_bet) || 0), 0)
+  // Also include GOLD members that are assigned to a host (managed Gold)
+  const { data: goldVips } = await supabase
+    .from('vip_monthly_totals')
+    .select('monthly_valid_bet')
+    .eq('snapshot_month', monthStr)
+    .eq('currency', 'MYR')
+    .eq('tier', 'GOLD')
+    .not('host_assigned', 'is', null)
+  const totalTurnover = [...(vips || []), ...(goldVips || [])].reduce((s, v) => s + (parseFloat(v.monthly_valid_bet) || 0), 0)
 
   // VIP-VIP upgrade count this month — Platinum → Diamond only
   // NOR-VIP (non-VIP → Platinum/Diamond) is tracked manually because those
