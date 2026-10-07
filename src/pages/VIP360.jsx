@@ -98,6 +98,18 @@ const [gamingAILoading, setGamingAILoading] = useState(false)
 const [vipExpenses, setVipExpenses] = useState([])
 const [expensesLoading, setExpensesLoading] = useState(false)
 
+// VIP Profile & Interests state
+const [vipProfile, setVipProfile] = useState(null)
+const [profileForm, setProfileForm] = useState({
+  preferred_games: [], interests: [], personality_tags: [],
+  deposit_pattern: '', deposit_trigger: '',
+  preferred_contact_time: '', preferred_contact_channel: 'whatsapp',
+  host_notes: '', relationship_level: 'neutral',
+  vip_since: '', birthday_month: '', birthday_day: '',
+})
+const [profileLoading, setProfileLoading] = useState(false)
+const [profileSaving, setProfileSaving] = useState(false)
+
 const load = useCallback(async () => {
 setLoading(true); setError(null)
 try {
@@ -207,6 +219,35 @@ Promise.all([
 })
 }, [tab, vip?.username, gaming.length, gamingLoading])
 
+// Lazy-load VIP profile when profile tab opens
+useEffect(() => {
+if (tab !== 'profile' || !vip?.username) return
+if (profileLoading) return
+setProfileLoading(true)
+supabase.from('vip_profiles')
+  .select('*').eq('username', vip.username).maybeSingle()
+  .then(({ data }) => {
+    if (data) {
+      setVipProfile(data)
+      setProfileForm({
+        preferred_games:          data.preferred_games || [],
+        interests:                data.interests || [],
+        personality_tags:         data.personality_tags || [],
+        deposit_pattern:          data.deposit_pattern || '',
+        deposit_trigger:          data.deposit_trigger || '',
+        preferred_contact_time:   data.preferred_contact_time || '',
+        preferred_contact_channel: data.preferred_contact_channel || 'whatsapp',
+        host_notes:               data.host_notes || '',
+        relationship_level:       data.relationship_level || 'neutral',
+        vip_since:                data.vip_since || '',
+        birthday_month:           data.birthday_month ? String(data.birthday_month) : '',
+        birthday_day:             data.birthday_day  ? String(data.birthday_day)  : '',
+      })
+    }
+    setProfileLoading(false)
+  })
+}, [tab, vip?.username, profileLoading])
+
 // Lazy-load department expenses when spending tab opens
 useEffect(() => {
 if (tab !== 'spending' || !vip?.username) return
@@ -301,10 +342,44 @@ setGamingAI(result)
 setGamingAILoading(false)
 }
 
+async function saveProfile() {
+setProfileSaving(true)
+const payload = {
+  username:                  vip.username,
+  preferred_games:           profileForm.preferred_games,
+  interests:                 profileForm.interests,
+  personality_tags:          profileForm.personality_tags,
+  deposit_pattern:           profileForm.deposit_pattern || '',
+  deposit_trigger:           profileForm.deposit_trigger || '',
+  preferred_contact_time:    profileForm.preferred_contact_time || '',
+  preferred_contact_channel: profileForm.preferred_contact_channel || 'whatsapp',
+  host_notes:                profileForm.host_notes || '',
+  relationship_level:        profileForm.relationship_level || 'neutral',
+  vip_since:                 profileForm.vip_since || null,
+  birthday_month:            profileForm.birthday_month ? parseInt(profileForm.birthday_month) : null,
+  birthday_day:              profileForm.birthday_day  ? parseInt(profileForm.birthday_day)  : null,
+  updated_at:                new Date().toISOString(),
+}
+const { error: err } = await supabase.from('vip_profiles')
+  .upsert(payload, { onConflict: 'username' })
+setProfileSaving(false)
+if (err) { toast('Error: ' + err.message, 'error'); return }
+toast('Profile saved ✓', 'success')
+setVipProfile(payload)
+}
+
+function toggleTag(field, val) {
+setProfileForm(f => {
+  const arr = f[field] || []
+  return { ...f, [field]: arr.includes(val) ? arr.filter(x => x !== val) : [...arr, val] }
+})
+}
+
 const TABS = [
 { key: 'overview', label: t('vip360.tabOverview') },
 { key: 'financial', label: t('vip360.tabFinancial') },
 { key: 'gaming', label: '🎮 Gaming' },
+{ key: 'profile', label: '👤 Profile' },
 { key: 'activity', label: t('vip360.tabActivity') },
 { key: 'campaigns', label: t('vip360.tabCampaigns'), count: campaigns.length },
 { key: 'contact', label: t('vip360.tabContact'), count: contacts.length },
@@ -995,6 +1070,240 @@ AI insights are labeled and separate from confirmed CRM data.
 )}
 </div>
 )}
+
+{/* PROFILE & INTERESTS */}
+{tab === 'profile' && (() => {
+const GAME_OPTIONS = [
+  { val:'slots',        label:'🎰 Slots' },
+  { val:'live_casino',  label:'🃏 Live Casino' },
+  { val:'sports',       label:'⚽ Sports Betting' },
+  { val:'fishing',      label:'🎣 Fishing' },
+  { val:'poker',        label:'♠️ Poker' },
+  { val:'esports',      label:'🕹️ E-Sports' },
+  { val:'arcade',       label:'🕹 Arcade' },
+  { val:'mixed',        label:'🎲 Mixed / All' },
+]
+const INTEREST_OPTIONS = [
+  { val:'gadgets_3c',   label:'📱 Gadgets / 3C' },
+  { val:'travel',       label:'✈️ Travel' },
+  { val:'fine_dining',  label:'🍜 Fine Dining' },
+  { val:'luxury_cars',  label:'🚗 Luxury Cars' },
+  { val:'fashion',      label:'👗 Fashion' },
+  { val:'watches',      label:'⌚ Watches' },
+  { val:'property',     label:'🏠 Property' },
+  { val:'sports_fan',   label:'🏆 Sports Fan' },
+  { val:'family',       label:'👨‍👩‍👧 Family Oriented' },
+  { val:'nightlife',    label:'🍸 Nightlife' },
+  { val:'crypto',       label:'₿ Crypto / Finance' },
+  { val:'health',       label:'💪 Health & Fitness' },
+]
+const PERSONALITY_OPTIONS = [
+  { val:'risk_taker',          label:'🔥 Risk Taker' },
+  { val:'bonus_hunter',        label:'🎁 Bonus Hunter' },
+  { val:'consistent_bettor',   label:'📊 Consistent Bettor' },
+  { val:'relationship_driven', label:'🤝 Relationship Driven' },
+  { val:'competitive',         label:'🏅 Competitive' },
+  { val:'vip_conscious',       label:'💎 VIP Conscious' },
+  { val:'price_sensitive',     label:'💰 Price Sensitive' },
+  { val:'big_spender',         label:'💸 Big Spender' },
+  { val:'quiet_player',        label:'🤫 Quiet / Private' },
+  { val:'social',              label:'😄 Social / Chatty' },
+]
+const RELATIONSHIP_OPTIONS = [
+  { val:'cold',     label:'🥶 Cold',    color:'#60a5fa' },
+  { val:'warming',  label:'🌤 Warming', color:'#fbbf24' },
+  { val:'neutral',  label:'😐 Neutral', color:'var(--muted)' },
+  { val:'loyal',    label:'❤️ Loyal',   color:'#34d399' },
+  { val:'at_risk',  label:'⚠️ At Risk', color:'#f87171' },
+]
+const CHANNEL_OPTIONS = [
+  { val:'whatsapp', label:'WhatsApp' },
+  { val:'call',     label:'Phone Call' },
+  { val:'telegram', label:'Telegram' },
+  { val:'sms',      label:'SMS' },
+]
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+
+function ChipRow({ options, selected, onToggle }) {
+  return (
+    <div style={{ display:'flex', flexWrap:'wrap', gap:7 }}>
+      {options.map(o => {
+        const active = (selected||[]).includes(o.val)
+        return (
+          <button key={o.val} onClick={() => onToggle(o.val)} style={{
+            fontSize:12, fontWeight:active?700:500, padding:'5px 12px', borderRadius:20,
+            border: active ? '1.5px solid var(--brand)' : '1px solid var(--border)',
+            background: active ? 'rgba(255,107,0,.12)' : 'var(--surface2)',
+            color: active ? 'var(--brand)' : 'var(--text)',
+            cursor:'pointer', transition:'all .15s',
+          }}>
+            {o.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+if (profileLoading) return <div style={{ padding:32, textAlign:'center', color:'var(--muted)' }}>Loading profile…</div>
+
+const relOpt = RELATIONSHIP_OPTIONS.find(r => r.val === profileForm.relationship_level) || RELATIONSHIP_OPTIONS[2]
+
+return (
+<div style={{ maxWidth:760 }}>
+  {/* Relationship & Quick Info */}
+  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16, marginBottom:20 }}>
+    {/* Relationship Level */}
+    <div style={{ background:'var(--surface2)', borderRadius:10, padding:'14px 16px' }}>
+      <SectionLabel>Relationship Level</SectionLabel>
+      <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+        {RELATIONSHIP_OPTIONS.map(o => (
+          <button key={o.val} onClick={() => setProfileForm(f=>({...f,relationship_level:o.val}))} style={{
+            fontSize:12, fontWeight:profileForm.relationship_level===o.val?700:500,
+            padding:'5px 12px', borderRadius:20, cursor:'pointer', transition:'all .15s',
+            border: profileForm.relationship_level===o.val ? `1.5px solid ${o.color}` : '1px solid var(--border)',
+            background: profileForm.relationship_level===o.val ? `${o.color}22` : 'var(--surface)',
+            color: profileForm.relationship_level===o.val ? o.color : 'var(--text)',
+          }}>{o.label}</button>
+        ))}
+      </div>
+    </div>
+
+    {/* Contact Preference */}
+    <div style={{ background:'var(--surface2)', borderRadius:10, padding:'14px 16px' }}>
+      <SectionLabel>Preferred Contact</SectionLabel>
+      <div style={{ display:'flex', gap:7, flexWrap:'wrap', marginBottom:10 }}>
+        {CHANNEL_OPTIONS.map(o => (
+          <button key={o.val} onClick={() => setProfileForm(f=>({...f,preferred_contact_channel:o.val}))} style={{
+            fontSize:12, fontWeight:profileForm.preferred_contact_channel===o.val?700:500,
+            padding:'5px 12px', borderRadius:20, cursor:'pointer',
+            border: profileForm.preferred_contact_channel===o.val ? '1.5px solid var(--brand)' : '1px solid var(--border)',
+            background: profileForm.preferred_contact_channel===o.val ? 'rgba(255,107,0,.12)' : 'var(--surface)',
+            color: profileForm.preferred_contact_channel===o.val ? 'var(--brand)' : 'var(--text)',
+          }}>{o.label}</button>
+        ))}
+      </div>
+      <input
+        value={profileForm.preferred_contact_time}
+        onChange={e => setProfileForm(f=>({...f,preferred_contact_time:e.target.value}))}
+        placeholder="Best time (e.g. Weekday evenings 8–10pm)"
+        style={{ width:'100%', fontSize:12, padding:'6px 10px', borderRadius:6, border:'1px solid var(--border)', background:'var(--surface)', color:'var(--text)', boxSizing:'border-box' }}
+      />
+    </div>
+  </div>
+
+  {/* Game Preferences */}
+  <div style={{ background:'var(--surface2)', borderRadius:10, padding:'14px 16px', marginBottom:14 }}>
+    <SectionLabel>Game Type Preferences</SectionLabel>
+    <ChipRow
+      options={GAME_OPTIONS}
+      selected={profileForm.preferred_games}
+      onToggle={val => toggleTag('preferred_games', val)}
+    />
+  </div>
+
+  {/* Deposit Behaviour */}
+  <div style={{ background:'var(--surface2)', borderRadius:10, padding:'14px 16px', marginBottom:14 }}>
+    <SectionLabel>Deposit Behaviour</SectionLabel>
+    <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
+      <div>
+        <label style={{ fontSize:11, color:'var(--muted)', display:'block', marginBottom:4 }}>Usual Deposit Time / Pattern</label>
+        <textarea
+          value={profileForm.deposit_pattern}
+          onChange={e => setProfileForm(f=>({...f,deposit_pattern:e.target.value}))}
+          placeholder="e.g. Friday nights 9–11pm, after weekend football"
+          rows={3}
+          style={{ width:'100%', fontSize:12, padding:'7px 10px', borderRadius:6, border:'1px solid var(--border)', background:'var(--surface)', color:'var(--text)', resize:'vertical', boxSizing:'border-box' }}
+        />
+      </div>
+      <div>
+        <label style={{ fontSize:11, color:'var(--muted)', display:'block', marginBottom:4 }}>What Triggers Deposit</label>
+        <textarea
+          value={profileForm.deposit_trigger}
+          onChange={e => setProfileForm(f=>({...f,deposit_trigger:e.target.value}))}
+          placeholder="e.g. Redeposits same day after big loss, or tops up after big win"
+          rows={3}
+          style={{ width:'100%', fontSize:12, padding:'7px 10px', borderRadius:6, border:'1px solid var(--border)', background:'var(--surface)', color:'var(--text)', resize:'vertical', boxSizing:'border-box' }}
+        />
+      </div>
+    </div>
+  </div>
+
+  {/* Real-Life Interests */}
+  <div style={{ background:'var(--surface2)', borderRadius:10, padding:'14px 16px', marginBottom:14 }}>
+    <SectionLabel>Real-Life Interests</SectionLabel>
+    <ChipRow
+      options={INTEREST_OPTIONS}
+      selected={profileForm.interests}
+      onToggle={val => toggleTag('interests', val)}
+    />
+  </div>
+
+  {/* Personality Tags */}
+  <div style={{ background:'var(--surface2)', borderRadius:10, padding:'14px 16px', marginBottom:14 }}>
+    <SectionLabel>Personality / Betting Style</SectionLabel>
+    <ChipRow
+      options={PERSONALITY_OPTIONS}
+      selected={profileForm.personality_tags}
+      onToggle={val => toggleTag('personality_tags', val)}
+    />
+  </div>
+
+  {/* VIP Since & Birthday */}
+  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, marginBottom:14 }}>
+    <div style={{ background:'var(--surface2)', borderRadius:10, padding:'14px 16px' }}>
+      <SectionLabel>VIP Since</SectionLabel>
+      <input
+        type="date"
+        value={profileForm.vip_since}
+        onChange={e => setProfileForm(f=>({...f,vip_since:e.target.value}))}
+        style={{ fontSize:13, padding:'6px 10px', borderRadius:6, border:'1px solid var(--border)', background:'var(--surface)', color:'var(--text)', width:'100%', boxSizing:'border-box' }}
+      />
+    </div>
+    <div style={{ background:'var(--surface2)', borderRadius:10, padding:'14px 16px' }}>
+      <SectionLabel>Birthday (for campaigns)</SectionLabel>
+      <div style={{ display:'flex', gap:8 }}>
+        <select
+          value={profileForm.birthday_month}
+          onChange={e => setProfileForm(f=>({...f,birthday_month:e.target.value}))}
+          style={{ flex:1, fontSize:13, padding:'6px 8px', borderRadius:6, border:'1px solid var(--border)', background:'var(--surface)', color:'var(--text)' }}
+        >
+          <option value="">Month</option>
+          {MONTHS.map((m,i) => <option key={m} value={String(i+1)}>{m}</option>)}
+        </select>
+        <select
+          value={profileForm.birthday_day}
+          onChange={e => setProfileForm(f=>({...f,birthday_day:e.target.value}))}
+          style={{ flex:1, fontSize:13, padding:'6px 8px', borderRadius:6, border:'1px solid var(--border)', background:'var(--surface)', color:'var(--text)' }}
+        >
+          <option value="">Day</option>
+          {Array.from({length:31},(_,i)=>i+1).map(d => <option key={d} value={String(d)}>{d}</option>)}
+        </select>
+      </div>
+    </div>
+  </div>
+
+  {/* Host Notes */}
+  <div style={{ background:'var(--surface2)', borderRadius:10, padding:'14px 16px', marginBottom:20 }}>
+    <SectionLabel>Host Notes (private)</SectionLabel>
+    <textarea
+      value={profileForm.host_notes}
+      onChange={e => setProfileForm(f=>({...f,host_notes:e.target.value}))}
+      placeholder="Anything the host knows about this VIP — family, hobbies, what gifts worked, what to avoid…"
+      rows={4}
+      style={{ width:'100%', fontSize:13, padding:'8px 12px', borderRadius:6, border:'1px solid var(--border)', background:'var(--surface)', color:'var(--text)', resize:'vertical', boxSizing:'border-box' }}
+    />
+  </div>
+
+  {/* Save */}
+  <div style={{ display:'flex', justifyContent:'flex-end' }}>
+    <Btn variant="primary" onClick={saveProfile} disabled={profileSaving}>
+      {profileSaving ? 'Saving…' : '💾 Save Profile'}
+    </Btn>
+  </div>
+</div>
+)
+})()}
 
 {/* DEPT SPENDING */}
 {tab === 'spending' && (() => {
