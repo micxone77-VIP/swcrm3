@@ -13,6 +13,16 @@ const VIP_TIERS       = ['GOLD', 'PLATINUM', 'DIAMOND', 'DIAMOND-P', 'BLACK']
 const POTENTIAL_TIERS = ['BRONZE', 'SILVER']
 const DEFAULT_THRESHOLDS = { BRONZE: 500, SILVER: 3000 }
 
+// ─── Tier name normalizer ────────────────────────────────────────────────────
+// The BO platform exports DIAMOND-P as "Diamond." (with a trailing dot/period),
+// which is why it's called "diamond dot". Normalise all variants to the DB enum.
+function normalizeTier(raw) {
+  const t = String(raw || '').trim().toUpperCase()
+  // Map "DIAMOND." / "DIAMOND•" / "DIAMOND P" / "DIAMOND_P" → "DIAMOND-P"
+  if (t === 'DIAMOND.' || t === 'DIAMOND•' || t === 'DIAMOND P' || t === 'DIAMOND_P' || t === 'DIAMOND.P') return 'DIAMOND-P'
+  return t
+}
+
 // ─── CSV parser ─────────────────────────────────────────────────────────────
 function parseCSV(text, skipRows = 0) {
   const lines = text.split(/\r?\n/).filter(l => l.trim())
@@ -145,8 +155,8 @@ function mergeRows(myRows, sgRows) {
 // ─── IMPORT PROCESSORS ─────────────────────────────────────────────────────
 
 async function processRawData(rows, month, thresholds, onProgress) {
-  const vipRows       = rows.filter(r => VIP_TIERS.includes(r['Member Group']?.toUpperCase()))
-  const potentialRows = rows.filter(r => POTENTIAL_TIERS.includes(r['Member Group']?.toUpperCase()))
+  const vipRows       = rows.filter(r => VIP_TIERS.includes(normalizeTier(r['Member Group'])))
+  const potentialRows = rows.filter(r => POTENTIAL_TIERS.includes(r['Member Group']?.toUpperCase().trim()))
 
   let vipUpdated = 0, vipCreated = 0, vipReset = 0, tierChanged = 0, potCreated = 0, potUpdated = 0, flagged = 0, errors = []
 
@@ -173,7 +183,7 @@ async function processRawData(rows, month, thresholds, onProgress) {
     for (const r of batch) {
       const username = r['login']?.trim()
       if (!username) continue
-      const newTier = r['Member Group']?.toUpperCase()
+      const newTier = normalizeTier(r['Member Group'])
       const oldTier = currentTierMap[username]
 
       // Detect tier change and queue log
@@ -426,7 +436,7 @@ async function processTierExcel(file, onProgress) {
         const username = String(r['Login'] || '').trim()
         if (!username) continue
 
-        const tier     = String(r['Group'] || sheetName).toUpperCase()
+        const tier     = normalizeTier(r['Group'] || sheetName)
         const currency = String(r['Currency'] || 'MYR').trim()
         const regDate  = parseDateOnly(r['Register Date (MYT)'])
         // last_deposit_date is seed-only for brand-new players; pg_cron owns it for existing ones

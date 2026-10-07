@@ -104,7 +104,7 @@ export default function ChurnAlerts() {
   function getWaLink(v){const rawNumber=(v.phone&&v.phone.replace(/\D/g,'').length>=10)?v.phone:(v.whatsapp&&v.whatsapp.replace(/\D/g,'').length>=10)?v.whatsapp:'';if(!rawNumber)return null;const waNumber=rawNumber.replace(/\D/g,'');const greeting=encodeURIComponent(`Hi ${v.username}, this is ${myName||'the VIP department'}.`);return `https://wa.me/${waNumber}?text=${greeting}`}
   function WaButton({v}){const link=getWaLink(v);if(!link)return <span style={{color:'var(--muted)'}}>—</span>;return <a href={link} target="_blank" rel="noopener noreferrer" style={{display:'inline-flex',width:26,height:26,borderRadius:13,background:'#25D366',color:'#fff',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:700,textDecoration:'none'}}>W</a>}
   const [mineOnly,setMineOnly]=useUrlParamBool('mine',false),[riskF,setRiskF]=useUrlParam('risk','ALL'),[tierF,setTierF]=useUrlParam('tier','ALL'),[reactTierF,setReactTierF]=useUrlParam('reactTier','ALL'),[sortCol,setSortCol]=useUrlParam('sort','days_inactive'),[sortAsc,setSortAsc]=useUrlParamBool('asc',false),[stats,setStats]=useState({high:0,medium:0,dormant:0,atRisk:0})
-  const [dHostF,setDHostF]=useState('ALL'),[pHostF,setPHostF]=useState('ALL'),[contactedSet,setContactedSet]=useState(new Set()),[dUncontactedOnly,setDUncontactedOnly]=useState(false),[pUncontactedOnly,setPUncontactedOnly]=useState(false)
+  const [dHostF,setDHostF]=useState('ALL'),[pHostF,setPHostF]=useState('ALL'),[gHostF,setGHostF]=useState('ALL'),[contactedSet,setContactedSet]=useState(new Set()),[dUncontactedOnly,setDUncontactedOnly]=useState(false),[pUncontactedOnly,setPUncontactedOnly]=useState(false),[gUncontactedOnly,setGUncontactedOnly]=useState(false)
   const [churnWaModal,setChurnWaModal]=useState(null),[priorityHostF,setPriorityHostF]=useState('ALL')
   const monthStr=`${year}-${String(month+1).padStart(2,'0')}`
 
@@ -113,6 +113,33 @@ export default function ChurnAlerts() {
   // ── Monthly churn overlay: surface Diamond/Platinum who churned last COMPLETE month ──
   try{const{data:latestMonthRows}=await supabase.from('vip_monthly_totals').select('snapshot_month').in('tier',['DIAMOND','PLATINUM']).order('snapshot_month',{ascending:false}).limit(2);const monthRows=(latestMonthRows||[]).map(r=>r.snapshot_month).filter(Boolean);const[latestM,prevM]=[...new Set(monthRows)];if(latestM&&prevM){const[{data:currRows},{data:prevRows}]=await Promise.all([supabase.from('vip_monthly_totals').select('username,tier,total_deposit,host_assigned,currency').eq('snapshot_month',latestM).in('tier',['DIAMOND','PLATINUM']),supabase.from('vip_monthly_totals').select('username,tier,total_deposit,host_assigned,currency').eq('snapshot_month',prevM).in('tier',['DIAMOND','PLATINUM'])]);const currMap={};(currRows||[]).forEach(r=>{currMap[r.username]=r});const alreadyInResults=new Set(results.map(x=>x.username));(prevRows||[]).forEach(r=>{if(alreadyInResults.has(r.username))return;const prevDep=Number(r.total_deposit)||0;const currDep=Number(currMap[r.username]?.total_deposit)||0;if(prevDep<=0||currDep>0)return;// This player churned: had deposits prevM, zero in latestM
   const vip=vipMap[r.username]||{};const contactedToday=Boolean(latestContact[r.username]?.logged_at&&new Date(latestContact[r.username].logged_at).toISOString().slice(0,10)===todayStr);results.push({id:vip.id||r.username,username:r.username,tier:r.tier||vip.tier,currency:r.currency||vip.currency||'MYR',host:r.host_assigned||vip.host_assigned,phone:vip.phone||null,whatsapp:vip.whatsapp||null,last_deposit_date:vip.last_deposit_date||null,days_since_deposit:Number(vip.days_inactive)||null,decline_pct:-100,net_win_loss_3d:0,reasons:[`Churned: deposited in ${prevM} but zero deposit in ${latestM} — needs reactivation`],urgency_score:4,follow_up_due:true,last_contact:latestContact[r.username]?.logged_at||null,contacted_today:contactedToday})})}}catch(monthlyErr){console.error('loadPriorityContacts monthly churn overlay error',monthlyErr)}
+  // ── Enrich with gaming labels ──────────────────────────────────────────────
+  try {
+    const usernames = results.map(r => r.username)
+    if (usernames.length) {
+      const { data: gamingRows } = await supabase
+        .from('player_gaming_labels')
+        .select('username, player_type, player_type_icon, offer_recommendation, snapshot_month')
+        .in('username', usernames)
+        .order('snapshot_month', { ascending: false })
+      if (gamingRows && gamingRows.length) {
+        // Take most recent label per username
+        const gamingMap = {}
+        gamingRows.forEach(g => { if (!gamingMap[g.username]) gamingMap[g.username] = g })
+        results.forEach(r => {
+          const g = gamingMap[r.username]
+          if (g && g.player_type) {
+            r.player_type = g.player_type
+            r.player_type_icon = g.player_type_icon || '🎮'
+            r.offer_recommendation = g.offer_recommendation
+            // Add gaming context as the FIRST reason so hosts see it immediately
+            const gamingReason = `${g.player_type_icon || '🎮'} ${g.player_type} — ${g.offer_recommendation || 'personalised offer recommended'}`
+            r.reasons = [gamingReason, ...r.reasons]
+          }
+        })
+      }
+    }
+  } catch (gamingErr) { console.error('loadPriorityContacts gaming labels error', gamingErr) }
   results.sort((a,b)=>getRetentionTierRank(a.tier)-getRetentionTierRank(b.tier)||Number(b.follow_up_due)-Number(a.follow_up_due)||b.urgency_score-a.urgency_score||String(a.username).localeCompare(String(b.username)));setPriorityList(results)}finally{setPriorityLoading(false)}}
 
   async function loadAll(){setLoading(true);try{const{data:members}=await supabase.from('vip_members').select('*').eq('is_excluded',false);const{data:logs}=await supabase.from('reactivation_logs').select('*').eq('reactivated_month',monthStr);const logSet=new Set((logs||[]).map(x=>x.username));setReactivated(logs||[]);setReactivatedSet(logSet);setVips(members||[]);setStats({high:(members||[]).filter(x=>x.churn_risk==='HIGH').length,medium:(members||[]).filter(x=>x.churn_risk==='MEDIUM').length,dormant:(members||[]).filter(x=>(x.days_inactive||0)>=dormantDays).length,atRisk:(members||[]).filter(x=>(x.churn_risk==='HIGH'||x.churn_risk==='MEDIUM')&&!logSet.has(x.username)).length});
@@ -124,7 +151,7 @@ export default function ChurnAlerts() {
   const visibleVips=vips.filter(v=>(tierF==='ALL'||v.tier===tierF)&&(!mineOnly||v.host_assigned===myName)); const reactRows=reactivated.filter(v=>reactTierF==='ALL'||v.tier===reactTierF)
   return <div style={s.page}><div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-end',marginBottom:18}}><div><div style={s.title}>{t('sidebar.nav.churnAlerts')}</div><div style={s.sub}>{t('churnAlerts.subtitle')}</div></div></div>
     <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:10,marginBottom:18}}><StatCard icon="🔥" label={t('churnAlerts.statHighRisk')} value={stats.high} color="#f85149"/><StatCard icon="⚠️" label={t('churnAlerts.statMediumRisk')} value={stats.medium} color="#d29922"/><StatCard icon="💤" label={t('common.dormant')} value={stats.dormant}/><StatCard icon="🎯" label={t('common.atRisk')} value={stats.atRisk}/></div>
-    <div style={s.card}><div style={{display:'flex',gap:8,padding:12,borderBottom:'1px solid var(--border)',flexWrap:'wrap'}}>{[['priority','🔥 Priority'],['churn','📉 Churn'],['reactivated','♻️ Reactivated'],['dormant','💤 Dormant'],['diamond','💎 Diamond'],['platinum','🔷 Platinum']].map(([key,label])=><button key={key} style={{...s.btnSm,background:tab===key?'var(--accent)':'var(--surface2)',color:tab===key?'#fff':'var(--text)'}} onClick={()=>setTab(key)}>{label}</button>)}</div>
+    <div style={s.card}><div style={{display:'flex',gap:8,padding:12,borderBottom:'1px solid var(--border)',flexWrap:'wrap'}}>{[['priority','🔥 Priority'],['churn','📉 Churn'],['reactivated','♻️ Reactivated'],['dormant','💤 Dormant'],['diamond','💎 Diamond'],['platinum','🔷 Platinum'],['gold','🥇 Gold']].map(([key,label])=><button key={key} style={{...s.btnSm,background:tab===key?'var(--accent)':'var(--surface2)',color:tab===key?'#fff':'var(--text)'}} onClick={()=>setTab(key)}>{label}</button>)}</div>
       {tab==='priority'&&<div>{priorityLoading?<div style={{padding:30}}>Loading…</div>:<>
         <div style={{display:'flex',gap:8,padding:'10px 14px',borderBottom:'1px solid var(--border)',alignItems:'center',flexWrap:'wrap'}}>
           <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
@@ -142,7 +169,19 @@ export default function ChurnAlerts() {
           <td style={{...s.td,fontSize:12,color:'var(--muted)'}}>{v.whatsapp||v.phone||'—'}</td>
           <td style={{...s.td,fontVariantNumeric:'tabular-nums'}}>{v.days_since_deposit!=null?v.days_since_deposit+'d':'—'}</td>
           <td style={s.td}>{v.last_contact?new Date(v.last_contact).toLocaleDateString('en-MY',{day:'2-digit',month:'short'}):'Never'}</td>
-          <td style={{...s.td,maxWidth:220,fontSize:12}}>{v.reasons.join(' • ')}</td>
+          <td style={{...s.td,maxWidth:240,fontSize:12}}>
+            {v.player_type && (
+              <div style={{display:'inline-flex',alignItems:'center',gap:4,background:'rgba(139,92,246,.12)',border:'1px solid rgba(139,92,246,.3)',borderRadius:8,padding:'2px 8px',marginBottom:4,fontSize:11,fontWeight:700,color:'#a78bfa'}}>
+                {v.player_type_icon||'🎮'} {v.player_type}
+              </div>
+            )}
+            <div style={{color:'var(--muted)',lineHeight:1.4}}>
+              {(v.player_type ? v.reasons.slice(1) : v.reasons).join(' • ')}
+            </div>
+            {v.offer_recommendation && (
+              <div style={{marginTop:3,fontSize:10,color:'#34D399',fontWeight:600}}>💡 {v.offer_recommendation}</div>
+            )}
+          </td>
           <td style={s.td}><div style={{display:'flex',gap:5,flexWrap:'wrap'}}>
             <button style={{background:'#25D366',color:'#fff',border:'none',padding:'4px 10px',borderRadius:6,fontSize:12,fontWeight:700,cursor:'pointer'}} onClick={()=>setChurnWaModal(v)}>💬 WA</button>
             <button style={s.btnSm} onClick={()=>navigate(`/vips/${v.id}`)}>Open</button>
@@ -224,6 +263,42 @@ export default function ChurnAlerts() {
               </tr>
             )})}
             {!pVips.length&&<tr><td colSpan="9" style={{...s.td,textAlign:'center',color:'var(--muted)'}}>No Platinum VIPs match the filter.</td></tr>}
+            </tbody></table></div>
+        </div>)
+      })()}
+      {tab==='gold'&&(()=>{
+        const allGHosts=[...new Set(vips.filter(v=>v.tier==='GOLD'&&v.host_assigned).map(v=>v.host_assigned))].sort()
+        const allG=vips.filter(v=>v.tier==='GOLD'&&(gHostF==='ALL'||v.host_assigned===gHostF))
+        const gVips=allG.filter(v=>!gUncontactedOnly||!contactedSet.has(v.username)).sort((a,b)=>Number(contactedSet.has(a.username))-Number(contactedSet.has(b.username))||(b.days_inactive||0)-(a.days_inactive||0))
+        const gContacted=allG.filter(v=>contactedSet.has(v.username)).length
+        const gNotYet=allG.length-gContacted
+        return(<div>
+          <div style={{display:'flex',gap:8,padding:'10px 14px',borderBottom:'1px solid var(--border)',alignItems:'center',flexWrap:'wrap'}}>
+            <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+              {['ALL',...allGHosts].map(h=><button key={h} style={{...s.btnSm,background:gHostF===h?'var(--accent)':'var(--surface2)',color:gHostF===h?'#fff':'var(--text)'}} onClick={()=>setGHostF(h)}>{h==='ALL'?`All (${allG.length})`:h}</button>)}
+            </div>
+            <button style={{...s.btnSm,background:gUncontactedOnly?'#f85149':'var(--surface2)',color:gUncontactedOnly?'#fff':'var(--text)',border:gUncontactedOnly?'1px solid #f85149':'1px solid var(--border)'}} onClick={()=>setGUncontactedOnly(v=>!v)}>❌ Not contacted only</button>
+            <div style={{marginLeft:'auto',display:'flex',gap:12,fontSize:12,alignItems:'center'}}>
+              <span style={{color:'#3fb950',fontWeight:700}}>✅ {gContacted} contacted</span>
+              <span style={{color:'#f85149',fontWeight:700}}>❌ {gNotYet} not yet</span>
+              <span style={{color:'var(--muted)'}}>{MONTHS[month]}: {allG.length?Math.round(gContacted/allG.length*100):0}%</span>
+            </div>
+          </div>
+          <div style={{overflowX:'auto'}}><table style={s.tbl}><thead><tr>{['Player','Host','Phone / WA','Risk','Days Inactive','Last Deposit','Last Contact','This Month','Actions'].map(h=><th key={h} style={s.th}>{h}</th>)}</tr></thead>
+            <tbody>{gVips.map(v=>{const isC=contactedSet.has(v.username);return(
+              <tr key={v.id}>
+                <td style={s.td}><span style={{display:'inline-flex',alignItems:'center',gap:4}}><button style={{background:'none',border:0,padding:0,cursor:'pointer',color:'var(--text)',fontWeight:700}} onClick={()=>navigate(`/vips/${v.id}`)}>{v.username}</button><button title="Copy username" onClick={e=>{e.stopPropagation();navigator.clipboard.writeText(v.username)}} style={{background:'none',border:'none',color:'var(--muted)',cursor:'pointer',fontSize:12,padding:'0 2px',lineHeight:1,opacity:.6}} onMouseEnter={e=>e.currentTarget.style.opacity=1} onMouseLeave={e=>e.currentTarget.style.opacity=.6}>⎘</button></span></td>
+                <td style={s.td}>{v.host_assigned||'—'}</td>
+                <td style={{...s.td,fontSize:12}}>{v.whatsapp||v.phone?<span style={{display:'inline-flex',alignItems:'center',gap:4}}><span style={{color:'var(--muted)'}}>{v.whatsapp||v.phone}</span><button title="Copy number" onClick={e=>{e.stopPropagation();navigator.clipboard.writeText((v.whatsapp||v.phone).replace(/\D/g,''))}} style={{background:'none',border:'none',color:'var(--muted)',cursor:'pointer',fontSize:11,padding:'0 2px',opacity:.6}} onMouseEnter={e=>e.currentTarget.style.opacity=1} onMouseLeave={e=>e.currentTarget.style.opacity=.6}>⎘</button></span>:'—'}</td>
+                <td style={s.td}>{v.risk_level?<span style={{padding:'2px 8px',borderRadius:12,fontSize:11,fontWeight:700,background:RISK_BG[v.risk_level]||'transparent',color:RISK_COLOR[v.risk_level]||'var(--muted)'}}>{v.risk_level}</span>:'—'}</td>
+                <td style={{...s.td,fontVariantNumeric:'tabular-nums'}}>{v.days_inactive||0}d</td>
+                <td style={s.td}>{v.last_deposit_date||'—'}</td>
+                <td style={{...s.td,fontSize:12,color:'var(--muted)'}}>{v.last_contacted?new Date(v.last_contacted).toLocaleDateString('en-MY',{day:'2-digit',month:'short'}):'Never'}</td>
+                <td style={s.td}><span style={{fontSize:12,fontWeight:700,color:isC?'#3fb950':'#f85149'}}>{isC?'✅ Done':'❌ Not yet'}</span></td>
+                <td style={s.td}><div style={{display:'flex',gap:5,flexWrap:'wrap'}}><button style={{background:'#25D366',color:'#fff',border:'none',padding:'4px 10px',borderRadius:6,fontSize:12,fontWeight:700,cursor:'pointer'}} onClick={()=>setChurnWaModal({...v,reasons:[`${v.tier} monthly follow-up`],days_since_deposit:v.days_inactive,host:v.host_assigned})}>💬 WA</button><button style={s.btnSm} onClick={()=>navigate(`/vips/${v.id}`)}>Open</button>{!reactivatedSet.has(v.username)&&<button style={{...s.btnSm,background:'#3fb950',color:'#fff',border:0,fontWeight:700}} onClick={()=>setReactivateModal(v)}>✅ Reactivate</button>}</div></td>
+              </tr>
+            )})}
+            {!gVips.length&&<tr><td colSpan="9" style={{...s.td,textAlign:'center',color:'var(--muted)'}}>No Gold VIPs match the filter.</td></tr>}
             </tbody></table></div>
         </div>)
       })()}
