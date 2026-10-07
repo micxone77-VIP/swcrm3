@@ -434,7 +434,6 @@ color: m.isWL ? (m.wl <= 0 ? 'var(--success)' : 'var(--danger)') : 'var(--text)'
 <div style={{ padding:'20px' }}>
 {/* OVERVIEW */}
 {tab === 'overview' && (
-<>
 <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:20 }}>
 {/* Left: profile summary */}
 <div>
@@ -488,122 +487,6 @@ color: m.isWL ? (m.wl <= 0 ? 'var(--success)' : 'var(--danger)') : 'var(--text)'
 )}
 </div>
 </div>
-
-{/* ── Tier Timeline ── */}
-{tierLogs.length > 0 && (() => {
-  const TC = {
-    SILVER:   '#94a3b8',
-    GOLD:     '#f59e0b',
-    PLATINUM: '#e5e7eb',
-    DIAMOND:  '#a78bfa',
-    BLACK:    '#111827',
-  }
-  const isUpgrade = (oldT, newT) => {
-    const ORD = { SILVER: 0, GOLD: 1, PLATINUM: 2, DIAMOND: 3, BLACK: 4 }
-    return (ORD[newT] ?? 0) > (ORD[oldT] ?? 0)
-  }
-  return (
-    <div style={{ marginTop: 20 }}>
-      <SectionLabel>Tier History</SectionLabel>
-      <div style={{ position: 'relative', paddingLeft: 24 }}>
-        {/* vertical line */}
-        <div style={{
-          position: 'absolute', left: 7, top: 6, bottom: 6,
-          width: 2, background: 'var(--border)', borderRadius: 2,
-        }} />
-        {tierLogs.map((log, i) => {
-          const up = isUpgrade(log.old_tier, log.new_tier)
-          const dotColor = up ? '#10b981' : '#f85149'
-          const date = log.changed_at
-            ? new Date(log.changed_at).toLocaleDateString('en-MY', { day:'2-digit', month:'short', year:'numeric' })
-            : log.import_month || '—'
-          return (
-            <div key={log.id || i} style={{
-              position: 'relative', display: 'flex', alignItems: 'flex-start',
-              gap: 12, paddingBottom: 16,
-            }}>
-              {/* dot */}
-              <div style={{
-                position: 'absolute', left: 0, top: 4,
-                width: 14, height: 14, borderRadius: '50%',
-                background: dotColor,
-                border: '2px solid var(--bg)',
-                boxShadow: `0 0 0 2px ${dotColor}44`,
-                flexShrink: 0, zIndex: 1,
-              }} />
-              {/* content */}
-              <div style={{ marginLeft: 26 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                  {/* old tier */}
-                  <span style={{
-                    fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 20,
-                    background: (TC[log.old_tier] || '#94a3b8') + '22',
-                    color: TC[log.old_tier] || '#94a3b8',
-                    border: `1px solid ${TC[log.old_tier] || '#94a3b8'}55`,
-                  }}>{log.old_tier || '?'}</span>
-                  {/* arrow */}
-                  <span style={{ fontSize: 13, color: dotColor, fontWeight: 700 }}>
-                    {up ? '↑' : '↓'}
-                  </span>
-                  {/* new tier */}
-                  <span style={{
-                    fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 20,
-                    background: (TC[log.new_tier] || '#94a3b8') + '22',
-                    color: TC[log.new_tier] || '#94a3b8',
-                    border: `1px solid ${TC[log.new_tier] || '#94a3b8'}55`,
-                  }}>{log.new_tier || '?'}</span>
-                  {/* label */}
-                  <span style={{
-                    fontSize: 10, fontWeight: 700,
-                    color: dotColor,
-                    background: dotColor + '15',
-                    padding: '1px 7px', borderRadius: 20,
-                    border: `1px solid ${dotColor}33`,
-                  }}>{up ? '▲ UPGRADED' : '▼ DOWNGRADED'}</span>
-                </div>
-                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>
-                  {date}
-                  {log.source === 'csv_import' && (
-                    <span style={{ marginLeft: 8, opacity: 0.6 }}>· via CSV import</span>
-                  )}
-                </div>
-              </div>
-            </div>
-          )
-        })}
-        {/* current tier cap */}
-        <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{
-            position: 'absolute', left: 0, top: '50%', transform: 'translateY(-50%)',
-            width: 14, height: 14, borderRadius: '50%',
-            background: TC[(vip?.tier||'').toUpperCase()] || '#94a3b8',
-            border: '2px solid var(--bg)',
-            flexShrink: 0, zIndex: 1,
-          }} />
-          <div style={{ marginLeft: 26 }}>
-            <span style={{
-              fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 20,
-              background: (TC[(vip?.tier||'').toUpperCase()] || '#94a3b8') + '22',
-              color: TC[(vip?.tier||'').toUpperCase()] || '#94a3b8',
-              border: `1px solid ${TC[(vip?.tier||'').toUpperCase()] || '#94a3b8'}55`,
-            }}>{vip?.tier}</span>
-            <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 8 }}>Current tier</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-})()}
-
-{tierLogs.length === 0 && (
-  <div style={{ marginTop: 20 }}>
-    <SectionLabel>Tier History</SectionLabel>
-    <div style={{ fontSize: 12, color: 'var(--muted)', padding: '10px 0' }}>
-      No tier changes recorded for this player.
-    </div>
-  </div>
-)}
-</>
 )}
 
 {/* FINANCIAL */}
