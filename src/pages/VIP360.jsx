@@ -1,5 +1,5 @@
 // src/pages/VIP360.jsx — VIP 360 (V2) — replaces VIPDetail.jsx
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
@@ -109,6 +109,7 @@ const [profileForm, setProfileForm] = useState({
 })
 const [profileLoading, setProfileLoading] = useState(false)
 const [profileSaving, setProfileSaving] = useState(false)
+const profileLoadedFor = useRef(null)
 
 const load = useCallback(async () => {
 setLoading(true); setError(null)
@@ -222,7 +223,8 @@ Promise.all([
 // Lazy-load VIP profile when profile tab opens
 useEffect(() => {
 if (tab !== 'profile' || !vip?.username) return
-if (profileLoading) return
+if (profileLoadedFor.current === vip.username) return
+profileLoadedFor.current = vip.username
 setProfileLoading(true)
 supabase.from('vip_profiles')
   .select('*').eq('username', vip.username).maybeSingle()
@@ -246,7 +248,7 @@ supabase.from('vip_profiles')
     }
     setProfileLoading(false)
   })
-}, [tab, vip?.username, profileLoading])
+}, [tab, vip?.username])
 
 // Lazy-load department expenses when spending tab opens
 useEffect(() => {
