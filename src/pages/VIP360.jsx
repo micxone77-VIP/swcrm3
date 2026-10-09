@@ -13,6 +13,7 @@ Input, Select, Textarea, useToast,
 import { TierBadge, StatusBadge, RiskBadge } from '../components/ui'
 import { callAI } from '../lib/aiApi'
 import { useLanguage } from '../contexts/LanguageContext'
+import DepositProfileCard from '../components/vip/DepositProfileCard'
 
 const TIERS = ['BRONZE','SILVER','GOLD','PLATINUM','DIAMOND','BLACK']
 const PERIODS = [
@@ -1153,6 +1154,9 @@ const relOpt = RELATIONSHIP_OPTIONS.find(r => r.val === profileForm.relationship
 
 return (
 <div style={{ maxWidth:760 }}>
+  {/* Deposit Profile 充值画像 — from vip_deposit_logs */}
+  <DepositProfileCard username={vip?.username} />
+
   {/* Relationship & Quick Info */}
   <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16, marginBottom:20 }}>
     {/* Relationship Level */}

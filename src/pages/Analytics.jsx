@@ -6,6 +6,7 @@ import { TIER_COLOR, TIER_BG, MONTHS } from '../lib/constants'
 import { formatMoney, currentYearMonth as currentYM, prevYearMonth as prevYM, fmtMonthLabel as fmtMonth } from '../lib/format'
 import { useLanguage } from '../contexts/LanguageContext'
 import { useUrlParam, useUrlParamBool } from '../hooks/useUrlParam'
+import DepositSegments from '../components/vip/DepositSegments'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 // fmt() is defined inside the component so it can use the selected currency state
@@ -366,6 +367,7 @@ export default function Analytics() {
           ['activity',    t('analytics.tabActivity')],
           ['issues',      t('analytics.tabIssues')],
           ['decline',     '📉 ' + t('analytics.tabDecline')],
+          ['segments',    '🧭 Deposit Segments 充值分群'],
         ].map(([id,label]) => (
           <button key={id} onClick={()=>setTab(id)} style={{
             padding:'9px 20px', borderRadius:'8px 8px 0 0',
@@ -877,6 +879,8 @@ export default function Analytics() {
                   </div>
                 </div>
               )}
+
+          {tab === 'segments' && <DepositSegments myName={myName} />}
 
         </>
       )}
