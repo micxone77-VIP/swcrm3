@@ -116,6 +116,7 @@ function extractUsernames(text) {
 
 // ── AI message bubble with inline clickable usernames + chips + copy
 function AIBubble({ content, onVipClick }) {
+  const { lang } = useLanguage()
   const [copied, setCopied] = useState(false)
   const usernames = extractUsernames(content)
   const usernameSet = new Set(usernames)
@@ -146,7 +147,7 @@ function AIBubble({ content, onVipClick }) {
         <button onClick={copy}
           style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:6,
                    padding:'4px 12px', fontSize:11, color:'var(--muted)', cursor:'pointer' }}>
-          {copied ? '✓ Copied' : '📋 Copy'}
+          {copied ? (lang === 'zh' ? '✓ 已复制' : '✓ Copied') : (lang === 'zh' ? '📋 复制' : '📋 Copy')}
         </button>
       </div>
     </div>
@@ -156,6 +157,7 @@ function AIBubble({ content, onVipClick }) {
 export default function AskData() {
   const { profile } = useAuth()
   const { lang } = useLanguage()
+  const L2 = (en, zh) => (lang === 'zh' ? zh : en)
   const navigate = useNavigate()
   const userId = profile?.id
 
@@ -234,7 +236,7 @@ export default function AskData() {
         hostName:  profile?.full_name,
         hostEmail: profile?.email,
       })
-      setMessages(prev => [...prev, { role: 'assistant', content: result.answer || 'No answer generated.' }])
+      setMessages(prev => [...prev, { role: 'assistant', content: result.answer || L2('No answer generated.','未生成回答。') }])
     } catch (e) {
       setMessages(prev => [...prev, { role: 'assistant', content: `⚠️ ${e.message}` }])
     } finally {
@@ -246,13 +248,13 @@ export default function AskData() {
     <div style={s.page}>
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start' }}>
         <div>
-          <div style={s.title}>💬 Ask Your Data</div>
-          <div style={s.sub}>Ask questions about VIPs, campaigns, contacts, and churn risk — answers pull live from the CRM, never guessed. VIP names are clickable.</div>
+          <div style={s.title}>💬 {L2('Ask Your Data','数据问答')}</div>
+          <div style={s.sub}>{L2('Ask questions about VIPs, campaigns, contacts, and churn risk — answers pull live from the CRM, never guessed. VIP names are clickable.','询问关于 VIP、活动、联系记录和流失风险的问题 — 答案实时取自 CRM，绝不猜测。VIP 名称可点击。')}</div>
         </div>
         {messages.length > 0 && (
           <button onClick={clearConversation}
             style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 14px', fontSize:12, color:'var(--muted)', cursor:'pointer' }}>
-            Clear conversation
+            {L2('Clear conversation','清除对话')}
           </button>
         )}
       </div>
@@ -260,7 +262,7 @@ export default function AskData() {
       <div style={s.chatArea}>
         {messages.length === 0 && (
           <div style={{ display:'flex', flexDirection:'column', gap:8, marginTop:20 }}>
-            <div style={{ fontSize:12, color:'var(--muted)', marginBottom:4 }}>Try asking:</div>
+            <div style={{ fontSize:12, color:'var(--muted)', marginBottom:4 }}>{L2('Try asking:','试着问：')}</div>
             {SUGGESTIONS.map(q => (
               <button key={q} onClick={() => send(q)}
                 style={{ textAlign:'left', background:'var(--surface)', border:'1px solid var(--border)', borderRadius:8, padding:'10px 14px', fontSize:13, color:'var(--text)', cursor:'pointer' }}>
@@ -278,7 +280,7 @@ export default function AskData() {
 
         {loading && (
           <div style={s.bubbleAI}>
-            <span style={{ color:'var(--muted)', fontSize:13 }}>Thinking…</span>
+            <span style={{ color:'var(--muted)', fontSize:13 }}>{L2('Thinking…','思考中…')}</span>
           </div>
         )}
         <div ref={bottomRef} />
@@ -288,11 +290,11 @@ export default function AskData() {
         <input
           style={s.input}
           value={input}
-          placeholder="Ask about your VIPs, campaigns, contacts, churn risk…"
+          placeholder={L2('Ask about your VIPs, campaigns, contacts, churn risk…','询问你的 VIP、活动、联系记录、流失风险…')}
           onChange={e => setInput(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter') send() }}
         />
-        <button style={s.sendBtn} onClick={() => send()} disabled={loading}>Send</button>
+        <button style={s.sendBtn} onClick={() => send()} disabled={loading}>{L2('Send','发送')}</button>
       </div>
     </div>
   )

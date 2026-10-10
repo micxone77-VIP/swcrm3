@@ -11,18 +11,19 @@ import {
 } from '../components/ui'
 import { TierBadge, StatusBadge, RiskBadge } from '../components/ui'
 import { formatMoney } from '../lib/format'
+import { enumLabel } from '../lib/enums'
 
 const PAGE_SIZE = 50
 const TIERS    = ['ALL','BLACK','DIAMOND','PLATINUM','GOLD','SILVER','BRONZE']
 const STATUSES = ['ALL','Active','Watch','At Risk','Dormant']
-const REGIONS  = [{ value:'ALL',label:'🌏 All' },{ value:'Malaysia',label:'🇲🇾 Malaysia' },{ value:'Singapore',label:'🇸🇬 Singapore' },{ value:'Cambodia',label:'🇰🇭 Cambodia' }]
+const REGIONS  = [{ value:'ALL',label:'🌏 All',zh:'🌏 全部' },{ value:'Malaysia',label:'🇲🇾 Malaysia',zh:'🇲🇾 马来西亚' },{ value:'Singapore',label:'🇸🇬 Singapore',zh:'🇸🇬 新加坡' },{ value:'Cambodia',label:'🇰🇭 Cambodia',zh:'🇰🇭 柬埔寨' }]
 
-function daysAgoLabel(date) {
+function daysAgoLabel(date, lang = 'en') {
   if (!date) return '—'
   const d = Math.floor((Date.now() - new Date(date)) / 86400000)
   if (d < 0) return '—'
-  if (d === 0) return 'Today'
-  return d + 'd ago'
+  if (d === 0) return lang === 'zh' ? '今天' : 'Today'
+  return lang === 'zh' ? d + '天前' : d + 'd ago'
 }
 
 function escCSV(v) {
@@ -80,7 +81,8 @@ function downloadCSV(rows, filename) {
 export default function AllVIPs() {
   const navigate = useNavigate()
   const { profile } = useAuth()
-  const { t } = useLanguage()
+  const { t, lang } = useLanguage()
+  const L2 = (en, zh) => (lang === 'zh' ? zh : en)
   const [vips, setVips]         = useState([])
   const [loading, setLoading]   = useState(true)
   const [error, setError]       = useState(null)
@@ -153,7 +155,7 @@ export default function AllVIPs() {
         body: { username: vip.username },
       })
       if (fnError) throw fnError
-      if (!data?.success || !data?.setup_link) throw new Error(data?.error || 'Failed to generate activation link.')
+      if (!data?.success || !data?.setup_link) throw new Error(data?.error || L2('Failed to generate activation link.', '生成激活链接失败。'))
 
       let copied = false
       try {
@@ -165,13 +167,13 @@ export default function AllVIPs() {
         ok: true,
         username: vip.username,
         link: data.setup_link,
-        text: copied ? `Activation link copied for ${vip.username}.` : `Activation link generated for ${vip.username}.`,
+        text: copied ? L2(`Activation link copied for ${vip.username}.`, `已复制 ${vip.username} 的激活链接。`) : L2(`Activation link generated for ${vip.username}.`, `已生成 ${vip.username} 的激活链接。`),
       })
     } catch (e) {
       setActivationNotice({
         ok: false,
         username: vip.username,
-        text: e?.message || 'Unable to generate activation link.',
+        text: e?.message || L2('Unable to generate activation link.', '无法生成激活链接。'),
       })
     } finally {
       setActivationBusy(null)
@@ -270,16 +272,16 @@ export default function AllVIPs() {
     { value: 'all',      label: t('allVips.viewAll') },
     { value: 'active',   label: t('common.active') },
     { value: 'risk',     label: t('common.atRisk') },
-    { value: 'diamond',  label: 'Diamond' },
-    { value: 'platinum', label: 'Platinum' },
-    { value: 'noctact',  label: 'No Contact 7d+' },
+    { value: 'diamond',  label: L2('Diamond', '钻石') },
+    { value: 'platinum', label: L2('Platinum', '白金') },
+    { value: 'noctact',  label: L2('No Contact 7d+', '7天以上未联系') },
   ]
 
   return (
     <div style={{ padding: '24px 28px' }}>
       <PageHeader
         title={t('allVips.title')}
-        subtitle={`${total.toLocaleString()} VIPs`}
+        subtitle={L2(`${total.toLocaleString()} VIPs`, `${total.toLocaleString()} 位VIP`)}
         actions={
           <>
             {profile?.role === 'admin' && (
@@ -313,8 +315,8 @@ export default function AllVIPs() {
                 onFocus={e => e.currentTarget.select()}
                 style={{ flex: '1 1 520px', minWidth: 260, background:'var(--surface)', border:'1px solid var(--border)', color:'var(--text)', padding:'7px 9px', borderRadius:6, fontSize:11 }}
               />
-              <Btn size="sm" variant="ghost" onClick={async () => { try { await navigator.clipboard.writeText(activationNotice.link); setActivationNotice(n => ({ ...n, text:`Activation link copied for ${n.username}.` })) } catch (_) {} }}>
-                Copy Link
+              <Btn size="sm" variant="ghost" onClick={async () => { try { await navigator.clipboard.writeText(activationNotice.link); setActivationNotice(n => ({ ...n, text: L2(`Activation link copied for ${n.username}.`, `已复制 ${n.username} 的激活链接。`) })) } catch (_) {} }}>
+                {L2('Copy Link', '复制链接')}
               </Btn>
             </div>
           )}
@@ -335,35 +337,35 @@ export default function AllVIPs() {
           {TIERS.map(tv => <option key={tv} value={tv}>{tv === 'ALL' ? t('allVips.allTiers') : tv}</option>)}
         </Select>
         <Select value={status} onChange={e => { setStatus(e.target.value); setPage(1) }} style={{ minWidth: 120 }}>
-          {STATUSES.map(s => <option key={s} value={s}>{s === 'ALL' ? t('allVips.allStatus') : s}</option>)}
+          {STATUSES.map(s => <option key={s} value={s}>{s === 'ALL' ? t('allVips.allStatus') : enumLabel(s, lang)}</option>)}
         </Select>
         <Select value={region} onChange={e => { setRegion(e.target.value); setPage(1) }} style={{ minWidth: 130 }}>
-          {REGIONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+          {REGIONS.map(r => <option key={r.value} value={r.value}>{L2(r.label, r.zh)}</option>)}
         </Select>
         <Select value={host} onChange={e => { setHost(e.target.value); setPage(1) }} style={{ minWidth: 130 }}>
-          {hosts.map(h => <option key={h} value={h}>{h === 'ALL' ? t('allVips.allHosts') : h === '__unassigned__' ? '⚠️ Unassigned' : h}</option>)}
+          {hosts.map(h => <option key={h} value={h}>{h === 'ALL' ? t('allVips.allHosts') : h === '__unassigned__' ? L2('⚠️ Unassigned', '⚠️ 未分配') : h}</option>)}
         </Select>
         <Select value={playerTypeFilter} onChange={e => { setPlayerTypeFilter(e.target.value); setPage(1) }} style={{ minWidth: 150 }}>
-          <option value="ALL">🎮 All Player Types</option>
-          <option value="Slots King">🎰 Slots King</option>
-          <option value="Live Casino VIP">🎲 Live Casino VIP</option>
-          <option value="Sports Punter">⚽ Sports Punter</option>
-          <option value="Slots + Live">🎰🎲 Slots + Live</option>
-          <option value="Live + Sports">🎲⚽ Live + Sports</option>
-          <option value="Multi-Platform">🎯 Multi-Platform</option>
-          <option value="Casual">🃏 Casual</option>
+          <option value="ALL">{L2('🎮 All Player Types', '🎮 全部玩家类型')}</option>
+          <option value="Slots King">{L2('🎰 Slots King', '🎰 老虎机之王')}</option>
+          <option value="Live Casino VIP">{L2('🎲 Live Casino VIP', '🎲 真人娱乐VIP')}</option>
+          <option value="Sports Punter">{L2('⚽ Sports Punter', '⚽ 体育投注玩家')}</option>
+          <option value="Slots + Live">{L2('🎰🎲 Slots + Live', '🎰🎲 老虎机 + 真人')}</option>
+          <option value="Live + Sports">{L2('🎲⚽ Live + Sports', '🎲⚽ 真人 + 体育')}</option>
+          <option value="Multi-Platform">{L2('🎯 Multi-Platform', '🎯 多平台')}</option>
+          <option value="Casual">{L2('🃏 Casual', '🃏 休闲')}</option>
         </Select>
         <Select value={affiliate} onChange={e => { setAffiliate(e.target.value); setPage(1) }} style={{ minWidth: 150 }}>
-          <option value="ALL">🤝 All Affiliates</option>
-          <option value="__direct__">Direct (no affiliate)</option>
-          <option value="__unknown__">Unknown (no deposit data)</option>
+          <option value="ALL">{L2('🤝 All Affiliates', '🤝 全部代理')}</option>
+          <option value="__direct__">{L2('Direct (no affiliate)', '直客（无代理）')}</option>
+          <option value="__unknown__">{L2('Unknown (no deposit data)', '未知（无存款数据）')}</option>
           {affiliateOptions.map(a => <option key={a.name} value={a.name}>{a.name} ({a.n})</option>)}
         </Select>
         <Select value={segFilter} onChange={e => { setSegFilter(e.target.value); setPage(1) }} style={{ minWidth: 150 }}>
-          <option value="ALL">🧭 All Segments</option>
-          <option value="RISK">🚨 Need action (Silent + Declining)</option>
-          {Object.keys(SEGMENTS).map(k => <option key={k} value={k}>{SEGMENTS[k].icon} {k} {SEGMENTS[k].zh}</option>)}
-          <option value="No deposits">No deposits (Jul–Sep)</option>
+          <option value="ALL">{L2('🧭 All Segments', '🧭 全部分群')}</option>
+          <option value="RISK">{L2('🚨 Need action (Silent + Declining)', '🚨 需跟进（沉默 + 下滑）')}</option>
+          {Object.keys(SEGMENTS).map(k => <option key={k} value={k}>{SEGMENTS[k].icon} {L2(k, SEGMENTS[k].zh)}</option>)}
+          <option value="No deposits">{L2('No deposits (Jul–Sep)', '无存款（7–9月）')}</option>
         </Select>
         {(search || tier !== 'ALL' || status !== 'ALL' || region !== 'ALL' || host !== 'ALL' || playerTypeFilter !== 'ALL' || affiliate !== 'ALL' || segFilter !== 'ALL') && (
           <Btn size="sm" variant="ghost" onClick={() => { setSearch(''); setTier('ALL'); setStatus('ALL'); setRegion('ALL'); setHost('ALL'); setPlayerTypeFilter('ALL'); setAffiliate('ALL'); setSegFilter('ALL'); setPage(1) }}>
@@ -384,13 +386,13 @@ export default function AllVIPs() {
                     { key:'tng', label:'T&G', sortable:false },
                     { key:'tier', label:t('common.tier'), sortable:true },
                     { key:'activity_status', label:t('common.status'), sortable:false },
-                    { key:'segment', label:'Segment 分群', sortable:false },
+                    { key:'segment', label:L2('Segment', '分群'), sortable:false },
                     { key:'dep', label:t('allVips.colDeposit'), sortable:true },
                     { key:'win_loss', label:t('common.winLoss'), sortable:false },
                     { key:'last_contact_date', label:t('allVips.colLastContact'), sortable:false },
                     { key:'last_deposit_date', label:t('allVips.colLastDeposit'), sortable:false },
                     { key:'host_assigned', label:t('common.host'), sortable:false },
-                    { key:'affiliate_login', label:'Affiliate 代理', sortable:true },
+                    { key:'affiliate_login', label:L2('Affiliate', '代理'), sortable:true },
                     { key:'churn_risk', label:t('common.atRisk'), sortable:false },
                     { key:'action', label:t('allVips.colNextAction'), sortable:false },
                   ].map(col => (
@@ -413,7 +415,7 @@ export default function AllVIPs() {
               <tbody>
                 {paged.length === 0 ? (
                   <tr><td colSpan={13} style={{ textAlign:'center', padding:'32px', color:'var(--muted)' }}>
-                    No VIPs match the current filters.
+                    {L2('No VIPs match the current filters.', '没有符合当前筛选条件的VIP。')}
                   </td></tr>
                 ) : paged.map(v => {
                   const lastContact = v.last_contacted || v.last_contact_date
@@ -431,16 +433,16 @@ export default function AllVIPs() {
                         {gamingLabels[v.username] && (
                           <div style={{ marginTop:3 }}>
                             <span style={{ fontSize:10, fontWeight:700, padding:'1px 6px', borderRadius:10, background:'rgba(139,92,246,.12)', color:'#a78bfa', border:'1px solid rgba(139,92,246,.25)' }}>
-                              {gamingLabels[v.username].player_type_icon} {gamingLabels[v.username].player_type}
+                              {gamingLabels[v.username].player_type_icon} {lang === 'zh' ? ({ 'Slots King':'老虎机之王','Live Casino VIP':'真人娱乐VIP','Sports Punter':'体育投注玩家','Slots + Live':'老虎机 + 真人','Live + Sports':'真人 + 体育','Multi-Platform':'多平台','Casual':'休闲' }[gamingLabels[v.username].player_type] || gamingLabels[v.username].player_type) : gamingLabels[v.username].player_type}
                             </span>
                           </div>
                         )}
                       </td>
                       <td style={{ padding:'9px 12px', borderBottom:'1px solid var(--border)' }}>
                         {v.tng_verify_status === 'verified' ? (
-                          <span title={v.tng_verified_name || ''} style={{ display:'inline-flex', alignItems:'center', gap:3, background:'rgba(63,185,80,.12)', color:'#3fb950', border:'1px solid rgba(63,185,80,.3)', borderRadius:6, padding:'2px 7px', fontSize:11, fontWeight:700, cursor:'default' }}>✓ Verified</span>
+                          <span title={v.tng_verified_name || ''} style={{ display:'inline-flex', alignItems:'center', gap:3, background:'rgba(63,185,80,.12)', color:'#3fb950', border:'1px solid rgba(63,185,80,.3)', borderRadius:6, padding:'2px 7px', fontSize:11, fontWeight:700, cursor:'default' }}>✓ {L2('Verified', '已验证')}</span>
                         ) : v.tng_verify_status === 'mismatch' ? (
-                          <span title={v.tng_verified_name || ''} style={{ display:'inline-flex', alignItems:'center', gap:3, background:'rgba(210,153,34,.12)', color:'#d29922', border:'1px solid rgba(210,153,34,.3)', borderRadius:6, padding:'2px 7px', fontSize:11, fontWeight:700, cursor:'default' }}>⚠ Mismatch</span>
+                          <span title={v.tng_verified_name || ''} style={{ display:'inline-flex', alignItems:'center', gap:3, background:'rgba(210,153,34,.12)', color:'#d29922', border:'1px solid rgba(210,153,34,.3)', borderRadius:6, padding:'2px 7px', fontSize:11, fontWeight:700, cursor:'default' }}>⚠ {L2('Mismatch', '不匹配')}</span>
                         ) : (
                           <span style={{ color:'var(--muted)', fontSize:11 }}>—</span>
                         )}
@@ -454,9 +456,9 @@ export default function AllVIPs() {
                       <td style={{ padding:'9px 12px', borderBottom:'1px solid var(--border)', whiteSpace:'nowrap' }}>
                         {(() => {
                           const sg = segMap[v.username]
-                          if (!sg) return <span style={{ color:'var(--muted)', fontSize:11 }}>No deposits</span>
+                          if (!sg) return <span style={{ color:'var(--muted)', fontSize:11 }}>{L2('No deposits', '无存款')}</span>
                           const cfg = SEGMENTS[sg.segment] || SEGMENTS.Stable
-                          return <span title={sg.trend_pct != null ? `Trend ${sg.trend_pct}% · ${sg.days_since_last}d since last deposit` : ''} style={{ fontSize:11, fontWeight:700, padding:'2px 8px', borderRadius:10, background:cfg.bg, color:cfg.color }}>{cfg.icon} {sg.segment}</span>
+                          return <span title={sg.trend_pct != null ? L2(`Trend ${sg.trend_pct}% · ${sg.days_since_last}d since last deposit`, `趋势 ${sg.trend_pct}% · 距上次存款 ${sg.days_since_last} 天`) : ''} style={{ fontSize:11, fontWeight:700, padding:'2px 8px', borderRadius:10, background:cfg.bg, color:cfg.color }}>{cfg.icon} {L2(sg.segment, cfg.zh)}</span>
                         })()}
                       </td>
                       <td style={{ padding:'9px 12px', borderBottom:'1px solid var(--border)', fontWeight:600 }}>
@@ -470,10 +472,10 @@ export default function AllVIPs() {
                         )}
                       </td>
                       <td style={{ padding:'9px 12px', borderBottom:'1px solid var(--border)', color:'var(--muted)', fontSize:12 }}>
-                        {daysAgoLabel(lastContact)}
+                        {daysAgoLabel(lastContact, lang)}
                       </td>
                       <td style={{ padding:'9px 12px', borderBottom:'1px solid var(--border)', color:'var(--muted)', fontSize:12 }}>
-                        {daysAgoLabel(v.last_deposit_date)}
+                        {daysAgoLabel(v.last_deposit_date, lang)}
                       </td>
                       <td style={{ padding:'9px 12px', borderBottom:'1px solid var(--border)', fontSize:12 }} onClick={e => e.stopPropagation()}>
                         {v.host_assigned ? (
@@ -482,7 +484,7 @@ export default function AllVIPs() {
                             {profile?.role === 'admin' && (
                               <button
                                 onClick={e => { e.stopPropagation(); setAssigningVip(v.id) }}
-                                title="Reassign host"
+                                title={L2('Reassign host', '重新分配负责人')}
                                 style={{ background:'none', border:'none', color:'var(--muted)', cursor:'pointer', fontSize:11, padding:'1px 4px', borderRadius:4, lineHeight:1 }}
                               >✎</button>
                             )}
@@ -496,7 +498,7 @@ export default function AllVIPs() {
                                 onChange={e => { if (e.target.value) assignHost(v.id, e.target.value) }}
                                 style={{ background:'var(--surface)', border:'1px solid var(--brand)', color:'var(--text)', padding:'4px 6px', borderRadius:5, fontSize:12, cursor:'pointer', maxWidth:130 }}
                               >
-                                <option value="">Pick host…</option>
+                                <option value="">{L2('Pick host…', '选择负责人…')}</option>
                                 {hosts.filter(h => h !== 'ALL' && h !== '__unassigned__').map(h => <option key={h} value={h}>{h}</option>)}
                               </select>
                               <button onClick={() => setAssigningVip(null)} style={{ background:'none', border:'none', color:'var(--muted)', cursor:'pointer', fontSize:13, padding:'2px 4px' }}>✕</button>
@@ -506,7 +508,7 @@ export default function AllVIPs() {
                               onClick={e => { e.stopPropagation(); setAssigningVip(v.id) }}
                               style={{ background:'rgba(255,106,0,.1)', border:'1px solid var(--brand)', color:'var(--brand)', padding:'3px 9px', borderRadius:5, fontSize:11, cursor:'pointer', fontWeight:600, whiteSpace:'nowrap' }}
                             >
-                              {assignBusy === v.id ? '…' : '+ Assign'}
+                              {assignBusy === v.id ? '…' : L2('+ Assign', '+ 分配')}
                             </button>
                           )
                         ) : (
@@ -515,7 +517,7 @@ export default function AllVIPs() {
                       </td>
                       <td style={{ padding:'9px 12px', borderBottom:'1px solid var(--border)', fontSize:12, whiteSpace:'nowrap' }}>
                         {v.affiliate_login ? <span style={{ fontWeight:600, color:'var(--brand)' }}>{v.affiliate_login}</span>
-                          : v.affiliate_updated_at ? <span style={{ color:'var(--text)' }}>Direct</span>
+                          : v.affiliate_updated_at ? <span style={{ color:'var(--text)' }}>{L2('Direct', '直客')}</span>
                           : <span style={{ color:'var(--muted)' }}>—</span>}
                       </td>
                       <td style={{ padding:'9px 12px', borderBottom:'1px solid var(--border)' }}>
@@ -532,7 +534,7 @@ export default function AllVIPs() {
                               variant="ghost"
                               disabled={activationBusy === v.id}
                               onClick={e => { e.stopPropagation(); generateActivation(v) }}
-                              title="Generate a one-time Player Portal activation link"
+                              title={L2('Generate a one-time Player Portal activation link', '生成一次性玩家门户激活链接')}
                             >
                               {activationBusy === v.id ? t('allVips.generating') : t('allVips.activatePortal')}
                             </Btn>

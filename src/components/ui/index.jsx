@@ -2,7 +2,8 @@
 // Shared UI component library — all pages import from here, not page-specific duplicates.
 
 import { useState, useRef, useEffect } from 'react'
-import { TIER_CONFIG, STATUS_CONFIG, RISK_CONFIG } from '../../lib/enums'
+import { TIER_CONFIG, STATUS_CONFIG, RISK_CONFIG, enumLabel } from '../../lib/enums'
+import { useLanguage } from '../../contexts/LanguageContext'
 
 // ── Button ──────────────────────────────────────────────────────────────────
 export function Btn({ children, variant = 'secondary', size = 'md', onClick, disabled, style, type = 'button' }) {
@@ -61,6 +62,7 @@ export function TierBadge({ tier }) {
 }
 
 export function StatusBadge({ status }) {
+  const { lang } = useLanguage()
   if (!status) return null
   const cfg = STATUS_CONFIG[status] || { color: 'var(--muted)', bg: 'var(--surface2)' }
   return (
@@ -68,11 +70,12 @@ export function StatusBadge({ status }) {
       display: 'inline-block', padding: '2px 9px', borderRadius: 20,
       fontSize: 11, fontWeight: 700,
       color: cfg.color, background: cfg.bg,
-    }}>{status}</span>
+    }}>{lang === 'zh' ? (cfg.zh || enumLabel(status, 'zh')) : status}</span>
   )
 }
 
 export function RiskBadge({ risk }) {
+  const { lang } = useLanguage()
   if (!risk) return null
   const key = (risk || '').toUpperCase()
   const cfg = RISK_CONFIG[risk] || RISK_CONFIG[key] || { color: 'var(--muted)', bg: 'var(--surface2)', label: risk }
@@ -81,7 +84,7 @@ export function RiskBadge({ risk }) {
       display: 'inline-block', padding: '2px 9px', borderRadius: 20,
       fontSize: 11, fontWeight: 700,
       color: cfg.color, background: cfg.bg,
-    }}>{cfg.label}</span>
+    }}>{lang === 'zh' ? (cfg.zh || enumLabel(cfg.label, 'zh')) : cfg.label}</span>
   )
 }
 
@@ -253,7 +256,9 @@ export function Toast({ message, type = 'success', onClose }) {
 }
 
 // ── Empty / Loading / Error states ────────────────────────────────────────────
-export function LoadingState({ message = 'Loading…' }) {
+export function LoadingState({ message }) {
+  const { lang } = useLanguage()
+  if (message == null) message = lang === 'zh' ? '载入中…' : 'Loading…'
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '48px 24px', color: 'var(--muted)', gap: 10 }}>
       <div style={{ width: 18, height: 18, border: '2px solid var(--border)', borderTopColor: 'var(--brand)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
@@ -275,20 +280,22 @@ export function EmptyState({ icon = '📭', title, message, action }) {
 }
 
 export function ErrorState({ message, onRetry }) {
+  const { lang } = useLanguage()
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '48px 24px', color: 'var(--muted)', textAlign: 'center', gap: 12 }}>
       <div style={{ fontSize: 36 }}>⚠️</div>
-      <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--danger)' }}>Something went wrong</div>
+      <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--danger)' }}>{lang === 'zh' ? '出错了' : 'Something went wrong'}</div>
       <div style={{ fontSize: 13, maxWidth: 360 }}>{message}</div>
-      {onRetry && <Btn variant="secondary" onClick={onRetry}>Retry</Btn>}
+      {onRetry && <Btn variant="secondary" onClick={onRetry}>{lang === 'zh' ? '重试' : 'Retry'}</Btn>}
     </div>
   )
 }
 
 // ── DataTable ─────────────────────────────────────────────────────────────────
 export function DataTable({ columns, rows, onRowClick, emptyState, loading, keyFn }) {
+  const { lang } = useLanguage()
   if (loading) return <LoadingState />
-  if (!rows || rows.length === 0) return emptyState || <EmptyState title="No data" message="No records match the current filters." />
+  if (!rows || rows.length === 0) return emptyState || <EmptyState title={lang === 'zh' ? '暂无数据' : 'No data'} message={lang === 'zh' ? '没有符合当前筛选条件的记录。' : 'No records match the current filters.'} />
   return (
     <div style={{ overflowX: 'auto' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
@@ -338,18 +345,19 @@ export function DataTable({ columns, rows, onRowClick, emptyState, loading, keyF
 
 // ── Pagination ────────────────────────────────────────────────────────────────
 export function Pagination({ page, total, pageSize, onChange }) {
+  const { lang } = useLanguage()
   const totalPages = Math.ceil(total / pageSize)
   if (totalPages <= 1) return null
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 16px', borderTop: '1px solid var(--border)' }}>
       <span style={{ fontSize: 12, color: 'var(--muted)', flex: 1 }}>
-        {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, total)} of {total.toLocaleString()}
+        {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, total)} {lang === 'zh' ? '共' : 'of'} {total.toLocaleString()}
       </span>
-      <Btn size="sm" variant="ghost" disabled={page <= 1} onClick={() => onChange(page - 1)}>← Prev</Btn>
+      <Btn size="sm" variant="ghost" disabled={page <= 1} onClick={() => onChange(page - 1)}>{lang === 'zh' ? '← 上一页' : '← Prev'}</Btn>
       <span style={{ fontSize: 12, color: 'var(--muted)', minWidth: 60, textAlign: 'center' }}>
         {page} / {totalPages}
       </span>
-      <Btn size="sm" variant="ghost" disabled={page >= totalPages} onClick={() => onChange(page + 1)}>Next →</Btn>
+      <Btn size="sm" variant="ghost" disabled={page >= totalPages} onClick={() => onChange(page + 1)}>{lang === 'zh' ? '下一页 →' : 'Next →'}</Btn>
     </div>
   )
 }

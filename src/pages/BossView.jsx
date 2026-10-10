@@ -21,7 +21,10 @@ const s = {
   badge:   { display:'inline-block', padding:'2px 10px', borderRadius:12, fontSize:11, fontWeight:700 },
 }
 
+const VAL_ZH = { Positive:'正面', Neutral:'中性', 'No Response':'无回应', Negative:'负面', Contacted:'已联系', Replied:'已回复', Deposited:'已存款', Reactivated:'已召回', 'No Reply':'未回复', Call:'电话', 'In-person':'面谈', Other:'其他', Active:'活跃', Inactive:'不活跃', Dormant:'休眠', 'At Risk':'有风险', Normal:'正常', Churned:'流失' }
+
 function BigStat({ icon, label, value, color, sub, change }) {
+  const { lang } = useLanguage()
   return (
     <div style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:12, padding:'18px 20px' }}>
       <div style={{ fontSize:12, color:'var(--muted)', marginBottom:8 }}>{icon} {label}</div>
@@ -29,7 +32,7 @@ function BigStat({ icon, label, value, color, sub, change }) {
       {sub    && <div style={{ fontSize:12, color:'var(--muted)', marginTop:4 }}>{sub}</div>}
       {change !== undefined && (
         <div style={{ fontSize:12, marginTop:4, color: change>=0?'#3fb950':'#f85149', fontWeight:600 }}>
-          {change>=0?'↑':'↓'} {Math.abs(change)}% vs last month
+          {change>=0?'↑':'↓'} {Math.abs(change)}% {lang === 'zh' ? '对比上月' : 'vs last month'}
         </div>
       )}
     </div>
@@ -38,7 +41,9 @@ function BigStat({ icon, label, value, color, sub, change }) {
 
 export default function BossView() {
   const navigate  = useNavigate()
-  const { t } = useLanguage()
+  const { t, lang } = useLanguage()
+  const L2 = (en, zh) => (lang === 'zh' ? zh : en)
+  const VZ = (v) => (lang === 'zh' && v ? (VAL_ZH[v] || v) : v)
   const [data,    setData]    = useState(null)
   const [loading, setLoading] = useState(true)
   const [period,  setPeriod]  = useUrlParam('period', 'today') // today | week | month
@@ -161,7 +166,7 @@ export default function BossView() {
 
   if (loading) return (
     <div style={{ ...s.page, display:'flex', alignItems:'center', justifyContent:'center', minHeight:'60vh' }}>
-      <div style={{ color:'var(--muted)' }}>Loading executive summary...</div>
+      <div style={{ color:'var(--muted)' }}>{L2('Loading executive summary...','载入高层摘要中...')}</div>
     </div>
   )
 
@@ -191,7 +196,7 @@ export default function BossView() {
         <BigStat icon="👥" label={t('bossView.totalVIPs')}      value={d.totalVIPs}   color="var(--accent)" />
         <BigStat icon="✅" label={t('bossView.activeVIPs')}     value={d.activeVIPs}  color="#3fb950" sub={`${d.retentionRate}% ${t('bossView.retention')}`} />
         <BigStat icon="🚨" label={t('bossView.highRisk')}       value={d.highRisk}    color="#f85149" sub={t('bossView.highRiskSub')} />
-        <BigStat icon="📞" label={`${t('bossView.contacts')} (${period})`} value={contactCount} color="var(--accent)" />
+        <BigStat icon="📞" label={`${t('bossView.contacts')} (${t(`bossView.period.${period}`)})`} value={contactCount} color="var(--accent)" />
       </div>
 
       <div style={{ ...s.grid2, marginBottom:16 }}>
@@ -290,16 +295,16 @@ export default function BossView() {
             ) : d.recentLogs.map(log => {
               const outcomeColor = { Positive:'#3fb950', Neutral:'#8b949e', 'No Response':'#d29922', Negative:'#f85149' }[log.outcome]||'var(--muted)'
               const diff = Math.floor((Date.now()-new Date(log.logged_at))/1000)
-              const ago  = diff<60?'just now':diff<3600?Math.floor(diff/60)+'m ago':diff<86400?Math.floor(diff/3600)+'h ago':Math.floor(diff/86400)+'d ago'
+              const ago  = diff<60?L2('just now','刚刚'):diff<3600?Math.floor(diff/60)+L2('m ago','分钟前'):diff<86400?Math.floor(diff/3600)+L2('h ago','小时前'):Math.floor(diff/86400)+L2('d ago','天前')
               return (
                 <div key={log.id} style={{ display:'flex', alignItems:'flex-start', gap:10, paddingBottom:10, borderBottom:'1px solid var(--border)', marginBottom:10, cursor:'pointer' }}
                   onClick={() => navigate(`/vips/${log.vip_id}`)}>
                   <div style={{ width:8, height:8, borderRadius:'50%', background:outcomeColor, marginTop:4, flexShrink:0 }} />
                   <div style={{ flex:1 }}>
-                    <div style={{ fontSize:13, fontWeight:600 }}>{log.vip_username} <span style={{ color:'var(--muted)', fontWeight:400, fontSize:12 }}>· {log.channel}</span></div>
+                    <div style={{ fontSize:13, fontWeight:600 }}>{log.vip_username} <span style={{ color:'var(--muted)', fontWeight:400, fontSize:12 }}>· {VZ(log.channel)}</span></div>
                     <div style={{ fontSize:11, color:'var(--muted)' }}>{log.host_name} · {ago}</div>
                   </div>
-                  <span style={{ fontSize:11, color:outcomeColor, fontWeight:600 }}>{log.outcome}</span>
+                  <span style={{ fontSize:11, color:outcomeColor, fontWeight:600 }}>{VZ(log.outcome)}</span>
                 </div>
               )
             })}
@@ -312,7 +317,7 @@ export default function BossView() {
         <div style={s.cardHdr}>💰 {t('bossView.topActiveVIPs')}</div>
         <div style={{ padding:'10px 20px 0' }}>
           <div style={{ fontSize: 11, color: 'var(--amber, #f59e0b)', marginBottom: 8 }}>
-            ⚠️ Deposits shown in each VIP's own currency — not directly comparable across regions
+            ⚠️ {L2("Deposits shown in each VIP's own currency — not directly comparable across regions",'存款以各 VIP 自身货币显示 — 不同地区之间无法直接比较')}
           </div>
         </div>
         <div style={{ overflowX:'auto' }}>
@@ -344,7 +349,7 @@ export default function BossView() {
                     </td>
                     <td style={{ ...s.td, fontWeight:700, color:'#3fb950' }}>{formatMoney(v.total_deposit, v.currency)}</td>
                     <td style={{ ...s.td, fontWeight:700, color:scoreColor }}>{score||'—'}</td>
-                    <td style={{ ...s.td, fontSize:12 }}>{v.activity_status||'—'}</td>
+                    <td style={{ ...s.td, fontSize:12 }}>{VZ(v.activity_status)||'—'}</td>
                     <td style={{ ...s.td, fontSize:12, color:'var(--muted)' }}>{v.host_assigned||'—'}</td>
                   </tr>
                 )
@@ -378,7 +383,7 @@ export default function BossView() {
                   <tr key={h.host}
                     onMouseEnter={e => e.currentTarget.style.background='var(--surface2)'}
                     onMouseLeave={e => e.currentTarget.style.background='transparent'}>
-                    <td style={{ ...s.td, fontWeight:700 }}>{h.host}</td>
+                    <td style={{ ...s.td, fontWeight:700 }}>{h.host === 'Unassigned' ? L2('Unassigned','未分配') : h.host === 'Unknown' ? L2('Unknown','未知') : h.host}</td>
                     <td style={s.td}>{h.assigned}</td>
                     <td style={{ ...s.td, fontWeight:700, color:'var(--accent)' }}>{h.contacts}</td>
                     <td style={s.td}>{h.uniqueVips}</td>

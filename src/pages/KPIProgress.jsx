@@ -6,7 +6,7 @@ import {
   KPI_FRAMEWORK, ALL_ITEMS, TOTAL_WEIGHT,
   getScore, getStatusColor, getStatusLabel,
   loadKpiAutoData, loadKpiManualData,
-  getActualFromMaps, hasManualEntry,
+  getActualFromMaps, hasManualEntry, kpiLabel, kpiDesc, kpiFmt,
 } from '../lib/kpi'
 import { MONTHS, MONTHS_CN } from '../lib/constants'
 import { useUrlParam, useUrlParamNumber } from '../hooks/useUrlParam'
@@ -51,7 +51,7 @@ function ScoreRing({ score, maxScore, label, color, size=80 }) {
 
 // ── KPI Item Row ──────────────────────────────────────────────────────────────
 function KPIRow({ item, actual, onEdit, isEditing, editValue, onEditChange, onSave, onCancel, noteValue, onNoteChange, isMine, compact=false, isOverridden, onResetToAuto }) {
-  const { t } = useLanguage()
+  const { t, lang } = useLanguage()
   const color  = getStatusColor(actual, item.target)
   const score  = getScore(actual, item.target, item.weight)
   const pctVal = item.target ? Math.min(1, actual / item.target) : 0
@@ -60,8 +60,8 @@ function KPIRow({ item, actual, onEdit, isEditing, editValue, onEditChange, onSa
     <div style={{ padding: compact?'10px 20px':'14px 20px', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', gap:12, flexWrap:'wrap' }}>
       <div style={{ fontSize:18, width:28, textAlign:'center', flexShrink:0 }}>{item.icon}</div>
       <div style={{ flex:2, minWidth:160 }}>
-        <div style={{ fontSize:13, fontWeight:600 }}>{item.label}</div>
-        <div style={{ fontSize:11, color:'var(--muted)', marginTop:1 }}>{item.desc}</div>
+        <div style={{ fontSize:13, fontWeight:600 }}>{kpiLabel(item, lang)}</div>
+        <div style={{ fontSize:11, color:'var(--muted)', marginTop:1 }}>{kpiDesc(item, lang)}</div>
         {item.source === 'auto' && !isOverridden && <span style={{ ...s.tag('#06b6d4'), fontSize:10, marginTop:3, display:'inline-block' }}>{t('kpi.sourceAuto')}</span>}
         {item.source === 'auto' && isOverridden && <span style={{ ...s.tag('#f0883e'), fontSize:10, marginTop:3, display:'inline-block' }}>{t('kpi.sourceOverridden')}</span>}
         {item.source === 'manual' && <span style={{ ...s.tag('#8b5cf6'), fontSize:10, marginTop:3, display:'inline-block' }}>{t('kpi.sourceManual')}</span>}
@@ -89,8 +89,8 @@ function KPIRow({ item, actual, onEdit, isEditing, editValue, onEditChange, onSa
           </div>
         ) : (
           <div>
-            <div style={{ fontSize:14, fontWeight:700, color }}>{item.fmt(actual)}</div>
-            <div style={{ fontSize:11, color:'var(--muted)' }}>{t('kpi.actualVsTarget', { target: item.fmt(item.target) })}</div>
+            <div style={{ fontSize:14, fontWeight:700, color }}>{kpiFmt(item, actual, lang)}</div>
+            <div style={{ fontSize:11, color:'var(--muted)' }}>{t('kpi.actualVsTarget', { target: kpiFmt(item, item.target, lang) })}</div>
           </div>
         )}
       </div>
@@ -120,7 +120,9 @@ function KPIRow({ item, actual, onEdit, isEditing, editValue, onEditChange, onSa
 // ── Main Component ────────────────────────────────────────────────────────────
 export default function KPIProgress() {
   const { profile } = useAuth()
-  const { t } = useLanguage()
+  const { t, lang } = useLanguage()
+  const L2 = (en, zh) => (lang === 'zh' ? zh : en)
+  const MN = lang === 'zh' ? MONTHS_CN : MONTHS
   const isAdmin = profile?.role === 'admin'
 
   const now = new Date()
@@ -256,8 +258,8 @@ export default function KPIProgress() {
       {/* Header */}
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:4, flexWrap:'wrap', gap:12 }}>
         <div>
-          <div style={s.title}>📈 KPI Progress</div>
-          <div style={s.sub}>{t('kpi.performanceTracking')} · {MONTHS[month]} {year}</div>
+          <div style={s.title}>📈 {L2('KPI Progress','KPI 进度')}</div>
+          <div style={s.sub}>{t('kpi.performanceTracking')} · {MN[month]} {year}</div>
         </div>
         <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
           {isAdmin && (
@@ -272,7 +274,7 @@ export default function KPIProgress() {
           )}
           <select style={{ background:'var(--surface)', border:'1px solid var(--border)', color:'var(--text)', padding:'7px 10px', borderRadius:7, fontSize:13, outline:'none' }}
             value={month} onChange={e => setMonth(parseInt(e.target.value))}>
-            {MONTHS.map((m,i) => <option key={m} value={i}>{m}</option>)}
+            {MONTHS.map((m,i) => <option key={m} value={i}>{MN[i]}</option>)}
           </select>
           <select style={{ background:'var(--surface)', border:'1px solid var(--border)', color:'var(--text)', padding:'7px 10px', borderRadius:7, fontSize:13, outline:'none' }}
             value={year} onChange={e => setYear(parseInt(e.target.value))}>
@@ -290,7 +292,7 @@ export default function KPIProgress() {
               <ScoreRing score={myScore} maxScore={TOTAL_WEIGHT} label={t('kpi.totalScoreLabel')} color={scoreColor} size={90} />
               <div style={{ flex:1, minWidth:200 }}>
                 <div style={{ fontSize:16, fontWeight:700, marginBottom:4 }}>
-                  {profile?.full_name || 'Me'} · {MONTHS[month]} {year}
+                  {profile?.full_name || L2('Me','我')} · {MN[month]} {year}
                 </div>
                 <div style={{ height:10, background:'var(--surface2)', borderRadius:5, overflow:'hidden', marginBottom:6 }}>
                   <div style={{ width:`${Math.min(100, myScore/TOTAL_WEIGHT*100)}%`, height:'100%', borderRadius:5, background:scoreColor, transition:'width .6s' }} />
@@ -323,7 +325,7 @@ export default function KPIProgress() {
             <div key={cat.category} style={s.card}>
               <div style={s.catHdr(cat.color)}>
                 <span style={{ ...s.tag(cat.color), fontSize:12 }}>{cat.category}{t('kpi.categorySuffix')} · {cat.weight}%</span>
-                <span style={{ fontSize:14, fontWeight:700, color:cat.color }}>{cat.label}</span>
+                <span style={{ fontSize:14, fontWeight:700, color:cat.color }}>{kpiLabel(cat, lang)}</span>
                 <span style={{ marginLeft:'auto', fontSize:12, color:'var(--muted)' }}>
                   {t('kpi.subtotalScore', { score: cat.items.reduce((s,item) => s + getScore(getActual(item.key), item.target, item.weight), 0).toFixed(1) })}
                   &nbsp;/&nbsp;{cat.items.reduce((s,item) => s + item.weight, 0)} {t('kpi.categorySuffix') === '类' ? '分' : 'pts'}
@@ -354,21 +356,21 @@ export default function KPIProgress() {
           {autoData.diamond_uncovered !== undefined && (
             <div style={{ ...s.card, border:'1px solid rgba(99,102,241,.3)' }}>
               <div style={{ padding:'12px 20px', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:8 }}>
-                <div style={{ fontSize:13, fontWeight:700 }}>💎 Diamond 1对1 Breakdown — {MONTHS[month]} {year}</div>
+                <div style={{ fontSize:13, fontWeight:700 }}>💎 {L2('Diamond 1:1 Breakdown','钻石 1对1 明细')} — {MN[month]} {year}</div>
                 <div style={{ display:'flex', gap:12, fontSize:12 }}>
-                  <span style={{ color:'#3fb950', fontWeight:700 }}>✅ Contacted: {autoData.diamond_contacted ?? 0}</span>
-                  <span style={{ color:'#f85149', fontWeight:700 }}>❌ Not yet: {(autoData.diamond_uncovered || []).length}</span>
-                  <span style={{ color:'var(--muted)' }}>Total: {autoData.diamond_total ?? 0}</span>
+                  <span style={{ color:'#3fb950', fontWeight:700 }}>✅ {L2('Contacted','已联系')}: {autoData.diamond_contacted ?? 0}</span>
+                  <span style={{ color:'#f85149', fontWeight:700 }}>❌ {L2('Not yet','未联系')}: {(autoData.diamond_uncovered || []).length}</span>
+                  <span style={{ color:'var(--muted)' }}>{L2('Total','总计')}: {autoData.diamond_total ?? 0}</span>
                 </div>
               </div>
               {(autoData.diamond_uncovered || []).length === 0 ? (
                 <div style={{ padding:'20px', textAlign:'center', color:'#3fb950', fontSize:13, fontWeight:600 }}>
-                  🎉 All Diamond players contacted this month!
+                  🎉 {L2('All Diamond players contacted this month!','本月所有钻石玩家均已联系！')}
                 </div>
               ) : (
                 <div style={{ padding:'14px 20px' }}>
                   <div style={{ fontSize:11, color:'var(--muted)', marginBottom:10, fontWeight:600 }}>
-                    NOT YET CONTACTED ({(autoData.diamond_uncovered || []).length} players) — contact them to improve your coverage rate
+                    {L2(`NOT YET CONTACTED (${(autoData.diamond_uncovered || []).length} players) — contact them to improve your coverage rate`,`尚未联系（${(autoData.diamond_uncovered || []).length} 位玩家）— 联系他们以提升覆盖率`)}
                   </div>
                   <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
                     {(autoData.diamond_uncovered || []).map(d => (
@@ -395,7 +397,7 @@ export default function KPIProgress() {
           <div style={{ ...s.card, marginBottom:16 }}>
             <div style={{ padding:'18px 24px' }}>
               <div style={{ fontSize:13, fontWeight:700, color:'var(--muted)', marginBottom:14, textTransform:'uppercase', letterSpacing:'.5px' }}>
-                {t('kpi.teamComparisonTitle', { month: MONTHS[month], year })}
+                {t('kpi.teamComparisonTitle', { month: MN[month], year })}
               </div>
               <div style={{ display:'flex', gap:20, flexWrap:'wrap', alignItems:'flex-end' }}>
                 {allUsers.map(user => {
@@ -419,7 +421,7 @@ export default function KPIProgress() {
             <div key={cat.category} style={s.card}>
               <div style={s.catHdr(cat.color)}>
                 <span style={{ ...s.tag(cat.color), fontSize:12 }}>{cat.category}{t('kpi.categorySuffix')} · {cat.weight}%</span>
-                <span style={{ fontSize:14, fontWeight:700, color:cat.color }}>{cat.label}</span>
+                <span style={{ fontSize:14, fontWeight:700, color:cat.color }}>{kpiLabel(cat, lang)}</span>
               </div>
               {/* Header row */}
               <div style={{ display:'flex', padding:'8px 20px', borderBottom:'1px solid var(--border)', background:'var(--surface2)' }}>
@@ -434,13 +436,13 @@ export default function KPIProgress() {
               {cat.items.map(item => (
                 <div key={item.key} style={{ display:'flex', alignItems:'center', padding:'10px 20px', borderBottom:'1px solid var(--border)' }}>
                   <div style={{ flex:2, minWidth:0 }}>
-                    <div style={{ fontSize:12, fontWeight:600 }}>{item.icon} {item.label}</div>
+                    <div style={{ fontSize:12, fontWeight:600 }}>{item.icon} {kpiLabel(item, lang)}</div>
                     <span style={{ ...s.tag(item.source==='auto'?'#06b6d4':'#8b5cf6'), fontSize:10 }}>
                       {item.source==='auto'?t('kpi.sourceAuto'):t('kpi.sourceManual')}
                     </span>
                   </div>
                   <div style={{ minWidth:60, textAlign:'center', fontSize:12, color:'var(--muted)' }}>
-                    {item.fmt(item.target)}
+                    {kpiFmt(item, item.target, lang)}
                   </div>
                   {allUsers.map(user => {
                     const actual = getActual(item.key, user.id)
@@ -448,7 +450,7 @@ export default function KPIProgress() {
                     const score  = getScore(actual, item.target, item.weight)
                     return (
                       <div key={user.id} style={{ flex:1, minWidth:100, textAlign:'center' }}>
-                        <div style={{ fontSize:13, fontWeight:700, color }}>{item.fmt(actual)}</div>
+                        <div style={{ fontSize:13, fontWeight:700, color }}>{kpiFmt(item, actual, lang)}</div>
                         <div style={{ fontSize:10, color:'var(--muted)' }}>{score.toFixed(1)}{t('kpi.perWeight', { n: item.weight })}</div>
                         <span style={{ ...s.tag(color), fontSize:10 }}>{getStatusLabel(actual, item.target, t)}</span>
                       </div>
@@ -478,7 +480,7 @@ export default function KPIProgress() {
           {/* Grand total */}
           <div style={{ ...s.card, border:'2px solid var(--accent)' }}>
             <div style={{ padding:'16px 20px', display:'flex', alignItems:'center', gap:20, flexWrap:'wrap' }}>
-              <div style={{ fontSize:14, fontWeight:700, color:'var(--accent)', flex:2 }}>{t('kpi.totalScoreSummary', { month: MONTHS[month], year })}</div>
+              <div style={{ fontSize:14, fontWeight:700, color:'var(--accent)', flex:2 }}>{t('kpi.totalScoreSummary', { month: MN[month], year })}</div>
               {allUsers.map(user => {
                 const total = calcTotalScore(user.id)
                 const col   = total >= 85 ? '#3fb950' : total >= 60 ? '#d29922' : '#f85149'

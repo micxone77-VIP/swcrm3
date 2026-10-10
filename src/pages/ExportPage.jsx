@@ -38,8 +38,11 @@ const fmtSplit = (totals) => {
 }
 
 
+// Current UI language for module-level helpers (set on each ExportPage render)
+let CUR_LANG = 'en'
+
 function downloadCSV(rows, filename) {
-  if (!rows || rows.length === 0) return alert('No data to export.')
+  if (!rows || rows.length === 0) return alert(CUR_LANG === 'zh' ? '没有可导出的数据。' : 'No data to export.')
   const headers = Object.keys(rows[0])
   const csv = [
     headers.join(','),
@@ -83,6 +86,8 @@ const s = {
 
 // ── CSV EXPORT SECTION ────────────────────────────────────────────────────────
 function CSVExportCard({ icon, title, desc, color, onExport, loading }) {
+  const { lang } = useLanguage()
+  const L2 = (en, zh) => (lang === 'zh' ? zh : en)
   return (
     <div style={{ ...s.card, display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:12 }}>
       <div style={{ display:'flex', alignItems:'center', gap:14 }}>
@@ -93,7 +98,7 @@ function CSVExportCard({ icon, title, desc, color, onExport, loading }) {
         </div>
       </div>
       <button style={s.btn(color, loading)} disabled={loading} onClick={onExport}>
-        {loading ? 'Exporting…' : '⬇ Export CSV'}
+        {loading ? L2('Exporting…','导出中…') : L2('⬇ Export CSV','⬇ 导出 CSV')}
       </button>
     </div>
   )
@@ -101,7 +106,9 @@ function CSVExportCard({ icon, title, desc, color, onExport, loading }) {
 
 export default function ExportPage() {
   const { profile } = useAuth()
-  const { t } = useLanguage()
+  const { t, lang } = useLanguage()
+  CUR_LANG = lang
+  const L2 = (en, zh) => (lang === 'zh' ? zh : en)
   const [exportMonth, setExportMonth] = useUrlParam('month', currentYearMonth())
   const [loadingCSV, setLoadingCSV]   = useState({})
   const [mailingImporting, setMailingImporting] = useState(false)
@@ -189,7 +196,7 @@ export default function ExportPage() {
     // Wildcard select — covers all columns including telegram/special_requests
     // which may be newly added; undefined columns simply come back as blank cells.
     const { data, error } = await supabase.from('vip_members').select('*').order('tier').order('username')
-    if (error) { alert('Export failed: ' + error.message); setLoadingCSV(p => ({...p, mailing:false})); return }
+    if (error) { alert(L2('Export failed: ','导出失败：') + error.message); setLoadingCSV(p => ({...p, mailing:false})); return }
     const vips = data || []
     downloadCSV(vips.map(v => ({
       Tier:     v.tier || '',
@@ -271,7 +278,7 @@ export default function ExportPage() {
 
       setMailingResult({ total: rows.length, updated, skippedBlank, notFound, errors, notFoundUsernames })
     } catch (e) {
-      alert('Import failed: ' + e.message)
+      alert(L2('Import failed: ','导入失败：') + e.message)
     } finally {
       setMailingImporting(false)
     }
@@ -409,7 +416,7 @@ export default function ExportPage() {
       .in('currency', ['MYR', 'SGD'])
 
     if (!totals || totals.length === 0) {
-      alert(`No profiling data found for ${activeMonth}`)
+      alert(L2(`No profiling data found for ${activeMonth}`, `未找到 ${activeMonth} 的玩家画像数据`))
       setLoadingCSV(p => ({...p, profiling:false}))
       return
     }
@@ -1348,24 +1355,24 @@ export default function ExportPage() {
     }
 
     setLoadingCSV(p => ({...p, bundle:false}))
-    alert(`✅ ${monthLabel} report package downloaded!\n\nIncluded (${included.length} files):\n${included.map((f,i)=>`${i+1}. ${f}`).join('\n')}\n\nUpload all of them to build the monthly report. (KPI data is intentionally not included — that's tracked separately.)`)
+    alert(L2(`✅ ${monthLabel} report package downloaded!\n\nIncluded (${included.length} files):\n${included.map((f,i)=>`${i+1}. ${f}`).join('\n')}\n\nUpload all of them to build the monthly report. (KPI data is intentionally not included — that's tracked separately.)`, `✅ ${monthLabel} 报告包已下载！\n\n包含（${included.length} 个文件）：\n${included.map((f,i)=>`${i+1}. ${f}`).join('\n')}\n\n请上传所有文件以制作每月报告。（KPI 数据刻意不包含 — 另行追踪。）`))
   }
 
   return (
     <div style={s.page}>
-      <div style={s.heading}>Export</div>
-      <div style={s.sub}>Download your data as CSV — including a full Monthly Report Package for building your PPT</div>
+      <div style={s.heading}>{L2('Export','导出')}</div>
+      <div style={s.sub}>{L2('Download your data as CSV — including a full Monthly Report Package for building your PPT','以 CSV 下载数据 — 包括用于制作 PPT 的完整每月报告包')}</div>
 
       {/* ── CSV EXPORTS ── */}
       <div style={s.card}>
         <div style={s.cardHdr}>
           <span style={s.badge('#0ea5e9')}>CSV</span>
           <div>
-            <div style={s.title}>Export & Import Data</div>
+            <div style={s.title}>{L2('Export & Import Data','导出与导入数据')}</div>
             <div style={{fontSize:13,color:'var(--muted)',marginTop:4}}>
-              Download VIP data for analysis — or import a completed mailing list (.xlsx) back into the system.
+              {L2('Download VIP data for analysis — or import a completed mailing list (.xlsx) back into the system.','下载 VIP 数据进行分析 — 或将填写完成的邮寄名单 (.xlsx) 导入系统。')}
               <span style={{color:'var(--amber,#f59e0b)',marginLeft:8}}>
-                📌 To upload monthly platform data (Raw Data CSV), use Raw Data Import instead.
+                {L2('📌 To upload monthly platform data (Raw Data CSV), use Raw Data Import instead.','📌 如需上传每月平台数据（原始数据 CSV），请使用原始数据导入。')}
               </span>
             </div>
           </div>
@@ -1373,12 +1380,12 @@ export default function ExportPage() {
 
         {/* Contact log date filter */}
         <div style={{ ...s.row, marginBottom:16, background:'var(--bg)', padding:'10px 14px', borderRadius:8, border:'1px solid var(--border)' }}>
-          <span style={s.label}>Contact logs filter:</span>
-          <span style={{ fontSize:12, color:'var(--muted)' }}>From</span>
+          <span style={s.label}>{L2('Contact logs filter:','联系记录筛选：')}</span>
+          <span style={{ fontSize:12, color:'var(--muted)' }}>{L2('From','从')}</span>
           <input type="date" style={s.input} value={dateFrom} onChange={e=>setDateFrom(e.target.value)} />
-          <span style={{ fontSize:12, color:'var(--muted)' }}>To</span>
+          <span style={{ fontSize:12, color:'var(--muted)' }}>{L2('To','至')}</span>
           <input type="date" style={s.input} value={dateTo}   onChange={e=>setDateTo(e.target.value)} />
-          {(dateFrom||dateTo) && <button style={s.btnSm('#8b949e')} onClick={()=>{setDateFrom('');setDateTo('')}}>Clear</button>}
+          {(dateFrom||dateTo) && <button style={s.btnSm('#8b949e')} onClick={()=>{setDateFrom('');setDateTo('')}}>{L2('Clear','清除')}</button>}
         </div>
 
         <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
@@ -1386,8 +1393,8 @@ export default function ExportPage() {
           <div style={{ background:'var(--surface)', border:'1px solid #6366f1', borderRadius:10, padding:'14px 16px', display:'flex', alignItems:'center', gap:14 }}>
             <div style={{ fontSize:22 }}>👑</div>
             <div style={{ flex:1 }}>
-              <div style={{ fontSize:13, fontWeight:700 }}>VIP Members</div>
-              <div style={{ fontSize:11, color:'var(--muted)', marginTop:2 }}>All VIP profiles — tier, valid bet, deposit, host, birthday, region</div>
+              <div style={{ fontSize:13, fontWeight:700 }}>{L2('VIP Members','VIP 会员')}</div>
+              <div style={{ fontSize:11, color:'var(--muted)', marginTop:2 }}>{L2('All VIP profiles — tier, valid bet, deposit, host, birthday, region','所有 VIP 资料 — 等级、有效投注、存款、负责人、生日、地区')}</div>
             </div>
             <div style={{ display:'flex', gap:8 }}>
               <button
@@ -1399,48 +1406,48 @@ export default function ExportPage() {
                 style={{ ...s.btn('#059669'), minWidth:130, fontSize:12 }}
                 onClick={exportVIPsXLSX}
                 disabled={loadingCSV.vipXlsx}
-              >{loadingCSV.vipXlsx ? '…' : '📊 XLSX (by tier)'}</button>
+              >{loadingCSV.vipXlsx ? '…' : L2('📊 XLSX (by tier)','📊 XLSX（按等级）')}</button>
             </div>
           </div>
-          <CSVExportCard icon="📮" title="VIP Mailing List"        desc="Tier, username, name, phone, email, address, race, telegram, remark — for holiday gift mailing. Fill in any blank columns by hand and re-import." color="#14b8a6" loading={loadingCSV.mailing}   onExport={exportMailingList} />
+          <CSVExportCard icon="📮" title={L2('VIP Mailing List','VIP 邮寄名单')} desc={L2('Tier, username, name, phone, email, address, race, telegram, remark — for holiday gift mailing. Fill in any blank columns by hand and re-import.','等级、用户名、姓名、电话、邮箱、地址、种族、Telegram、备注 — 用于节日礼品邮寄。手动填写空白栏后重新导入。')} color="#14b8a6" loading={loadingCSV.mailing}   onExport={exportMailingList} />
 
           <div style={{ background:'var(--surface)', border:'1px dashed var(--border)', borderRadius:10, padding:'14px 16px', display:'flex', alignItems:'center', gap:14 }}>
             <div style={{ fontSize:22 }}>⬆️</div>
             <div style={{ flex:1 }}>
-              <div style={{ fontSize:13, fontWeight:700 }}>Import Completed Mailing List</div>
+              <div style={{ fontSize:13, fontWeight:700 }}>{L2('Import Completed Mailing List','导入已完成的邮寄名单')}</div>
               <div style={{ fontSize:11, color:'var(--muted)', marginTop:2 }}>
-                Upload the filled-in .xlsx or .csv back — updates Name, Phone, Email, Address, Race, Telegram, and Remark by matching Username. Blank cells are left untouched and never overwrite existing data.
+                {L2('Upload the filled-in .xlsx or .csv back — updates Name, Phone, Email, Address, Race, Telegram, and Remark by matching Username. Blank cells are left untouched and never overwrite existing data.','上传填写好的 .xlsx 或 .csv — 按用户名匹配更新姓名、电话、邮箱、地址、种族、Telegram 和备注。空白单元格不会改动，也不会覆盖现有数据。')}
               </div>
               {mailingResult && (
                 <div style={{ marginTop:8, fontSize:12, padding:'8px 12px', borderRadius:6, background:'var(--surface2)' }}>
-                  ✅ {mailingResult.updated} updated · {mailingResult.skippedBlank} had nothing new to add · {mailingResult.notFound} username{mailingResult.notFound===1?'':'s'} not found
-                  {mailingResult.errors > 0 && <span style={{ color:'#f85149' }}> · {mailingResult.errors} failed (columns may not exist yet — see setup note below)</span>}
+                  ✅ {L2(`${mailingResult.updated} updated · ${mailingResult.skippedBlank} had nothing new to add · ${mailingResult.notFound} username${mailingResult.notFound===1?'':'s'} not found`, `已更新 ${mailingResult.updated} · ${mailingResult.skippedBlank} 条无新内容 · ${mailingResult.notFound} 个用户名未找到`)}
+                  {mailingResult.errors > 0 && <span style={{ color:'#f85149' }}> · {L2(`${mailingResult.errors} failed (columns may not exist yet — see setup note below)`, `${mailingResult.errors} 条失败（栏位可能尚不存在 — 请参阅下方设置说明）`)}</span>}
                   {mailingResult.notFoundUsernames.length > 0 && (
-                    <div style={{ marginTop:4, color:'var(--muted)' }}>Not found: {mailingResult.notFoundUsernames.slice(0,10).join(', ')}{mailingResult.notFoundUsernames.length>10?'…':''}</div>
+                    <div style={{ marginTop:4, color:'var(--muted)' }}>{L2('Not found:','未找到：')} {mailingResult.notFoundUsernames.slice(0,10).join(', ')}{mailingResult.notFoundUsernames.length>10?'…':''}</div>
                   )}
                 </div>
               )}
             </div>
             <label style={{ background:'#14b8a6', color:'#fff', padding:'8px 16px', borderRadius:8, fontSize:12, fontWeight:700, cursor: mailingImporting ? 'default' : 'pointer', opacity: mailingImporting ? 0.6 : 1 }}>
-              {mailingImporting ? 'Importing…' : 'Choose File'}
+              {mailingImporting ? L2('Importing…','导入中…') : L2('Choose File','选择文件')}
               <input type="file" accept=".xlsx,.xls,.csv" style={{ display:'none' }} disabled={mailingImporting}
                 onChange={e => { if (e.target.files[0]) importMailingList(e.target.files[0]); e.target.value = '' }} />
             </label>
           </div>
-          <CSVExportCard icon="📋" title="Contact Logs"            desc={`All host-VIP contact history${dateFrom||dateTo?' (filtered by date)':''}`}                                          color="#0ea5e9" loading={loadingCSV.contacts}   onExport={exportContacts} />
-          <CSVExportCard icon="⬆️" title="Upgrades / Flagged"      desc="VIPs qualifying for upgrade + Bronze/Silver flagged potentials"          color="#f59e0b" loading={loadingCSV.upgrades}  onExport={exportUpgrades} />
-          <CSVExportCard icon="🎂" title="Birthdays & Gifts"       desc="All VIP birthdays with latest gift log summary"                           color="#ec4899" loading={loadingCSV.birthdays} onExport={exportBirthdays} />
-          <CSVExportCard icon="🔬" title="Player Profiling"        desc={t('exportPage.playerProfilingDesc')} color="#f97316" loading={loadingCSV.profiling}  onExport={exportPlayerProfiling} />
-          <CSVExportCard icon="📊" title="Retention Metrics"       desc="Weekly depositor/active rates by tier — all months stored in CRM"        color="#8b5cf6" loading={loadingCSV.retention} onExport={exportRetentionMetrics} />
-          <CSVExportCard icon="🎁" title="Reward Campaigns"        desc="All bonus/deposit privilege campaigns with qualifier and payout breakdown" color="#f43f5e" loading={loadingCSV.rewards}   onExport={exportRewardCampaigns} />
+          <CSVExportCard icon="📋" title={L2('Contact Logs','联系记录')} desc={L2(`All host-VIP contact history${dateFrom||dateTo?' (filtered by date)':''}`, `所有负责人与 VIP 的联系历史${dateFrom||dateTo?'（按日期筛选）':''}`)}                                          color="#0ea5e9" loading={loadingCSV.contacts}   onExport={exportContacts} />
+          <CSVExportCard icon="⬆️" title={L2('Upgrades / Flagged','升级 / 标记')} desc={L2('VIPs qualifying for upgrade + Bronze/Silver flagged potentials','符合升级条件的 VIP + 被标记的铜/银级潜力玩家')}          color="#f59e0b" loading={loadingCSV.upgrades}  onExport={exportUpgrades} />
+          <CSVExportCard icon="🎂" title={L2('Birthdays & Gifts','生日与礼品')} desc={L2('All VIP birthdays with latest gift log summary','所有 VIP 生日及最新礼品记录汇总')}                           color="#ec4899" loading={loadingCSV.birthdays} onExport={exportBirthdays} />
+          <CSVExportCard icon="🔬" title={L2('Player Profiling','玩家画像')} desc={t('exportPage.playerProfilingDesc')} color="#f97316" loading={loadingCSV.profiling}  onExport={exportPlayerProfiling} />
+          <CSVExportCard icon="📊" title={L2('Retention Metrics','留存指标')} desc={L2('Weekly depositor/active rates by tier — all months stored in CRM','按等级的每周存款/活跃率 — CRM 中所有月份')}        color="#8b5cf6" loading={loadingCSV.retention} onExport={exportRetentionMetrics} />
+          <CSVExportCard icon="🎁" title={L2('Reward Campaigns','奖励活动')} desc={L2('All bonus/deposit privilege campaigns with qualifier and payout breakdown','所有奖金/存款特权活动，含合格者与派发明细')} color="#f43f5e" loading={loadingCSV.rewards}   onExport={exportRewardCampaigns} />
 
         {/* Export by Host */}
         <div style={{ ...s.card, display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:12 }}>
           <div style={{ display:'flex', alignItems:'center', gap:14 }}>
             <span style={{ fontSize:28 }}>👤</span>
             <div>
-              <div style={s.title}>Export by Host</div>
-              <div style={s.desc}>Download VIP list for a specific host — username, tier, last deposit date, phone number</div>
+              <div style={s.title}>{L2('Export by Host','按负责人导出')}</div>
+              <div style={s.desc}>{L2('Download VIP list for a specific host — username, tier, last deposit date, phone number','下载指定负责人的 VIP 名单 — 用户名、等级、最后存款日期、电话号码')}</div>
             </div>
           </div>
           <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
@@ -1448,14 +1455,14 @@ export default function ExportPage() {
               style={{ ...s.input, width:180 }}
               value={selectedHost}
               onChange={e => setSelectedHost(e.target.value)}>
-              <option value="">— Select Host —</option>
+              <option value="">{L2('— Select Host —','— 选择负责人 —')}</option>
               {hosts.map(h => <option key={h} value={h}>{h}</option>)}
             </select>
             <button
               style={s.btn('#7c3aed', !selectedHost || loadingCSV.byHost)}
               disabled={!selectedHost || loadingCSV.byHost}
               onClick={() => exportByHost(selectedHost)}>
-              {loadingCSV.byHost ? 'Exporting...' : '⬇ Export Host VIPs'}
+              {loadingCSV.byHost ? L2('Exporting...','导出中...') : L2('⬇ Export Host VIPs','⬇ 导出负责人 VIP')}
             </button>
           </div>
         </div>
@@ -1467,18 +1474,18 @@ export default function ExportPage() {
       {/* ── MONTHLY REPORT PACKAGE ── */}
       <div style={s.card}>
         <div style={s.cardHdr}>
-          <span style={s.badge('#0f766e')}>PACKAGE</span>
+          <span style={s.badge('#0f766e')}>{L2('PACKAGE','报告包')}</span>
           <div>
-            <div style={s.title}>Monthly Report Package</div>
-            <div style={s.desc}>Every section of the CRM for one month, current vs prior month side-by-side — ready to upload elsewhere to build the PPT (KPI data not included, that's tracked separately)</div>
+            <div style={s.title}>{L2('Monthly Report Package','每月报告包')}</div>
+            <div style={s.desc}>{L2("Every section of the CRM for one month, current vs prior month side-by-side — ready to upload elsewhere to build the PPT (KPI data not included, that's tracked separately)",'CRM 各部分的单月数据，本月与上月并列对比 — 可上传至其他工具制作 PPT（不含 KPI 数据，另行追踪）')}</div>
           </div>
         </div>
         <div style={{ ...s.row, marginBottom: 16 }}>
-          <span style={s.label}>Report month:</span>
+          <span style={s.label}>{L2('Report month:','报告月份：')}</span>
           <input type="month" value={exportMonth} onChange={e => setExportMonth(e.target.value)} style={s.input} />
         </div>
         <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 16, lineHeight: 1.7 }}>
-          Downloads up to 17 files: Tier Breakdown &amp; Retention by Region · VIP Activity ·
+          {L2('Downloads up to 17 files:','最多下载 17 个文件：')} Tier Breakdown &amp; Retention by Region · VIP Activity ·
           Contact Activity by Host · Contact Logs (raw) · Churn &amp; Reactivation · Campaigns Summary · Campaigns Player Results (winners/achievers) ·
           Budget &amp; Expenses · Host Bonus Summary by Tier · Platinum+Diamond 3-Month Trend (upgrades/downgrades/churn) ·
           Per-VIP Benefit Report (TD before/after) · Transfer Tracker Snapshot ·
@@ -1489,10 +1496,10 @@ export default function ExportPage() {
           disabled={loadingCSV.bundle}
           onClick={() => exportMonthlyPackage(exportMonth)}
         >
-          {loadingCSV.bundle ? '⏳ Downloading…' : `📦 Download ${fmtMonthLabel(exportMonth)} Full Package`}
+          {loadingCSV.bundle ? L2('⏳ Downloading…','⏳ 下载中…') : L2(`📦 Download ${fmtMonthLabel(exportMonth)} Full Package`, `📦 下载 ${fmtMonthLabel(exportMonth)} 完整报告包`)}
         </button>
         <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 8 }}>
-          Tip: Upload all downloaded files to Claude and ask it to build your monthly PPT report
+          {L2('Tip: Upload all downloaded files to Claude and ask it to build your monthly PPT report','提示：将所有下载的文件上传给 Claude，并让它制作您的每月 PPT 报告')}
         </div>
       </div>
     </div>

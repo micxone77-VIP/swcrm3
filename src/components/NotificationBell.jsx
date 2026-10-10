@@ -112,7 +112,7 @@ function applyParams(str, params) {
 
 export default function NotificationBell() {
   const { profile } = useAuth()
-  const { t } = useLanguage()
+  const { t, lang } = useLanguage()
   const navigate = useNavigate()
   const [alerts, setAlerts] = useState([])
   const [open, setOpen] = useState(false)
@@ -152,7 +152,7 @@ export default function NotificationBell() {
     <div style={{ position: 'relative' }}>
       <button
         onClick={() => setOpen(o => !o)}
-        title="System status"
+        title={lang === 'zh' ? '系统状态' : 'System status'}
         style={{
           position: 'relative', background: 'var(--surface2)', border: '1px solid var(--border)',
           borderRadius: 8, width: 36, height: 36, display: 'flex', alignItems: 'center',

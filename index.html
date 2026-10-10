@@ -84,7 +84,135 @@
 
       /* Utility classes */
       .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
+      /* ── Text size (A / A+ / A++) — set by data-text on <html>, chosen in the sidebar ──
+         Inline React styles use px, so each size is mapped explicitly. */
+      html[data-text="large"] body, html[data-text="large"] button, html[data-text="large"] input, html[data-text="large"] select, html[data-text="large"] textarea { font-size: 16.5px; }
+      html[data-text="large"] [style*="font-size: 8px"]{font-size:9.5px!important}
+      html[data-text="large"] [style*="font-size:8px"]{font-size:9.5px!important}
+      html[data-text="large"] [style*="font-size: 8.5px"]{font-size:10px!important}
+      html[data-text="large"] [style*="font-size:8.5px"]{font-size:10px!important}
+      html[data-text="large"] [style*="font-size: 9px"]{font-size:10.5px!important}
+      html[data-text="large"] [style*="font-size:9px"]{font-size:10.5px!important}
+      html[data-text="large"] [style*="font-size: 9.5px"]{font-size:11px!important}
+      html[data-text="large"] [style*="font-size:9.5px"]{font-size:11px!important}
+      html[data-text="large"] [style*="font-size: 10px"]{font-size:12px!important}
+      html[data-text="large"] [style*="font-size:10px"]{font-size:12px!important}
+      html[data-text="large"] [style*="font-size: 10.5px"]{font-size:12.5px!important}
+      html[data-text="large"] [style*="font-size:10.5px"]{font-size:12.5px!important}
+      html[data-text="large"] [style*="font-size: 11px"]{font-size:13px!important}
+      html[data-text="large"] [style*="font-size:11px"]{font-size:13px!important}
+      html[data-text="large"] [style*="font-size: 11.5px"]{font-size:13.5px!important}
+      html[data-text="large"] [style*="font-size:11.5px"]{font-size:13.5px!important}
+      html[data-text="large"] [style*="font-size: 12px"]{font-size:14px!important}
+      html[data-text="large"] [style*="font-size:12px"]{font-size:14px!important}
+      html[data-text="large"] [style*="font-size: 12.5px"]{font-size:15px!important}
+      html[data-text="large"] [style*="font-size:12.5px"]{font-size:15px!important}
+      html[data-text="large"] [style*="font-size: 13px"]{font-size:15.5px!important}
+      html[data-text="large"] [style*="font-size:13px"]{font-size:15.5px!important}
+      html[data-text="large"] [style*="font-size: 14px"]{font-size:16.5px!important}
+      html[data-text="large"] [style*="font-size:14px"]{font-size:16.5px!important}
+      html[data-text="large"] [style*="font-size: 15px"]{font-size:17.5px!important}
+      html[data-text="large"] [style*="font-size:15px"]{font-size:17.5px!important}
+      html[data-text="large"] [style*="font-size: 16px"]{font-size:19px!important}
+      html[data-text="large"] [style*="font-size:16px"]{font-size:19px!important}
+      html[data-text="large"] [style*="font-size: 17px"]{font-size:20px!important}
+      html[data-text="large"] [style*="font-size:17px"]{font-size:20px!important}
+      html[data-text="large"] [style*="font-size: 18px"]{font-size:21px!important}
+      html[data-text="large"] [style*="font-size:18px"]{font-size:21px!important}
+      html[data-text="large"] [style*="font-size: 19px"]{font-size:22.5px!important}
+      html[data-text="large"] [style*="font-size:19px"]{font-size:22.5px!important}
+      html[data-text="large"] [style*="font-size: 20px"]{font-size:23.5px!important}
+      html[data-text="large"] [style*="font-size:20px"]{font-size:23.5px!important}
+      html[data-text="large"] [style*="font-size: 22px"]{font-size:26px!important}
+      html[data-text="large"] [style*="font-size:22px"]{font-size:26px!important}
+      html[data-text="large"] [style*="font-size: 24px"]{font-size:28.5px!important}
+      html[data-text="large"] [style*="font-size:24px"]{font-size:28.5px!important}
+      html[data-text="large"] [style*="font-size: 25px"]{font-size:29.5px!important}
+      html[data-text="large"] [style*="font-size:25px"]{font-size:29.5px!important}
+      html[data-text="large"] [style*="font-size: 26px"]{font-size:30.5px!important}
+      html[data-text="large"] [style*="font-size:26px"]{font-size:30.5px!important}
+      html[data-text="large"] [style*="font-size: 28px"]{font-size:33px!important}
+      html[data-text="large"] [style*="font-size:28px"]{font-size:33px!important}
+      html[data-text="large"] [style*="font-size: 30px"]{font-size:35.5px!important}
+      html[data-text="large"] [style*="font-size:30px"]{font-size:35.5px!important}
+      html[data-text="large"] [style*="font-size: 32px"]{font-size:38px!important}
+      html[data-text="large"] [style*="font-size:32px"]{font-size:38px!important}
+      html[data-text="large"] [style*="font-size: 36px"]{font-size:42.5px!important}
+      html[data-text="large"] [style*="font-size:36px"]{font-size:42.5px!important}
+      html[data-text="large"] [style*="font-size: 38px"]{font-size:45px!important}
+      html[data-text="large"] [style*="font-size:38px"]{font-size:45px!important}
+      html[data-text="large"] [style*="font-size: 40px"]{font-size:47px!important}
+      html[data-text="large"] [style*="font-size:40px"]{font-size:47px!important}
+      html[data-text="large"] [style*="font-size: 44px"]{font-size:52px!important}
+      html[data-text="large"] [style*="font-size:44px"]{font-size:52px!important}
+      html[data-text="large"] [style*="font-size: 48px"]{font-size:56.5px!important}
+      html[data-text="large"] [style*="font-size:48px"]{font-size:56.5px!important}
+      html[data-text="xl"] body, html[data-text="xl"] button, html[data-text="xl"] input, html[data-text="xl"] select, html[data-text="xl"] textarea { font-size: 18.8px; }
+      html[data-text="xl"] [style*="font-size: 8px"]{font-size:10.5px!important}
+      html[data-text="xl"] [style*="font-size:8px"]{font-size:10.5px!important}
+      html[data-text="xl"] [style*="font-size: 8.5px"]{font-size:11.5px!important}
+      html[data-text="xl"] [style*="font-size:8.5px"]{font-size:11.5px!important}
+      html[data-text="xl"] [style*="font-size: 9px"]{font-size:12px!important}
+      html[data-text="xl"] [style*="font-size:9px"]{font-size:12px!important}
+      html[data-text="xl"] [style*="font-size: 9.5px"]{font-size:12.5px!important}
+      html[data-text="xl"] [style*="font-size:9.5px"]{font-size:12.5px!important}
+      html[data-text="xl"] [style*="font-size: 10px"]{font-size:13.5px!important}
+      html[data-text="xl"] [style*="font-size:10px"]{font-size:13.5px!important}
+      html[data-text="xl"] [style*="font-size: 10.5px"]{font-size:14px!important}
+      html[data-text="xl"] [style*="font-size:10.5px"]{font-size:14px!important}
+      html[data-text="xl"] [style*="font-size: 11px"]{font-size:14.5px!important}
+      html[data-text="xl"] [style*="font-size:11px"]{font-size:14.5px!important}
+      html[data-text="xl"] [style*="font-size: 11.5px"]{font-size:15.5px!important}
+      html[data-text="xl"] [style*="font-size:11.5px"]{font-size:15.5px!important}
+      html[data-text="xl"] [style*="font-size: 12px"]{font-size:16px!important}
+      html[data-text="xl"] [style*="font-size:12px"]{font-size:16px!important}
+      html[data-text="xl"] [style*="font-size: 12.5px"]{font-size:17px!important}
+      html[data-text="xl"] [style*="font-size:12.5px"]{font-size:17px!important}
+      html[data-text="xl"] [style*="font-size: 13px"]{font-size:17.5px!important}
+      html[data-text="xl"] [style*="font-size:13px"]{font-size:17.5px!important}
+      html[data-text="xl"] [style*="font-size: 14px"]{font-size:19px!important}
+      html[data-text="xl"] [style*="font-size:14px"]{font-size:19px!important}
+      html[data-text="xl"] [style*="font-size: 15px"]{font-size:20px!important}
+      html[data-text="xl"] [style*="font-size:15px"]{font-size:20px!important}
+      html[data-text="xl"] [style*="font-size: 16px"]{font-size:21.5px!important}
+      html[data-text="xl"] [style*="font-size:16px"]{font-size:21.5px!important}
+      html[data-text="xl"] [style*="font-size: 17px"]{font-size:23px!important}
+      html[data-text="xl"] [style*="font-size:17px"]{font-size:23px!important}
+      html[data-text="xl"] [style*="font-size: 18px"]{font-size:24px!important}
+      html[data-text="xl"] [style*="font-size:18px"]{font-size:24px!important}
+      html[data-text="xl"] [style*="font-size: 19px"]{font-size:25.5px!important}
+      html[data-text="xl"] [style*="font-size:19px"]{font-size:25.5px!important}
+      html[data-text="xl"] [style*="font-size: 20px"]{font-size:27px!important}
+      html[data-text="xl"] [style*="font-size:20px"]{font-size:27px!important}
+      html[data-text="xl"] [style*="font-size: 22px"]{font-size:29.5px!important}
+      html[data-text="xl"] [style*="font-size:22px"]{font-size:29.5px!important}
+      html[data-text="xl"] [style*="font-size: 24px"]{font-size:32px!important}
+      html[data-text="xl"] [style*="font-size:24px"]{font-size:32px!important}
+      html[data-text="xl"] [style*="font-size: 25px"]{font-size:33.5px!important}
+      html[data-text="xl"] [style*="font-size:25px"]{font-size:33.5px!important}
+      html[data-text="xl"] [style*="font-size: 26px"]{font-size:35px!important}
+      html[data-text="xl"] [style*="font-size:26px"]{font-size:35px!important}
+      html[data-text="xl"] [style*="font-size: 28px"]{font-size:37.5px!important}
+      html[data-text="xl"] [style*="font-size:28px"]{font-size:37.5px!important}
+      html[data-text="xl"] [style*="font-size: 30px"]{font-size:40px!important}
+      html[data-text="xl"] [style*="font-size:30px"]{font-size:40px!important}
+      html[data-text="xl"] [style*="font-size: 32px"]{font-size:43px!important}
+      html[data-text="xl"] [style*="font-size:32px"]{font-size:43px!important}
+      html[data-text="xl"] [style*="font-size: 36px"]{font-size:48px!important}
+      html[data-text="xl"] [style*="font-size:36px"]{font-size:48px!important}
+      html[data-text="xl"] [style*="font-size: 38px"]{font-size:51px!important}
+      html[data-text="xl"] [style*="font-size:38px"]{font-size:51px!important}
+      html[data-text="xl"] [style*="font-size: 40px"]{font-size:53.5px!important}
+      html[data-text="xl"] [style*="font-size:40px"]{font-size:53.5px!important}
+      html[data-text="xl"] [style*="font-size: 44px"]{font-size:59px!important}
+      html[data-text="xl"] [style*="font-size:44px"]{font-size:59px!important}
+      html[data-text="xl"] [style*="font-size: 48px"]{font-size:64.5px!important}
+      html[data-text="xl"] [style*="font-size:48px"]{font-size:64.5px!important}
     </style>
+    <script>
+      // Apply saved text size before the app renders (default: large)
+      try { document.documentElement.setAttribute('data-text', localStorage.getItem('crm_text_size') || 'large') } catch (e) { document.documentElement.setAttribute('data-text', 'large') }
+    </script>
   </head>
   <body>
     <div id="root"></div>

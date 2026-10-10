@@ -1,6 +1,7 @@
 // src/components/task/index.jsx — Shared Task components
 import { Btn, Badge } from '../ui'
-import { TASK_PRIORITY } from '../../lib/enums'
+import { TASK_PRIORITY, enumLabel } from '../../lib/enums'
+import { useLanguage } from '../../contexts/LanguageContext'
 
 const PRIORITY_CONFIG = {
   Urgent: { color: '#EF4444', bg: 'rgba(239,68,68,.12)' },
@@ -19,17 +20,19 @@ const STATUS_CONFIG = {
 }
 
 export function TaskPriorityBadge({ priority }) {
+  const { lang } = useLanguage()
   if (!priority) return null
   const cfg = PRIORITY_CONFIG[priority] || PRIORITY_CONFIG.Medium
   return (
     <span style={{
       display: 'inline-block', padding: '2px 8px', borderRadius: 20,
       fontSize: 11, fontWeight: 700, color: cfg.color, background: cfg.bg,
-    }}>{priority}</span>
+    }}>{enumLabel(priority, lang)}</span>
   )
 }
 
 export function TaskStatusBadge({ status }) {
+  const { lang } = useLanguage()
   if (!status) return null
   const cfg = STATUS_CONFIG[status] || STATUS_CONFIG.Open
   return (
@@ -39,12 +42,14 @@ export function TaskStatusBadge({ status }) {
       color: cfg.color, background: cfg.color + '22',
     }}>
       <span style={{ width: 6, height: 6, borderRadius: '50%', background: cfg.color }} />
-      {cfg.label}
+      {enumLabel(cfg.label, lang)}
     </span>
   )
 }
 
 export function TaskCard({ task, onComplete, onSnooze, onOpenVIP }) {
+  const { lang } = useLanguage()
+  const L2 = (en, zh) => (lang === 'zh' ? zh : en)
   const isOverdue = task.status === 'Overdue' || (
     task.due_date && new Date(task.due_date) < new Date() && task.status !== 'Completed'
   )
@@ -77,13 +82,13 @@ export function TaskCard({ task, onComplete, onSnooze, onOpenVIP }) {
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 }}>
         <div style={{ fontSize: 11, color: isOverdue ? 'var(--danger)' : 'var(--muted)' }}>
-          {task.due_date ? `Due: ${new Date(task.due_date).toLocaleDateString('en-MY', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' })}` : 'No due date'}
+          {task.due_date ? `${L2('Due', '截止')}: ${new Date(task.due_date).toLocaleDateString(lang === 'zh' ? 'zh-CN' : 'en-MY', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' })}` : L2('No due date', '无截止日期')}
           {task.owner && <span style={{ marginLeft: 10 }}>· {task.owner}</span>}
         </div>
         <div style={{ display: 'flex', gap: 6 }}>
-          {onComplete && <Btn size="sm" variant="primary"   onClick={() => onComplete(task)}>Complete</Btn>}
-          {onSnooze   && <Btn size="sm" variant="ghost"     onClick={() => onSnooze(task)}>Snooze</Btn>}
-          {onOpenVIP  && task.vip_id && <Btn size="sm" variant="ghost" onClick={() => onOpenVIP(task.vip_id)}>Open VIP</Btn>}
+          {onComplete && <Btn size="sm" variant="primary"   onClick={() => onComplete(task)}>{L2('Complete', '完成')}</Btn>}
+          {onSnooze   && <Btn size="sm" variant="ghost"     onClick={() => onSnooze(task)}>{L2('Snooze', '延后')}</Btn>}
+          {onOpenVIP  && task.vip_id && <Btn size="sm" variant="ghost" onClick={() => onOpenVIP(task.vip_id)}>{L2('Open VIP', '打开VIP')}</Btn>}
         </div>
       </div>
     </div>

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import LegacyCampaigns from './Campaigns'
 import { supabase } from '../lib/supabase'
 import { parseManualUserIds } from '../lib/campaignEnrollment'
+import { useLanguage } from '../contexts/LanguageContext'
 
 const TIERS = ['BLACK','DIAMOND','PLATINUM','GOLD','SILVER','BRONZE']
 const TIER_COLOR = { DIAMOND:'#b9f2ff', PLATINUM:'#C0C0C0', GOLD:'#ffd700', SILVER:'#a8a8a8', BRONZE:'#cd7f32' }
@@ -11,6 +12,8 @@ const input = { width:'100%', background:'var(--surface2)', border:'1px solid va
 const button = { background:'var(--accent)', color:'#fff', border:'none', padding:'8px 14px', borderRadius:7, fontWeight:700, cursor:'pointer' }
 
 export default function CampaignsMixedWrapper() {
+  const { lang } = useLanguage()
+  const L2 = (en, zh) => (lang === 'zh' ? zh : en)
   const [campaigns, setCampaigns] = useState([])
   const [selectedId, setSelectedId] = useState('')
   const [tiers, setTiers] = useState([])
@@ -73,24 +76,24 @@ export default function CampaignsMixedWrapper() {
           if (manual.length) { const {error}=await supabase.from('campaign_players').update({enrollment_source:'manual'}).eq('campaign_id',selected.id).in('username',manual); if(error) throw error }
         }
       }
-      setMessage(`Saved. ${preview.tier} tier players + ${preview.manual} manual players, ${preview.duplicate} duplicate(s) removed${preview.missing?`, ${preview.missing} missing ID(s) skipped`:''}.`)
+      setMessage(L2(`Saved. ${preview.tier} tier players + ${preview.manual} manual players, ${preview.duplicate} duplicate(s) removed${preview.missing?`, ${preview.missing} missing ID(s) skipped`:''}.`, `已保存。等级玩家 ${preview.tier} 名 + 手动玩家 ${preview.manual} 名，已移除重复 ${preview.duplicate} 个${preview.missing?`，跳过缺失ID ${preview.missing} 个`:''}。`))
       await loadCampaigns(); window.setTimeout(()=>window.location.reload(),500)
-    } catch(e) { setMessage('Enrollment sync failed: '+e.message) } finally { setLoading(false) }
+    } catch(e) { setMessage('ERR:'+L2('Enrollment sync failed: ','报名同步失败：')+e.message) } finally { setLoading(false) }
   }
 
   return <div>
     <div style={panel}>
       <div style={{display:'flex',justifyContent:'space-between',gap:16,alignItems:'flex-start',flexWrap:'wrap'}}>
-        <div><div style={{fontSize:15,fontWeight:800}}>🎯 Campaign Audience / Mixed Enrollment</div><div style={{fontSize:11,color:'var(--muted)',marginTop:4}}>Select VIP tiers for automatic enrollment, then optionally add specific User IDs. A player is enrolled only once.</div></div>
-        <span style={{fontSize:10,color:'#3fb950',fontWeight:700}}>AUTO TIER + MANUAL</span>
+        <div><div style={{fontSize:15,fontWeight:800}}>🎯 {L2('Campaign Audience / Mixed Enrollment','活动受众 / 混合报名')}</div><div style={{fontSize:11,color:'var(--muted)',marginTop:4}}>{L2('Select VIP tiers for automatic enrollment, then optionally add specific User IDs. A player is enrolled only once.','选择VIP等级自动报名，再可选择添加指定用户ID。每位玩家只会报名一次。')}</div></div>
+        <span style={{fontSize:10,color:'#3fb950',fontWeight:700}}>{L2('AUTO TIER + MANUAL','自动等级 + 手动')}</span>
       </div>
       <div style={{display:'grid',gridTemplateColumns:'minmax(220px,1fr) minmax(280px,1.5fr)',gap:14,marginTop:14}}>
-        <div><div style={{fontSize:10,color:'var(--muted)',fontWeight:700,marginBottom:5}}>CAMPAIGN</div><select style={input} value={selectedId} onChange={e=>setSelectedId(e.target.value)}><option value="">Select campaign</option>{campaigns.map(c=><option key={c.id} value={c.id}>{c.campaign_name} · {c.campaign_code}</option>)}</select></div>
-        <div><div style={{fontSize:10,color:'var(--muted)',fontWeight:700,marginBottom:5}}>AUTO-ENROLL TIERS</div><div style={{display:'flex',gap:6,flexWrap:'wrap'}}>{TIERS.map(tier=>{const active=tiers.includes(tier);return <button type="button" key={tier} onClick={()=>toggleTier(tier)} style={{padding:'5px 11px',borderRadius:12,border:`1px solid ${active?TIER_COLOR[tier]||'var(--accent)':'var(--border)'}`,background:active?TIER_BG[tier]||'rgba(99,102,241,.12)':'var(--surface2)',color:active?TIER_COLOR[tier]||'var(--text)':'var(--muted)',cursor:'pointer',fontSize:11,fontWeight:700}}>{tier}</button>})}</div></div>
+        <div><div style={{fontSize:10,color:'var(--muted)',fontWeight:700,marginBottom:5}}>{L2('CAMPAIGN','活动')}</div><select style={input} value={selectedId} onChange={e=>setSelectedId(e.target.value)}><option value="">{L2('Select campaign','选择活动')}</option>{campaigns.map(c=><option key={c.id} value={c.id}>{c.campaign_name} · {c.campaign_code}</option>)}</select></div>
+        <div><div style={{fontSize:10,color:'var(--muted)',fontWeight:700,marginBottom:5}}>{L2('AUTO-ENROLL TIERS','自动报名等级')}</div><div style={{display:'flex',gap:6,flexWrap:'wrap'}}>{TIERS.map(tier=>{const active=tiers.includes(tier);return <button type="button" key={tier} onClick={()=>toggleTier(tier)} style={{padding:'5px 11px',borderRadius:12,border:`1px solid ${active?TIER_COLOR[tier]||'var(--accent)':'var(--border)'}`,background:active?TIER_BG[tier]||'rgba(99,102,241,.12)':'var(--surface2)',color:active?TIER_COLOR[tier]||'var(--text)':'var(--muted)',cursor:'pointer',fontSize:11,fontWeight:700}}>{tier}</button>})}</div></div>
       </div>
-      <div style={{marginTop:12}}><div style={{fontSize:10,color:'var(--muted)',fontWeight:700,marginBottom:5}}>MANUAL USER IDs — OPTIONAL</div><textarea style={{...input,minHeight:72,resize:'vertical',fontFamily:'inherit'}} value={manualIds} onChange={e=>setManualIds(e.target.value)} placeholder={'One User ID per line, or paste comma-separated IDs\nExample: ABC123, VIP888, USER001'} /></div>
-      <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8,marginTop:10}}>{[['Tier Players',preview.tier,'var(--accent)'],['Manual Found',preview.manual,'#3fb950'],['Duplicates',preview.duplicate,'#f59e0b'],['Missing IDs',preview.missing,'#f85149']].map(([label,value,color])=><div key={label} style={{background:'var(--surface2)',border:'1px solid var(--border)',borderRadius:7,padding:'8px 10px'}}><div style={{fontSize:15,fontWeight:800,color}}>{value}</div><div style={{fontSize:9,color:'var(--muted)'}}>{label}</div></div>)}</div>
-      <div style={{display:'flex',alignItems:'center',gap:10,marginTop:12,flexWrap:'wrap'}}><button style={button} onClick={syncEnrollment} disabled={!selected||loading}>{loading?'Syncing…':'💾 Save Audience & Enroll'}</button>{selected&&<span style={{fontSize:10,color:'var(--muted)'}}>Current mode: <strong style={{color:'var(--text)'}}>{selected.enrollment_mode||'manual'}</strong></span>}{message&&<span style={{fontSize:11,color:message.startsWith('Enrollment sync failed')?'#f85149':'#3fb950'}}>{message}</span>}</div>
+      <div style={{marginTop:12}}><div style={{fontSize:10,color:'var(--muted)',fontWeight:700,marginBottom:5}}>{L2('MANUAL USER IDs — OPTIONAL','手动用户ID — 可选')}</div><textarea style={{...input,minHeight:72,resize:'vertical',fontFamily:'inherit'}} value={manualIds} onChange={e=>setManualIds(e.target.value)} placeholder={L2('One User ID per line, or paste comma-separated IDs\nExample: ABC123, VIP888, USER001','每行一个用户ID，或粘贴以逗号分隔的ID\n例如：ABC123, VIP888, USER001')} /></div>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8,marginTop:10}}>{[[L2('Tier Players','等级玩家'),preview.tier,'var(--accent)'],[L2('Manual Found','手动已找到'),preview.manual,'#3fb950'],[L2('Duplicates','重复'),preview.duplicate,'#f59e0b'],[L2('Missing IDs','缺失ID'),preview.missing,'#f85149']].map(([label,value,color])=><div key={label} style={{background:'var(--surface2)',border:'1px solid var(--border)',borderRadius:7,padding:'8px 10px'}}><div style={{fontSize:15,fontWeight:800,color}}>{value}</div><div style={{fontSize:9,color:'var(--muted)'}}>{label}</div></div>)}</div>
+      <div style={{display:'flex',alignItems:'center',gap:10,marginTop:12,flexWrap:'wrap'}}><button style={button} onClick={syncEnrollment} disabled={!selected||loading}>{loading?L2('Syncing…','同步中…'):L2('💾 Save Audience & Enroll','💾 保存受众并报名')}</button>{selected&&<span style={{fontSize:10,color:'var(--muted)'}}>{L2('Current mode:','当前模式：')} <strong style={{color:'var(--text)'}}>{selected.enrollment_mode||'manual'}</strong></span>}{message&&<span style={{fontSize:11,color:message.startsWith('ERR:')?'#f85149':'#3fb950'}}>{message.replace(/^ERR:/,'')}</span>}</div>
     </div>
     <LegacyCampaigns />
   </div>

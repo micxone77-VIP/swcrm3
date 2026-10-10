@@ -2,6 +2,12 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
+import { useLanguage } from '../contexts/LanguageContext'
+
+function useL2() {
+  const { lang } = useLanguage()
+  return (en, zh) => (lang === 'zh' ? zh : en)
+}
 
 // ─── constants ────────────────────────────────────────────────────────────────
 const STATUSES = ['Active', 'Cooling', 'Review', 'Suspended', 'Standby', 'Dead']
@@ -9,13 +15,14 @@ const TYPES    = ['Personal', 'Business']
 const TELCOS   = ['HOTLINK', 'REDONE', 'Digi', 'UMobile', 'Celcom', 'Maxis', 'Other']
 
 const STATUS_META = {
-  Active:    { color: '#22C55E', bg: '#22C55E22', label: 'Active' },
-  Cooling:   { color: '#F59E0B', bg: '#F59E0B22', label: 'Cooling' },
-  Review:    { color: '#EF4444', bg: '#EF444422', label: 'Review' },
-  Suspended: { color: '#DC2626', bg: '#DC262622', label: 'Suspended' },
-  Standby:   { color: '#6B7280', bg: '#6B728022', label: 'Standby' },
-  Dead:      { color: '#374151', bg: '#37415122', label: 'Dead' },
+  Active:    { color: '#22C55E', bg: '#22C55E22', label: 'Active', zh: '活跃' },
+  Cooling:   { color: '#F59E0B', bg: '#F59E0B22', label: 'Cooling', zh: '冷却中' },
+  Review:    { color: '#EF4444', bg: '#EF444422', label: 'Review', zh: '审核中' },
+  Suspended: { color: '#DC2626', bg: '#DC262622', label: 'Suspended', zh: '已封停' },
+  Standby:   { color: '#6B7280', bg: '#6B728022', label: 'Standby', zh: '备用' },
+  Dead:      { color: '#374151', bg: '#37415122', label: 'Dead', zh: '已失效' },
 }
+const OPTION_ZH = { Personal: '个人', Business: '商业', Other: '其他', Active: '活跃', Cooling: '冷却中', Review: '审核中', Suspended: '已封停', Standby: '备用', Dead: '已失效' }
 
 const EMPTY_FORM = {
   host: '', codename: '', number: '', type: 'Personal',
@@ -25,18 +32,20 @@ const EMPTY_FORM = {
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 function StatusBadge({ status }) {
+  const { lang } = useLanguage()
   const m = STATUS_META[status] || { color: '#6B7280', bg: '#6B728022', label: status }
   return (
     <span style={{
       display: 'inline-block', padding: '2px 10px', borderRadius: 20,
       fontSize: 11, fontWeight: 700, letterSpacing: '.4px',
       color: m.color, background: m.bg, border: `1px solid ${m.color}44`,
-    }}>{m.label}</span>
+    }}>{lang === 'zh' ? (m.zh || m.label) : m.label}</span>
   )
 }
 
 function CopyBtn({ text }) {
   const [done, setDone] = useState(false)
+  const L2 = useL2()
   const copy = (e) => {
     e.stopPropagation()
     if (!text) return
@@ -45,7 +54,7 @@ function CopyBtn({ text }) {
     })
   }
   return (
-    <button onClick={copy} title={`Copy ${text}`} style={{
+    <button onClick={copy} title={L2(`Copy ${text}`, `复制 ${text}`)} style={{
       border: 'none', background: 'transparent', cursor: text ? 'pointer' : 'default',
       color: done ? '#4ade80' : 'var(--muted)', fontSize: 11,
       padding: '0 3px', lineHeight: 1, opacity: text ? 1 : 0.3,
@@ -56,6 +65,9 @@ function CopyBtn({ text }) {
 // ─── Add / Edit Modal ─────────────────────────────────────────────────────────
 function NumberModal({ initial, hosts, onSave, onClose }) {
   const [form, setForm] = useState(initial || EMPTY_FORM)
+  const { lang } = useLanguage()
+  const L2 = (en, zh) => (lang === 'zh' ? zh : en)
+  const optLabel = (o) => (lang === 'zh' ? (OPTION_ZH[o] || o) : o)
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
 
@@ -64,9 +76,9 @@ function NumberModal({ initial, hosts, onSave, onClose }) {
   const isStandby = form.status === 'Standby'
 
   async function handleSave() {
-    if (!form.host.trim())                           return setErr('Host is required.')
-    if (!isStandby && !form.codename.trim())         return setErr('Codename is required.')
-    if (!form.number.trim())                         return setErr('Number is required.')
+    if (!form.host.trim())                           return setErr(L2('Host is required.','负责人为必填项。'))
+    if (!isStandby && !form.codename.trim())         return setErr(L2('Codename is required.','代号为必填项。'))
+    if (!form.number.trim())                         return setErr(L2('Number is required.','号码为必填项。'))
     setSaving(true); setErr('')
     try {
       const payload = {
@@ -91,7 +103,7 @@ function NumberModal({ initial, hosts, onSave, onClose }) {
       }
       onSave()
     } catch (e) {
-      setErr(e.message || 'Save failed.')
+      setErr(e.message || L2('Save failed.','保存失败。'))
     } finally {
       setSaving(false)
     }
@@ -118,7 +130,7 @@ function NumberModal({ initial, hosts, onSave, onClose }) {
         onChange={e => set(key, e.target.value)}
         style={{ width: '100%', boxSizing: 'border-box', background: 'var(--surface2)', border: '1px solid var(--border)', color: 'var(--text)', borderRadius: 7, padding: '8px 10px', fontSize: 13 }}
       >
-        {options.map(o => <option key={o} value={o}>{o}</option>)}
+        {options.map(o => <option key={o} value={o}>{optLabel(o)}</option>)}
       </select>
     </div>
   )
@@ -127,7 +139,7 @@ function NumberModal({ initial, hosts, onSave, onClose }) {
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
       <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: 24, width: 520, maxHeight: '90vh', overflowY: 'auto' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-          <h2 style={{ margin: 0, fontSize: 16, color: 'var(--text)' }}>{form.id ? 'Edit Number' : 'Add New Number'}</h2>
+          <h2 style={{ margin: 0, fontSize: 16, color: 'var(--text)' }}>{form.id ? L2('Edit Number','编辑号码') : L2('Add New Number','添加新号码')}</h2>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 20, cursor: 'pointer' }}>×</button>
         </div>
 
@@ -135,19 +147,19 @@ function NumberModal({ initial, hosts, onSave, onClose }) {
           <div>
             {/* Host — allow typing a new host or picking existing */}
             <div style={{ marginBottom: 12 }}>
-              <label style={{ display: 'block', fontSize: 11, color: 'var(--muted)', marginBottom: 4, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.4px' }}>Host</label>
+              <label style={{ display: 'block', fontSize: 11, color: 'var(--muted)', marginBottom: 4, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.4px' }}>{L2('Host','负责人')}</label>
               <input
                 list="host-list"
                 value={form.host || ''}
                 onChange={e => set('host', e.target.value)}
-                placeholder="e.g. Marcus"
+                placeholder={L2('e.g. Marcus','例如 Marcus')}
                 style={{ width: '100%', boxSizing: 'border-box', background: 'var(--surface2)', border: '1px solid var(--border)', color: 'var(--text)', borderRadius: 7, padding: '8px 10px', fontSize: 13 }}
               />
               <datalist id="host-list">{hosts.map(h => <option key={h} value={h} />)}</datalist>
             </div>
             <div style={{ marginBottom: 12, opacity: isStandby ? 0.4 : 1 }}>
               <label style={{ display: 'block', fontSize: 11, color: 'var(--muted)', marginBottom: 4, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.4px' }}>
-                Codename {isStandby && <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>(assigned on promote)</span>}
+                {L2('Codename','代号')} {isStandby && <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>{L2('(assigned on promote)','（升级时分配）')}</span>}
               </label>
               <input
                 value={form.codename || ''}
@@ -157,15 +169,15 @@ function NumberModal({ initial, hosts, onSave, onClose }) {
                 style={{ width: '100%', boxSizing: 'border-box', background: 'var(--surface2)', border: '1px solid var(--border)', color: 'var(--text)', borderRadius: 7, padding: '8px 10px', fontSize: 13 }}
               />
             </div>
-            {inp('Number', 'number', { placeholder: '601112365940' })}
-            {sel('Type', 'type', TYPES)}
-            {sel('Telco', 'telco', ['', ...TELCOS])}
+            {inp(L2('Number','号码'), 'number', { placeholder: '601112365940' })}
+            {sel(L2('Type','类型'), 'type', TYPES)}
+            {sel(L2('Telco','电信商'), 'telco', ['', ...TELCOS])}
           </div>
           <div>
-            {sel('Status', 'status', STATUSES)}
+            {sel(L2('Status','状态'), 'status', STATUSES)}
             <div style={{ marginBottom: 12, opacity: isStandby ? 0.4 : 1 }}>
               <label style={{ display: 'block', fontSize: 11, color: 'var(--muted)', marginBottom: 4, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.4px' }}>
-                Phone Slot {isStandby && <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>(assigned on promote)</span>}
+                {L2('Phone Slot','手机槽位')} {isStandby && <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>{L2('(assigned on promote)','（升级时分配）')}</span>}
               </label>
               <input
                 value={form.phone_slot || ''}
@@ -175,20 +187,20 @@ function NumberModal({ initial, hosts, onSave, onClose }) {
                 style={{ width: '100%', boxSizing: 'border-box', background: 'var(--surface2)', border: '1px solid var(--border)', color: 'var(--text)', borderRadius: 7, padding: '8px 10px', fontSize: 13 }}
               />
             </div>
-            {inp('Email', 'email', { placeholder: 'c.wapps101@gmail.com' })}
-            {inp('Valid Until', 'valid_until', { type: 'date' })}
-            {inp('Last Reload', 'last_reload_date', { type: 'date' })}
+            {inp(L2('Email','邮箱'), 'email', { placeholder: 'c.wapps101@gmail.com' })}
+            {inp(L2('Valid Until','有效期至'), 'valid_until', { type: 'date' })}
+            {inp(L2('Last Reload','上次充值'), 'last_reload_date', { type: 'date' })}
           </div>
         </div>
 
         {/* Notes full width */}
         <div style={{ marginBottom: 12 }}>
-          <label style={{ display: 'block', fontSize: 11, color: 'var(--muted)', marginBottom: 4, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.4px' }}>Notes</label>
+          <label style={{ display: 'block', fontSize: 11, color: 'var(--muted)', marginBottom: 4, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.4px' }}>{L2('Notes','备注')}</label>
           <textarea
             value={form.notes || ''}
             onChange={e => set('notes', e.target.value)}
             rows={2}
-            placeholder="Any remarks..."
+            placeholder={L2('Any remarks...','任何备注...')}
             style={{ width: '100%', boxSizing: 'border-box', background: 'var(--surface2)', border: '1px solid var(--border)', color: 'var(--text)', borderRadius: 7, padding: '8px 10px', fontSize: 13, resize: 'vertical' }}
           />
         </div>
@@ -196,9 +208,9 @@ function NumberModal({ initial, hosts, onSave, onClose }) {
         {err && <div style={{ color: '#EF4444', fontSize: 12, marginBottom: 10 }}>{err}</div>}
 
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <button onClick={onClose} style={{ padding: '8px 18px', borderRadius: 7, border: '1px solid var(--border)', background: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 13 }}>Cancel</button>
+          <button onClick={onClose} style={{ padding: '8px 18px', borderRadius: 7, border: '1px solid var(--border)', background: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 13 }}>{L2('Cancel','取消')}</button>
           <button onClick={handleSave} disabled={saving} style={{ padding: '8px 20px', borderRadius: 7, border: 'none', background: 'var(--brand)', color: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 600, opacity: saving ? .6 : 1 }}>
-            {saving ? 'Saving…' : 'Save'}
+            {saving ? L2('Saving…','保存中…') : L2('Save','保存')}
           </button>
         </div>
       </div>
@@ -209,6 +221,7 @@ function NumberModal({ initial, hosts, onSave, onClose }) {
 // ─── Delete confirm ───────────────────────────────────────────────────────────
 function ConfirmDelete({ row, onConfirm, onClose }) {
   const [busy, setBusy] = useState(false)
+  const L2 = useL2()
   async function go() {
     setBusy(true)
     await supabase.from('wa_numbers').delete().eq('id', row.id)
@@ -218,12 +231,12 @@ function ConfirmDelete({ row, onConfirm, onClose }) {
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
       <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: 28, width: 380, textAlign: 'center' }}>
         <div style={{ fontSize: 32, marginBottom: 12 }}>🗑️</div>
-        <h3 style={{ margin: '0 0 8px', color: 'var(--text)' }}>Delete {row.codename}?</h3>
-        <p style={{ color: 'var(--muted)', fontSize: 13, margin: '0 0 20px' }}>This will permanently remove <strong>{row.number}</strong> from the system.</p>
+        <h3 style={{ margin: '0 0 8px', color: 'var(--text)' }}>{L2('Delete','删除')} {row.codename}?</h3>
+        <p style={{ color: 'var(--muted)', fontSize: 13, margin: '0 0 20px' }}>{L2('This will permanently remove ','此操作将从系统中永久移除 ')}<strong>{row.number}</strong>{L2(' from the system.','。')}</p>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
-          <button onClick={onClose} style={{ padding: '8px 20px', borderRadius: 7, border: '1px solid var(--border)', background: 'none', color: 'var(--muted)', cursor: 'pointer' }}>Cancel</button>
+          <button onClick={onClose} style={{ padding: '8px 20px', borderRadius: 7, border: '1px solid var(--border)', background: 'none', color: 'var(--muted)', cursor: 'pointer' }}>{L2('Cancel','取消')}</button>
           <button onClick={go} disabled={busy} style={{ padding: '8px 20px', borderRadius: 7, border: 'none', background: '#DC2626', color: '#fff', cursor: 'pointer', fontWeight: 600 }}>
-            {busy ? 'Deleting…' : 'Delete'}
+            {busy ? L2('Deleting…','删除中…') : L2('Delete','删除')}
           </button>
         </div>
       </div>
@@ -235,6 +248,7 @@ function ConfirmDelete({ row, onConfirm, onClose }) {
 function PromoteModal({ suspended, standbys, onDone, onClose }) {
   const [chosen, setChosen] = useState(standbys[0]?.id || '')
   const [busy, setBusy] = useState(false)
+  const L2 = useL2()
 
   async function go() {
     if (!chosen) return
@@ -254,12 +268,12 @@ function PromoteModal({ suspended, standbys, onDone, onClose }) {
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
       <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: 28, width: 420 }}>
-        <h3 style={{ margin: '0 0 6px', color: 'var(--text)' }}>🔄 Promote Standby</h3>
+        <h3 style={{ margin: '0 0 6px', color: 'var(--text)' }}>🔄 {L2('Promote Standby','升级备用号码')}</h3>
         <p style={{ color: 'var(--muted)', fontSize: 13, margin: '0 0 18px' }}>
-          <strong>{suspended.codename}</strong> ({suspended.number}) will be marked <strong style={{ color: '#DC2626' }}>Suspended</strong>. Choose which Standby to promote to <strong style={{ color: '#22C55E' }}>Active</strong>:
+          <strong>{suspended.codename}</strong> ({suspended.number}) {L2('will be marked','将被标记为')} <strong style={{ color: '#DC2626' }}>{L2('Suspended','已封停')}</strong>{L2('. Choose which Standby to promote to ','。请选择要升级为')} <strong style={{ color: '#22C55E' }}>{L2('Active','活跃')}</strong>{L2(':','的备用号码：')}
         </p>
         {standbys.length === 0 ? (
-          <p style={{ color: '#EF4444', fontSize: 13 }}>No Standby numbers available for {suspended.host}.</p>
+          <p style={{ color: '#EF4444', fontSize: 13 }}>{L2(`No Standby numbers available for ${suspended.host}.`, `${suspended.host} 没有可用的备用号码。`)}</p>
         ) : (
           <div style={{ marginBottom: 16 }}>
             {standbys.map(s => (
@@ -267,16 +281,16 @@ function PromoteModal({ suspended, standbys, onDone, onClose }) {
                 <input type="radio" name="standby" value={s.id} checked={chosen === s.id} onChange={() => setChosen(s.id)} />
                 <div>
                   <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{s.number}</div>
-                  <div style={{ fontSize: 11, color: 'var(--muted)' }}>{s.telco} · {s.type} — will take slot <strong style={{ color: 'var(--text)' }}>{suspended.codename}</strong> / {suspended.phone_slot}</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)' }}>{s.telco} · {s.type} — {L2('will take slot','将接管槽位')} <strong style={{ color: 'var(--text)' }}>{suspended.codename}</strong> / {suspended.phone_slot}</div>
                 </div>
               </label>
             ))}
           </div>
         )}
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <button onClick={onClose} style={{ padding: '8px 18px', borderRadius: 7, border: '1px solid var(--border)', background: 'none', color: 'var(--muted)', cursor: 'pointer' }}>Cancel</button>
+          <button onClick={onClose} style={{ padding: '8px 18px', borderRadius: 7, border: '1px solid var(--border)', background: 'none', color: 'var(--muted)', cursor: 'pointer' }}>{L2('Cancel','取消')}</button>
           <button onClick={go} disabled={busy || standbys.length === 0} style={{ padding: '8px 20px', borderRadius: 7, border: 'none', background: '#22C55E', color: '#fff', cursor: 'pointer', fontWeight: 600, opacity: busy || standbys.length === 0 ? .5 : 1 }}>
-            {busy ? 'Promoting…' : 'Promote'}
+            {busy ? L2('Promoting…','升级中…') : L2('Promote','升级')}
           </button>
         </div>
       </div>
@@ -304,6 +318,7 @@ function reloadUrgency(row) {
 
 // ─── Row ──────────────────────────────────────────────────────────────────────
 function NumberRow({ row, standbys, onEdit, onDelete, onPromote }) {
+  const L2 = useL2()
   const fmtDate = d => d ? new Date(d).toLocaleDateString('en-MY', { day: '2-digit', month: 'short', year: '2-digit' }) : '—'
   const isExpired = row.valid_until && new Date(row.valid_until) < new Date()
   const urgency = reloadUrgency(row)
@@ -318,7 +333,7 @@ function NumberRow({ row, standbys, onEdit, onDelete, onPromote }) {
           <CopyBtn text={row.number} />
         </div>
       </td>
-      <td style={{ padding: '8px 10px', color: 'var(--muted)' }}>{row.type}</td>
+      <td style={{ padding: '8px 10px', color: 'var(--muted)' }}>{L2(row.type, OPTION_ZH[row.type] || row.type)}</td>
       <td style={{ padding: '8px 10px' }}>
         {row.telco ? (
           <span style={{
@@ -342,15 +357,15 @@ function NumberRow({ row, standbys, onEdit, onDelete, onPromote }) {
       </td>
       <td style={{ padding: '8px 10px', fontSize: 12, color: reloadColor, fontWeight: urgency ? 700 : 400 }}>
         {fmtDate(row.last_reload_date)}
-        {urgency === 'urgent' && <span title="Reload overdue!" style={{ marginLeft: 4 }}>🔴</span>}
-        {urgency === 'warn'   && <span title="Reload due soon" style={{ marginLeft: 4 }}>🟡</span>}
-        {!row.last_reload_date && ['Active','Cooling'].includes(row.status) && <span style={{ color: '#F59E0B', fontSize: 11 }}>No date set</span>}
+        {urgency === 'urgent' && <span title={L2('Reload overdue!','充值已逾期！')} style={{ marginLeft: 4 }}>🔴</span>}
+        {urgency === 'warn'   && <span title={L2('Reload due soon','即将需要充值')} style={{ marginLeft: 4 }}>🟡</span>}
+        {!row.last_reload_date && ['Active','Cooling'].includes(row.status) && <span style={{ color: '#F59E0B', fontSize: 11 }}>{L2('No date set','未设置日期')}</span>}
       </td>
       <td style={{ padding: '8px 10px', color: 'var(--muted)', fontSize: 12, maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.notes || '—'}</td>
       <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>
         <div style={{ display: 'flex', gap: 4 }}>
           {row.status === 'Active' && (
-            <button onClick={() => onPromote(row)} title="Suspend & promote standby" style={{ padding: '4px 8px', borderRadius: 5, border: '1px solid #DC262644', background: '#DC262611', color: '#DC2626', cursor: 'pointer', fontSize: 11, fontWeight: 600 }}>🔄</button>
+            <button onClick={() => onPromote(row)} title={L2('Suspend & promote standby','封停并升级备用号码')} style={{ padding: '4px 8px', borderRadius: 5, border: '1px solid #DC262644', background: '#DC262611', color: '#DC2626', cursor: 'pointer', fontSize: 11, fontWeight: 600 }}>🔄</button>
           )}
           <button onClick={() => onEdit(row)} style={{ padding: '4px 8px', borderRadius: 5, border: '1px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)', cursor: 'pointer', fontSize: 11 }}>✏️</button>
           <button onClick={() => onDelete(row)} style={{ padding: '4px 8px', borderRadius: 5, border: '1px solid #DC262644', background: '#DC262611', color: '#DC2626', cursor: 'pointer', fontSize: 11 }}>🗑️</button>
@@ -363,10 +378,11 @@ function NumberRow({ row, standbys, onEdit, onDelete, onPromote }) {
 // ─── Section ──────────────────────────────────────────────────────────────────
 function StatusSection({ status, rows, standbys, onEdit, onDelete, onPromote }) {
   const [open, setOpen] = useState(true)
+  const L2 = useL2()
   const m = STATUS_META[status] || { color: '#6B7280', bg: '#6B728011' }
   if (!rows.length) return null
 
-  const cols = ['Codename', 'Number', 'Type', 'Telco', 'Phone Slot', 'Email', 'Valid Until', 'Last Reload', 'Notes', '']
+  const cols = [L2('Codename','代号'), L2('Number','号码'), L2('Type','类型'), L2('Telco','电信商'), L2('Phone Slot','手机槽位'), L2('Email','邮箱'), L2('Valid Until','有效期至'), L2('Last Reload','上次充值'), L2('Notes','备注'), '']
 
   return (
     <div style={{ marginBottom: 20, borderRadius: 10, border: `1px solid ${m.color}33`, overflow: 'hidden' }}>
@@ -376,7 +392,7 @@ function StatusSection({ status, rows, standbys, onEdit, onDelete, onPromote }) 
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <StatusBadge status={status} />
-          <span style={{ fontSize: 13, color: 'var(--muted)' }}>{rows.length} number{rows.length !== 1 ? 's' : ''}</span>
+          <span style={{ fontSize: 13, color: 'var(--muted)' }}>{L2(`${rows.length} number${rows.length !== 1 ? 's' : ''}`, `${rows.length} 个号码`)}</span>
         </div>
         <span style={{ color: 'var(--muted)', fontSize: 12, transform: open ? 'rotate(180deg)' : 'none', display: 'inline-block', transition: 'transform .2s' }}>▾</span>
       </button>
@@ -406,6 +422,7 @@ function StatusSection({ status, rows, standbys, onEdit, onDelete, onPromote }) 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function WANumbers() {
   const { profile } = useAuth()
+  const L2 = useL2()
   const [rows, setRows]         = useState([])
   const [loading, setLoading]   = useState(true)
   const [hostFilter, setHostFilter] = useState('All')
@@ -457,21 +474,21 @@ export default function WANumbers() {
       {/* Header */}
       <div style={s.header}>
         <div>
-          <h1 style={s.title}>📱 WA Number Manager</h1>
+          <h1 style={s.title}>📱 {L2('WA Number Manager','WA 号码管理')}</h1>
           <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 4 }}>
-            {totalActive} active &nbsp;·&nbsp; {totalStandby} standby &nbsp;·&nbsp; {totalSuspended} suspended
+            {totalActive} {L2('active','活跃')} &nbsp;·&nbsp; {totalStandby} {L2('standby','备用')} &nbsp;·&nbsp; {totalSuspended} {L2('suspended','已封停')}
           </div>
         </div>
         <button style={s.addBtn} onClick={() => setEditModal({ ...EMPTY_FORM, host: profile?.full_name || '' })}>
-          ＋ Add Number
+          {L2('＋ Add Number','＋ 添加号码')}
         </button>
       </div>
 
       {/* Host filter */}
       <div style={s.filterBar}>
-        <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600 }}>Host:</span>
+        <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600 }}>{L2('Host:','负责人：')}</span>
         {['All', ...hosts].map(h => (
-          <button key={h} style={s.chip(hostFilter === h)} onClick={() => setHostFilter(h)}>{h}</button>
+          <button key={h} style={s.chip(hostFilter === h)} onClick={() => setHostFilter(h)}>{h === 'All' ? L2('All','全部') : h}</button>
         ))}
       </div>
 
@@ -479,7 +496,7 @@ export default function WANumbers() {
       {reloadAlerts.length > 0 && (
         <div style={{ marginBottom: 20, borderRadius: 10, border: '1px solid #EF444444', background: '#EF444411', padding: '12px 16px' }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: '#EF4444', marginBottom: 8 }}>
-            🔔 Reload Reminder — {reloadAlerts.length} number{reloadAlerts.length > 1 ? 's' : ''} need attention
+            🔔 {L2(`Reload Reminder — ${reloadAlerts.length} number${reloadAlerts.length > 1 ? 's' : ''} need attention`, `充值提醒 — ${reloadAlerts.length} 个号码需要处理`)}
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {reloadAlerts.map(r => {
@@ -494,10 +511,10 @@ export default function WANumbers() {
                   <strong style={{ color: 'var(--text)' }}>{r.codename || r.number}</strong>
                   <span style={{ color: 'var(--muted)' }}>{r.number}</span>
                   <span style={{ color: u === 'urgent' ? '#EF4444' : '#F59E0B', fontWeight: 600 }}>
-                    {days === null ? 'No reload date set' : days >= 30 ? `${days} days since last reload — OVERDUE` : `${days} days since last reload — due soon`}
+                    {days === null ? L2('No reload date set','未设置充值日期') : days >= 30 ? L2(`${days} days since last reload — OVERDUE`, `距上次充值已 ${days} 天 — 已逾期`) : L2(`${days} days since last reload — due soon`, `距上次充值已 ${days} 天 — 即将到期`)}
                   </span>
                   <span style={{ color: 'var(--muted)', fontSize: 11 }}>({r.host})</span>
-                  <button onClick={() => setEditModal(r)} style={{ marginLeft: 'auto', padding: '3px 10px', borderRadius: 5, border: '1px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)', cursor: 'pointer', fontSize: 11 }}>Update reload date</button>
+                  <button onClick={() => setEditModal(r)} style={{ marginLeft: 'auto', padding: '3px 10px', borderRadius: 5, border: '1px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)', cursor: 'pointer', fontSize: 11 }}>{L2('Update reload date','更新充值日期')}</button>
                 </div>
               )
             })}
@@ -507,11 +524,11 @@ export default function WANumbers() {
 
       {/* Sections */}
       {loading ? (
-        <div style={{ textAlign: 'center', color: 'var(--muted)', padding: 60 }}>Loading…</div>
+        <div style={{ textAlign: 'center', color: 'var(--muted)', padding: 60 }}>{L2('Loading…','载入中…')}</div>
       ) : visible.length === 0 ? (
         <div style={{ textAlign: 'center', color: 'var(--muted)', padding: 60 }}>
           <div style={{ fontSize: 40, marginBottom: 12 }}>📱</div>
-          <div style={{ fontSize: 15 }}>No numbers yet. Click <strong>+ Add Number</strong> to start.</div>
+          <div style={{ fontSize: 15 }}>{L2('No numbers yet. Click ','暂无号码。点击 ')}<strong>{L2('+ Add Number','+ 添加号码')}</strong>{L2(' to start.',' 开始。')}</div>
         </div>
       ) : (
         STATUSES.map(status => (

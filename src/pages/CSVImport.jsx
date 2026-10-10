@@ -7,6 +7,9 @@ import { useLanguage } from '../contexts/LanguageContext'
 
 // ─── Column mappings per import type ───────────────────────────────────────
 const RAW_DATA_SKIP_ROWS = 0
+// Current UI language for module-level progress messages (set on each CSVImport render)
+let CUR_LANG = 'en'
+const PL = (en, zh) => (CUR_LANG === 'zh' ? zh : en)
 const TIER_FILE_SKIP_ROWS = 0
 
 const VIP_TIERS       = ['GOLD', 'PLATINUM', 'DIAMOND', 'DIAMOND-P', 'BLACK']
@@ -118,9 +121,10 @@ const monthsFromDate = (dateStr) => {
     (now.getMonth() - reg.getMonth()) + 1
   )
 }
-const fmtMonth = (m) => {
+const fmtMonth = (m, lang) => {
   if (!m) return '-'
   const [y, mo] = m.split('-')
+  if (lang === 'zh') return `${y}年${parseInt(mo,10)}月`
   const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
   return `${months[parseInt(mo,10)-1]} ${y}`
 }
@@ -233,12 +237,12 @@ async function processRawData(rows, month, thresholds, onProgress) {
       else if (isNew) vipCreated++
       else vipUpdated++
     }
-    onProgress(`Updating VIP members… ${Math.min(i + VIP_BATCH, vipRows.length)}/${vipRows.length}`)
+    onProgress(PL(`Updating VIP members… ${Math.min(i + VIP_BATCH, vipRows.length)}/${vipRows.length}`, `正在更新 VIP 会员… ${Math.min(i + VIP_BATCH, vipRows.length)}/${vipRows.length}`))
   }
 
   // --- Save tier change logs to DB ---
   if (tierChangeLogs.length > 0) {
-    onProgress(`Logging ${tierChangeLogs.length} tier change(s)…`)
+    onProgress(PL(`Logging ${tierChangeLogs.length} tier change(s)…`, `正在记录 ${tierChangeLogs.length} 项等级变更…`))
     const LOG_BATCH = 50
     for (let i = 0; i < tierChangeLogs.length; i += LOG_BATCH) {
       await supabase.from('tier_change_logs').insert(tierChangeLogs.slice(i, i + LOG_BATCH))
@@ -248,7 +252,7 @@ async function processRawData(rows, month, thresholds, onProgress) {
 
   // --- Auto-graduate potential_players who now appear as VIPs in CSV ---
   // If a Bronze/Silver in potential_players now shows as Gold+ in the CSV, mark graduated
-  onProgress('Checking for auto-graduations…')
+  onProgress(PL('Checking for auto-graduations…','正在检查自动升级…'))
   const csvVipMap = {}
   vipRows.forEach(r => {
     const u = r['login']?.trim()
@@ -268,7 +272,7 @@ async function processRawData(rows, month, thresholds, onProgress) {
 
   let autoGraduated = 0
   if (toGraduate.length > 0) {
-    onProgress(`Auto-graduating ${toGraduate.length} players who moved to VIP tier…`)
+    onProgress(PL(`Auto-graduating ${toGraduate.length} players who moved to VIP tier…`, `正在自动升级 ${toGraduate.length} 名进入 VIP 等级的玩家…`))
     const GRAD_BATCH = 50
     for (let i = 0; i < toGraduate.length; i += GRAD_BATCH) {
       const batch = toGraduate.slice(i, i + GRAD_BATCH)
@@ -283,12 +287,12 @@ async function processRawData(rows, month, thresholds, onProgress) {
         autoGraduated++
       }
     }
-    onProgress(`✅ ${autoGraduated} players auto-graduated to VIP`)
+    onProgress(PL(`✅ ${autoGraduated} players auto-graduated to VIP`, `✅ ${autoGraduated} 名玩家已自动升级为 VIP`))
   }
 
   // --- Reset monthly_valid_bet = 0 for VIPs NOT in this month's CSV ---
   // Fetch all active Gold/Platinum/Diamond usernames from DB
-  onProgress('Resetting inactive VIP members for this month…')
+  onProgress(PL('Resetting inactive VIP members for this month…','正在重置本月不活跃的 VIP 会员…'))
   const { data: allVips } = await supabase
     .from('vip_members')
     .select('id, username')
@@ -388,7 +392,7 @@ async function processRawData(rows, month, thresholds, onProgress) {
       }, { onConflict: 'username,snapshot_month' })
     }
 
-    onProgress(`Processing Bronze/Silver… ${Math.min(i + POT_BATCH, potentialRows.length)}/${potentialRows.length}`)
+    onProgress(PL(`Processing Bronze/Silver… ${Math.min(i + POT_BATCH, potentialRows.length)}/${potentialRows.length}`, `正在处理铜/银级… ${Math.min(i + POT_BATCH, potentialRows.length)}/${potentialRows.length}`))
   }
 
   return { vipUpdated, vipCreated, vipReset, tierChanged, tierChangeLogs, autoGraduated, potCreated, potUpdated, flagged, errors }
@@ -533,7 +537,7 @@ async function processRetentionData(rows, onProgress) {
     if (error) errors.push(`${month}/${tier}/${metricType}: ${error.message}`)
     else inserted++
   }
-  onProgress(`Retention metrics: ${inserted} rows saved`)
+  onProgress(PL(`Retention metrics: ${inserted} rows saved`, `留存指标：已保存 ${inserted} 行`))
   return { inserted, errors }
 }
 
@@ -582,7 +586,7 @@ async function processRewardCampaign(rows, campaignName, month, platform, curren
     }
   }
 
-  onProgress(`Saving campaign: ${campaignName} (${month})…`)
+  onProgress(PL(`Saving campaign: ${campaignName} (${month})…`, `正在保存活动：${campaignName} (${month})…`))
 
   // Insert campaign header
   const { data: camp, error: campErr } = await supabase
@@ -612,7 +616,7 @@ async function processRewardCampaign(rows, campaignName, month, platform, curren
     )
   }
 
-  onProgress(`Campaign saved: ${groupEntries.length} tier groups`)
+  onProgress(PL(`Campaign saved: ${groupEntries.length} tier groups`, `活动已保存：${groupEntries.length} 个等级组`))
   return { inserted: 1 + groupEntries.length, errors: [] }
 }
 
@@ -665,6 +669,8 @@ const s = {
 
 // ─── DROPZONE COMPONENT ────────────────────────────────────────────────────
 function Dropzone({ onFile, file, label, accept = '.csv' }) {
+  const { lang } = useLanguage()
+  const L2 = (en, zh) => (lang === 'zh' ? zh : en)
   const [dragging, setDragging] = useState(false)
   const inputRef = useRef()
 
@@ -689,9 +695,9 @@ function Dropzone({ onFile, file, label, accept = '.csv' }) {
         {file
           ? <>
               <div style={s.fileName}>📄 {file.name}</div>
-              <div style={{ fontSize: 11, color: 'var(--muted)' }}>{(file.size / 1024).toFixed(1)} KB · click to change</div>
+              <div style={{ fontSize: 11, color: 'var(--muted)' }}>{(file.size / 1024).toFixed(1)} KB · {L2('click to change','点击更换')}</div>
             </>
-          : <div style={s.dropText}>Drop CSV here or <span style={{ color: 'var(--accent)', fontWeight: 600 }}>click to browse</span></div>
+          : <div style={s.dropText}>{L2('Drop CSV here or ','拖放 CSV 到此处或 ')}<span style={{ color: 'var(--accent)', fontWeight: 600 }}>{L2('click to browse','点击浏览')}</span></div>
         }
       </div>
     </div>
@@ -700,6 +706,8 @@ function Dropzone({ onFile, file, label, accept = '.csv' }) {
 
 // ─── MULTI-FILE DROPZONE ──────────────────────────────────────────────────
 function MultiDropzone({ onFiles, files, label }) {
+  const { lang } = useLanguage()
+  const L2 = (en, zh) => (lang === 'zh' ? zh : en)
   const [dragging, setDragging] = useState(false)
   const inputRef = useRef()
 
@@ -736,8 +744,8 @@ function MultiDropzone({ onFiles, files, label }) {
         <input ref={inputRef} type="file" accept=".csv" multiple style={{ display: 'none' }}
           onChange={(e) => addFiles(e.target.files)} />
         <div style={{ fontSize: 13, color: 'var(--muted)', textAlign: 'center' }}>
-          Drop CSV files here or <span style={{ color: 'var(--accent)', fontWeight: 600 }}>click to browse</span>
-          <span style={{ fontSize: 11, display: 'block', marginTop: 3 }}>Multiple files supported</span>
+          {L2('Drop CSV files here or ','拖放 CSV 文件到此处或 ')}<span style={{ color: 'var(--accent)', fontWeight: 600 }}>{L2('click to browse','点击浏览')}</span>
+          <span style={{ fontSize: 11, display: 'block', marginTop: 3 }}>{L2('Multiple files supported','支持多个文件')}</span>
         </div>
       </div>
       {files.length > 0 && (
@@ -757,34 +765,36 @@ function MultiDropzone({ onFiles, files, label }) {
   )
 }
 function ResultBox({ result }) {
+  const { lang } = useLanguage()
+  const L2 = (en, zh) => (lang === 'zh' ? zh : en)
   if (!result) return null
   const ok = !result.error && result.errors?.length === 0
   return (
     <div style={s.result(ok)}>
-      <div style={{ fontWeight: 600, marginBottom: 6 }}>{ok ? '✓ Import complete' : '⚠ Import finished with issues'}</div>
+      <div style={{ fontWeight: 600, marginBottom: 6 }}>{ok ? L2('✓ Import complete','✓ 导入完成') : L2('⚠ Import finished with issues','⚠ 导入完成但有问题')}</div>
       <div style={s.statRow}>
-        {result.myRows    != null && <span style={s.stat}>MY rows: {result.myRows}</span>}
-        {result.sgRows    != null && <span style={s.stat}>SG rows: {result.sgRows}</span>}
-        {result.merged    != null && <span style={s.stat}>Merged total: {result.merged}</span>}
-        {result.vipCreated   != null && result.vipCreated > 0 && <span style={{ ...s.stat, color: '#3fb950', borderColor: '#3fb95044' }}>✨ New VIPs: {result.vipCreated}</span>}
-        {result.dailySnapshotSaved != null && <span style={s.stat}>📅 Daily snapshot: {result.dailySnapshotSaved} saved</span>}
-        {result.potentialDailySnapshotSaved != null && <span style={s.stat}>📅 Potential daily snapshot: {result.potentialDailySnapshotSaved} saved</span>}
-        {result.autoReactivated != null && result.autoReactivated > 0 && <span style={{ ...s.stat, color:'#3fb950', borderColor:'#3fb95044' }}>✅ Auto-reactivated: {result.autoReactivated}</span>}
-        {result.vipUpdated   != null && <span style={s.stat}>VIP updated: {result.vipUpdated}</span>}
-        {result.vipReset     != null && result.vipReset > 0 && <span style={s.stat}>VIP reset to 0: {result.vipReset}</span>}
-        {result.tierChanged    != null && result.tierChanged > 0 && <span style={{ ...s.stat, color: '#f59e0b', borderColor: '#f59e0b44' }}>⚡ Tier changes: {result.tierChanged}</span>}
-        {result.autoGraduated != null && result.autoGraduated > 0 && <span style={{ ...s.stat, color: '#3fb950', borderColor: '#3fb95044' }}>🎓 Auto-graduated: {result.autoGraduated}</span>}
-        {result.potCreated   != null && <span style={s.stat}>New potentials: {result.potCreated}</span>}
-        {result.potUpdated   != null && <span style={s.stat}>Potentials refreshed: {result.potUpdated}</span>}
-        {result.flagged      != null && <span style={s.stat}>Upgrade flagged: {result.flagged}</span>}
-        {result.updated      != null && <span style={s.stat}>Updated: {result.updated}</span>}
-        {result.created      != null && result.created > 0 && <span style={{ ...s.stat, color: '#3fb950', borderColor: '#3fb95044' }}>✨ New VIPs created: {result.created}</span>}
-        {result.notFound     != null && result.notFound > 0 && <span style={s.stat}>Not in VIP list: {result.notFound}</span>}
+        {result.myRows    != null && <span style={s.stat}>{L2('MY rows:','MY 行数：')} {result.myRows}</span>}
+        {result.sgRows    != null && <span style={s.stat}>{L2('SG rows:','SG 行数：')} {result.sgRows}</span>}
+        {result.merged    != null && <span style={s.stat}>{L2('Merged total:','合并总计：')} {result.merged}</span>}
+        {result.vipCreated   != null && result.vipCreated > 0 && <span style={{ ...s.stat, color: '#3fb950', borderColor: '#3fb95044' }}>✨ {L2('New VIPs:','新 VIP：')} {result.vipCreated}</span>}
+        {result.dailySnapshotSaved != null && <span style={s.stat}>📅 {L2('Daily snapshot:','每日快照：')} {result.dailySnapshotSaved} {L2('saved','已保存')}</span>}
+        {result.potentialDailySnapshotSaved != null && <span style={s.stat}>📅 {L2('Potential daily snapshot:','潜力玩家每日快照：')} {result.potentialDailySnapshotSaved} {L2('saved','已保存')}</span>}
+        {result.autoReactivated != null && result.autoReactivated > 0 && <span style={{ ...s.stat, color:'#3fb950', borderColor:'#3fb95044' }}>✅ {L2('Auto-reactivated:','自动重新激活：')} {result.autoReactivated}</span>}
+        {result.vipUpdated   != null && <span style={s.stat}>{L2('VIP updated:','VIP 已更新：')} {result.vipUpdated}</span>}
+        {result.vipReset     != null && result.vipReset > 0 && <span style={s.stat}>{L2('VIP reset to 0:','VIP 重置为 0：')} {result.vipReset}</span>}
+        {result.tierChanged    != null && result.tierChanged > 0 && <span style={{ ...s.stat, color: '#f59e0b', borderColor: '#f59e0b44' }}>⚡ {L2('Tier changes:','等级变更：')} {result.tierChanged}</span>}
+        {result.autoGraduated != null && result.autoGraduated > 0 && <span style={{ ...s.stat, color: '#3fb950', borderColor: '#3fb95044' }}>🎓 {L2('Auto-graduated:','自动升级：')} {result.autoGraduated}</span>}
+        {result.potCreated   != null && <span style={s.stat}>{L2('New potentials:','新潜力玩家：')} {result.potCreated}</span>}
+        {result.potUpdated   != null && <span style={s.stat}>{L2('Potentials refreshed:','潜力玩家已刷新：')} {result.potUpdated}</span>}
+        {result.flagged      != null && <span style={s.stat}>{L2('Upgrade flagged:','标记升级：')} {result.flagged}</span>}
+        {result.updated      != null && <span style={s.stat}>{L2('Updated:','已更新：')} {result.updated}</span>}
+        {result.created      != null && result.created > 0 && <span style={{ ...s.stat, color: '#3fb950', borderColor: '#3fb95044' }}>✨ {L2('New VIPs created:','新建 VIP：')} {result.created}</span>}
+        {result.notFound     != null && result.notFound > 0 && <span style={s.stat}>{L2('Not in VIP list:','不在 VIP 名单中：')} {result.notFound}</span>}
       </div>
       {result.notFoundUsernames?.length > 0 && (
         <details style={{ marginTop: 8 }}>
           <summary style={{ cursor: 'pointer', fontSize: 12, color: '#f59e0b', fontWeight: 600 }}>
-            ⚠ {result.notFoundUsernames.length} username(s) could not be created — click to review
+            ⚠ {L2(`${result.notFoundUsernames.length} username(s) could not be created — click to review`, `${result.notFoundUsernames.length} 个用户名无法创建 — 点击查看`)}
           </summary>
           <div style={{ marginTop: 6, maxHeight: 160, overflowY: 'auto', fontSize: 11 }}>
             {result.notFoundUsernames.map((u, i) => (
@@ -795,7 +805,7 @@ function ResultBox({ result }) {
       )}
       {result.errors?.length > 0 && (
         <details style={{ marginTop: 8 }}>
-          <summary style={{ cursor: 'pointer', fontSize: 12 }}>{result.errors.length} row error(s)</summary>
+          <summary style={{ cursor: 'pointer', fontSize: 12 }}>{L2(`${result.errors.length} row error(s)`, `${result.errors.length} 行错误`)}</summary>
           <div style={{ marginTop: 6, maxHeight: 120, overflowY: 'auto', fontSize: 11 }}>
             {result.errors.map((e, i) => <div key={i}>{e}</div>)}
           </div>
@@ -804,7 +814,7 @@ function ResultBox({ result }) {
       {result.tierChangeLogs?.length > 0 && (
         <details style={{ marginTop: 8 }}>
           <summary style={{ cursor: 'pointer', fontSize: 12, color: '#f59e0b', fontWeight: 600 }}>
-            ⚡ {result.tierChangeLogs.length} tier change(s) — click to review
+            ⚡ {L2(`${result.tierChangeLogs.length} tier change(s) — click to review`, `${result.tierChangeLogs.length} 项等级变更 — 点击查看`)}
           </summary>
           <div style={{ marginTop: 6, maxHeight: 160, overflowY: 'auto', fontSize: 11 }}>
             {result.tierChangeLogs.map((t, i) => (
@@ -827,6 +837,8 @@ function ImportHistory({ refresh }) {
   const [history, setHistory] = useState([])
   const [loading, setLoading] = useState(true)
   const [expanded, setExpanded] = useState(false)
+  const { lang } = useLanguage()
+  const L2 = (en, zh) => (lang === 'zh' ? zh : en)
 
   useEffect(() => {
     async function load() {
@@ -856,25 +868,25 @@ function ImportHistory({ refresh }) {
   return (
     <div style={{ ...s.card, marginBottom: 24 }}>
       <div style={s.cardHeader}>
-        <span style={s.badge('#0ea5e9')}>HISTORY</span>
+        <span style={s.badge('#0ea5e9')}>{L2('HISTORY','历史')}</span>
         <div>
-          <div style={s.cardTitle}>Import History</div>
-          <div style={s.cardDesc}>All past uploads — so you always know what's been loaded</div>
+          <div style={s.cardTitle}>{L2('Import History','导入历史')}</div>
+          <div style={s.cardDesc}>{L2("All past uploads — so you always know what's been loaded",'所有过往上传记录 — 随时了解已载入的数据')}</div>
         </div>
       </div>
 
       {loading ? (
-        <div style={{ fontSize: 13, color: 'var(--muted)' }}>Loading history…</div>
+        <div style={{ fontSize: 13, color: 'var(--muted)' }}>{L2('Loading history…','正在载入历史…')}</div>
       ) : history.length === 0 ? (
-        <div style={{ fontSize: 13, color: 'var(--muted)', fontStyle: 'italic' }}>No imports yet. Upload your first file below.</div>
+        <div style={{ fontSize: 13, color: 'var(--muted)', fontStyle: 'italic' }}>{L2('No imports yet. Upload your first file below.','尚无导入记录。请在下方上传第一个文件。')}</div>
       ) : (
         <>
           {shown.map(h => (
             <div key={h.id} style={s.historyRow}>
               <span style={{ fontSize: 18 }}>📦</span>
-              <span style={{ fontWeight: 700, minWidth: 80, color: 'var(--text)' }}>{fmtMonth(h.import_month)}</span>
-              <span style={s.pill(typeColor(h.notes))}>{h.notes || 'Import'}</span>
-              <span style={{ fontSize: 12, color: 'var(--muted)' }}>{h.row_count?.toLocaleString()} rows</span>
+              <span style={{ fontWeight: 700, minWidth: 80, color: 'var(--text)' }}>{fmtMonth(h.import_month, lang)}</span>
+              <span style={s.pill(typeColor(h.notes))}>{h.notes || L2('Import','导入')}</span>
+              <span style={{ fontSize: 12, color: 'var(--muted)' }}>{h.row_count?.toLocaleString()} {L2('rows','行')}</span>
               <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--muted)' }}>
                 {new Date(h.import_date).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
               </span>
@@ -883,7 +895,7 @@ function ImportHistory({ refresh }) {
           {history.length > 5 && (
             <button onClick={() => setExpanded(e => !e)}
               style={{ background: 'none', border: 'none', color: 'var(--accent)', fontSize: 12, cursor: 'pointer', marginTop: 4 }}>
-              {expanded ? '▲ Show less' : `▼ Show all ${history.length} imports`}
+              {expanded ? L2('▲ Show less','▲ 收起') : L2(`▼ Show all ${history.length} imports`, `▼ 显示全部 ${history.length} 条导入`)}
             </button>
           )}
         </>
@@ -895,7 +907,9 @@ function ImportHistory({ refresh }) {
 // ─── MAIN COMPONENT ────────────────────────────────────────────────────────
 export default function CSVImport() {
   const { profile } = useAuth()
-  const { t } = useLanguage()
+  const { t, lang } = useLanguage()
+  CUR_LANG = lang
+  const L2 = (en, zh) => (lang === 'zh' ? zh : en)
   const [importMonth, setImportMonth] = useState(currentYearMonth())
   const [snapshotDate, setSnapshotDate] = useState(() => {
     const d = new Date()
@@ -982,7 +996,7 @@ export default function CSVImport() {
   const readFile = (file) => new Promise((resolve, reject) => {
     const reader = new FileReader()
     reader.onload = (e) => resolve(e.target.result)
-    reader.onerror = () => reject(new Error('Failed to read file'))
+    reader.onerror = () => reject(new Error(L2('Failed to read file','读取文件失败')))
     reader.readAsText(file)
   })
 
@@ -1014,7 +1028,7 @@ export default function CSVImport() {
 
   // Save current vip_members state as a snapshot for this month
   const saveVipSnapshot = async (month, onProgress) => {
-    onProgress('Saving VIP snapshot for this month…')
+    onProgress(L2('Saving VIP snapshot for this month…','正在保存本月 VIP 快照…'))
     const { data: vips } = await supabase
       .from('vip_members')
       .select('username, tier, monthly_valid_bet, total_deposit, total_withdrawal, days_inactive, host_assigned, region, currency, win_loss, bet_count, bonus_count, bonus_amount, has_promo, total_rebate')
@@ -1048,14 +1062,14 @@ export default function CSVImport() {
         .from('vip_snapshots')
         .upsert(batch, { onConflict: 'snapshot_month,username' })
       saved += batch.length
-      onProgress(`Saving snapshot… ${saved}/${vips.length}`)
+      onProgress(L2(`Saving snapshot… ${saved}/${vips.length}`, `正在保存快照… ${saved}/${vips.length}`))
     }
-    onProgress(`✅ Snapshot saved: ${saved} VIPs for ${month}`)
+    onProgress(L2(`✅ Snapshot saved: ${saved} VIPs for ${month}`, `✅ 快照已保存：${month} 共 ${saved} 位 VIP`))
   }
 
   // Save monthly stats to vip_monthly_stats (for Ask Data 3-month comparisons)
   const saveMonthlyStats = async (month, onProgress) => {
-    onProgress(`Saving monthly stats for ${month}…`)
+    onProgress(L2(`Saving monthly stats for ${month}…`, `正在保存 ${month} 每月统计…`))
     const { data: vips } = await supabase
       .from('vip_members')
       .select('id,username,region,currency,total_deposit,total_withdrawal,total_turnover,dep_count,bonus_amount,win_loss')
@@ -1082,13 +1096,13 @@ export default function CSVImport() {
       await supabase.from('vip_monthly_stats').upsert(batch, { onConflict: 'username,month' })
       saved += batch.length
     }
-    onProgress(`✅ Monthly stats saved: ${saved} VIPs for ${month}`)
+    onProgress(L2(`✅ Monthly stats saved: ${saved} VIPs for ${month}`, `✅ 每月统计已保存：${month} 共 ${saved} 位 VIP`))
   }
 
   // Save current vip_members state as a DAILY snapshot (for calendar heatmap)
   // dateStr: 'YYYY-MM-DD' — defaults to today, but can be backdated to cover missed days
   const saveDailySnapshot = async (dateStr, onProgress) => {
-    onProgress(`Saving daily snapshot for ${dateStr}…`)
+    onProgress(L2(`Saving daily snapshot for ${dateStr}…`, `正在保存 ${dateStr} 每日快照…`))
     const snapshotMonth = dateStr.slice(0, 7) // 'YYYY-MM'
     const { data: vips, error: fetchErr } = await supabase
       .from('vip_members')
@@ -1097,11 +1111,11 @@ export default function CSVImport() {
       .eq('is_excluded', false)
 
     if (fetchErr) {
-      onProgress(`⚠ Daily snapshot: failed to fetch VIPs — ${fetchErr.message}`)
+      onProgress(L2(`⚠ Daily snapshot: failed to fetch VIPs — ${fetchErr.message}`, `⚠ 每日快照：获取 VIP 失败 — ${fetchErr.message}`))
       return { saved: 0, errors: [fetchErr.message] }
     }
     if (!vips || vips.length === 0) {
-      onProgress('⚠ Daily snapshot: no VIPs found to snapshot')
+      onProgress(L2('⚠ Daily snapshot: no VIPs found to snapshot','⚠ 每日快照：未找到可快照的 VIP'))
       return { saved: 0, errors: [] }
     }
 
@@ -1137,16 +1151,16 @@ export default function CSVImport() {
         .upsert(batch, { onConflict: 'username,snapshot_date' })
       if (error) {
         errors.push(error.message)
-        onProgress(`⚠ Daily snapshot batch failed: ${error.message}`)
+        onProgress(L2(`⚠ Daily snapshot batch failed: ${error.message}`, `⚠ 每日快照批次失败：${error.message}`))
       } else {
         saved += batch.length
       }
-      onProgress(`Saving daily snapshot… ${saved}/${vips.length}`)
+      onProgress(L2(`Saving daily snapshot… ${saved}/${vips.length}`, `正在保存每日快照… ${saved}/${vips.length}`))
     }
     if (errors.length > 0) {
-      onProgress(`⚠ Daily snapshot finished with errors: ${saved} saved, ${errors.length} batch error(s)`)
+      onProgress(L2(`⚠ Daily snapshot finished with errors: ${saved} saved, ${errors.length} batch error(s)`, `⚠ 每日快照完成但有错误：已保存 ${saved}，${errors.length} 个批次错误`))
     } else {
-      onProgress(`✅ Daily snapshot saved: ${saved} VIPs for ${dateStr}`)
+      onProgress(L2(`✅ Daily snapshot saved: ${saved} VIPs for ${dateStr}`, `✅ 每日快照已保存：${dateStr} 共 ${saved} 位 VIP`))
     }
     return { saved, errors }
   }
@@ -1155,14 +1169,14 @@ export default function CSVImport() {
   // same reasoning as saveDailySnapshot for VIPs: CSV uploads are daily, so
   // potential_players.monthly_valid_bet is also just the last uploaded day's number.
   const savePotentialDailySnapshot = async (dateStr, onProgress) => {
-    onProgress(`Saving potential players daily snapshot for ${dateStr}…`)
+    onProgress(L2(`Saving potential players daily snapshot for ${dateStr}…`, `正在保存 ${dateStr} 潜力玩家每日快照…`))
     const { data: pots, error: fetchErr } = await supabase
       .from('potential_players')
       .select('username, tier, monthly_valid_bet')
       .eq('is_graduated', false)
 
     if (fetchErr) {
-      onProgress(`⚠ Potential daily snapshot: failed to fetch — ${fetchErr.message}`)
+      onProgress(L2(`⚠ Potential daily snapshot: failed to fetch — ${fetchErr.message}`, `⚠ 潜力玩家每日快照：获取失败 — ${fetchErr.message}`))
       return { saved: 0, errors: [fetchErr.message] }
     }
     if (!pots || pots.length === 0) {
@@ -1184,15 +1198,15 @@ export default function CSVImport() {
         .upsert(batch, { onConflict: 'username,snapshot_date' })
       if (error) {
         errors.push(error.message)
-        onProgress(`⚠ Potential daily snapshot batch failed: ${error.message}`)
+        onProgress(L2(`⚠ Potential daily snapshot batch failed: ${error.message}`, `⚠ 潜力玩家每日快照批次失败：${error.message}`))
       } else {
         saved += batch.length
       }
     }
     if (errors.length > 0) {
-      onProgress(`⚠ Potential daily snapshot finished with errors: ${saved} saved`)
+      onProgress(L2(`⚠ Potential daily snapshot finished with errors: ${saved} saved`, `⚠ 潜力玩家每日快照完成但有错误：已保存 ${saved}`))
     } else {
-      onProgress(`✅ Potential daily snapshot saved: ${saved} players for ${dateStr}`)
+      onProgress(L2(`✅ Potential daily snapshot saved: ${saved} players for ${dateStr}`, `✅ 潜力玩家每日快照已保存：${dateStr} 共 ${saved} 名玩家`))
     }
     return { saved, errors }
   }
@@ -1200,7 +1214,7 @@ export default function CSVImport() {
   // Auto-detect reactivations: if a VIP has valid_bet > 0 today but had 3+ consecutive
   // days of valid_bet = 0 immediately before, automatically log them as reactivated.
   const autoDetectReactivations = async (dateStr, onProgress) => {
-    onProgress('Checking for auto-reactivations…')
+    onProgress(L2('Checking for auto-reactivations…','正在检查自动重新激活…'))
 
     // Find VIPs active today AND all GOLD+/non-excluded VIPs (fetch separately to avoid .in() URL length issues)
     const [{ data: activeToday, error: activeErr }, { data: vipList }] = await Promise.all([
@@ -1260,7 +1274,7 @@ export default function CSVImport() {
     }
 
     if (reactivated.length > 0) {
-      onProgress(`✅ Auto-reactivations detected: ${reactivated.length} (${reactivated.slice(0,3).join(', ')}${reactivated.length > 3 ? '…' : ''})`)
+      onProgress(L2('✅ Auto-reactivations detected: ','✅ 检测到自动重新激活：') + `${reactivated.length} (${reactivated.slice(0,3).join(', ')}${reactivated.length > 3 ? '…' : ''})`)
     }
     return { detected: reactivated.length }
   }
@@ -1268,7 +1282,7 @@ export default function CSVImport() {
     if (rawMyFiles.length === 0 && rawSgFiles.length === 0) return
     setRawLoading(true)
     setRawResult(null)
-    setRawProgress('Reading files…')
+    setRawProgress(L2('Reading files…','正在读取文件…'))
 
     try {
       let myRows = [], sgRows = []
@@ -1278,7 +1292,7 @@ export default function CSVImport() {
         const text = await readFile(file)
         const rows = parseCSV(text, RAW_DATA_SKIP_ROWS)
         myRows = [...myRows, ...rows]
-        setRawProgress(`MY: ${myRows.length} rows parsed`)
+        setRawProgress(L2(`MY: ${myRows.length} rows parsed`, `MY：已解析 ${myRows.length} 行`))
       }
 
       // Read all SG files and combine
@@ -1286,7 +1300,7 @@ export default function CSVImport() {
         const text = await readFile(file)
         const rows = parseCSV(text, RAW_DATA_SKIP_ROWS)
         sgRows = [...sgRows, ...rows]
-        setRawProgress(`SG: ${sgRows.length} rows parsed`)
+        setRawProgress(L2(`SG: ${sgRows.length} rows parsed`, `SG：已解析 ${sgRows.length} 行`))
       }
 
       // Deduplicate within MY and SG by username (keep last occurrence)
@@ -1306,10 +1320,10 @@ export default function CSVImport() {
       const myFileCount = rawMyFiles.length, sgFileCount = rawSgFiles.length
 
       const mergedRows = mergeRows(myRows, sgRows)
-      setRawProgress(`Merged ${mergedRows.length} rows (${myFileCount} MY file${myFileCount!==1?'s':''} + ${sgFileCount} SG file${sgFileCount!==1?'s':''}). Fetching thresholds…`)
+      setRawProgress(L2(`Merged ${mergedRows.length} rows (${myFileCount} MY file${myFileCount!==1?'s':''} + ${sgFileCount} SG file${sgFileCount!==1?'s':''}). Fetching thresholds…`, `已合并 ${mergedRows.length} 行（${myFileCount} 个 MY 文件 + ${sgFileCount} 个 SG 文件）。正在获取阈值…`))
 
       const thresholds = await fetchThresholds()
-      setRawProgress('Starting import…')
+      setRawProgress(L2('Starting import…','开始导入…'))
 
       const result = await processRawData(mergedRows, importMonth, thresholds, setRawProgress)
 
@@ -1329,7 +1343,7 @@ export default function CSVImport() {
       const reactivationResult = await autoDetectReactivations(snapshotDate, setRawProgress)
 
       // Recalculate days_inactive / activity_status / churn_risk immediately after upload
-      setRawProgress('Recalculating days inactive…')
+      setRawProgress(L2('Recalculating days inactive…','正在重新计算不活跃天数…'))
       await supabase.rpc('refresh_days_inactive')
 
       setHistoryRefresh(n => n + 1) // also refresh the missing-days indicator
@@ -1361,7 +1375,7 @@ export default function CSVImport() {
     setTierLoading(true)
     setTierResult(null)
     try {
-      setTierProgress('Reading Excel workbook…')
+      setTierProgress(L2('Reading Excel workbook…','正在读取 Excel 工作簿…'))
       const res = await processTierExcel(tierExcelFile, setTierProgress)
       await saveImportRecord(importMonth, res.totalRows, 'Tier Excel Sync')
       setTierResult({
@@ -1400,11 +1414,11 @@ export default function CSVImport() {
     if (!retentionFile) return
     setRetentionLoading(true)
     setRetentionResult(null)
-    setRetentionProgress('Reading file…')
+    setRetentionProgress(L2('Reading file…','正在读取文件…'))
     try {
       const text = await readFile(retentionFile)
       const rows = parseCSV(text, 0)
-      setRetentionProgress(`Parsed ${rows.length} rows…`)
+      setRetentionProgress(L2(`Parsed ${rows.length} rows…`, `已解析 ${rows.length} 行…`))
       const result = await processRetentionData(rows, setRetentionProgress)
       await saveImportRecord(importMonth, rows.length, `Retention Metrics · ${importMonth}`)
       setRetentionResult({ inserted: result.inserted, errors: result.errors })
@@ -1421,11 +1435,11 @@ export default function CSVImport() {
     if (!rewardFile || !campaignName.trim()) return
     setRewardLoading(true)
     setRewardResult(null)
-    setRewardProgress('Reading file…')
+    setRewardProgress(L2('Reading file…','正在读取文件…'))
     try {
       const text = await readFile(rewardFile)
       const rows = parseCSV(text, 0)
-      setRewardProgress(`Parsed ${rows.length} rows…`)
+      setRewardProgress(L2(`Parsed ${rows.length} rows…`, `已解析 ${rows.length} 行…`))
       const result = await processRewardCampaign(
         rows, campaignName.trim(), importMonth,
         campaignPlatform, campaignCurrency, profile?.id,
@@ -1444,11 +1458,11 @@ export default function CSVImport() {
   // ── RENDER ─────────────────────────────────────────────────────────────
   return (
     <div style={s.page}>
-      <div style={s.heading}>CSV Import</div>
+      <div style={s.heading}>{L2('CSV Import','CSV 导入')}</div>
       <div style={{fontSize:13,color:'var(--muted)',marginTop:4}}>
-        Upload the monthly platform CSV export — updates VIP activity, tiers, deposits and withdrawals.
+        {L2('Upload the monthly platform CSV export — updates VIP activity, tiers, deposits and withdrawals.','上传每月平台 CSV 导出文件 — 更新 VIP 活跃度、等级、存款和提款。')}
         <span style={{color:'var(--amber,#f59e0b)',marginLeft:8}}>
-          📌 To import the mailing list (.xlsx), use Export &amp; Mailing instead.
+          {L2('📌 To import the mailing list (.xlsx), use Export & Mailing instead.','📌 如需导入邮寄名单 (.xlsx)，请使用导出与邮寄。')}
         </span>
       </div>
 
@@ -1458,24 +1472,24 @@ export default function CSVImport() {
       {/* ── Month selector ── */}
       <div style={{ ...s.card, marginBottom: 24 }}>
         <div style={s.cardHeader}>
-          <span style={s.badge('#6366f1')}>REQUIRED</span>
+          <span style={s.badge('#6366f1')}>{L2('REQUIRED','必填')}</span>
           <div>
-            <div style={s.cardTitle}>Import Month</div>
-            <div style={s.cardDesc}>Set the month this data belongs to before uploading</div>
+            <div style={s.cardTitle}>{L2('Import Month','导入月份')}</div>
+            <div style={s.cardDesc}>{L2('Set the month this data belongs to before uploading','上传前请设置此数据所属的月份')}</div>
           </div>
         </div>
         <div style={s.monthRow}>
-          <span style={s.monthLabel}>Data month:</span>
+          <span style={s.monthLabel}>{L2('Data month:','数据月份：')}</span>
           <input type="month" value={importMonth} onChange={(e) => setImportMonth(e.target.value)} style={s.monthInput} />
           <span style={{ fontSize: 12, color: 'var(--muted)' }}>
-            (set to the month your platform data covers — April and May will both be kept)
+            {L2('(set to the month your platform data covers — April and May will both be kept)','（设置为平台数据涵盖的月份 — 4月与5月的数据都会保留）')}
           </span>
         </div>
         <div style={s.monthRow}>
-          <span style={s.monthLabel}>Snapshot date:</span>
+          <span style={s.monthLabel}>{L2('Snapshot date:','快照日期：')}</span>
           <input type="date" value={snapshotDate} onChange={(e) => setSnapshotDate(e.target.value)} style={s.monthInput} />
           <span style={{ fontSize: 12, color: 'var(--muted)' }}>
-            (defaults to today — change this to backdate if you missed uploading on a previous day)
+            {L2('(defaults to today — change this to backdate if you missed uploading on a previous day)','（默认为今天 — 如错过之前某天的上传，可更改为过去日期补传）')}
           </span>
         </div>
 
@@ -1506,33 +1520,33 @@ export default function CSVImport() {
       {/* ── IMPORT 1: Raw Data (MY + SG) ── */}
       <div style={s.card}>
         <div style={s.cardHeader}>
-          <span style={s.badge('#f59e0b')}>STEP 1</span>
+          <span style={s.badge('#f59e0b')}>{L2('STEP 1','步骤 1')}</span>
           <div>
-            <div style={s.cardTitle}>Raw Data — Monthly Activity</div>
+            <div style={s.cardTitle}>{L2('Raw Data — Monthly Activity','原始数据 — 每月活跃度')}</div>
             <div style={s.cardDesc}>
-              Upload MY and/or SG files — they will be merged by username automatically.
+              {L2('Upload MY and/or SG files — they will be merged by username automatically.','上传 MY 和/或 SG 文件 — 将按用户名自动合并。')}
             </div>
           </div>
         </div>
 
         <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 14 }}>
-          ✓ MY + SG merged by username &nbsp;|&nbsp;
-          ✓ Updates VIP activity (Gold/Platinum/Diamond) &nbsp;|&nbsp;
-          ✓ Creates/refreshes Bronze &amp; Silver in potential_players &nbsp;|&nbsp;
-          ✓ Flags upgrade candidates &nbsp;|&nbsp;
-          ✓ Saves monthly snapshot to history
+          {L2('✓ MY + SG merged by username','✓ MY + SG 按用户名合并')} &nbsp;|&nbsp;
+          {L2('✓ Updates VIP activity (Gold/Platinum/Diamond)','✓ 更新 VIP 活跃度（金/白金/钻石）')} &nbsp;|&nbsp;
+          {L2('✓ Creates/refreshes Bronze & Silver in potential_players','✓ 在 potential_players 中创建/刷新铜级与银级')} &nbsp;|&nbsp;
+          {L2('✓ Flags upgrade candidates','✓ 标记升级候选')} &nbsp;|&nbsp;
+          {L2('✓ Saves monthly snapshot to history','✓ 保存每月快照至历史')}
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 14 }}>
           <MultiDropzone
             onFiles={setRawMyFiles}
             files={rawMyFiles}
-            label="🇲🇾 MY Raw Data (multiple files OK)"
+            label={L2('🇲🇾 MY Raw Data (multiple files OK)','🇲🇾 MY 原始数据（可多个文件）')}
           />
           <MultiDropzone
             onFiles={setRawSgFiles}
             files={rawSgFiles}
-            label="🇸🇬 SG Raw Data (multiple files OK)"
+            label={L2('🇸🇬 SG Raw Data (multiple files OK)','🇸🇬 SG 原始数据（可多个文件）')}
           />
         </div>
 
@@ -1540,17 +1554,17 @@ export default function CSVImport() {
         {(rawMyFiles.length > 0 || rawSgFiles.length > 0) && (
           <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
             {rawMyFiles.length > 0 && (
-              <span style={s.pill('#3fb950')}>✓ MY: {rawMyFiles.length} file{rawMyFiles.length!==1?'s':''}</span>
+              <span style={s.pill('#3fb950')}>✓ MY: {L2(`${rawMyFiles.length} file${rawMyFiles.length!==1?'s':''}`, `${rawMyFiles.length} 个文件`)}</span>
             )}
             {rawSgFiles.length > 0 && (
-              <span style={s.pill('#f59e0b')}>✓ SG: {rawSgFiles.length} file{rawSgFiles.length!==1?'s':''}</span>
+              <span style={s.pill('#f59e0b')}>✓ SG: {L2(`${rawSgFiles.length} file${rawSgFiles.length!==1?'s':''}`, `${rawSgFiles.length} 个文件`)}</span>
             )}
             {rawMyFiles.length > 0 && rawSgFiles.length > 0 && (
-              <span style={s.pill('#b9f2ff')}>⚡ Will merge MY + SG</span>
+              <span style={s.pill('#b9f2ff')}>{L2('⚡ Will merge MY + SG','⚡ 将合并 MY + SG')}</span>
             )}
             <button onClick={() => { setRawMyFiles([]); setRawSgFiles([]) }}
               style={{ background: 'none', border: '1px solid var(--border)', color: 'var(--muted)', padding: '2px 10px', borderRadius: 6, fontSize: 11, cursor: 'pointer' }}>
-              Clear all
+              {L2('Clear all','全部清除')}
             </button>
           </div>
         )}
@@ -1560,7 +1574,7 @@ export default function CSVImport() {
           disabled={!hasRawFile || rawLoading}
           onClick={handleRawImport}
         >
-          {rawLoading ? 'Importing…' : rawMyFiles.length > 0 && rawSgFiles.length > 0 ? `Import MY + SG (${rawMyFiles.length + rawSgFiles.length} files)` : 'Import Raw Data'}
+          {rawLoading ? L2('Importing…','导入中…') : rawMyFiles.length > 0 && rawSgFiles.length > 0 ? L2(`Import MY + SG (${rawMyFiles.length + rawSgFiles.length} files)`, `导入 MY + SG（${rawMyFiles.length + rawSgFiles.length} 个文件）`) : L2('Import Raw Data','导入原始数据')}
         </button>
 
         {rawProgress && <div style={s.progress}>⏳ {rawProgress}</div>}
@@ -1572,23 +1586,23 @@ export default function CSVImport() {
       {/* ── IMPORT 2: Tier Excel Sync ── */}
       <div style={s.card}>
         <div style={s.cardHeader}>
-          <span style={s.badge('#10b981')}>STEP 2</span>
+          <span style={s.badge('#10b981')}>{L2('STEP 2','步骤 2')}</span>
           <div>
-            <div style={s.cardTitle}>VIP Member List — Tier Sync</div>
+            <div style={s.cardTitle}>{L2('VIP Member List — Tier Sync','VIP 会员名单 — 等级同步')}</div>
             <div style={s.cardDesc}>
-              Upload the full BO VIP Member List Excel (.xlsx). Syncs tier for all Gold / Platinum / Diamond / Black members — including dormant players the daily CSV misses.
+              {L2('Upload the full BO VIP Member List Excel (.xlsx). Syncs tier for all Gold / Platinum / Diamond / Black members — including dormant players the daily CSV misses.','上传完整的 BO VIP 会员名单 Excel (.xlsx)。同步所有金/白金/钻石/黑卡会员的等级 — 包括每日 CSV 遗漏的休眠玩家。')}
             </div>
           </div>
         </div>
 
         <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 14 }}>
-          ✓ Updates: tier, currency, registration_date &nbsp;|&nbsp;
-          ✓ days_inactive &amp; last_deposit_date auto-calculated from daily snapshots — not touched here &nbsp;|&nbsp;
-          ✓ Upload monthly (or whenever you suspect tier drift)
+          {L2('✓ Updates: tier, currency, registration_date','✓ 更新：等级、货币、注册日期')} &nbsp;|&nbsp;
+          {L2('✓ days_inactive & last_deposit_date auto-calculated from daily snapshots — not touched here','✓ 不活跃天数与最后存款日期由每日快照自动计算 — 此处不更改')} &nbsp;|&nbsp;
+          {L2('✓ Upload monthly (or whenever you suspect tier drift)','✓ 每月上传（或怀疑等级有偏差时）')}
         </div>
 
         <div style={{ marginBottom: 14 }}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)', marginBottom: 6 }}>📋 VIP Member List (.xlsx) — all tiers in one file</div>
+          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)', marginBottom: 6 }}>{L2('📋 VIP Member List (.xlsx) — all tiers in one file','📋 VIP 会员名单 (.xlsx) — 所有等级在同一文件')}</div>
           <Dropzone onFile={setTierExcelFile} file={tierExcelFile} accept=".xlsx" />
         </div>
 
@@ -1597,7 +1611,7 @@ export default function CSVImport() {
           disabled={!tierExcelFile || tierLoading}
           onClick={handleTierImport}
         >
-          {tierLoading ? 'Syncing…' : 'Sync Tiers'}
+          {tierLoading ? L2('Syncing…','同步中…') : L2('Sync Tiers','同步等级')}
         </button>
 
         {tierProgress && <div style={s.progress}>⏳ {tierProgress}</div>}
@@ -1605,7 +1619,7 @@ export default function CSVImport() {
           <div style={{ marginTop: 12, fontSize: 12, color: 'var(--muted)' }}>
             {Object.entries(tierResult.tierSummary).map(([tier, s]) => (
               <span key={tier} style={{ marginRight: 16 }}>
-                <strong style={{ color: 'var(--text)' }}>{tier}</strong>: {s.updated} updated, {s.created} new / {s.total} total
+                <strong style={{ color: 'var(--text)' }}>{tier}</strong>: {L2(`${s.updated} updated, ${s.created} new / ${s.total} total`, `已更新 ${s.updated}，新增 ${s.created} / 共 ${s.total}`)}
               </span>
             ))}
           </div>
@@ -1618,26 +1632,26 @@ export default function CSVImport() {
       {/* ── IMPORT 3: Retention Engagement ── */}
       <div style={s.card}>
         <div style={s.cardHeader}>
-          <span style={s.badge('#8b5cf6')}>STEP 3</span>
+          <span style={s.badge('#8b5cf6')}>{L2('STEP 3','步骤 3')}</span>
           <div>
-            <div style={s.cardTitle}>VIP Retention Engagement — Monthly</div>
+            <div style={s.cardTitle}>{L2('VIP Retention Engagement — Monthly','VIP 留存参与度 — 每月')}</div>
             <div style={s.cardDesc}>
-              Upload your monthly retention CSV (depositor rate, active rate by tier and week). Format: Month, Tier, Total Members, Metric Type, 1-7, 8-14, 15-21, 22-end, Monthly, + % columns.
+              {L2('Upload your monthly retention CSV (depositor rate, active rate by tier and week). Format:','上传每月留存 CSV（按等级和周的存款率、活跃率）。格式：')} Month, Tier, Total Members, Metric Type, 1-7, 8-14, 15-21, 22-end, Monthly, + % {L2('columns.','栏。')}
             </div>
           </div>
         </div>
         <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 14 }}>
-          ✓ Stores weekly depositor &amp; active rates by tier &nbsp;|&nbsp;
-          ✓ Powers month-over-month engagement trends &nbsp;|&nbsp;
-          ✓ Used in PPT report — Activity section
+          {L2('✓ Stores weekly depositor & active rates by tier','✓ 按等级存储每周存款率与活跃率')} &nbsp;|&nbsp;
+          {L2('✓ Powers month-over-month engagement trends','✓ 支持环比参与度趋势')} &nbsp;|&nbsp;
+          {L2('✓ Used in PPT report — Activity section','✓ 用于 PPT 报告 — 活跃度部分')}
         </div>
-        <Dropzone onFile={setRetentionFile} file={retentionFile} label="📊 Retention Engagement CSV" />
+        <Dropzone onFile={setRetentionFile} file={retentionFile} label={L2('📊 Retention Engagement CSV','📊 留存参与度 CSV')} />
         <button
           style={s.btn(!retentionFile || retentionLoading, '#8b5cf6')}
           disabled={!retentionFile || retentionLoading}
           onClick={handleRetentionImport}
         >
-          {retentionLoading ? 'Importing…' : 'Import Retention Data'}
+          {retentionLoading ? L2('Importing…','导入中…') : L2('Import Retention Data','导入留存数据')}
         </button>
         {retentionProgress && <div style={s.progress}>⏳ {retentionProgress}</div>}
         <ResultBox result={retentionResult} />
@@ -1648,31 +1662,31 @@ export default function CSVImport() {
       {/* ── IMPORT 4: Reward Campaign ── */}
       <div style={s.card}>
         <div style={s.cardHeader}>
-          <span style={s.badge('#ec4899')}>STEP 4</span>
+          <span style={s.badge('#ec4899')}>{L2('STEP 4','步骤 4')}</span>
           <div>
-            <div style={s.cardTitle}>Reward / Bonus Campaign</div>
+            <div style={s.cardTitle}>{L2('Reward / Bonus Campaign','奖励 / 奖金活动')}</div>
             <div style={s.cardDesc}>
-              Upload your deposit privilege tracker or bonus campaign summary CSV. Stores qualifier counts and payout totals per tier.
+              {L2('Upload your deposit privilege tracker or bonus campaign summary CSV. Stores qualifier counts and payout totals per tier.','上传存款特权追踪表或奖金活动汇总 CSV。按等级存储合格人数与派发总额。')}
             </div>
           </div>
         </div>
         <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 14 }}>
-          ✓ Stores campaign KPIs (Tier 1/2 qualifiers, total payout) &nbsp;|&nbsp;
-          ✓ Breakdown by member group (Bronze → Diamond) &nbsp;|&nbsp;
-          ✓ Exportable for PPT bonus slide
+          {L2('✓ Stores campaign KPIs (Tier 1/2 qualifiers, total payout)','✓ 存储活动 KPI（第1/2级合格者、总派发）')} &nbsp;|&nbsp;
+          {L2('✓ Breakdown by member group (Bronze → Diamond)','✓ 按会员组细分（铜级 → 钻石）')} &nbsp;|&nbsp;
+          {L2('✓ Exportable for PPT bonus slide','✓ 可导出用于 PPT 奖金页')}
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
           <div>
-            <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>Campaign Name *</div>
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>{L2('Campaign Name *','活动名称 *')}</div>
             <input
               style={{ ...s.monthInput, width: '100%', boxSizing: 'border-box' }}
               value={campaignName}
               onChange={e => setCampaignName(e.target.value)}
-              placeholder="e.g. VIP Deposit Privilege May"
+              placeholder={L2('e.g. VIP Deposit Privilege May','例如 VIP 5月存款特权')}
             />
           </div>
           <div>
-            <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>Platform</div>
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>{L2('Platform','平台')}</div>
             <select
               style={{ ...s.monthInput, width: '100%' }}
               value={campaignPlatform}
@@ -1683,11 +1697,11 @@ export default function CSVImport() {
             >
               <option value="MY">MY (MYR)</option>
               <option value="SG">SG (SGD)</option>
-              <option value="BOTH">Both Platforms</option>
+              <option value="BOTH">{L2('Both Platforms','两个平台')}</option>
             </select>
           </div>
           <div>
-            <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>Currency</div>
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>{L2('Currency','货币')}</div>
             <select
               style={{ ...s.monthInput, width: '100%' }}
               value={campaignCurrency}
@@ -1699,16 +1713,16 @@ export default function CSVImport() {
             </select>
           </div>
         </div>
-        <Dropzone onFile={setRewardFile} file={rewardFile} label="🎁 Reward Campaign CSV" />
+        <Dropzone onFile={setRewardFile} file={rewardFile} label={L2('🎁 Reward Campaign CSV','🎁 奖励活动 CSV')} />
         <button
           style={s.btn(!rewardFile || !campaignName.trim() || rewardLoading, '#ec4899')}
           disabled={!rewardFile || !campaignName.trim() || rewardLoading}
           onClick={handleRewardImport}
         >
-          {rewardLoading ? 'Importing…' : 'Import Campaign Data'}
+          {rewardLoading ? L2('Importing…','导入中…') : L2('Import Campaign Data','导入活动数据')}
         </button>
         {!campaignName.trim() && rewardFile && (
-          <div style={{ fontSize: 12, color: '#f59e0b', marginTop: 6 }}>⚠ Please enter a campaign name first</div>
+          <div style={{ fontSize: 12, color: '#f59e0b', marginTop: 6 }}>{L2('⚠ Please enter a campaign name first','⚠ 请先输入活动名称')}</div>
         )}
         {rewardProgress && <div style={s.progress}>⏳ {rewardProgress}</div>}
         <ResultBox result={rewardResult} />
@@ -1718,16 +1732,16 @@ export default function CSVImport() {
 
       {/* ── Info box ── */}
       <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, padding: '16px 20px', fontSize: 12, color: 'var(--muted)', lineHeight: 1.7 }}>
-        <div style={{ fontWeight: 600, color: 'var(--text)', marginBottom: 8 }}>📋 Monthly workflow reminder</div>
-        <div>1. Set the import month above to the month your data covers</div>
-        <div>2. Upload <strong>MY Raw Data</strong> + <strong>SG Raw Data</strong> together — they merge automatically by username</div>
-        <div>3. Upload the <strong>3 tier files</strong> to refresh last deposit dates and turnover for Gold+ members</div>
-        <div>4. Upload <strong>Retention Engagement CSV</strong> — weekly depositor/active rates by tier</div>
-        <div>5. Upload <strong>Reward/Bonus Campaign CSV</strong> — qualifier counts and payout totals</div>
-        <div>6. Check the <strong>Import History</strong> panel at the top — each month shows separately</div>
-        <div>7. After all steps, go to <strong>Export</strong> → Generate Monthly Report PPT</div>
+        <div style={{ fontWeight: 600, color: 'var(--text)', marginBottom: 8 }}>{L2('📋 Monthly workflow reminder','📋 每月流程提醒')}</div>
+        <div>{L2('1. Set the import month above to the month your data covers','1. 将上方的导入月份设置为数据涵盖的月份')}</div>
+        <div>{L2('2. Upload ','2. 同时上传 ')}<strong>{L2('MY Raw Data','MY 原始数据')}</strong> + <strong>{L2('SG Raw Data','SG 原始数据')}</strong>{L2(' together — they merge automatically by username',' — 将按用户名自动合并')}</div>
+        <div>{L2('3. Upload the ','3. 上传 ')}<strong>{L2('3 tier files','3 个等级文件')}</strong>{L2(' to refresh last deposit dates and turnover for Gold+ members',' 以刷新金级以上会员的最后存款日期和流水')}</div>
+        <div>{L2('4. Upload ','4. 上传 ')}<strong>{L2('Retention Engagement CSV','留存参与度 CSV')}</strong>{L2(' — weekly depositor/active rates by tier',' — 按等级的每周存款/活跃率')}</div>
+        <div>{L2('5. Upload ','5. 上传 ')}<strong>{L2('Reward/Bonus Campaign CSV','奖励/奖金活动 CSV')}</strong>{L2(' — qualifier counts and payout totals',' — 合格人数与派发总额')}</div>
+        <div>{L2('6. Check the ','6. 查看顶部的 ')}<strong>{L2('Import History','导入历史')}</strong>{L2(' panel at the top — each month shows separately',' 面板 — 每个月分别显示')}</div>
+        <div>{L2('7. After all steps, go to ','7. 完成所有步骤后，前往 ')}<strong>{L2('Export','导出')}</strong>{L2(' → Generate Monthly Report PPT',' → 生成每月报告 PPT')}</div>
         <div style={{ marginTop: 8, color: 'var(--accent)' }}>
-          ℹ️ CRM fields (host, birthday, notes, city) are updated directly on each VIP's profile page — not through CSV import
+          {L2("ℹ️ CRM fields (host, birthday, notes, city) are updated directly on each VIP's profile page — not through CSV import",'ℹ️ CRM 字段（负责人、生日、备注、城市）需在每位 VIP 的资料页直接更新 — 不通过 CSV 导入')}
         </div>
       </div>
     </div>

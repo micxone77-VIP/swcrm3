@@ -6,6 +6,7 @@ import { useLanguage } from '../contexts/LanguageContext'
 
 // ── constants ─────────────────────────────────────────────────────────────────
 const DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun']
+const DAYS_ZH = ['周一','周二','周三','周四','周五','周六','周日']
 const DEFAULT_DAILY_TARGET = 10
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -99,7 +100,8 @@ function StatCard({ icon, label, value, max, color, sub }) {
 // ── main ──────────────────────────────────────────────────────────────────────
 export default function DailyTargets() {
   const { profile } = useAuth()
-  const { t } = useLanguage()
+  const { t, lang } = useLanguage()
+  const L2 = (en, zh) => (lang === 'zh' ? zh : en)
   const isAdmin = profile?.role === 'admin'
 
   const [loading,      setLoading]      = useState(true)
@@ -277,7 +279,7 @@ export default function DailyTargets() {
             ) : (
               <>
                 <span style={{ fontSize:16, fontWeight:800, color:'var(--accent)' }}>{dailyTarget}</span>
-                <button style={{ ...s.btnSm, padding:'4px 10px', fontSize:11 }} onClick={() => setEditTarget(true)}>Edit</button>
+                <button style={{ ...s.btnSm, padding:'4px 10px', fontSize:11 }} onClick={() => setEditTarget(true)}>{L2('Edit', '编辑')}</button>
               </>
             )}
           </div>
@@ -294,10 +296,10 @@ export default function DailyTargets() {
             <StatCard icon="👤" label={t('dailyTargets.uniqueVipsToday')} value={myStats.todayUnique}
               sub={t('dailyTargets.distinctVipsReached')} color="var(--accent)" />
             <StatCard icon="✅" label={t('dailyTargets.positiveToday')} value={myStats.todayPositive}
-              sub={myStats.todayCount ? Math.round(myStats.todayPositive/myStats.todayCount*100)+'% of today' : '—'}
+              sub={myStats.todayCount ? L2(Math.round(myStats.todayPositive/myStats.todayCount*100)+'% of today', '占今天 '+Math.round(myStats.todayPositive/myStats.todayCount*100)+'%') : '—'}
               color="#3fb950" />
             <StatCard icon="📊" label={t('dailyTargets.responseRate')} value={myStats.responseRate+'%'}
-              sub={`${myStats.positiveCount} positive of ${myStats.totalCount} total`}
+              sub={L2(`${myStats.positiveCount} positive of ${myStats.totalCount} total`, `共 ${myStats.totalCount} 次，正面 ${myStats.positiveCount} 次`)}
               color={myStats.responseRate>=70?'#3fb950':myStats.responseRate>=50?'#d29922':'#f85149'} />
           </div>
 
@@ -391,7 +393,7 @@ export default function DailyTargets() {
                         <div style={{ width:'100%', height: barH, background: barColor, borderRadius:'4px 4px 0 0', transition:'height .4s', opacity: isFuture ? .3 : 1 }} />
                       </div>
                       <div style={{ fontSize:11, color: isToday ? 'var(--accent)' : 'var(--muted)', fontWeight: isToday ? 700 : 400 }}>
-                        {DAYS[i]}
+                        {L2(DAYS[i], DAYS_ZH[i])}
                       </div>
                       <div style={{ fontSize:10, color:'var(--muted)' }}>
                         {date.getDate()}/{date.getMonth()+1}
@@ -448,7 +450,7 @@ export default function DailyTargets() {
                         <span style={{ fontSize:11, fontWeight:600, padding:'2px 8px', borderRadius:6,
                           background: host.role==='admin' ? 'rgba(88,166,255,.15)' : 'rgba(63,185,80,.1)',
                           color: host.role==='admin' ? 'var(--accent)' : '#3fb950' }}>
-                          {host.role}
+                          {L2(host.role, host.role === 'admin' ? '管理员' : host.role === 'host' ? '负责人' : host.role)}
                         </span>
                       </td>
                       <td style={{ ...s.td, fontWeight:700, color: host.todayCount >= dailyTarget ? '#3fb950' : 'var(--text)' }}>

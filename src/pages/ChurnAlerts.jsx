@@ -10,6 +10,8 @@ import { useUrlParam, useUrlParamNumber, useUrlParamBool, useUrlParamsRaw } from
 import { getRetentionTierRank, isFollowUpDue, calculateChurnUrgency } from '../lib/retention'
 
 const RISK_COLOR = { HIGH:'#f85149', MEDIUM:'#d29922', LOW:'#3fb950' }
+const RISK_ZH    = { HIGH:'高', MEDIUM:'中', LOW:'低', CRITICAL:'严重' }
+const TIER_ZH    = { BLACK:'黑金', DIAMOND:'钻石', PLATINUM:'白金', GOLD:'黄金', SILVER:'白银', BRONZE:'青铜' }
 const RISK_BG    = { HIGH:'rgba(248,81,73,.12)', MEDIUM:'rgba(210,153,34,.12)', LOW:'rgba(63,185,80,.1)' }
 
 const s = {
@@ -30,10 +32,25 @@ const s = {
   mBox:   { background:'var(--surface)', border:'1px solid var(--border)', borderRadius:14, padding:'28px 32px', width:440, maxWidth:'90vw' },
 }
 
+// Display-only translation of in-memory reason strings (data stays English)
+function trReason(r, lang) {
+  if (lang !== 'zh' || !r) return r
+  let m
+  if ((m = r.match(/^7-day deposit dropped (\S+)% \((.*)\)$/))) return `7天存款下降 ${m[1]}% (${m[2]})`
+  if ((m = r.match(/^No deposit for (\d+) days — may become a churn case soon$/))) return `${m[1]}天未存款 — 可能即将流失`
+  if ((m = r.match(/^Balance running low: bet but didn't deposit on (\d+) days? in the last 7$/))) return `余额偏低：过去7天中有${m[1]}天投注但未存款`
+  if ((m = r.match(/^Net loss (.+) in 3 days — recommend appeasement$/))) return `3天净输 ${m[1]} — 建议安抚`
+  if ((m = r.match(/^Churned: deposited in (\S+) but zero deposit in (\S+) — needs reactivation$/))) return `已流失：${m[1]} 有存款但 ${m[2]} 零存款 — 需要召回`
+  if ((m = r.match(/^(HIGH|MEDIUM) churn risk$/))) return `${m[1] === 'HIGH' ? '高' : '中'}流失风险`
+  if ((m = r.match(/^Dormant (\d+) days$/))) return `休眠 ${m[1]} 天`
+  if ((m = r.match(/^(\S+) monthly follow-up$/))) return `${m[1]} 月度跟进`
+  return r.replace('personalised offer recommended', '建议个性化优惠')
+}
+
 function StatCard({ icon, label, value, color, sub }) { return (<div style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:10, padding:'16px 18px' }}><div style={{ fontSize:11, color:'var(--muted)', marginBottom:6 }}>{icon} {label}</div><div style={{ fontSize:28, fontWeight:800, color: color||'var(--text)' }}>{value}</div>{sub && <div style={{ fontSize:12, color:'var(--muted)', marginTop:2 }}>{sub}</div>}</div>) }
 
 function ReactivateModal({ vip, month, onClose, onSaved }) {
-  const { profile } = useAuth(); const { t } = useLanguage()
+  const { profile } = useAuth(); const { t, lang } = useLanguage()
   const [amount,setAmount]=useState(''); const [currency,setCurrency]=useState(vip?.currency || 'MYR'); const [notes,setNotes]=useState(''); const [saving,setSaving]=useState(false)
   async function handleSave(){
     const recoveryAmount=Number(amount)
@@ -54,6 +71,8 @@ function ReactivateModal({ vip, month, onClose, onSaved }) {
 
 function ChurnWaModal({ player, agentName, onClose }) {
   const [lang, setLang] = useState('en')
+  const { lang: uiLang } = useLanguage()
+  const L2 = (en, zh) => (uiLang === 'zh' ? zh : en)
   const [copied, setCopied] = useState(false)
   const rawNumber = (player.whatsapp && player.whatsapp.replace(/\D/g,'').length >= 10)
     ? player.whatsapp : (player.phone && player.phone.replace(/\D/g,'').length >= 10)
@@ -79,25 +98,25 @@ function ChurnWaModal({ player, agentName, onClose }) {
   return <div style={s.modal} onClick={onClose}><div style={{...s.mBox, width:520}} onClick={e=>e.stopPropagation()}>
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:16}}>
       <div><div style={{fontSize:16,fontWeight:700}}>💬 WhatsApp — {player.username}</div>
-      <div style={{fontSize:12,color:'var(--muted)',marginTop:2}}>{player.tier} · 📱 {displayNum}{daysSince?` · ${daysSince}d inactive`:''}</div></div>
+      <div style={{fontSize:12,color:'var(--muted)',marginTop:2}}>{player.tier} · 📱 {displayNum}{daysSince?L2(` · ${daysSince}d inactive`,` · 不活跃${daysSince}天`):''}</div></div>
       <button onClick={onClose} style={{background:'none',border:'none',color:'var(--muted)',cursor:'pointer',fontSize:18,lineHeight:1}}>✕</button>
     </div>
     <div style={{display:'flex',gap:6,marginBottom:12,alignItems:'center'}}>
       {[['en','🇬🇧 EN'],['cn','🇨🇳 CN']].map(([l,label])=><button key={l} style={{...s.btnSm,background:lang===l?'var(--accent)':'var(--surface2)',color:lang===l?'#fff':'var(--text)'}} onClick={()=>setLang(l)}>{label}</button>)}
-      <div style={{marginLeft:'auto',fontSize:11,color:'var(--muted)'}}>{hasDecline?'📉 Decline message':'♻️ Reactivation message'}</div>
+      <div style={{marginLeft:'auto',fontSize:11,color:'var(--muted)'}}>{hasDecline?L2('📉 Decline message','📉 下滑关怀信息'):L2('♻️ Reactivation message','♻️ 召回信息')}</div>
     </div>
     <div style={{background:'var(--surface2)',border:'1px solid var(--border)',borderRadius:10,padding:14,fontSize:13,lineHeight:1.65,whiteSpace:'pre-wrap',maxHeight:220,overflowY:'auto',color:'var(--text)',marginBottom:14}}>{message}</div>
     <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
-      <button style={s.btnSm} onClick={onClose}>Close</button>
-      <button style={{...s.btn('#6366f1'),padding:'8px 16px'}} onClick={handleCopy}>{copied?'✅ Copied!':'📋 Copy'}</button>
-      {waLink?<a href={waLink} target="_blank" rel="noopener noreferrer" style={{...s.btn('#25D366'),padding:'8px 16px',textDecoration:'none',display:'inline-block'}}>💬 Open WhatsApp</a>:<button style={{...s.btn('#555'),padding:'8px 16px'}} disabled>No WA Number</button>}
+      <button style={s.btnSm} onClick={onClose}>{L2('Close','关闭')}</button>
+      <button style={{...s.btn('#6366f1'),padding:'8px 16px'}} onClick={handleCopy}>{copied?L2('✅ Copied!','✅ 已复制！'):L2('📋 Copy','📋 复制')}</button>
+      {waLink?<a href={waLink} target="_blank" rel="noopener noreferrer" style={{...s.btn('#25D366'),padding:'8px 16px',textDecoration:'none',display:'inline-block'}}>{L2('💬 Open WhatsApp','💬 打开WhatsApp')}</a>:<button style={{...s.btn('#555'),padding:'8px 16px'}} disabled>{L2('No WA Number','无WA号码')}</button>}
     </div>
   </div></div>
 }
 
 // ── Main Component ────────────────────────────────────────────────────────────
 export default function ChurnAlerts() {
-  const navigate=useNavigate(); const {profile}=useAuth(); const {t}=useLanguage(); const now=new Date()
+  const navigate=useNavigate(); const {profile}=useAuth(); const {t,lang}=useLanguage(); const L2=(en,zh)=>(lang==='zh'?zh:en); const now=new Date()
   const [month,setMonth]=useUrlParamNumber('month',now.getMonth()); const [year,setYear]=useUrlParamNumber('year',now.getFullYear()); const [tab,setTab]=useUrlParam('tab','priority')
   const [priorityList,setPriorityList]=useState([]),[priorityLoading,setPriorityLoading]=useState(true),[vips,setVips]=useState([]),[reactivated,setReactivated]=useState([]),[reactivatedSet,setReactivatedSet]=useState(new Set()),[diamondUncontacted,setDiamondUncontacted]=useState([]),[platinumUncontacted,setPlatinumUncontacted]=useState([]),[dormantList,setDormantList]=useState([]),[dormantDays,setDormantDays]=useUrlParamNumber('dormantDays',30),[dormantTierF,setDormantTierF]=useUrlParam('dormantTier','ALL'),[loading,setLoading]=useState(true),[reactivateModal,setReactivateModal]=useState(null)
   const myName=profile?.full_name||''
@@ -151,24 +170,24 @@ export default function ChurnAlerts() {
   const visibleVips=vips.filter(v=>(tierF==='ALL'||v.tier===tierF)&&(!mineOnly||v.host_assigned===myName)); const reactRows=reactivated.filter(v=>reactTierF==='ALL'||v.tier===reactTierF)
   return <div style={s.page}><div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-end',marginBottom:18}}><div><div style={s.title}>{t('sidebar.nav.churnAlerts')}</div><div style={s.sub}>{t('churnAlerts.subtitle')}</div></div></div>
     <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:10,marginBottom:18}}><StatCard icon="🔥" label={t('churnAlerts.statHighRisk')} value={stats.high} color="#f85149"/><StatCard icon="⚠️" label={t('churnAlerts.statMediumRisk')} value={stats.medium} color="#d29922"/><StatCard icon="💤" label={t('common.dormant')} value={stats.dormant}/><StatCard icon="🎯" label={t('common.atRisk')} value={stats.atRisk}/></div>
-    <div style={s.card}><div style={{display:'flex',gap:8,padding:12,borderBottom:'1px solid var(--border)',flexWrap:'wrap'}}>{[['priority','🔥 Priority'],['churn','📉 Churn'],['reactivated','♻️ Reactivated'],['dormant','💤 Dormant'],['diamond','💎 Diamond'],['platinum','🔷 Platinum'],['gold','🥇 Gold']].map(([key,label])=><button key={key} style={{...s.btnSm,background:tab===key?'var(--accent)':'var(--surface2)',color:tab===key?'#fff':'var(--text)'}} onClick={()=>setTab(key)}>{label}</button>)}</div>
-      {tab==='priority'&&<div>{priorityLoading?<div style={{padding:30}}>Loading…</div>:<>
+    <div style={s.card}><div style={{display:'flex',gap:8,padding:12,borderBottom:'1px solid var(--border)',flexWrap:'wrap'}}>{[['priority',L2('🔥 Priority','🔥 优先')],['churn',L2('📉 Churn','📉 流失')],['reactivated',L2('♻️ Reactivated','♻️ 已召回')],['dormant',L2('💤 Dormant','💤 休眠')],['diamond',L2('💎 Diamond','💎 钻石')],['platinum',L2('🔷 Platinum','🔷 白金')],['gold',L2('🥇 Gold','🥇 黄金')]].map(([key,label])=><button key={key} style={{...s.btnSm,background:tab===key?'var(--accent)':'var(--surface2)',color:tab===key?'#fff':'var(--text)'}} onClick={()=>setTab(key)}>{label}</button>)}</div>
+      {tab==='priority'&&<div>{priorityLoading?<div style={{padding:30}}>{L2('Loading…','载入中…')}</div>:<>
         <div style={{display:'flex',gap:8,padding:'10px 14px',borderBottom:'1px solid var(--border)',alignItems:'center',flexWrap:'wrap'}}>
           <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
-            {['ALL',...[...new Set(priorityList.filter(v=>v.host).map(v=>v.host))].sort()].map(h=><button key={h} style={{...s.btnSm,background:priorityHostF===h?'var(--accent)':'var(--surface2)',color:priorityHostF===h?'#fff':'var(--text)'}} onClick={()=>setPriorityHostF(h)}>{h==='ALL'?`All (${priorityList.length})`:h}</button>)}
+            {['ALL',...[...new Set(priorityList.filter(v=>v.host).map(v=>v.host))].sort()].map(h=><button key={h} style={{...s.btnSm,background:priorityHostF===h?'var(--accent)':'var(--surface2)',color:priorityHostF===h?'#fff':'var(--text)'}} onClick={()=>setPriorityHostF(h)}>{h==='ALL'?L2(`All (${priorityList.length})`,`全部 (${priorityList.length})`):h}</button>)}
           </div>
           <label style={{display:'flex',gap:6,fontSize:12,alignItems:'center',color:'var(--text)',marginLeft:'auto',cursor:'pointer'}}>
-            <input type="checkbox" checked={mineOnly} onChange={e=>setMineOnly(e.target.checked)}/>Mine only
+            <input type="checkbox" checked={mineOnly} onChange={e=>setMineOnly(e.target.checked)}/>{L2('Mine only','仅我的')}
           </label>
         </div>
-        <div style={{overflowX:'auto'}}><table style={s.tbl}><thead><tr>{['Player','Tier','Host','Phone / WA','Days','Last Contact','Reason','Actions'].map(h=><th key={h} style={s.th}>{h}</th>)}</tr></thead>
+        <div style={{overflowX:'auto'}}><table style={s.tbl}><thead><tr>{[L2('Player','玩家'),L2('Tier','等级'),L2('Host','负责人'),L2('Phone / WA','电话 / WA'),L2('Days','天数'),L2('Last Contact','最后联系'),L2('Reason','原因'),L2('Actions','操作')].map(h=><th key={h} style={s.th}>{h}</th>)}</tr></thead>
         <tbody>{priorityList.filter(v=>priorityHostF==='ALL'||v.host===priorityHostF).map(v=><tr key={v.id}>
-          <td style={s.td}><span style={{display:'inline-flex',alignItems:'center',gap:4}}><button style={{background:'none',border:0,padding:0,cursor:'pointer',color:'var(--text)',fontWeight:700}} onClick={()=>navigate(`/vips/${v.id}`)}>{v.username}</button><button title="Copy username" onClick={e=>{e.stopPropagation();navigator.clipboard.writeText(v.username)}} style={{background:'none',border:'none',color:'var(--muted)',cursor:'pointer',fontSize:12,padding:'0 2px',lineHeight:1,opacity:.6}} onMouseEnter={e=>e.currentTarget.style.opacity=1} onMouseLeave={e=>e.currentTarget.style.opacity=.6}>⎘</button></span></td>
-          <td style={s.td}>{v.tier}</td>
+          <td style={s.td}><span style={{display:'inline-flex',alignItems:'center',gap:4}}><button style={{background:'none',border:0,padding:0,cursor:'pointer',color:'var(--text)',fontWeight:700}} onClick={()=>navigate(`/vips/${v.id}`)}>{v.username}</button><button title={L2('Copy username','复制用户名')} onClick={e=>{e.stopPropagation();navigator.clipboard.writeText(v.username)}} style={{background:'none',border:'none',color:'var(--muted)',cursor:'pointer',fontSize:12,padding:'0 2px',lineHeight:1,opacity:.6}} onMouseEnter={e=>e.currentTarget.style.opacity=1} onMouseLeave={e=>e.currentTarget.style.opacity=.6}>⎘</button></span></td>
+          <td style={s.td}>{lang==='zh'?(TIER_ZH[v.tier]||v.tier):v.tier}</td>
           <td style={s.td}>{v.host||'—'}</td>
           <td style={{...s.td,fontSize:12,color:'var(--muted)'}}>{v.whatsapp||v.phone||'—'}</td>
-          <td style={{...s.td,fontVariantNumeric:'tabular-nums'}}>{v.days_since_deposit!=null?v.days_since_deposit+'d':'—'}</td>
-          <td style={s.td}>{v.last_contact?new Date(v.last_contact).toLocaleDateString('en-MY',{day:'2-digit',month:'short'}):'Never'}</td>
+          <td style={{...s.td,fontVariantNumeric:'tabular-nums'}}>{v.days_since_deposit!=null?v.days_since_deposit+L2('d','天'):'—'}</td>
+          <td style={s.td}>{v.last_contact?new Date(v.last_contact).toLocaleDateString(lang==='zh'?'zh-CN':'en-MY',{day:'2-digit',month:'short'}):L2('Never','从未')}</td>
           <td style={{...s.td,maxWidth:240,fontSize:12}}>
             {v.player_type && (
               <div style={{display:'inline-flex',alignItems:'center',gap:4,background:'rgba(139,92,246,.12)',border:'1px solid rgba(139,92,246,.3)',borderRadius:8,padding:'2px 8px',marginBottom:4,fontSize:11,fontWeight:700,color:'#a78bfa'}}>
@@ -176,7 +195,7 @@ export default function ChurnAlerts() {
               </div>
             )}
             <div style={{color:'var(--muted)',lineHeight:1.4}}>
-              {(v.player_type ? v.reasons.slice(1) : v.reasons).join(' • ')}
+              {(v.player_type ? v.reasons.slice(1) : v.reasons).map(r=>trReason(r,lang)).join(' • ')}
             </div>
             {v.offer_recommendation && (
               <div style={{marginTop:3,fontSize:10,color:'#34D399',fontWeight:600}}>💡 {v.offer_recommendation}</div>
@@ -184,16 +203,16 @@ export default function ChurnAlerts() {
           </td>
           <td style={s.td}><div style={{display:'flex',gap:5,flexWrap:'wrap'}}>
             <button style={{background:'#25D366',color:'#fff',border:'none',padding:'4px 10px',borderRadius:6,fontSize:12,fontWeight:700,cursor:'pointer'}} onClick={()=>setChurnWaModal(v)}>💬 WA</button>
-            <button style={s.btnSm} onClick={()=>navigate(`/vips/${v.id}`)}>Open</button>
-            {!reactivatedSet.has(v.username)&&<button style={{...s.btnSm,background:'#3fb950',color:'#fff',border:0,fontWeight:700}} onClick={()=>setReactivateModal(v)}>✅ Reactivate</button>}
+            <button style={s.btnSm} onClick={()=>navigate(`/vips/${v.id}`)}>{L2('Open','打开')}</button>
+            {!reactivatedSet.has(v.username)&&<button style={{...s.btnSm,background:'#3fb950',color:'#fff',border:0,fontWeight:700}} onClick={()=>setReactivateModal(v)}>{L2('✅ Reactivate','✅ 召回')}</button>}
           </div></td>
         </tr>)}
-        {!priorityList.filter(v=>priorityHostF==='ALL'||v.host===priorityHostF).length&&<tr><td colSpan="8" style={{...s.td,textAlign:'center'}}>No priority VIPs.</td></tr>}
+        {!priorityList.filter(v=>priorityHostF==='ALL'||v.host===priorityHostF).length&&<tr><td colSpan="8" style={{...s.td,textAlign:'center'}}>{L2('No priority VIPs.','没有优先VIP。')}</td></tr>}
         </tbody></table></div>
       </>}</div>}
-      {tab==='reactivated'&&<div style={{overflowX:'auto'}}><table style={s.tbl}><thead><tr>{['Player','Tier','Host','Recovery','Currency','Notes'].map(h=><th key={h} style={s.th}>{h}</th>)}</tr></thead><tbody>{reactRows.map(v=><tr key={v.username}><td style={s.td}>{v.username}</td><td style={s.td}>{v.tier||'—'}</td><td style={s.td}>{v.host_name||'—'}</td><td style={s.td}>{formatMoney(v.reactivation_deposit||0,v.currency||'')}</td><td style={s.td}>{v.currency||'—'}</td><td style={s.td}>{v.notes||'—'}</td></tr>)}{!reactRows.length&&<tr><td colSpan="6" style={{...s.td,textAlign:'center'}}>No reactivated VIPs for this month.</td></tr>}</tbody></table></div>}
-      {tab==='churn'&&(()=>{const churnVips=vips.filter(v=>v.churn_risk==='HIGH'||v.churn_risk==='MEDIUM').sort((a,b)=>(a.churn_risk==='HIGH'?0:1)-(b.churn_risk==='HIGH'?0:1)||(b.days_inactive||0)-(a.days_inactive||0));return<div style={{overflowX:'auto'}}><table style={s.tbl}><thead><tr>{['Player','Tier','Host','Phone / WA','Risk','Days Inactive','Last Deposit','Last Contact','Actions'].map(h=><th key={h} style={s.th}>{h}</th>)}</tr></thead><tbody>{churnVips.map(v=><tr key={v.id}><td style={s.td}><span style={{display:'inline-flex',alignItems:'center',gap:4}}><button style={{background:'none',border:0,padding:0,cursor:'pointer',color:'var(--text)',fontWeight:700}} onClick={()=>navigate(`/vips/${v.id}`)}>{v.username}</button><button title="Copy username" onClick={e=>{e.stopPropagation();navigator.clipboard.writeText(v.username)}} style={{background:'none',border:'none',color:'var(--muted)',cursor:'pointer',fontSize:12,padding:'0 2px',lineHeight:1,opacity:.6}} onMouseEnter={e=>e.currentTarget.style.opacity=1} onMouseLeave={e=>e.currentTarget.style.opacity=.6}>⎘</button></span></td><td style={s.td}>{v.tier}</td><td style={s.td}>{v.host_assigned||'—'}</td><td style={{...s.td,fontSize:12,color:'var(--muted)'}}>{v.whatsapp||v.phone||'—'}</td><td style={s.td}><span style={{padding:'2px 8px',borderRadius:12,fontSize:11,fontWeight:700,background:RISK_BG[v.churn_risk]||'transparent',color:RISK_COLOR[v.churn_risk]||'var(--muted)'}}>{v.churn_risk}</span></td><td style={{...s.td,fontVariantNumeric:'tabular-nums',color:'#f85149',fontWeight:700}}>{v.days_inactive||0}d</td><td style={s.td}>{v.last_deposit_date||'—'}</td><td style={{...s.td,fontSize:12,color:'var(--muted)'}}>{v.last_contacted?new Date(v.last_contacted).toLocaleDateString('en-MY',{day:'2-digit',month:'short'}):'Never'}</td><td style={s.td}><div style={{display:'flex',gap:5,flexWrap:'wrap'}}><button style={{background:'#25D366',color:'#fff',border:'none',padding:'4px 10px',borderRadius:6,fontSize:12,fontWeight:700,cursor:'pointer'}} onClick={()=>setChurnWaModal({...v,reasons:[v.churn_risk==='HIGH'?'HIGH churn risk':'MEDIUM churn risk'],days_since_deposit:v.days_inactive})}>💬 WA</button><button style={s.btnSm} onClick={()=>navigate(`/vips/${v.id}`)}>Open</button>{!reactivatedSet.has(v.username)&&<button style={{...s.btnSm,background:'#3fb950',color:'#fff',border:0,fontWeight:700}} onClick={()=>setReactivateModal(v)}>✅ Reactivate</button>}</div></td></tr>)}{!churnVips.length&&<tr><td colSpan="9" style={{...s.td,textAlign:'center',color:'var(--muted)'}}>No high/medium risk VIPs at this time.</td></tr>}</tbody></table></div>})()}
-      {tab==='dormant'&&(()=>{const dormVips=vips.filter(v=>(v.days_inactive||0)>=dormantDays&&(dormantTierF==='ALL'||v.tier===dormantTierF)).sort((a,b)=>(b.days_inactive||0)-(a.days_inactive||0));return<div><div style={{display:'flex',gap:10,padding:'10px 14px',borderBottom:'1px solid var(--border)',alignItems:'center',flexWrap:'wrap'}}><select value={dormantTierF} onChange={e=>setDormantTierF(e.target.value)} style={s.sel}><option value="ALL">All Tiers</option>{['DIAMOND','PLATINUM','GOLD','SILVER','BRONZE'].map(t=><option key={t} value={t}>{t}</option>)}</select><label style={{display:'flex',gap:6,fontSize:12,alignItems:'center',color:'var(--text)'}}>Inactive ≥<input type="number" min={1} value={dormantDays} onChange={e=>setDormantDays(Number(e.target.value))} style={{...s.sel,width:70,padding:'5px 8px',fontSize:12}} /> days</label><span style={{fontSize:12,color:'var(--muted)'}}>{dormVips.length} players</span></div><div style={{overflowX:'auto'}}><table style={s.tbl}><thead><tr>{['Player','Tier','Host','Phone / WA','Days Inactive','Last Deposit','Last Contact','Actions'].map(h=><th key={h} style={s.th}>{h}</th>)}</tr></thead><tbody>{dormVips.map(v=><tr key={v.id}><td style={s.td}><span style={{display:'inline-flex',alignItems:'center',gap:4}}><button style={{background:'none',border:0,padding:0,cursor:'pointer',color:'var(--text)',fontWeight:700}} onClick={()=>navigate(`/vips/${v.id}`)}>{v.username}</button><button title="Copy username" onClick={e=>{e.stopPropagation();navigator.clipboard.writeText(v.username)}} style={{background:'none',border:'none',color:'var(--muted)',cursor:'pointer',fontSize:12,padding:'0 2px',lineHeight:1,opacity:.6}} onMouseEnter={e=>e.currentTarget.style.opacity=1} onMouseLeave={e=>e.currentTarget.style.opacity=.6}>⎘</button></span></td><td style={s.td}>{v.tier}</td><td style={s.td}>{v.host_assigned||'—'}</td><td style={{...s.td,fontSize:12,color:'var(--muted)'}}>{v.whatsapp||v.phone||'—'}</td><td style={{...s.td,fontVariantNumeric:'tabular-nums',color:'#f85149',fontWeight:700}}>{v.days_inactive||0}d</td><td style={s.td}>{v.last_deposit_date||'—'}</td><td style={{...s.td,fontSize:12,color:'var(--muted)'}}>{v.last_contacted?new Date(v.last_contacted).toLocaleDateString('en-MY',{day:'2-digit',month:'short'}):'Never'}</td><td style={s.td}><div style={{display:'flex',gap:5}}><button style={{background:'#25D366',color:'#fff',border:'none',padding:'4px 10px',borderRadius:6,fontSize:12,fontWeight:700,cursor:'pointer'}} onClick={()=>setChurnWaModal({...v,reasons:[`Dormant ${v.days_inactive||0} days`],days_since_deposit:v.days_inactive,host:v.host_assigned})}>💬 WA</button><button style={s.btnSm} onClick={()=>navigate(`/vips/${v.id}`)}>Open</button></div></td></tr>)}{!dormVips.length&&<tr><td colSpan="8" style={{...s.td,textAlign:'center',color:'var(--muted)'}}>No dormant VIPs match the threshold.</td></tr>}</tbody></table></div></div>})()}
+      {tab==='reactivated'&&<div style={{overflowX:'auto'}}><table style={s.tbl}><thead><tr>{[L2('Player','玩家'),L2('Tier','等级'),L2('Host','负责人'),L2('Recovery','召回存款'),L2('Currency','货币'),L2('Notes','备注')].map(h=><th key={h} style={s.th}>{h}</th>)}</tr></thead><tbody>{reactRows.map(v=><tr key={v.username}><td style={s.td}>{v.username}</td><td style={s.td}>{lang==='zh'?(TIER_ZH[v.tier]||v.tier||'—'):(v.tier||'—')}</td><td style={s.td}>{v.host_name||'—'}</td><td style={s.td}>{formatMoney(v.reactivation_deposit||0,v.currency||'')}</td><td style={s.td}>{v.currency||'—'}</td><td style={s.td}>{v.notes||'—'}</td></tr>)}{!reactRows.length&&<tr><td colSpan="6" style={{...s.td,textAlign:'center'}}>{L2('No reactivated VIPs for this month.','本月没有召回的VIP。')}</td></tr>}</tbody></table></div>}
+      {tab==='churn'&&(()=>{const churnVips=vips.filter(v=>v.churn_risk==='HIGH'||v.churn_risk==='MEDIUM').sort((a,b)=>(a.churn_risk==='HIGH'?0:1)-(b.churn_risk==='HIGH'?0:1)||(b.days_inactive||0)-(a.days_inactive||0));return<div style={{overflowX:'auto'}}><table style={s.tbl}><thead><tr>{[L2('Player','玩家'),L2('Tier','等级'),L2('Host','负责人'),L2('Phone / WA','电话 / WA'),L2('Risk','风险'),L2('Days Inactive','不活跃天数'),L2('Last Deposit','最后存款'),L2('Last Contact','最后联系'),L2('Actions','操作')].map(h=><th key={h} style={s.th}>{h}</th>)}</tr></thead><tbody>{churnVips.map(v=><tr key={v.id}><td style={s.td}><span style={{display:'inline-flex',alignItems:'center',gap:4}}><button style={{background:'none',border:0,padding:0,cursor:'pointer',color:'var(--text)',fontWeight:700}} onClick={()=>navigate(`/vips/${v.id}`)}>{v.username}</button><button title={L2('Copy username','复制用户名')} onClick={e=>{e.stopPropagation();navigator.clipboard.writeText(v.username)}} style={{background:'none',border:'none',color:'var(--muted)',cursor:'pointer',fontSize:12,padding:'0 2px',lineHeight:1,opacity:.6}} onMouseEnter={e=>e.currentTarget.style.opacity=1} onMouseLeave={e=>e.currentTarget.style.opacity=.6}>⎘</button></span></td><td style={s.td}>{lang==='zh'?(TIER_ZH[v.tier]||v.tier):v.tier}</td><td style={s.td}>{v.host_assigned||'—'}</td><td style={{...s.td,fontSize:12,color:'var(--muted)'}}>{v.whatsapp||v.phone||'—'}</td><td style={s.td}><span style={{padding:'2px 8px',borderRadius:12,fontSize:11,fontWeight:700,background:RISK_BG[v.churn_risk]||'transparent',color:RISK_COLOR[v.churn_risk]||'var(--muted)'}}>{L2(v.churn_risk,RISK_ZH[v.churn_risk]||v.churn_risk)}</span></td><td style={{...s.td,fontVariantNumeric:'tabular-nums',color:'#f85149',fontWeight:700}}>{v.days_inactive||0}{L2('d','天')}</td><td style={s.td}>{v.last_deposit_date||'—'}</td><td style={{...s.td,fontSize:12,color:'var(--muted)'}}>{v.last_contacted?new Date(v.last_contacted).toLocaleDateString(lang==='zh'?'zh-CN':'en-MY',{day:'2-digit',month:'short'}):L2('Never','从未')}</td><td style={s.td}><div style={{display:'flex',gap:5,flexWrap:'wrap'}}><button style={{background:'#25D366',color:'#fff',border:'none',padding:'4px 10px',borderRadius:6,fontSize:12,fontWeight:700,cursor:'pointer'}} onClick={()=>setChurnWaModal({...v,reasons:[v.churn_risk==='HIGH'?'HIGH churn risk':'MEDIUM churn risk'],days_since_deposit:v.days_inactive})}>💬 WA</button><button style={s.btnSm} onClick={()=>navigate(`/vips/${v.id}`)}>{L2('Open','打开')}</button>{!reactivatedSet.has(v.username)&&<button style={{...s.btnSm,background:'#3fb950',color:'#fff',border:0,fontWeight:700}} onClick={()=>setReactivateModal(v)}>{L2('✅ Reactivate','✅ 召回')}</button>}</div></td></tr>)}{!churnVips.length&&<tr><td colSpan="9" style={{...s.td,textAlign:'center',color:'var(--muted)'}}>{L2('No high/medium risk VIPs at this time.','目前没有高/中风险VIP。')}</td></tr>}</tbody></table></div>})()}
+      {tab==='dormant'&&(()=>{const dormVips=vips.filter(v=>(v.days_inactive||0)>=dormantDays&&(dormantTierF==='ALL'||v.tier===dormantTierF)).sort((a,b)=>(b.days_inactive||0)-(a.days_inactive||0));return<div><div style={{display:'flex',gap:10,padding:'10px 14px',borderBottom:'1px solid var(--border)',alignItems:'center',flexWrap:'wrap'}}><select value={dormantTierF} onChange={e=>setDormantTierF(e.target.value)} style={s.sel}><option value="ALL">{L2('All Tiers','全部等级')}</option>{['DIAMOND','PLATINUM','GOLD','SILVER','BRONZE'].map(t=><option key={t} value={t}>{L2(t,TIER_ZH[t])}</option>)}</select><label style={{display:'flex',gap:6,fontSize:12,alignItems:'center',color:'var(--text)'}}>{L2('Inactive ≥','不活跃 ≥')}<input type="number" min={1} value={dormantDays} onChange={e=>setDormantDays(Number(e.target.value))} style={{...s.sel,width:70,padding:'5px 8px',fontSize:12}} /> {L2('days','天')}</label><span style={{fontSize:12,color:'var(--muted)'}}>{L2(`${dormVips.length} players`,`${dormVips.length} 位玩家`)}</span></div><div style={{overflowX:'auto'}}><table style={s.tbl}><thead><tr>{[L2('Player','玩家'),L2('Tier','等级'),L2('Host','负责人'),L2('Phone / WA','电话 / WA'),L2('Days Inactive','不活跃天数'),L2('Last Deposit','最后存款'),L2('Last Contact','最后联系'),L2('Actions','操作')].map(h=><th key={h} style={s.th}>{h}</th>)}</tr></thead><tbody>{dormVips.map(v=><tr key={v.id}><td style={s.td}><span style={{display:'inline-flex',alignItems:'center',gap:4}}><button style={{background:'none',border:0,padding:0,cursor:'pointer',color:'var(--text)',fontWeight:700}} onClick={()=>navigate(`/vips/${v.id}`)}>{v.username}</button><button title={L2('Copy username','复制用户名')} onClick={e=>{e.stopPropagation();navigator.clipboard.writeText(v.username)}} style={{background:'none',border:'none',color:'var(--muted)',cursor:'pointer',fontSize:12,padding:'0 2px',lineHeight:1,opacity:.6}} onMouseEnter={e=>e.currentTarget.style.opacity=1} onMouseLeave={e=>e.currentTarget.style.opacity=.6}>⎘</button></span></td><td style={s.td}>{lang==='zh'?(TIER_ZH[v.tier]||v.tier):v.tier}</td><td style={s.td}>{v.host_assigned||'—'}</td><td style={{...s.td,fontSize:12,color:'var(--muted)'}}>{v.whatsapp||v.phone||'—'}</td><td style={{...s.td,fontVariantNumeric:'tabular-nums',color:'#f85149',fontWeight:700}}>{v.days_inactive||0}{L2('d','天')}</td><td style={s.td}>{v.last_deposit_date||'—'}</td><td style={{...s.td,fontSize:12,color:'var(--muted)'}}>{v.last_contacted?new Date(v.last_contacted).toLocaleDateString(lang==='zh'?'zh-CN':'en-MY',{day:'2-digit',month:'short'}):L2('Never','从未')}</td><td style={s.td}><div style={{display:'flex',gap:5}}><button style={{background:'#25D366',color:'#fff',border:'none',padding:'4px 10px',borderRadius:6,fontSize:12,fontWeight:700,cursor:'pointer'}} onClick={()=>setChurnWaModal({...v,reasons:[`Dormant ${v.days_inactive||0} days`],days_since_deposit:v.days_inactive,host:v.host_assigned})}>💬 WA</button><button style={s.btnSm} onClick={()=>navigate(`/vips/${v.id}`)}>{L2('Open','打开')}</button></div></td></tr>)}{!dormVips.length&&<tr><td colSpan="8" style={{...s.td,textAlign:'center',color:'var(--muted)'}}>{L2('No dormant VIPs match the threshold.','没有符合门槛的休眠VIP。')}</td></tr>}</tbody></table></div></div>})()}
       {tab==='diamond'&&(()=>{
         const allDHosts=[...new Set(vips.filter(v=>v.tier==='DIAMOND'&&v.host_assigned).map(v=>v.host_assigned))].sort()
         const allD=vips.filter(v=>v.tier==='DIAMOND'&&(dHostF==='ALL'||v.host_assigned===dHostF))
@@ -203,30 +222,30 @@ export default function ChurnAlerts() {
         return(<div>
           <div style={{display:'flex',gap:8,padding:'10px 14px',borderBottom:'1px solid var(--border)',alignItems:'center',flexWrap:'wrap'}}>
             <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
-              {['ALL',...allDHosts].map(h=><button key={h} style={{...s.btnSm,background:dHostF===h?'var(--accent)':'var(--surface2)',color:dHostF===h?'#fff':'var(--text)'}} onClick={()=>setDHostF(h)}>{h==='ALL'?`All (${allD.length})`:h}</button>)}
+              {['ALL',...allDHosts].map(h=><button key={h} style={{...s.btnSm,background:dHostF===h?'var(--accent)':'var(--surface2)',color:dHostF===h?'#fff':'var(--text)'}} onClick={()=>setDHostF(h)}>{h==='ALL'?L2(`All (${allD.length})`,`全部 (${allD.length})`):h}</button>)}
             </div>
-            <button style={{...s.btnSm,background:dUncontactedOnly?'#f85149':'var(--surface2)',color:dUncontactedOnly?'#fff':'var(--text)',border:dUncontactedOnly?'1px solid #f85149':'1px solid var(--border)'}} onClick={()=>setDUncontactedOnly(v=>!v)}>❌ Not contacted only</button>
+            <button style={{...s.btnSm,background:dUncontactedOnly?'#f85149':'var(--surface2)',color:dUncontactedOnly?'#fff':'var(--text)',border:dUncontactedOnly?'1px solid #f85149':'1px solid var(--border)'}} onClick={()=>setDUncontactedOnly(v=>!v)}>{L2('❌ Not contacted only','❌ 仅未联系')}</button>
             <div style={{marginLeft:'auto',display:'flex',gap:12,fontSize:12,alignItems:'center'}}>
-              <span style={{color:'#3fb950',fontWeight:700}}>✅ {dContacted} contacted</span>
-              <span style={{color:'#f85149',fontWeight:700}}>❌ {dNotYet} not yet</span>
-              <span style={{color:'var(--muted)'}}>{MONTHS[month]}: {allD.length?Math.round(dContacted/allD.length*100):0}%</span>
+              <span style={{color:'#3fb950',fontWeight:700}}>✅ {dContacted} {L2('contacted','已联系')}</span>
+              <span style={{color:'#f85149',fontWeight:700}}>❌ {dNotYet} {L2('not yet','未联系')}</span>
+              <span style={{color:'var(--muted)'}}>{L2(MONTHS[month],`${month+1}月`)}: {allD.length?Math.round(dContacted/allD.length*100):0}%</span>
             </div>
           </div>
-          <div style={{overflowX:'auto'}}><table style={s.tbl}><thead><tr>{['Player','Host','Phone / WA','Risk','Days Inactive','Last Deposit','Last Contact','This Month','Actions'].map(h=><th key={h} style={s.th}>{h}</th>)}</tr></thead>
+          <div style={{overflowX:'auto'}}><table style={s.tbl}><thead><tr>{[L2('Player','玩家'),L2('Host','负责人'),L2('Phone / WA','电话 / WA'),L2('Risk','风险'),L2('Days Inactive','不活跃天数'),L2('Last Deposit','最后存款'),L2('Last Contact','最后联系'),L2('This Month','本月'),L2('Actions','操作')].map(h=><th key={h} style={s.th}>{h}</th>)}</tr></thead>
             <tbody>{dVips.map(v=>{const isC=contactedSet.has(v.username);return(
               <tr key={v.id}>
-                <td style={s.td}><span style={{display:'inline-flex',alignItems:'center',gap:4}}><button style={{background:'none',border:0,padding:0,cursor:'pointer',color:'var(--text)',fontWeight:700}} onClick={()=>navigate(`/vips/${v.id}`)}>{v.username}</button><button title="Copy username" onClick={e=>{e.stopPropagation();navigator.clipboard.writeText(v.username)}} style={{background:'none',border:'none',color:'var(--muted)',cursor:'pointer',fontSize:12,padding:'0 2px',lineHeight:1,opacity:.6}} onMouseEnter={e=>e.currentTarget.style.opacity=1} onMouseLeave={e=>e.currentTarget.style.opacity=.6}>⎘</button></span></td>
+                <td style={s.td}><span style={{display:'inline-flex',alignItems:'center',gap:4}}><button style={{background:'none',border:0,padding:0,cursor:'pointer',color:'var(--text)',fontWeight:700}} onClick={()=>navigate(`/vips/${v.id}`)}>{v.username}</button><button title={L2('Copy username','复制用户名')} onClick={e=>{e.stopPropagation();navigator.clipboard.writeText(v.username)}} style={{background:'none',border:'none',color:'var(--muted)',cursor:'pointer',fontSize:12,padding:'0 2px',lineHeight:1,opacity:.6}} onMouseEnter={e=>e.currentTarget.style.opacity=1} onMouseLeave={e=>e.currentTarget.style.opacity=.6}>⎘</button></span></td>
                 <td style={s.td}>{v.host_assigned||'—'}</td>
-                <td style={{...s.td,fontSize:12}}>{v.whatsapp||v.phone?<span style={{display:'inline-flex',alignItems:'center',gap:4}}><span style={{color:'var(--muted)'}}>{v.whatsapp||v.phone}</span><button title="Copy number" onClick={e=>{e.stopPropagation();navigator.clipboard.writeText((v.whatsapp||v.phone).replace(/\D/g,''))}} style={{background:'none',border:'none',color:'var(--muted)',cursor:'pointer',fontSize:11,padding:'0 2px',opacity:.6}} onMouseEnter={e=>e.currentTarget.style.opacity=1} onMouseLeave={e=>e.currentTarget.style.opacity=.6}>⎘</button></span>:'—'}</td>
-                <td style={s.td}>{v.risk_level?<span style={{padding:'2px 8px',borderRadius:12,fontSize:11,fontWeight:700,background:RISK_BG[v.risk_level]||'transparent',color:RISK_COLOR[v.risk_level]||'var(--muted)'}}>{v.risk_level}</span>:'—'}</td>
-                <td style={{...s.td,fontVariantNumeric:'tabular-nums'}}>{v.days_inactive||0}d</td>
+                <td style={{...s.td,fontSize:12}}>{v.whatsapp||v.phone?<span style={{display:'inline-flex',alignItems:'center',gap:4}}><span style={{color:'var(--muted)'}}>{v.whatsapp||v.phone}</span><button title={L2('Copy number','复制号码')} onClick={e=>{e.stopPropagation();navigator.clipboard.writeText((v.whatsapp||v.phone).replace(/\D/g,''))}} style={{background:'none',border:'none',color:'var(--muted)',cursor:'pointer',fontSize:11,padding:'0 2px',opacity:.6}} onMouseEnter={e=>e.currentTarget.style.opacity=1} onMouseLeave={e=>e.currentTarget.style.opacity=.6}>⎘</button></span>:'—'}</td>
+                <td style={s.td}>{v.risk_level?<span style={{padding:'2px 8px',borderRadius:12,fontSize:11,fontWeight:700,background:RISK_BG[v.risk_level]||'transparent',color:RISK_COLOR[v.risk_level]||'var(--muted)'}}>{L2(v.risk_level,RISK_ZH[v.risk_level]||v.risk_level)}</span>:'—'}</td>
+                <td style={{...s.td,fontVariantNumeric:'tabular-nums'}}>{v.days_inactive||0}{L2('d','天')}</td>
                 <td style={s.td}>{v.last_deposit_date||'—'}</td>
-                <td style={{...s.td,fontSize:12,color:'var(--muted)'}}>{v.last_contacted?new Date(v.last_contacted).toLocaleDateString('en-MY',{day:'2-digit',month:'short'}):'Never'}</td>
-                <td style={s.td}><span style={{fontSize:12,fontWeight:700,color:isC?'#3fb950':'#f85149'}}>{isC?'✅ Done':'❌ Not yet'}</span></td>
-                <td style={s.td}><div style={{display:'flex',gap:5,flexWrap:'wrap'}}><button style={{background:'#25D366',color:'#fff',border:'none',padding:'4px 10px',borderRadius:6,fontSize:12,fontWeight:700,cursor:'pointer'}} onClick={()=>setChurnWaModal({...v,reasons:[`${v.tier} monthly follow-up`],days_since_deposit:v.days_inactive,host:v.host_assigned})}>💬 WA</button><button style={s.btnSm} onClick={()=>navigate(`/vips/${v.id}`)}>Open</button>{!reactivatedSet.has(v.username)&&<button style={{...s.btnSm,background:'#3fb950',color:'#fff',border:0,fontWeight:700}} onClick={()=>setReactivateModal(v)}>✅ Reactivate</button>}</div></td>
+                <td style={{...s.td,fontSize:12,color:'var(--muted)'}}>{v.last_contacted?new Date(v.last_contacted).toLocaleDateString(lang==='zh'?'zh-CN':'en-MY',{day:'2-digit',month:'short'}):L2('Never','从未')}</td>
+                <td style={s.td}><span style={{fontSize:12,fontWeight:700,color:isC?'#3fb950':'#f85149'}}>{isC?L2('✅ Done','✅ 已完成'):L2('❌ Not yet','❌ 未联系')}</span></td>
+                <td style={s.td}><div style={{display:'flex',gap:5,flexWrap:'wrap'}}><button style={{background:'#25D366',color:'#fff',border:'none',padding:'4px 10px',borderRadius:6,fontSize:12,fontWeight:700,cursor:'pointer'}} onClick={()=>setChurnWaModal({...v,reasons:[`${v.tier} monthly follow-up`],days_since_deposit:v.days_inactive,host:v.host_assigned})}>💬 WA</button><button style={s.btnSm} onClick={()=>navigate(`/vips/${v.id}`)}>{L2('Open','打开')}</button>{!reactivatedSet.has(v.username)&&<button style={{...s.btnSm,background:'#3fb950',color:'#fff',border:0,fontWeight:700}} onClick={()=>setReactivateModal(v)}>{L2('✅ Reactivate','✅ 召回')}</button>}</div></td>
               </tr>
             )})}
-            {!dVips.length&&<tr><td colSpan="9" style={{...s.td,textAlign:'center',color:'var(--muted)'}}>No Diamond VIPs match the filter.</td></tr>}
+            {!dVips.length&&<tr><td colSpan="9" style={{...s.td,textAlign:'center',color:'var(--muted)'}}>{L2('No Diamond VIPs match the filter.','没有符合筛选的钻石VIP。')}</td></tr>}
             </tbody></table></div>
         </div>)
       })()}
@@ -239,30 +258,30 @@ export default function ChurnAlerts() {
         return(<div>
           <div style={{display:'flex',gap:8,padding:'10px 14px',borderBottom:'1px solid var(--border)',alignItems:'center',flexWrap:'wrap'}}>
             <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
-              {['ALL',...allPHosts].map(h=><button key={h} style={{...s.btnSm,background:pHostF===h?'var(--accent)':'var(--surface2)',color:pHostF===h?'#fff':'var(--text)'}} onClick={()=>setPHostF(h)}>{h==='ALL'?`All (${allP.length})`:h}</button>)}
+              {['ALL',...allPHosts].map(h=><button key={h} style={{...s.btnSm,background:pHostF===h?'var(--accent)':'var(--surface2)',color:pHostF===h?'#fff':'var(--text)'}} onClick={()=>setPHostF(h)}>{h==='ALL'?L2(`All (${allP.length})`,`全部 (${allP.length})`):h}</button>)}
             </div>
-            <button style={{...s.btnSm,background:pUncontactedOnly?'#f85149':'var(--surface2)',color:pUncontactedOnly?'#fff':'var(--text)',border:pUncontactedOnly?'1px solid #f85149':'1px solid var(--border)'}} onClick={()=>setPUncontactedOnly(v=>!v)}>❌ Not contacted only</button>
+            <button style={{...s.btnSm,background:pUncontactedOnly?'#f85149':'var(--surface2)',color:pUncontactedOnly?'#fff':'var(--text)',border:pUncontactedOnly?'1px solid #f85149':'1px solid var(--border)'}} onClick={()=>setPUncontactedOnly(v=>!v)}>{L2('❌ Not contacted only','❌ 仅未联系')}</button>
             <div style={{marginLeft:'auto',display:'flex',gap:12,fontSize:12,alignItems:'center'}}>
-              <span style={{color:'#3fb950',fontWeight:700}}>✅ {pContacted} contacted</span>
-              <span style={{color:'#f85149',fontWeight:700}}>❌ {pNotYet} not yet</span>
-              <span style={{color:'var(--muted)'}}>{MONTHS[month]}: {allP.length?Math.round(pContacted/allP.length*100):0}%</span>
+              <span style={{color:'#3fb950',fontWeight:700}}>✅ {pContacted} {L2('contacted','已联系')}</span>
+              <span style={{color:'#f85149',fontWeight:700}}>❌ {pNotYet} {L2('not yet','未联系')}</span>
+              <span style={{color:'var(--muted)'}}>{L2(MONTHS[month],`${month+1}月`)}: {allP.length?Math.round(pContacted/allP.length*100):0}%</span>
             </div>
           </div>
-          <div style={{overflowX:'auto'}}><table style={s.tbl}><thead><tr>{['Player','Host','Phone / WA','Risk','Days Inactive','Last Deposit','Last Contact','This Month','Actions'].map(h=><th key={h} style={s.th}>{h}</th>)}</tr></thead>
+          <div style={{overflowX:'auto'}}><table style={s.tbl}><thead><tr>{[L2('Player','玩家'),L2('Host','负责人'),L2('Phone / WA','电话 / WA'),L2('Risk','风险'),L2('Days Inactive','不活跃天数'),L2('Last Deposit','最后存款'),L2('Last Contact','最后联系'),L2('This Month','本月'),L2('Actions','操作')].map(h=><th key={h} style={s.th}>{h}</th>)}</tr></thead>
             <tbody>{pVips.map(v=>{const isC=contactedSet.has(v.username);return(
               <tr key={v.id}>
-                <td style={s.td}><span style={{display:'inline-flex',alignItems:'center',gap:4}}><button style={{background:'none',border:0,padding:0,cursor:'pointer',color:'var(--text)',fontWeight:700}} onClick={()=>navigate(`/vips/${v.id}`)}>{v.username}</button><button title="Copy username" onClick={e=>{e.stopPropagation();navigator.clipboard.writeText(v.username)}} style={{background:'none',border:'none',color:'var(--muted)',cursor:'pointer',fontSize:12,padding:'0 2px',lineHeight:1,opacity:.6}} onMouseEnter={e=>e.currentTarget.style.opacity=1} onMouseLeave={e=>e.currentTarget.style.opacity=.6}>⎘</button></span></td>
+                <td style={s.td}><span style={{display:'inline-flex',alignItems:'center',gap:4}}><button style={{background:'none',border:0,padding:0,cursor:'pointer',color:'var(--text)',fontWeight:700}} onClick={()=>navigate(`/vips/${v.id}`)}>{v.username}</button><button title={L2('Copy username','复制用户名')} onClick={e=>{e.stopPropagation();navigator.clipboard.writeText(v.username)}} style={{background:'none',border:'none',color:'var(--muted)',cursor:'pointer',fontSize:12,padding:'0 2px',lineHeight:1,opacity:.6}} onMouseEnter={e=>e.currentTarget.style.opacity=1} onMouseLeave={e=>e.currentTarget.style.opacity=.6}>⎘</button></span></td>
                 <td style={s.td}>{v.host_assigned||'—'}</td>
-                <td style={{...s.td,fontSize:12}}>{v.whatsapp||v.phone?<span style={{display:'inline-flex',alignItems:'center',gap:4}}><span style={{color:'var(--muted)'}}>{v.whatsapp||v.phone}</span><button title="Copy number" onClick={e=>{e.stopPropagation();navigator.clipboard.writeText((v.whatsapp||v.phone).replace(/\D/g,''))}} style={{background:'none',border:'none',color:'var(--muted)',cursor:'pointer',fontSize:11,padding:'0 2px',opacity:.6}} onMouseEnter={e=>e.currentTarget.style.opacity=1} onMouseLeave={e=>e.currentTarget.style.opacity=.6}>⎘</button></span>:'—'}</td>
-                <td style={s.td}>{v.risk_level?<span style={{padding:'2px 8px',borderRadius:12,fontSize:11,fontWeight:700,background:RISK_BG[v.risk_level]||'transparent',color:RISK_COLOR[v.risk_level]||'var(--muted)'}}>{v.risk_level}</span>:'—'}</td>
-                <td style={{...s.td,fontVariantNumeric:'tabular-nums'}}>{v.days_inactive||0}d</td>
+                <td style={{...s.td,fontSize:12}}>{v.whatsapp||v.phone?<span style={{display:'inline-flex',alignItems:'center',gap:4}}><span style={{color:'var(--muted)'}}>{v.whatsapp||v.phone}</span><button title={L2('Copy number','复制号码')} onClick={e=>{e.stopPropagation();navigator.clipboard.writeText((v.whatsapp||v.phone).replace(/\D/g,''))}} style={{background:'none',border:'none',color:'var(--muted)',cursor:'pointer',fontSize:11,padding:'0 2px',opacity:.6}} onMouseEnter={e=>e.currentTarget.style.opacity=1} onMouseLeave={e=>e.currentTarget.style.opacity=.6}>⎘</button></span>:'—'}</td>
+                <td style={s.td}>{v.risk_level?<span style={{padding:'2px 8px',borderRadius:12,fontSize:11,fontWeight:700,background:RISK_BG[v.risk_level]||'transparent',color:RISK_COLOR[v.risk_level]||'var(--muted)'}}>{L2(v.risk_level,RISK_ZH[v.risk_level]||v.risk_level)}</span>:'—'}</td>
+                <td style={{...s.td,fontVariantNumeric:'tabular-nums'}}>{v.days_inactive||0}{L2('d','天')}</td>
                 <td style={s.td}>{v.last_deposit_date||'—'}</td>
-                <td style={{...s.td,fontSize:12,color:'var(--muted)'}}>{v.last_contacted?new Date(v.last_contacted).toLocaleDateString('en-MY',{day:'2-digit',month:'short'}):'Never'}</td>
-                <td style={s.td}><span style={{fontSize:12,fontWeight:700,color:isC?'#3fb950':'#f85149'}}>{isC?'✅ Done':'❌ Not yet'}</span></td>
-                <td style={s.td}><div style={{display:'flex',gap:5,flexWrap:'wrap'}}><button style={{background:'#25D366',color:'#fff',border:'none',padding:'4px 10px',borderRadius:6,fontSize:12,fontWeight:700,cursor:'pointer'}} onClick={()=>setChurnWaModal({...v,reasons:[`${v.tier} monthly follow-up`],days_since_deposit:v.days_inactive,host:v.host_assigned})}>💬 WA</button><button style={s.btnSm} onClick={()=>navigate(`/vips/${v.id}`)}>Open</button>{!reactivatedSet.has(v.username)&&<button style={{...s.btnSm,background:'#3fb950',color:'#fff',border:0,fontWeight:700}} onClick={()=>setReactivateModal(v)}>✅ Reactivate</button>}</div></td>
+                <td style={{...s.td,fontSize:12,color:'var(--muted)'}}>{v.last_contacted?new Date(v.last_contacted).toLocaleDateString(lang==='zh'?'zh-CN':'en-MY',{day:'2-digit',month:'short'}):L2('Never','从未')}</td>
+                <td style={s.td}><span style={{fontSize:12,fontWeight:700,color:isC?'#3fb950':'#f85149'}}>{isC?L2('✅ Done','✅ 已完成'):L2('❌ Not yet','❌ 未联系')}</span></td>
+                <td style={s.td}><div style={{display:'flex',gap:5,flexWrap:'wrap'}}><button style={{background:'#25D366',color:'#fff',border:'none',padding:'4px 10px',borderRadius:6,fontSize:12,fontWeight:700,cursor:'pointer'}} onClick={()=>setChurnWaModal({...v,reasons:[`${v.tier} monthly follow-up`],days_since_deposit:v.days_inactive,host:v.host_assigned})}>💬 WA</button><button style={s.btnSm} onClick={()=>navigate(`/vips/${v.id}`)}>{L2('Open','打开')}</button>{!reactivatedSet.has(v.username)&&<button style={{...s.btnSm,background:'#3fb950',color:'#fff',border:0,fontWeight:700}} onClick={()=>setReactivateModal(v)}>{L2('✅ Reactivate','✅ 召回')}</button>}</div></td>
               </tr>
             )})}
-            {!pVips.length&&<tr><td colSpan="9" style={{...s.td,textAlign:'center',color:'var(--muted)'}}>No Platinum VIPs match the filter.</td></tr>}
+            {!pVips.length&&<tr><td colSpan="9" style={{...s.td,textAlign:'center',color:'var(--muted)'}}>{L2('No Platinum VIPs match the filter.','没有符合筛选的白金VIP。')}</td></tr>}
             </tbody></table></div>
         </div>)
       })()}
@@ -275,30 +294,30 @@ export default function ChurnAlerts() {
         return(<div>
           <div style={{display:'flex',gap:8,padding:'10px 14px',borderBottom:'1px solid var(--border)',alignItems:'center',flexWrap:'wrap'}}>
             <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
-              {['ALL',...allGHosts].map(h=><button key={h} style={{...s.btnSm,background:gHostF===h?'var(--accent)':'var(--surface2)',color:gHostF===h?'#fff':'var(--text)'}} onClick={()=>setGHostF(h)}>{h==='ALL'?`All (${allG.length})`:h}</button>)}
+              {['ALL',...allGHosts].map(h=><button key={h} style={{...s.btnSm,background:gHostF===h?'var(--accent)':'var(--surface2)',color:gHostF===h?'#fff':'var(--text)'}} onClick={()=>setGHostF(h)}>{h==='ALL'?L2(`All (${allG.length})`,`全部 (${allG.length})`):h}</button>)}
             </div>
-            <button style={{...s.btnSm,background:gUncontactedOnly?'#f85149':'var(--surface2)',color:gUncontactedOnly?'#fff':'var(--text)',border:gUncontactedOnly?'1px solid #f85149':'1px solid var(--border)'}} onClick={()=>setGUncontactedOnly(v=>!v)}>❌ Not contacted only</button>
+            <button style={{...s.btnSm,background:gUncontactedOnly?'#f85149':'var(--surface2)',color:gUncontactedOnly?'#fff':'var(--text)',border:gUncontactedOnly?'1px solid #f85149':'1px solid var(--border)'}} onClick={()=>setGUncontactedOnly(v=>!v)}>{L2('❌ Not contacted only','❌ 仅未联系')}</button>
             <div style={{marginLeft:'auto',display:'flex',gap:12,fontSize:12,alignItems:'center'}}>
-              <span style={{color:'#3fb950',fontWeight:700}}>✅ {gContacted} contacted</span>
-              <span style={{color:'#f85149',fontWeight:700}}>❌ {gNotYet} not yet</span>
-              <span style={{color:'var(--muted)'}}>{MONTHS[month]}: {allG.length?Math.round(gContacted/allG.length*100):0}%</span>
+              <span style={{color:'#3fb950',fontWeight:700}}>✅ {gContacted} {L2('contacted','已联系')}</span>
+              <span style={{color:'#f85149',fontWeight:700}}>❌ {gNotYet} {L2('not yet','未联系')}</span>
+              <span style={{color:'var(--muted)'}}>{L2(MONTHS[month],`${month+1}月`)}: {allG.length?Math.round(gContacted/allG.length*100):0}%</span>
             </div>
           </div>
-          <div style={{overflowX:'auto'}}><table style={s.tbl}><thead><tr>{['Player','Host','Phone / WA','Risk','Days Inactive','Last Deposit','Last Contact','This Month','Actions'].map(h=><th key={h} style={s.th}>{h}</th>)}</tr></thead>
+          <div style={{overflowX:'auto'}}><table style={s.tbl}><thead><tr>{[L2('Player','玩家'),L2('Host','负责人'),L2('Phone / WA','电话 / WA'),L2('Risk','风险'),L2('Days Inactive','不活跃天数'),L2('Last Deposit','最后存款'),L2('Last Contact','最后联系'),L2('This Month','本月'),L2('Actions','操作')].map(h=><th key={h} style={s.th}>{h}</th>)}</tr></thead>
             <tbody>{gVips.map(v=>{const isC=contactedSet.has(v.username);return(
               <tr key={v.id}>
-                <td style={s.td}><span style={{display:'inline-flex',alignItems:'center',gap:4}}><button style={{background:'none',border:0,padding:0,cursor:'pointer',color:'var(--text)',fontWeight:700}} onClick={()=>navigate(`/vips/${v.id}`)}>{v.username}</button><button title="Copy username" onClick={e=>{e.stopPropagation();navigator.clipboard.writeText(v.username)}} style={{background:'none',border:'none',color:'var(--muted)',cursor:'pointer',fontSize:12,padding:'0 2px',lineHeight:1,opacity:.6}} onMouseEnter={e=>e.currentTarget.style.opacity=1} onMouseLeave={e=>e.currentTarget.style.opacity=.6}>⎘</button></span></td>
+                <td style={s.td}><span style={{display:'inline-flex',alignItems:'center',gap:4}}><button style={{background:'none',border:0,padding:0,cursor:'pointer',color:'var(--text)',fontWeight:700}} onClick={()=>navigate(`/vips/${v.id}`)}>{v.username}</button><button title={L2('Copy username','复制用户名')} onClick={e=>{e.stopPropagation();navigator.clipboard.writeText(v.username)}} style={{background:'none',border:'none',color:'var(--muted)',cursor:'pointer',fontSize:12,padding:'0 2px',lineHeight:1,opacity:.6}} onMouseEnter={e=>e.currentTarget.style.opacity=1} onMouseLeave={e=>e.currentTarget.style.opacity=.6}>⎘</button></span></td>
                 <td style={s.td}>{v.host_assigned||'—'}</td>
-                <td style={{...s.td,fontSize:12}}>{v.whatsapp||v.phone?<span style={{display:'inline-flex',alignItems:'center',gap:4}}><span style={{color:'var(--muted)'}}>{v.whatsapp||v.phone}</span><button title="Copy number" onClick={e=>{e.stopPropagation();navigator.clipboard.writeText((v.whatsapp||v.phone).replace(/\D/g,''))}} style={{background:'none',border:'none',color:'var(--muted)',cursor:'pointer',fontSize:11,padding:'0 2px',opacity:.6}} onMouseEnter={e=>e.currentTarget.style.opacity=1} onMouseLeave={e=>e.currentTarget.style.opacity=.6}>⎘</button></span>:'—'}</td>
-                <td style={s.td}>{v.risk_level?<span style={{padding:'2px 8px',borderRadius:12,fontSize:11,fontWeight:700,background:RISK_BG[v.risk_level]||'transparent',color:RISK_COLOR[v.risk_level]||'var(--muted)'}}>{v.risk_level}</span>:'—'}</td>
-                <td style={{...s.td,fontVariantNumeric:'tabular-nums'}}>{v.days_inactive||0}d</td>
+                <td style={{...s.td,fontSize:12}}>{v.whatsapp||v.phone?<span style={{display:'inline-flex',alignItems:'center',gap:4}}><span style={{color:'var(--muted)'}}>{v.whatsapp||v.phone}</span><button title={L2('Copy number','复制号码')} onClick={e=>{e.stopPropagation();navigator.clipboard.writeText((v.whatsapp||v.phone).replace(/\D/g,''))}} style={{background:'none',border:'none',color:'var(--muted)',cursor:'pointer',fontSize:11,padding:'0 2px',opacity:.6}} onMouseEnter={e=>e.currentTarget.style.opacity=1} onMouseLeave={e=>e.currentTarget.style.opacity=.6}>⎘</button></span>:'—'}</td>
+                <td style={s.td}>{v.risk_level?<span style={{padding:'2px 8px',borderRadius:12,fontSize:11,fontWeight:700,background:RISK_BG[v.risk_level]||'transparent',color:RISK_COLOR[v.risk_level]||'var(--muted)'}}>{L2(v.risk_level,RISK_ZH[v.risk_level]||v.risk_level)}</span>:'—'}</td>
+                <td style={{...s.td,fontVariantNumeric:'tabular-nums'}}>{v.days_inactive||0}{L2('d','天')}</td>
                 <td style={s.td}>{v.last_deposit_date||'—'}</td>
-                <td style={{...s.td,fontSize:12,color:'var(--muted)'}}>{v.last_contacted?new Date(v.last_contacted).toLocaleDateString('en-MY',{day:'2-digit',month:'short'}):'Never'}</td>
-                <td style={s.td}><span style={{fontSize:12,fontWeight:700,color:isC?'#3fb950':'#f85149'}}>{isC?'✅ Done':'❌ Not yet'}</span></td>
-                <td style={s.td}><div style={{display:'flex',gap:5,flexWrap:'wrap'}}><button style={{background:'#25D366',color:'#fff',border:'none',padding:'4px 10px',borderRadius:6,fontSize:12,fontWeight:700,cursor:'pointer'}} onClick={()=>setChurnWaModal({...v,reasons:[`${v.tier} monthly follow-up`],days_since_deposit:v.days_inactive,host:v.host_assigned})}>💬 WA</button><button style={s.btnSm} onClick={()=>navigate(`/vips/${v.id}`)}>Open</button>{!reactivatedSet.has(v.username)&&<button style={{...s.btnSm,background:'#3fb950',color:'#fff',border:0,fontWeight:700}} onClick={()=>setReactivateModal(v)}>✅ Reactivate</button>}</div></td>
+                <td style={{...s.td,fontSize:12,color:'var(--muted)'}}>{v.last_contacted?new Date(v.last_contacted).toLocaleDateString(lang==='zh'?'zh-CN':'en-MY',{day:'2-digit',month:'short'}):L2('Never','从未')}</td>
+                <td style={s.td}><span style={{fontSize:12,fontWeight:700,color:isC?'#3fb950':'#f85149'}}>{isC?L2('✅ Done','✅ 已完成'):L2('❌ Not yet','❌ 未联系')}</span></td>
+                <td style={s.td}><div style={{display:'flex',gap:5,flexWrap:'wrap'}}><button style={{background:'#25D366',color:'#fff',border:'none',padding:'4px 10px',borderRadius:6,fontSize:12,fontWeight:700,cursor:'pointer'}} onClick={()=>setChurnWaModal({...v,reasons:[`${v.tier} monthly follow-up`],days_since_deposit:v.days_inactive,host:v.host_assigned})}>💬 WA</button><button style={s.btnSm} onClick={()=>navigate(`/vips/${v.id}`)}>{L2('Open','打开')}</button>{!reactivatedSet.has(v.username)&&<button style={{...s.btnSm,background:'#3fb950',color:'#fff',border:0,fontWeight:700}} onClick={()=>setReactivateModal(v)}>{L2('✅ Reactivate','✅ 召回')}</button>}</div></td>
               </tr>
             )})}
-            {!gVips.length&&<tr><td colSpan="9" style={{...s.td,textAlign:'center',color:'var(--muted)'}}>No Gold VIPs match the filter.</td></tr>}
+            {!gVips.length&&<tr><td colSpan="9" style={{...s.td,textAlign:'center',color:'var(--muted)'}}>{L2('No Gold VIPs match the filter.','没有符合筛选的黄金VIP。')}</td></tr>}
             </tbody></table></div>
         </div>)
       })()}

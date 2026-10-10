@@ -12,18 +12,21 @@ import { useLanguage } from '../contexts/LanguageContext'
 import { useAuth } from '../hooks/useAuth'
 import WaSenderModal from '../components/WaSenderModal'
 
-function daysAgoLabel(d) {
+function daysAgoLabel(d, lang = 'en') {
   if (!d) return '—'
+  const zh = lang === 'zh'
   const days = Math.floor((Date.now() - new Date(d)) / 86400000)
-  if (days === 0) return 'Today'; if (days === 1) return 'Yesterday'
-  return days + 'd ago'
+  if (days === 0) return zh ? '今天' : 'Today'; if (days === 1) return zh ? '昨天' : 'Yesterday'
+  return days + (zh ? '天前' : 'd ago')
 }
 
 const RISK_LEVELS = ['All', 'Critical', 'High', 'Medium']
+const RISK_LEVELS_ZH = { All: '全部', Critical: '严重', High: '高', Medium: '中' }
 
 export default function AtRisk() {
   const navigate = useNavigate()
-  const { t } = useLanguage()
+  const { t, lang } = useLanguage()
+  const L2 = (en, zh) => (lang === 'zh' ? zh : en)
   const { profile } = useAuth()
   const [vips, setVips]       = useState([])
   const [loading, setLoading] = useState(true)
@@ -102,7 +105,7 @@ export default function AtRisk() {
 
       {/* Filters */}
       <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
-        <FilterPills options={RISK_LEVELS.map(r => ({ value: r, label: r }))} active={riskFilter} onChange={setRiskFilter} />
+        <FilterPills options={RISK_LEVELS.map(r => ({ value: r, label: L2(r, RISK_LEVELS_ZH[r]) }))} active={riskFilter} onChange={setRiskFilter} />
         <select value={host} onChange={e => setHost(e.target.value)}
           style={{ background:'var(--surface)', border:'1px solid var(--border)', color:'var(--text)', padding:'7px 12px', borderRadius:7, fontSize:13, outline:'none', marginLeft:'auto' }}>
           {hosts.map(h => <option key={h} value={h}>{h === 'All' ? t('atRisk.allHosts') : h}</option>)}
@@ -127,12 +130,12 @@ export default function AtRisk() {
                 {sorted.map(v => {
                   const days = getDays(v)
                   const reasons = []
-                  if (days != null && days >= 7) reasons.push(`No deposit ${days}d`)
+                  if (days != null && days >= 7) reasons.push(L2(`No deposit ${days}d`, `${days}天未存款`))
                   const lastC = v.last_contacted || v.last_contact_date
                   if (lastC) {
                     const dC = Math.floor((now - new Date(lastC)) / 86400000)
-                    if (dC >= 3) reasons.push(`No contact ${dC}d`)
-                  } else { reasons.push('Never contacted') }
+                    if (dC >= 3) reasons.push(L2(`No contact ${dC}d`, `${dC}天未联系`))
+                  } else { reasons.push(L2('Never contacted', '从未联系')) }
 
                   return (
                     <tr key={v.id}
@@ -151,10 +154,10 @@ export default function AtRisk() {
                         {reasons.join(' · ') || '—'}
                       </td>
                       <td style={{ padding:'10px 14px', borderBottom:'1px solid var(--border)', color:'var(--muted)', fontSize:12 }}>
-                        {days != null ? `${days}d` : '—'}
+                        {days != null ? L2(`${days}d`, `${days}天`) : '—'}
                       </td>
                       <td style={{ padding:'10px 14px', borderBottom:'1px solid var(--border)', color:'var(--muted)', fontSize:12 }}>
-                        {daysAgoLabel(v.last_contacted || v.last_contact_date)}
+                        {daysAgoLabel(v.last_contacted || v.last_contact_date, lang)}
                       </td>
                       <td style={{ padding:'10px 14px', borderBottom:'1px solid var(--border)', fontWeight:600 }}>
                         {formatMoney(v.total_deposit, v.currency)}
@@ -165,7 +168,7 @@ export default function AtRisk() {
                       <td style={{ padding:'10px 14px', borderBottom:'1px solid var(--border)' }}>
                         <div style={{ display:'flex', gap:6 }}>
                           <Btn size="sm" variant="primary" onClick={e => { e.stopPropagation(); navigate(`/vips/${v.id}`) }}>{t('atRisk.openVip')}</Btn>
-                          <button title="Send WhatsApp" onClick={e => { e.stopPropagation(); setWaTarget(v) }}
+                          <button title={L2('Send WhatsApp', '发送WhatsApp')} onClick={e => { e.stopPropagation(); setWaTarget(v) }}
                             style={{ width:28, height:28, borderRadius:14, background:'#25D366', border:'none', color:'#fff', fontSize:13, fontWeight:700, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>W</button>
                         </div>
                       </td>

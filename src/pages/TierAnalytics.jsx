@@ -138,7 +138,8 @@ function DepositChart({ data, metric, onMetricChange, currency, t }) {
 }
 
 export default function TierAnalytics() {
-  const { t } = useLanguage()
+  const { t, lang } = useLanguage()
+  const L2 = (en, zh) => (lang === 'zh' ? zh : en)
   const [month,    setMonth]    = useUrlParam('month', currentYearMonth())
   const [cmpMonth, setCmpMonth] = useUrlParam('cmp', prevYearMonth(currentYearMonth()))
   // MYR and SGD must never be summed together — this toggle picks ONE currency
@@ -375,7 +376,7 @@ export default function TierAnalytics() {
             ))}
           </div>
           <div style={{ display:'flex', background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, overflow:'hidden' }}>
-            {[['summary', t('tierAnalytics.summary')],['detail', t('tierAnalytics.detail')],['pdtrend', '📈 P+D 3-Month']].map(([v,l]) => (
+            {[['summary', t('tierAnalytics.summary')],['detail', t('tierAnalytics.detail')],['pdtrend', L2('📈 P+D 3-Month','📈 白金+钻石 3个月')]].map(([v,l]) => (
               <button key={v} onClick={() => setView(v)} style={s.toggle(view === v)}>{l}</button>
             ))}
           </div>
@@ -475,7 +476,7 @@ export default function TierAnalytics() {
                     })}
                     {/* Total row */}
                     <tr style={s.totRow}>
-                      <td style={{ ...s.td, fontWeight:700 }}>TOTAL</td>
+                      <td style={{ ...s.td, fontWeight:700 }}>{L2('TOTAL','总计')}</td>
                       <td style={s.tdR}>{totalCurr.count}</td>
                       <td style={s.tdR}>{totalCurr.active}</td>
                       <td style={s.tdR}>
@@ -534,9 +535,9 @@ export default function TierAnalytics() {
                     <span style={{ color:'var(--muted)' }}>{tierMembers.length} {t('common.members')}</span>
                     <span style={{ color:'#3fb950' }}>{t('common.active')}: {active.length}</span>
                     <span style={{ color:'#f85149' }}>{t('common.inactive')}: {inactive.length}</span>
-                    <span style={{ color:TIER_COLOR[tier], fontWeight:700 }}>VB: {fmt(tierTotal.validBet)}</span>
-                    <span style={{ color:'#3fb950', fontWeight:700 }}>Dep: {fmt(tierTotal.deposit)}</span>
-                    <span style={{ color:'#f85149', fontWeight:700 }}>Wd: {fmt(tierTotal.withdrawal)}</span>
+                    <span style={{ color:TIER_COLOR[tier], fontWeight:700 }}>{L2('VB','有效投注')}: {fmt(tierTotal.validBet)}</span>
+                    <span style={{ color:'#3fb950', fontWeight:700 }}>{L2('Dep','存款')}: {fmt(tierTotal.deposit)}</span>
+                    <span style={{ color:'#f85149', fontWeight:700 }}>{L2('Wd','提款')}: {fmt(tierTotal.withdrawal)}</span>
                   </div>
                 </div>
                 <div style={{ overflowX:'auto' }}>
@@ -582,7 +583,7 @@ export default function TierAnalytics() {
                             </td>
                             <td style={s.tdR}>{m.active ? (m.depositCount||'—') : '—'}</td>
                             <td style={{ ...s.tdR, color: (m.daysInactive||0)>=60?'#f85149':(m.daysInactive||0)>=30?'#d29922':'var(--muted)' }}>
-                              {m.daysInactive !== null ? `${m.daysInactive}d` : '—'}
+                              {m.daysInactive !== null ? `${m.daysInactive}${L2('d','天')}` : '—'}
                             </td>
                             <td style={s.td}>
                               {m.active
@@ -618,8 +619,8 @@ export default function TierAnalytics() {
       {view === 'pdtrend' && (
         <div style={s.card}>
           <div style={s.cardHdr}>
-            <span style={{ fontSize:13, fontWeight:700 }}>📈 Platinum + Diamond — 3-Month Trend ({REGION_LABEL[CURRENCY_REGION[currency]]})</span>
-            <span style={{ fontSize:11, color:'var(--muted)' }}>Upgrades/downgrades from tier_change_logs · Churned is an approximation (active last month, inactive this month)</span>
+            <span style={{ fontSize:13, fontWeight:700 }}>📈 {L2('Platinum + Diamond — 3-Month Trend','白金 + 钻石 — 3个月趋势')} ({REGION_LABEL[CURRENCY_REGION[currency]]})</span>
+            <span style={{ fontSize:11, color:'var(--muted)' }}>{L2('Upgrades/downgrades from tier_change_logs · Churned is an approximation (active last month, inactive this month)','升级/降级取自 tier_change_logs · 流失为估算值（上月活跃、本月不活跃）')}</span>
           </div>
           {pdTrendLoading ? (
             <div style={{ textAlign:'center', padding:40, color:'var(--muted)' }}>{t('common.loading')}</div>
@@ -635,14 +636,14 @@ export default function TierAnalytics() {
                     <th style={s.thR}>{t('common.validBet')}</th>
                     <th style={s.thR}>{t('common.deposit')}</th>
                     <th style={s.thR}>{t('common.withdrawal')}</th>
-                    <th style={s.thR}>Upgraded In</th>
-                    <th style={s.thR}>Downgraded Out</th>
-                    <th style={s.thR}>Approx. Churned</th>
+                    <th style={s.thR}>{L2('Upgraded In','升级进入')}</th>
+                    <th style={s.thR}>{L2('Downgraded Out','降级离开')}</th>
+                    <th style={s.thR}>{L2('Approx. Churned','估计流失')}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {pdTrend.length === 0 ? (
-                    <tr><td colSpan={10} style={{ ...s.td, textAlign:'center', color:'var(--muted)', padding:32 }}>No data for this range.</td></tr>
+                    <tr><td colSpan={10} style={{ ...s.td, textAlign:'center', color:'var(--muted)', padding:32 }}>{L2('No data for this range.','此范围内没有数据。')}</td></tr>
                   ) : pdTrend.map((r, i) => (
                     <tr key={`${r.tier}-${r.month}`}
                       onMouseEnter={e => e.currentTarget.style.background='var(--surface2)'}

@@ -174,6 +174,39 @@ async function genKpiReminderTask() {
   return 0
 }
 
+// ─── Display localisation (render-time only; stored titles stay English) ─────
+export const TASK_TYPE_ZH = {
+  'Follow Up': '跟进', 'VIP Contact': 'VIP联系', 'Campaign': '活动', 'Upgrade': '升级',
+  'Birthday': '生日', 'Review': '审阅', 'Other': '其他',
+}
+export const TASK_PRIORITY_ZH = { Urgent: '紧急', High: '高', Medium: '中', Low: '低' }
+export const TASK_STATUS_ZH = { Open: '待办', 'In Progress': '进行中', Completed: '已完成', Snoozed: '已暂缓', Cancelled: '已取消' }
+
+const TITLE_RULES = [
+  [/^🎂 Birthday greeting — (.+)$/, m => `🎂 生日祝福 — ${m[1]}`],
+  [/^⚠️ At-risk follow-up — (.+)$/, m => `⚠️ 风险跟进 — ${m[1]}`],
+  [/^📊 Review monthly churn snapshot — (.+)$/, m => `📊 审阅月度流失快照 — ${m[1]}`],
+  [/^⬆️ Upgrade ready — (.+)$/, m => `⬆️ 可升级 — ${m[1]}`],
+  [/^📢 Campaign ending soon — (.+)$/, m => `📢 活动即将结束 — ${m[1]}`],
+  [/^🏆 Log monthly KPIs — (.+)$/, m => `🏆 录入月度KPI — ${m[1]}`],
+]
+const NOTES_RULES = [
+  [/^Today is (.+)'s birthday\. Send a greeting message\.$/, m => `今天是 ${m[1]} 的生日，请发送祝福信息。`],
+  [/^(.+) is (\S+) churn risk this month\. Reach out urgently to retain them\.$/, m => `${m[1]} 本月流失风险为 ${m[2]}，请尽快联系挽留。`],
+  [/^Monthly churn snapshot for (.+) has been saved\. Review churned players and plan reactivation strategy\.$/, m => `${m[1]} 月度流失快照已保存。请审阅流失玩家并制定召回策略。`],
+  [/^(.+) has met the monthly valid bet threshold for (\S+)\. Process their tier upgrade now\.$/, m => `${m[1]} 已达到 ${m[2]} 的月有效投注门槛，请立即处理等级升级。`],
+  [/^Campaign "(.+)" \((.*)\) ends within 3 days\. Confirm eligible players are enrolled and rewards are ready to process\.$/, m => `活动「${m[1]}」(${m[2]}) 将在3天内结束。请确认合资格玩家已报名，奖励已准备好发放。`],
+  [/^No KPI data entered for (.+) yet\. Open KPI Progress and log this month's performance numbers before the 5th\.$/, m => `${m[1]} 尚未录入KPI数据。请在5号前打开KPI进度录入本月业绩。`],
+]
+function applyRules(rules, text) {
+  if (!text) return text
+  for (const [re, fn] of rules) { const m = String(text).match(re); if (m) return fn(m) }
+  return text
+}
+// Translate an auto-generated task title / notes for display. Unknown text is returned unchanged.
+export function localizeTaskTitle(title, lang = 'en') { return lang === 'zh' ? applyRules(TITLE_RULES, title) : title }
+export function localizeTaskNotes(notes, lang = 'en') { return lang === 'zh' ? applyRules(NOTES_RULES, notes) : notes }
+
 // ─── Main entry point ─────────────────────────────────────────────────────────
 export async function generateAutoTasks() {
   const results = await Promise.allSettled([

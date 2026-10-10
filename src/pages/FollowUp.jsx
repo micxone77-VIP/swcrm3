@@ -7,14 +7,16 @@ import { useLanguage } from '../contexts/LanguageContext'
 import { PageHeader, Card, KpiCard, Btn, FilterPills, LoadingState, ErrorState, EmptyState, Modal, Select, Textarea, useToast, TierBadge, RiskBadge } from '../components/ui'
 import WaSenderModal from '../components/WaSenderModal'
 
-function daysAgoLabel(d) {
+function daysAgoLabel(d, lang = 'en') {
   if (!d) return '—'
+  const zh = lang === 'zh'
   const days = Math.floor((Date.now() - new Date(d)) / 86400000)
-  if (days === 0) return 'Today'; if (days === 1) return 'Yesterday'
-  return days + 'd ago'
+  if (days === 0) return zh ? '今天' : 'Today'; if (days === 1) return zh ? '昨天' : 'Yesterday'
+  return days + (zh ? '天前' : 'd ago')
 }
 
 const OUTCOMES = ['Contacted', 'No Reply', 'Replied', 'Deposited', 'Reactivated']
+const OUTCOME_ZH = { Contacted: '已联系', 'No Reply': '未回复', Replied: '已回复', Deposited: '已存款', Reactivated: '已召回' }
 
 const TIER_FILTERS = ['ALL','BLACK','DIAMOND','PLATINUM','GOLD','SILVER','BRONZE']
 
@@ -23,7 +25,8 @@ export default function FollowUp() {
   const [searchParams] = useSearchParams()
   const requestedVipId = searchParams.get('vip') || ''
   const { profile } = useAuth()
-  const { t } = useLanguage()
+  const { t, lang } = useLanguage()
+  const L2 = (en, zh) => (lang === 'zh' ? zh : en)
   const { toast, ToastContainer } = useToast()
   const [vips, setVips] = useState([])
   const [todayLogs, setTodayLogs] = useState([])
@@ -56,7 +59,7 @@ export default function FollowUp() {
       supabase.from('contact_logs').select('username').gte('logged_at', todayStr + 'T00:00:00').lte('logged_at', todayStr + 'T23:59:59'),
     ])
     if (vipRes.error || logRes.error) {
-      setLoadError(vipRes.error?.message || logRes.error?.message || 'Unable to load follow-up data'); setVips([]); setTodayLogs([]); setLoading(false); return
+      setLoadError(vipRes.error?.message || logRes.error?.message || L2('Unable to load follow-up data', '无法载入跟进数据')); setVips([]); setTodayLogs([]); setLoading(false); return
     }
     setVips(vipRes.data || []); setTodayLogs(logRes.data || []); setLoading(false)
   }
@@ -93,7 +96,7 @@ export default function FollowUp() {
   async function submitLog() {
     if (!logTarget || logSaving) return
     if (logOutcome === 'Reactivated' && (!(Number(recoveryAmount) > 0) || !recoveryCurrency)) {
-      toast('Reactivation requires a valid deposit amount and currency', 'error'); return
+      toast(L2('Reactivation requires a valid deposit amount and currency', '召回需填写有效的存款金额和货币'), 'error'); return
     }
     setLogSaving(true)
     const nowIso = new Date().toISOString()
@@ -101,7 +104,7 @@ export default function FollowUp() {
       username: logTarget.username, vip_id: logTarget.id, outcome: logOutcome, notes: logNote || null,
       host_name: profile?.full_name || null, logged_at: nowIso,
     })
-    if (contactError) { setLogSaving(false); toast(`Save failed: ${contactError.message}`, 'error'); return }
+    if (contactError) { setLogSaving(false); toast(L2(`Save failed: ${contactError.message}`, `保存失败：${contactError.message}`), 'error'); return }
 
     if (logOutcome === 'Reactivated') {
       const { error: reactError } = await supabase.from('reactivation_logs').insert({
@@ -116,7 +119,7 @@ export default function FollowUp() {
       })
       if (reactError) {
         setLogSaving(false)
-        toast(`Contact saved, but reactivation save failed: ${reactError.message}`, 'error')
+        toast(L2(`Contact saved, but reactivation save failed: ${reactError.message}`, `联系记录已保存，但召回记录保存失败：${reactError.message}`), 'error')
         await load()
         return
       }
@@ -124,10 +127,10 @@ export default function FollowUp() {
 
     const { error: vipError } = await supabase.from('vip_members').update({ last_contacted: nowIso, last_contact_date: nowIso.slice(0,10) }).eq('id', logTarget.id)
     if (vipError) {
-      setLogSaving(false); toast(`Contact saved, but VIP update failed: ${vipError.message}`, 'error'); await load(); return
+      setLogSaving(false); toast(L2(`Contact saved, but VIP update failed: ${vipError.message}`, `联系记录已保存，但VIP更新失败：${vipError.message}`), 'error'); await load(); return
     }
     setLogSaving(false)
-    toast(`Logged: ${logTarget.username} — ${logOutcome}`, 'success')
+    toast(L2(`Logged: ${logTarget.username} — ${logOutcome}`, `已记录：${logTarget.username} — ${OUTCOME_ZH[logOutcome] || logOutcome}`), 'success')
     setLogTarget(null); setLogNote(''); setLogOutcome('Contacted'); setRecoveryAmount(''); setRecoveryCurrency('')
     await load()
   }
@@ -138,15 +141,15 @@ export default function FollowUp() {
     <div style={{ padding: '24px 28px' }}>
       <ToastContainer />
       <PageHeader title={t('followUp.title')} subtitle={t('followUp.subtitle')} />
-      {requestedVipId && !requestedVip && <Card style={{ marginBottom: 16 }}><div style={{ padding: 16, fontSize: 13, color: 'var(--warning)' }}>VIP <strong>{requestedVipId}</strong> could not be found in the current VIP records.</div></Card>}
-      {requestedVip && !requestedInQueue && <Card style={{ marginBottom: 16 }}><div style={{ padding: 16, display:'flex', alignItems:'center', justifyContent:'space-between', gap:12 }}><div style={{ fontSize: 13 }}><strong>{requestedVip.full_name || requestedVip.username}</strong> is not currently due in the Follow Up queue.</div><Btn size="sm" variant="ghost" onClick={() => navigate(`/vips/${requestedVip.id}`)}>Open VIP</Btn></div></Card>}
+      {requestedVipId && !requestedVip && <Card style={{ marginBottom: 16 }}><div style={{ padding: 16, fontSize: 13, color: 'var(--warning)' }}>{L2('VIP ', 'VIP ')}<strong>{requestedVipId}</strong>{L2(' could not be found in the current VIP records.', ' 在当前VIP记录中找不到。')}</div></Card>}
+      {requestedVip && !requestedInQueue && <Card style={{ marginBottom: 16 }}><div style={{ padding: 16, display:'flex', alignItems:'center', justifyContent:'space-between', gap:12 }}><div style={{ fontSize: 13 }}><strong>{requestedVip.full_name || requestedVip.username}</strong>{L2(' is not currently due in the Follow Up queue.', ' 目前不在跟进队列中。')}</div><Btn size="sm" variant="ghost" onClick={() => navigate(`/vips/${requestedVip.id}`)}>{L2('Open VIP', '打开VIP')}</Btn></div></Card>}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12, marginBottom: 24 }}>
         <KpiCard label={t('followUp.needsFollowUp')} value={queue.length} color="var(--info)" />
         <KpiCard label={t('followUp.urgent')} value={urgent.length} color="var(--danger)" onClick={() => setUrgency('Urgent')} />
         <KpiCard label={t('followUp.contactedToday')} value={contactedSet.size} color="var(--success)" />
       </div>
       <div style={{ display:'flex', gap:10, flexWrap:'wrap', alignItems:'center', marginBottom:16 }}>
-        <FilterPills options={[{ value: 'All', label: `All (${queue.length})` }, { value: 'Urgent', label: `Urgent (${urgent.length})` }, { value: 'Moderate', label: `Moderate (${moderate.length})` }]} active={urgency} onChange={setUrgency} />
+        <FilterPills options={[{ value: 'All', label: L2(`All (${queue.length})`, `全部 (${queue.length})`) }, { value: 'Urgent', label: L2(`Urgent (${urgent.length})`, `紧急 (${urgent.length})`) }, { value: 'Moderate', label: L2(`Moderate (${moderate.length})`, `一般 (${moderate.length})`) }]} active={urgency} onChange={setUrgency} />
         <select value={tierFilter} onChange={e => { setTierFilter(e.target.value) }}
           style={{ background:'var(--surface)', border:'1px solid var(--border)', color:'var(--text)', padding:'7px 12px', borderRadius:7, fontSize:13, outline:'none', marginLeft:'auto' }}>
           {TIER_FILTERS.map(tv => <option key={tv} value={tv}>{tv === 'ALL' ? t('followUp.allTiers') : tv}</option>)}
@@ -181,10 +184,10 @@ export default function FollowUp() {
                         <div style={{ fontSize:11, color:'var(--muted)' }}>{v.full_name || ''}</div>
                       </td>
                       <td style={{ padding:'10px 14px', borderBottom:'1px solid var(--border)' }}><TierBadge tier={v.tier} /></td>
-                      <td style={{ padding:'10px 14px', borderBottom:'1px solid var(--border)', color:'var(--muted)', fontSize:12 }}>{daysAgoLabel(v.last_contacted || v.last_contact_date)}</td>
+                      <td style={{ padding:'10px 14px', borderBottom:'1px solid var(--border)', color:'var(--muted)', fontSize:12 }}>{daysAgoLabel(v.last_contacted || v.last_contact_date, lang)}</td>
                       <td style={{ padding:'10px 14px', borderBottom:'1px solid var(--border)' }}>
                         <span style={{ fontWeight:600, color: days >= 7 ? 'var(--danger)' : days >= 3 ? 'var(--warning)' : 'var(--muted)', fontSize:13 }}>
-                          {days >= 999 ? t('common.never') : `${days}d`}
+                          {days >= 999 ? t('common.never') : L2(`${days}d`, `${days}天`)}
                         </span>
                       </td>
                       <td style={{ padding:'10px 14px', borderBottom:'1px solid var(--border)' }}><RiskBadge risk={v.churn_risk} /></td>
@@ -193,7 +196,7 @@ export default function FollowUp() {
                         <div style={{ display:'flex', gap:6 }}>
                           <Btn size="sm" variant="primary" onClick={e => { e.stopPropagation(); openLog(v) }}>{t('followUp.logContact')}</Btn>
                           <Btn size="sm" variant="ghost" onClick={e => { e.stopPropagation(); navigate(`/vips/${v.id}`) }}>{t('followUp.open')}</Btn>
-                          <button title="Send WhatsApp" onClick={e => { e.stopPropagation(); setWaTarget(v) }}
+                          <button title={L2('Send WhatsApp', '发送WhatsApp')} onClick={e => { e.stopPropagation(); setWaTarget(v) }}
                             style={{ width:28, height:28, borderRadius:14, background:'#25D366', border:'none', color:'#fff', fontSize:13, fontWeight:700, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>W</button>
                         </div>
                       </td>
@@ -209,10 +212,10 @@ export default function FollowUp() {
       <Modal open={!!logTarget} onClose={() => { if (!logSaving) { setLogTarget(null); setLogNote(''); setRecoveryAmount(''); setRecoveryCurrency('') } }} title={t('followUp.logTitle')} width={420}>
         {logTarget && <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
           <div style={{ fontSize:14, fontWeight:600 }}>{logTarget.username}{logTarget.full_name ? ` — ${logTarget.full_name}` : ''}</div>
-          <div><label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>{t('followUp.outcome')}</label><Select value={logOutcome} onChange={e => setLogOutcome(e.target.value)} style={{ width:'100%' }}>{OUTCOMES.map(o => <option key={o} value={o}>{o}</option>)}</Select></div>
+          <div><label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>{t('followUp.outcome')}</label><Select value={logOutcome} onChange={e => setLogOutcome(e.target.value)} style={{ width:'100%' }}>{OUTCOMES.map(o => <option key={o} value={o}>{L2(o, OUTCOME_ZH[o])}</option>)}</Select></div>
           {logOutcome === 'Reactivated' && <>
             <div><label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>{t('followUp.recoveryDeposit')}</label><input type="number" min="0" step="0.01" value={recoveryAmount} onChange={e => setRecoveryAmount(e.target.value)} style={{ width:'100%', boxSizing:'border-box', padding:'9px 12px', borderRadius:8, border:'1px solid var(--border)', background:'var(--surface2)', color:'var(--text)' }} placeholder="0.00" /></div>
-            <div><label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>{t('common.currency')}</label><Select value={recoveryCurrency} onChange={e => setRecoveryCurrency(e.target.value)} style={{ width:'100%' }}><option value="">Select currency</option><option value="MYR">MYR</option><option value="SGD">SGD</option><option value="KHUSD">KHUSD</option></Select></div>
+            <div><label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>{t('common.currency')}</label><Select value={recoveryCurrency} onChange={e => setRecoveryCurrency(e.target.value)} style={{ width:'100%' }}><option value="">{L2('Select currency', '选择货币')}</option><option value="MYR">MYR</option><option value="SGD">SGD</option><option value="KHUSD">KHUSD</option></Select></div>
           </>}
           <div><label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>{t('followUp.notesLabel')}</label><Textarea value={logNote} onChange={e => setLogNote(e.target.value)} rows={3} placeholder={t('followUp.notesPlaceholder')} /></div>
           <div style={{ display:'flex', gap:8, justifyContent:'flex-end' }}><Btn variant="ghost" onClick={() => { if (!logSaving) { setLogTarget(null); setLogNote(''); setRecoveryAmount(''); setRecoveryCurrency('') } }}>{t('common.cancel')}</Btn><Btn variant="primary" onClick={submitLog} disabled={logSaving}>{logSaving ? t('common.saving') : t('followUp.saveLog')}</Btn></div>

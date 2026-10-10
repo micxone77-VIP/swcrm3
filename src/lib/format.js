@@ -15,7 +15,7 @@
 // PlayerProfiling, BudgetStrategy, ContactLog for the pattern: split totals
 // by currency BEFORE reducing, never after).
 
-import { CURRENCY_SYMBOL, MONTHS } from './constants'
+import { CURRENCY_SYMBOL, MONTHS, MONTHS_CN } from './constants'
 
 export function formatMoney(n, currency = 'MYR') {
   if (!n && n !== 0) return '—'
@@ -42,9 +42,10 @@ export function pctChange(current, prev) {
 }
 
 // 'YYYY-MM' -> 'Jan 2026'
-export function fmtMonthLabel(m) {
+export function fmtMonthLabel(m, lang = 'en') {
   if (!m) return '—'
   const [y, mo] = m.split('-')
+  if (lang === 'zh') return `${y}年${MONTHS_CN[parseInt(mo, 10) - 1]}`
   return `${MONTHS[parseInt(mo, 10) - 1]} ${y}`
 }
 
@@ -59,7 +60,8 @@ export function prevYearMonth(m) {
   return `${y}-${String(mo - 1).padStart(2, '0')}`
 }
 
-export function fmtDate(d) {
+export function fmtDate(d, lang = 'en') {
   if (!d) return '—'
+  if (lang === 'zh') return new Date(d).toLocaleDateString('zh-CN', { day: 'numeric', month: 'short', year: 'numeric' })
   return new Date(d).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })
 }

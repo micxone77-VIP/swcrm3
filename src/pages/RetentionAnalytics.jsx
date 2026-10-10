@@ -8,7 +8,8 @@ const monthKey = (date) => { const d = new Date(date); return `${d.getUTCFullYea
 const money = (n,c) => `${c || ''} ${Number(n || 0).toLocaleString(undefined,{maximumFractionDigits:2})}`.trim()
 const recoveryAmount = row => Number(row?.reactivation_deposit ?? row?.deposit_amount ?? row?.amount ?? 0) || 0
 const playerKey = row => String(row?.vip_id || row?.username || row?.id || '').trim().toLowerCase()
-const monthLabel = (m) => m ? new Date(`${m}-01T00:00:00Z`).toLocaleDateString('en-MY',{month:'short',year:'numeric',timeZone:'UTC'}) : '—'
+const TIER_ZH = { BLACK:'黑卡', DIAMOND:'钻石', PLATINUM:'白金', GOLD:'黄金', SILVER:'白银', BRONZE:'青铜' }
+const monthLabel = (m, lg) => m ? new Date(`${m}-01T00:00:00Z`).toLocaleDateString(lg === 'zh' ? 'zh-CN' : 'en-MY',{month:'short',year:'numeric',timeZone:'UTC'}) : '—'
 
 function aggregateReactivationLogs(logs = [], stats = []) {
   const grouped = new Map()
@@ -50,7 +51,9 @@ function computePeriodStats(rows, prevMonth, currMonth) {
 }
 
 export default function RetentionAnalytics() {
-  const { t } = useLanguage()
+  const { t, lang } = useLanguage()
+  const L2 = (en, zh) => (lang === 'zh' ? zh : en)
+  const ML = (m) => monthLabel(m, lang)
   const [month, setMonth] = useState(monthKey(new Date()))
   const [allMonths, setAllMonths] = useState([])
   const [rows, setRows] = useState([])
@@ -211,8 +214,8 @@ export default function RetentionAnalytics() {
 
   const tierRecoveryText = (h, tier) => Object.entries(h?.byTier?.[tier]?.recoveredDepositByCurrency || {}).map(([c, a]) => money(a, c)).join(' · ') || '—'
 
-  const currentPeriodLabel = previousSnapshotMonth && effectiveMonth ? `${monthLabel(previousSnapshotMonth)} → ${monthLabel(effectiveMonth)}` : monthLabel(effectiveMonth)
-  const compPeriodLabel = compPeriodMonths.prev && compPeriodMonths.curr ? `${monthLabel(compPeriodMonths.prev)} → ${monthLabel(compPeriodMonths.curr)}` : null
+  const currentPeriodLabel = previousSnapshotMonth && effectiveMonth ? `${ML(previousSnapshotMonth)} → ${ML(effectiveMonth)}` : ML(effectiveMonth)
+  const compPeriodLabel = compPeriodMonths.prev && compPeriodMonths.curr ? `${ML(compPeriodMonths.prev)} → ${ML(compPeriodMonths.curr)}` : null
 
   const delta = (curr, prev) => {
     const diff = curr - prev
@@ -238,12 +241,12 @@ export default function RetentionAnalytics() {
         <div style={{ display:'flex', flexWrap:'wrap', gap:12, alignItems:'center' }}>
           {/* Tier filter — affects all metrics */}
           <div style={{ display:'flex', gap:5, flexWrap:'wrap', alignItems:'center' }}>
-            <span style={{ fontSize:11, color:'var(--muted)', fontWeight:600, marginRight:2 }}>TIERS</span>
-            <button onClick={() => setSelectedTiers(ALL_TIERS)} style={{ padding:'3px 10px', borderRadius:20, fontSize:11, fontWeight:600, cursor:'pointer', border:'1px solid var(--border)', background: selectedTiers.length === ALL_TIERS.length ? 'var(--accent)' : 'transparent', color: selectedTiers.length === ALL_TIERS.length ? '#fff' : 'var(--muted)' }}>All</button>
+            <span style={{ fontSize:11, color:'var(--muted)', fontWeight:600, marginRight:2 }}>{L2('TIERS','等级')}</span>
+            <button onClick={() => setSelectedTiers(ALL_TIERS)} style={{ padding:'3px 10px', borderRadius:20, fontSize:11, fontWeight:600, cursor:'pointer', border:'1px solid var(--border)', background: selectedTiers.length === ALL_TIERS.length ? 'var(--accent)' : 'transparent', color: selectedTiers.length === ALL_TIERS.length ? '#fff' : 'var(--muted)' }}>{L2('All','全部')}</button>
             {ALL_TIERS.map(tier => {
               const icon = {BLACK:'⬛',DIAMOND:'💎',PLATINUM:'🔷',GOLD:'🟡',SILVER:'⚪',BRONZE:'🟤'}[tier]
               const active = selectedTiers.includes(tier)
-              return <button key={tier} onClick={() => setSelectedTiers(prev => prev.includes(tier) ? prev.filter(t=>t!==tier) : [...prev, tier])} style={{ padding:'3px 10px', borderRadius:20, fontSize:11, fontWeight:600, cursor:'pointer', border:`1px solid ${active?'var(--accent)':'var(--border)'}`, background: active ? 'rgba(88,166,255,.12)' : 'transparent', color: active ? 'var(--accent)' : 'var(--muted)' }}>{icon} {tier.charAt(0)+tier.slice(1).toLowerCase()}</button>
+              return <button key={tier} onClick={() => setSelectedTiers(prev => prev.includes(tier) ? prev.filter(t=>t!==tier) : [...prev, tier])} style={{ padding:'3px 10px', borderRadius:20, fontSize:11, fontWeight:600, cursor:'pointer', border:`1px solid ${active?'var(--accent)':'var(--border)'}`, background: active ? 'rgba(88,166,255,.12)' : 'transparent', color: active ? 'var(--accent)' : 'var(--muted)' }}>{icon} {lang === 'zh' ? (TIER_ZH[tier] || tier) : tier.charAt(0)+tier.slice(1).toLowerCase()}</button>
             })}
           </div>
           <div>
@@ -268,7 +271,7 @@ export default function RetentionAnalytics() {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                  <th style={{ padding: '10px 20px', textAlign: 'left', color: 'var(--muted)', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.4px' }}>{t('common.metric') || 'Metric'}</th>
+                  <th style={{ padding: '10px 20px', textAlign: 'left', color: 'var(--muted)', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.4px' }}>{t('common.metric') || L2('Metric','指标')}</th>
                   <th style={{ padding: '10px 20px', textAlign: 'right', color: 'var(--muted)', fontSize: 11, fontWeight: 600 }}>{compPeriodLabel}</th>
                   <th style={{ padding: '10px 20px', textAlign: 'right', color: 'var(--accent)', fontSize: 11, fontWeight: 700 }}>{currentPeriodLabel} ← {t('retention.currentPeriod')}</th>
                   <th style={{ padding: '10px 20px', textAlign: 'right', color: 'var(--muted)', fontSize: 11, fontWeight: 600 }}>{t('retention.change')}</th>
@@ -321,7 +324,7 @@ export default function RetentionAnalytics() {
 
       {/* Current period KPIs */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-6">
-        <Kpi label={t('retention.previousActive')} value={filteredPreviousActive.length} sub={monthLabel(previousSnapshotMonth)} />
+        <Kpi label={t('retention.previousActive')} value={filteredPreviousActive.length} sub={ML(previousSnapshotMonth)} />
         <Kpi label={t('retention.retained')} value={filteredRetained.length} />
         <Kpi label={t('retention.churned')} value={filteredChurned.length} />
         <Kpi label={t('retention.retention')} value={`${metrics.retentionRate}%`} />
@@ -333,7 +336,7 @@ export default function RetentionAnalytics() {
       <section className="rounded-xl border overflow-hidden">
         <div className="border-b px-5 py-4">
           <div className="font-medium">{t('retention.priorityTierPerformance')}</div>
-          <div className="text-xs opacity-60 mt-1">Filtered by tier selection above</div>
+          <div className="text-xs opacity-60 mt-1">{L2('Filtered by tier selection above','按上方所选等级筛选')}</div>
         </div>
         <div className="grid gap-3 p-5" style={{ gridTemplateColumns: `repeat(${Math.min(selectedTiers.length, 3)}, 1fr)` }}>
           {tierKpis.filter(k => selectedTiers.includes(k.tier)).map(k => {
@@ -342,10 +345,10 @@ export default function RetentionAnalytics() {
               <div key={k.tier} className="rounded-lg border p-4">
                 <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start' }}>
                   <div className="text-sm font-semibold">{icon} {k.tier}</div>
-                  {k.totalInTierPrev > 0 && <div style={{ fontSize:10, color:'var(--muted)', textAlign:'right' }}>Total in prev snapshot<br/><strong style={{ fontSize:14, color:'var(--text)' }}>{k.totalInTierPrev}</strong></div>}
+                  {k.totalInTierPrev > 0 && <div style={{ fontSize:10, color:'var(--muted)', textAlign:'right' }}>{L2('Total in prev snapshot','上期快照总数')}<br/><strong style={{ fontSize:14, color:'var(--text)' }}>{k.totalInTierPrev}</strong></div>}
                 </div>
                 <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
-                  <div><div className="text-xs opacity-60">{t('retention.previousActive')}</div><strong>{k.opening}</strong>{k.inactive > 0 && <span style={{ fontSize:10, color:'var(--muted)', marginLeft:4 }}>({k.inactive} inactive)</span>}</div>
+                  <div><div className="text-xs opacity-60">{t('retention.previousActive')}</div><strong>{k.opening}</strong>{k.inactive > 0 && <span style={{ fontSize:10, color:'var(--muted)', marginLeft:4 }}>({k.inactive} {L2('inactive','不活跃')})</span>}</div>
                   <div><div className="text-xs opacity-60">{t('retention.retained')}</div><strong>{k.kept}</strong></div>
                   <div><div className="text-xs opacity-60">{t('retention.churned')}</div><strong style={{ color: k.lost > 0 ? '#d94b4b' : 'inherit' }}>{k.lost}</strong></div>
                   <div><div className="text-xs opacity-60">{t('retention.reactivatedCount')}</div><strong style={{ color: k.back > 0 ? '#20a36a' : 'inherit' }}>{k.back}</strong></div>
@@ -355,16 +358,16 @@ export default function RetentionAnalytics() {
               </div>
             )
           })}
-          {tierKpis.filter(k => selectedTiers.includes(k.tier)).length === 0 && <div className="col-span-3 py-8 text-center text-sm opacity-60">Select at least one tier above to view performance.</div>}
+          {tierKpis.filter(k => selectedTiers.includes(k.tier)).length === 0 && <div className="col-span-3 py-8 text-center text-sm opacity-60">{L2('Select at least one tier above to view performance.','请在上方至少选择一个等级以查看表现。')}</div>}
         </div>
       </section>
 
       {/* VIP Player Lists — Churned / Inactive / Reactivated */}
       {(() => {
         const tabs = [
-          { key: 'churned',     label: 'Churned',      count: filteredChurned.length,     color: '#d94b4b' },
-          { key: 'inactive',    label: 'Inactive',     count: inactiveVips.length,         color: '#d29922' },
-          { key: 'reactivated', label: 'Reactivated',  count: filteredReactivated.length,  color: '#20a36a' },
+          { key: 'churned',     label: L2('Churned','流失'),      count: filteredChurned.length,     color: '#d94b4b' },
+          { key: 'inactive',    label: L2('Inactive','不活跃'),     count: inactiveVips.length,         color: '#d29922' },
+          { key: 'reactivated', label: L2('Reactivated','已召回'),  count: filteredReactivated.length,  color: '#20a36a' },
         ]
         const listData = vipListTab === 'churned' ? filteredChurned
           : vipListTab === 'inactive' ? inactiveVips
@@ -376,7 +379,7 @@ export default function RetentionAnalytics() {
         return (
           <section className="rounded-xl border overflow-hidden">
             <div className="border-b px-5 py-4 flex items-center justify-between flex-wrap gap-3">
-              <div className="font-medium">👥 VIP Player Details</div>
+              <div className="font-medium">👥 {L2('VIP Player Details','VIP 玩家明细')}</div>
               <div style={{ display:'flex', gap:6 }}>
                 {tabs.map(tab => (
                   <button key={tab.key} onClick={() => { setVipListTab(v => v === tab.key ? null : tab.key); setVipListSearch('') }}
@@ -393,27 +396,27 @@ export default function RetentionAnalytics() {
               <>
                 <div style={{ padding:'10px 20px', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', gap:8 }}>
                   <input value={vipListSearch} onChange={e => setVipListSearch(e.target.value)}
-                    placeholder={`🔍 Search ${filtered.length} players…`}
+                    placeholder={L2(`🔍 Search ${filtered.length} players…`,`🔍 搜索 ${filtered.length} 位玩家…`)}
                     style={{ flex:1, maxWidth:280, padding:'5px 10px', borderRadius:8, border:'1px solid var(--border)', background:'var(--surface2)', color:'var(--text)', fontSize:12 }} />
-                  {vipListSearch && <button onClick={() => setVipListSearch('')} style={{ fontSize:11, color:'var(--muted)', background:'none', border:'none', cursor:'pointer' }}>✕ Clear</button>}
-                  <span style={{ fontSize:11, color:'var(--muted)', marginLeft:'auto' }}>{filtered.length} players</span>
+                  {vipListSearch && <button onClick={() => setVipListSearch('')} style={{ fontSize:11, color:'var(--muted)', background:'none', border:'none', cursor:'pointer' }}>✕ {L2('Clear','清除')}</button>}
+                  <span style={{ fontSize:11, color:'var(--muted)', marginLeft:'auto' }}>{L2(`${filtered.length} players`,`${filtered.length} 位玩家`)}</span>
                 </div>
                 <div style={{ overflowX:'auto' }}>
                   <table style={{ width:'100%', borderCollapse:'collapse', fontSize:13 }}>
                     <thead>
                       <tr style={{ borderBottom:'1px solid var(--border)', background:'var(--surface2)' }}>
                         <th style={{ padding:'8px 16px', textAlign:'left', fontSize:11, fontWeight:600, color:'var(--muted)', textTransform:'uppercase', letterSpacing:'.4px' }}>#</th>
-                        <th style={{ padding:'8px 16px', textAlign:'left', fontSize:11, fontWeight:600, color:'var(--muted)', textTransform:'uppercase', letterSpacing:'.4px' }}>Username</th>
-                        <th style={{ padding:'8px 16px', textAlign:'left', fontSize:11, fontWeight:600, color:'var(--muted)', textTransform:'uppercase', letterSpacing:'.4px' }}>Tier</th>
-                        <th style={{ padding:'8px 16px', textAlign:'left', fontSize:11, fontWeight:600, color:'var(--muted)', textTransform:'uppercase', letterSpacing:'.4px' }}>Host</th>
-                        {vipListTab === 'churned' && <th style={{ padding:'8px 16px', textAlign:'right', fontSize:11, fontWeight:600, color:'var(--muted)', textTransform:'uppercase', letterSpacing:'.4px' }}>Prev Deposit</th>}
-                        {vipListTab === 'inactive' && <th style={{ padding:'8px 16px', textAlign:'right', fontSize:11, fontWeight:600, color:'var(--muted)', textTransform:'uppercase', letterSpacing:'.4px' }}>Status</th>}
-                        {vipListTab === 'reactivated' && <th style={{ padding:'8px 16px', textAlign:'right', fontSize:11, fontWeight:600, color:'var(--muted)', textTransform:'uppercase', letterSpacing:'.4px' }}>Recovery Deposit</th>}
+                        <th style={{ padding:'8px 16px', textAlign:'left', fontSize:11, fontWeight:600, color:'var(--muted)', textTransform:'uppercase', letterSpacing:'.4px' }}>{L2('Username','用户名')}</th>
+                        <th style={{ padding:'8px 16px', textAlign:'left', fontSize:11, fontWeight:600, color:'var(--muted)', textTransform:'uppercase', letterSpacing:'.4px' }}>{L2('Tier','等级')}</th>
+                        <th style={{ padding:'8px 16px', textAlign:'left', fontSize:11, fontWeight:600, color:'var(--muted)', textTransform:'uppercase', letterSpacing:'.4px' }}>{L2('Host','负责人')}</th>
+                        {vipListTab === 'churned' && <th style={{ padding:'8px 16px', textAlign:'right', fontSize:11, fontWeight:600, color:'var(--muted)', textTransform:'uppercase', letterSpacing:'.4px' }}>{L2('Prev Deposit','上期存款')}</th>}
+                        {vipListTab === 'inactive' && <th style={{ padding:'8px 16px', textAlign:'right', fontSize:11, fontWeight:600, color:'var(--muted)', textTransform:'uppercase', letterSpacing:'.4px' }}>{L2('Status','状态')}</th>}
+                        {vipListTab === 'reactivated' && <th style={{ padding:'8px 16px', textAlign:'right', fontSize:11, fontWeight:600, color:'var(--muted)', textTransform:'uppercase', letterSpacing:'.4px' }}>{L2('Recovery Deposit','召回存款')}</th>}
                       </tr>
                     </thead>
                     <tbody>
                       {filtered.length === 0
-                        ? <tr><td colSpan={5} style={{ padding:24, textAlign:'center', color:'var(--muted)', fontSize:13 }}>No players found.</td></tr>
+                        ? <tr><td colSpan={5} style={{ padding:24, textAlign:'center', color:'var(--muted)', fontSize:13 }}>{L2('No players found.','未找到玩家。')}</td></tr>
                         : filtered.map((v, i) => (
                           <tr key={v.id || v.username || i} style={{ borderBottom:'1px solid var(--border)' }}
                             onMouseEnter={e=>e.currentTarget.style.background='var(--surface2)'}
@@ -425,7 +428,7 @@ export default function RetentionAnalytics() {
                                 ? <span style={{ padding:'2px 8px', borderRadius:20, fontSize:11, fontWeight:700, background:(TIER_COLOR[String(v.tier).toUpperCase()]||'#8b949e')+'22', color:TIER_COLOR[String(v.tier).toUpperCase()]||'#8b949e' }}>{v.tier}</span>
                                 : <span style={{ color:'var(--muted)' }}>—</span>}
                             </td>
-                            <td style={{ padding:'9px 16px', color:'var(--muted)', fontSize:12 }}>{v.host || 'Unassigned'}</td>
+                            <td style={{ padding:'9px 16px', color:'var(--muted)', fontSize:12 }}>{v.host || L2('Unassigned','未分配')}</td>
                             {vipListTab === 'churned' && (
                               <td style={{ padding:'9px 16px', textAlign:'right', color:'#d94b4b', fontWeight:600 }}>
                                 {v.currency ? money(v.prev, v.currency) : (v.prev ? `${Number(v.prev).toLocaleString()}` : '—')}
@@ -433,7 +436,7 @@ export default function RetentionAnalytics() {
                             )}
                             {vipListTab === 'inactive' && (
                               <td style={{ padding:'9px 16px', textAlign:'right' }}>
-                                <span style={{ padding:'2px 8px', borderRadius:20, fontSize:11, fontWeight:600, background:'#d2992222', color:'#d29922' }}>No Deposit</span>
+                                <span style={{ padding:'2px 8px', borderRadius:20, fontSize:11, fontWeight:600, background:'#d2992222', color:'#d29922' }}>{L2('No Deposit','无存款')}</span>
                               </td>
                             )}
                             {vipListTab === 'reactivated' && (
@@ -452,7 +455,7 @@ export default function RetentionAnalytics() {
             )}
             {!vipListTab && (
               <div style={{ padding:20, textAlign:'center', fontSize:12, color:'var(--muted)' }}>
-                Click Churned, Inactive, or Reactivated above to view the player list.
+                {L2('Click Churned, Inactive, or Reactivated above to view the player list.','点击上方的流失、不活跃或已召回以查看玩家名单。')}
               </div>
             )}
           </section>
@@ -482,9 +485,9 @@ export default function RetentionAnalytics() {
               <tr className="border-b text-left">
                 <th className="px-5 py-3">{t('retention.host')}</th>
                 <th className="px-5 py-3">{t('retention.assignedVips')}</th>
-                <th className="px-5 py-3">💎 Diamond</th>
-                <th className="px-5 py-3">🔷 Platinum</th>
-                <th className="px-5 py-3">🟡 Gold</th>
+                <th className="px-5 py-3">💎 {L2('Diamond','钻石')}</th>
+                <th className="px-5 py-3">🔷 {L2('Platinum','白金')}</th>
+                <th className="px-5 py-3">🟡 {L2('Gold','黄金')}</th>
                 <th className="px-5 py-3">{t('retention.reactivatedCount')}</th>
                 <th className="px-5 py-3">{t('retention.reactivationRateShort')}</th>
                 <th className="px-5 py-3">{t('retention.reactivatedDeposit')}</th>
@@ -493,7 +496,7 @@ export default function RetentionAnalytics() {
             <tbody>
               {hosts.map(h => (
                 <tr key={h.host} className="border-b last:border-0">
-                  <td className="px-5 py-3 font-medium">{h.host}</td>
+                  <td className="px-5 py-3 font-medium">{h.host === 'Unassigned' ? L2('Unassigned','未分配') : h.host}</td>
                   <td className="px-5 py-3">{h.assignedVips || '—'}</td>
                   <td className="px-5 py-3"><div className="font-medium">{h.byTier?.DIAMOND?.reactivated || 0}</div><div className="text-xs opacity-60">{tierRecoveryText(h, 'DIAMOND')}</div></td>
                   <td className="px-5 py-3"><div className="font-medium">{h.byTier?.PLATINUM?.reactivated || 0}</div><div className="text-xs opacity-60">{tierRecoveryText(h, 'PLATINUM')}</div></td>

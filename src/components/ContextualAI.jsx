@@ -24,6 +24,25 @@ function getPageCtx(pathname) {
   return ''
 }
 
+// Display-only Chinese versions of the page context line (English is still sent to the AI)
+const PAGE_CONTEXT_ZH = {
+  '/': '今天 / 指挥中心页面', '/vips': '全部VIP列表', '/at-risk': '有风险VIP页面', '/ask': '数据问答 / AI聊天页面',
+  '/contact-log': '联系记录页面', '/analytics': '分析页面', '/tasks': '我的任务页面', '/birthdays': '生日页面', '/campaigns': '活动页面',
+}
+function getPageCtxZh(pathname) {
+  if (PAGE_CONTEXT_ZH[pathname]) return PAGE_CONTEXT_ZH[pathname]
+  if (pathname.startsWith('/vips/')) return 'VIP档案页面'
+  return ''
+}
+
+const SUGGESTIONS_BY_PAGE_ZH = {
+  '/':        ['今天需要联系谁？', '有哪些有风险的VIP需要打电话？', '本周谁过生日？'],
+  '/vips':    ['哪些VIP已14天没有存款？', '显示有风险的钻石会员', '本月谁的存款最高？'],
+  '/at-risk': ['哪些有风险VIP是钻石或白金？', '谁的流失风险最高？'],
+  '/tasks':   ['哪些任务已逾期？', '我有多少待处理任务？'],
+  '/birthdays': ['本周谁过生日？', '哪些生日VIP价值高？'],
+}
+
 const SUGGESTIONS_BY_PAGE = {
   '/':        ['Who needs contact today?', 'Any at-risk VIPs I should call?', 'Who has a birthday this week?'],
   '/vips':    ['Which VIPs haven\'t deposited in 14 days?', 'Show me Diamond members at risk', 'Who has the highest deposit this month?'],
@@ -101,9 +120,12 @@ export default function ContextualAI() {
   }, [messages, loading, open])
 
   const pageCtx = getPageCtx(pathname)
-  const suggestions = SUGGESTIONS_BY_PAGE[pathname] ||
-    SUGGESTIONS_BY_PAGE[Object.keys(SUGGESTIONS_BY_PAGE).find(k => pathname.startsWith(k) && k !== '/') || '/']
-    || SUGGESTIONS_BY_PAGE['/']
+  const SUG = lang === 'zh' ? SUGGESTIONS_BY_PAGE_ZH : SUGGESTIONS_BY_PAGE
+  const suggestions = SUG[pathname] ||
+    SUG[Object.keys(SUG).find(k => pathname.startsWith(k) && k !== '/') || '/']
+    || SUG['/']
+  const L2 = (en, zh) => (lang === 'zh' ? zh : en)
+  const pageCtxDisplay = lang === 'zh' ? getPageCtxZh(pathname) : pageCtx
 
   async function send(text) {
     const raw = (text ?? input).trim()
@@ -118,7 +140,7 @@ export default function ContextualAI() {
     try {
       const history = nextMessages.slice(0, -1).slice(-4).map(m => ({ role: m.role, content: m.content }))
       const result = await callAI('chat', { question, history, language: lang })
-      setMessages(prev => [...prev, { role: 'assistant', content: result.answer || 'No answer.' }])
+      setMessages(prev => [...prev, { role: 'assistant', content: result.answer || L2('No answer.', '没有答案。') }])
     } catch (e) {
       setMessages(prev => [...prev, { role: 'assistant', content: `⚠️ ${e.message}` }])
     } finally {
@@ -133,7 +155,7 @@ export default function ContextualAI() {
       {/* Floating toggle button — draggable */}
       <button
         onMouseDown={onMouseDown}
-        title="Ask AI (drag to move)"
+        title={L2('Ask AI (drag to move)', '问AI（可拖动）')}
         style={{
           position: 'fixed', bottom: pos.bottom, right: pos.right, zIndex: 9000,
           width: 52, height: 52, borderRadius: '50%',
@@ -169,8 +191,8 @@ export default function ContextualAI() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span style={{ fontSize: 16 }}>✨</span>
               <div>
-                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>Quick AI</div>
-                <div style={{ fontSize: 11, color: 'var(--muted)' }}>{pageCtx || 'Ask anything'}</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{L2('Quick AI', '快捷AI')}</div>
+                <div style={{ fontSize: 11, color: 'var(--muted)' }}>{pageCtxDisplay || L2('Ask anything', '随便问')}</div>
               </div>
             </div>
             {messages.length > 0 && (
@@ -178,7 +200,7 @@ export default function ContextualAI() {
                 background: 'none', border: 'none', cursor: 'pointer',
                 fontSize: 11, color: 'var(--muted)', padding: '3px 8px',
                 borderRadius: 6, border: '1px solid var(--border)',
-              }}>Clear</button>
+              }}>{L2('Clear', '清除')}</button>
             )}
           </div>
 
@@ -186,7 +208,7 @@ export default function ContextualAI() {
           <div style={{ flex: 1, overflowY: 'auto', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
             {messages.length === 0 && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 2 }}>Quick questions:</div>
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 2 }}>{L2('Quick questions:', '快捷问题：')}</div>
                 {(suggestions || []).map(q => (
                   <button key={q} onClick={() => send(q)} style={{
                     textAlign: 'left', background: 'var(--surface)', border: '1px solid var(--border)',
@@ -214,7 +236,7 @@ export default function ContextualAI() {
                 alignSelf: 'flex-start', background: 'var(--surface)',
                 border: '1px solid var(--border)', padding: '8px 12px',
                 borderRadius: '10px 10px 10px 2px', fontSize: 12, color: 'var(--muted)',
-              }}>Thinking…</div>
+              }}>{L2('Thinking…', '思考中…')}</div>
             )}
             <div ref={bottomRef} />
           </div>
@@ -226,7 +248,7 @@ export default function ContextualAI() {
               value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}
-              placeholder="Ask a quick question…"
+              placeholder={L2('Ask a quick question…', '快速提问…')}
               style={{
                 flex: 1, background: 'var(--bg)', border: '1px solid var(--border)',
                 borderRadius: 8, padding: '8px 12px', color: 'var(--text)',

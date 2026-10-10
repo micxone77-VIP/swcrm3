@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import { supabase } from '../lib/supabase'
-import { generateAutoTasks } from '../lib/taskEngine'
+import { generateAutoTasks, localizeTaskTitle, localizeTaskNotes, TASK_TYPE_ZH, TASK_PRIORITY_ZH } from '../lib/taskEngine'
 import {
   PageHeader, Card, KpiCard, Btn, Badge,
   Tabs, LoadingState, ErrorState, EmptyState, Modal,
@@ -22,25 +22,28 @@ const isOverdue = t => {
   return new Date(t.due_date) < new Date()
 }
 
-const fmtDate = d => {
+const fmtDate = (d, lang = 'en') => {
   if (!d) return '—'
-  return new Date(d).toLocaleDateString('en-MY', { day:'numeric', month:'short', year:'numeric' })
+  return new Date(d).toLocaleDateString(lang === 'zh' ? 'zh-CN' : 'en-MY', { day:'numeric', month:'short', year:'numeric' })
 }
 
-const sourceLabel = src => {
+const sourceLabel = (src, lang = 'en') => {
+  const a = lang === 'zh' ? '自动' : 'Auto'
   const map = {
     manual: null,
-    auto_birthday: '🎂 Auto',
-    auto_churn_risk: '⚠️ Auto',
-    auto_churn_snapshot: '📊 Auto',
-    auto_upgrade: '⬆️ Auto',
-    auto_campaign_deadline: '📢 Auto',
-    auto_kpi_reminder: '🏆 Auto',
+    auto_birthday: `🎂 ${a}`,
+    auto_churn_risk: `⚠️ ${a}`,
+    auto_churn_snapshot: `📊 ${a}`,
+    auto_upgrade: `⬆️ ${a}`,
+    auto_campaign_deadline: `📢 ${a}`,
+    auto_kpi_reminder: `🏆 ${a}`,
   }
   return map[src] || null
 }
 
 function TaskRow({ task, onStatusChange, onDelete, onOpen, t }) {
+  const { lang } = useLanguage()
+  const L2 = (en, zh) => (lang === 'zh' ? zh : en)
   const [saving, setSaving] = useState(false)
 
   async function setStatus(status) {
@@ -53,7 +56,7 @@ function TaskRow({ task, onStatusChange, onDelete, onOpen, t }) {
   }
 
   const overdue = isOverdue(task)
-  const src = sourceLabel(task.source)
+  const src = sourceLabel(task.source, lang)
 
   return (
     <div style={{
@@ -74,7 +77,7 @@ function TaskRow({ task, onStatusChange, onDelete, onOpen, t }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
           <span style={{ fontWeight: 600, fontSize: 14, color: task.status === 'Completed' ? 'var(--muted)' : 'var(--text)',
             textDecoration: task.status === 'Completed' ? 'line-through' : 'none' }}>
-            {task.title}
+            {localizeTaskTitle(task.title, lang)}
           </span>
           {src && <span style={{ fontSize: 10, color: 'var(--muted)', background: 'var(--surface2)',
             padding: '1px 6px', borderRadius: 10, fontWeight: 600 }}>{src}</span>}
@@ -88,11 +91,11 @@ function TaskRow({ task, onStatusChange, onDelete, onOpen, t }) {
             </span>
           )}
           <span style={{ color: overdue ? 'var(--danger)' : 'var(--muted)', fontWeight: overdue ? 700 : 400 }}>
-            {overdue ? '⏰ Overdue · ' : ''}{fmtDate(task.due_date)}
+            {overdue ? L2('⏰ Overdue · ', '⏰ 已逾期 · ') : ''}{fmtDate(task.due_date, lang)}
           </span>
-          <span>{task.task_type}</span>
+          <span>{L2(task.task_type, TASK_TYPE_ZH[task.task_type] || task.task_type)}</span>
           {task.assigned_to && <span>→ {task.assigned_to}</span>}
-          {task.notes && <span style={{ fontStyle: 'italic', maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{task.notes}</span>}
+          {task.notes && <span style={{ fontStyle: 'italic', maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{localizeTaskNotes(task.notes, lang)}</span>}
         </div>
       </div>
 
@@ -109,7 +112,7 @@ function TaskRow({ task, onStatusChange, onDelete, onOpen, t }) {
           <Btn size="sm" variant="ghost" disabled={saving} onClick={() => setStatus('Open')}>{t('myTasks.reopenBtn')}</Btn>
         )}
         <Btn size="sm" variant="ghost" disabled={saving} onClick={() => onDelete?.(task.id)}
-          style={{ color: 'var(--muted)', fontSize: 16, padding: '2px 8px' }}>×</Btn>
+          style={{ color: 'var(--muted)', fontSize: 16, padding: '2px 8px' }} title={L2('Delete', '删除')}>×</Btn>
       </div>
     </div>
   )
@@ -119,7 +122,8 @@ export default function MyTasks() {
   const navigate = useNavigate()
   const { profile } = useAuth()
   const { toast, ToastContainer } = useToast()
-  const { t } = useLanguage()
+  const { t, lang } = useLanguage()
+  const L2 = (en, zh) => (lang === 'zh' ? zh : en)
 
   const [tasks, setTasks]               = useState([])
   const [loading, setLoading]           = useState(true)
@@ -170,17 +174,17 @@ export default function MyTasks() {
       const result = await generateAutoTasks()
       const created = result.total
       toast(created > 0
-        ? `Auto-sync complete — ${created} new task${created === 1 ? '' : 's'} generated`
-        : 'Auto-sync complete — no new tasks to create', 'success')
+        ? L2(`Auto-sync complete — ${created} new task${created === 1 ? '' : 's'} generated`, `自动同步完成 — 已生成 ${created} 个新任务`)
+        : L2('Auto-sync complete — no new tasks to create', '自动同步完成 — 没有需要新建的任务'), 'success')
       await load()
     } catch(e) {
-      toast('Auto-sync failed: ' + e.message, 'error')
+      toast(L2('Auto-sync failed: ', '自动同步失败：') + e.message, 'error')
     }
     setSyncing(false)
   }
 
   async function createTask() {
-    if (!form.title.trim()) { toast('Please enter a task title', 'error'); return }
+    if (!form.title.trim()) { toast(L2('Please enter a task title', '请输入任务标题'), 'error'); return }
     setSaving(true)
     const { error: err } = await supabase.from('tasks').insert({
       title: form.title.trim(),
@@ -197,8 +201,8 @@ export default function MyTasks() {
       created_by: profile?.full_name || null,
     })
     setSaving(false)
-    if (err) { toast('Failed to create task: ' + err.message, 'error'); return }
-    toast('Task created', 'success')
+    if (err) { toast(L2('Failed to create task: ', '创建任务失败：') + err.message, 'error'); return }
+    toast(L2('Task created', '任务已创建'), 'success')
     setShowCreate(false)
     setForm(emptyForm)
     setVipSearch('')
@@ -288,7 +292,7 @@ export default function MyTasks() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div>
             <label style={{ fontSize: 12, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>{t('myTasks.titleLabel')}</label>
-            <Input value={form.title} onChange={e => setForm(f => ({...f, title: e.target.value}))} placeholder="What needs to be done?" />
+            <Input value={form.title} onChange={e => setForm(f => ({...f, title: e.target.value}))} placeholder={L2('What needs to be done?', '需要做什么？')} />
           </div>
           <div>
             <label style={{ fontSize: 12, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>{t('myTasks.vipLabel')}</label>
@@ -316,13 +320,13 @@ export default function MyTasks() {
             <div>
               <label style={{ fontSize: 12, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>{t('myTasks.typeLabel')}</label>
               <Select value={form.task_type} onChange={e => setForm(f => ({...f, task_type: e.target.value}))} style={{ width: '100%' }}>
-                {TASK_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                {TASK_TYPES.map(t => <option key={t} value={t}>{L2(t, TASK_TYPE_ZH[t] || t)}</option>)}
               </Select>
             </div>
             <div>
               <label style={{ fontSize: 12, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>{t('myTasks.priorityLabel')}</label>
               <Select value={form.priority} onChange={e => setForm(f => ({...f, priority: e.target.value}))} style={{ width: '100%' }}>
-                {PRIORITIES.map(p => <option key={p} value={p}>{p}</option>)}
+                {PRIORITIES.map(p => <option key={p} value={p}>{L2(p, TASK_PRIORITY_ZH[p] || p)}</option>)}
               </Select>
             </div>
           </div>

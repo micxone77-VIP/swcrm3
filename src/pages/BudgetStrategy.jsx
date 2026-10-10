@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
-import { MONTHS, TIER_COLOR, TIER_BG, CURRENCY_LIST, CURRENCY_SYMBOL, CURRENCY_REGION, REGION_LABEL } from '../lib/constants'
+import { MONTHS, MONTHS_CN, TIER_COLOR, TIER_BG, CURRENCY_LIST, CURRENCY_SYMBOL, CURRENCY_REGION, REGION_LABEL } from '../lib/constants'
 import { formatMoney } from '../lib/format'
 import { useUrlParam, useUrlParamNumber } from '../hooks/useUrlParam'
 import { useLanguage } from '../contexts/LanguageContext'
@@ -35,7 +35,9 @@ const DEFAULT_BUDGET = {
 
 export default function BudgetStrategy() {
   const { profile } = useAuth()
-  const { t } = useLanguage()
+  const { t, lang } = useLanguage()
+  const L2 = (en, zh) => (lang === 'zh' ? zh : en)
+  const MN = lang === 'zh' ? MONTHS_CN : MONTHS
   const isAdmin = profile?.role === 'admin'
 
   const now = new Date()
@@ -116,7 +118,7 @@ export default function BudgetStrategy() {
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:20, flexWrap:'wrap', gap:12 }}>
         <div>
           <div style={s.title}>💼 {t('budgetStrategy.title')}</div>
-          <div style={s.sub}>Bonus budget planning and allocation tracking — {REGION_LABEL[CURRENCY_REGION[currency]]} ({CURRENCY_SYMBOL[currency]}) only</div>
+          <div style={s.sub}>{L2('Bonus budget planning and allocation tracking — ','奖金预算规划与分配追踪 — ')}{REGION_LABEL[CURRENCY_REGION[currency]]} ({CURRENCY_SYMBOL[currency]}){L2(' only',' 仅限')}</div>
         </div>
         <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
           <div style={{ display:'flex', background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, overflow:'hidden' }}>
@@ -128,7 +130,7 @@ export default function BudgetStrategy() {
           </div>
           <select style={{ background:'var(--surface)', border:'1px solid var(--border)', color:'var(--text)', padding:'8px 12px', borderRadius:8, fontSize:13, outline:'none' }}
             value={month} onChange={e=>setMonth(parseInt(e.target.value))}>
-            {MONTHS.map((m,i) => <option key={m} value={i}>{m}</option>)}
+            {MONTHS.map((m,i) => <option key={m} value={i}>{MN[i]}</option>)}
           </select>
           <select style={{ background:'var(--surface)', border:'1px solid var(--border)', color:'var(--text)', padding:'8px 12px', borderRadius:8, fontSize:13, outline:'none' }}
             value={year} onChange={e=>setYear(parseInt(e.target.value))}>
@@ -150,7 +152,7 @@ export default function BudgetStrategy() {
           { label: t('budgetStrategy.totalBudget'), value: fmt(totalBudget), color:'var(--accent)' },
           { label: t('budgetStrategy.used'),        value: fmt(totalSpent),  color: budgetColor },
           { label: t('budgetStrategy.remaining'),   value: fmt(remaining),   color: remaining>=0?'#3fb950':'#f85149' },
-          { label:'Bonuses Given',value: logs.length,        color:'var(--text)', sub:`${MONTHS[month]} ${year}` },
+          { label:L2('Bonuses Given','已发奖金'),value: logs.length,        color:'var(--text)', sub:`${MN[month]} ${year}` },
         ].map(({ label, value, color, sub }) => (
           <div key={label} style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:10, padding:'16px 18px' }}>
             <div style={{ fontSize:11, color:'var(--muted)', marginBottom:6 }}>{label}</div>
@@ -164,15 +166,15 @@ export default function BudgetStrategy() {
       <div style={{ ...s.card, marginBottom:16 }}>
         <div style={s.cardBody}>
           <div style={{ display:'flex', justifyContent:'space-between', marginBottom:8 }}>
-            <span style={{ fontSize:13, fontWeight:600 }}>Budget Utilisation</span>
-            <span style={{ fontSize:13, fontWeight:700, color:budgetColor }}>{spentPct}% used</span>
+            <span style={{ fontSize:13, fontWeight:600 }}>{L2('Budget Utilisation','预算使用率')}</span>
+            <span style={{ fontSize:13, fontWeight:700, color:budgetColor }}>{spentPct}% {L2('used','已用')}</span>
           </div>
           <div style={{ height:14, background:'var(--surface2)', borderRadius:7, overflow:'hidden' }}>
             <div style={{ width:spentPct+'%', height:'100%', background:budgetColor, borderRadius:7, transition:'width .5s' }} />
           </div>
           <div style={{ display:'flex', justifyContent:'space-between', fontSize:11, color:'var(--muted)', marginTop:6 }}>
             <span>{CURRENCY_SYMBOL[currency]} 0</span>
-            <span>{fmt(totalBudget)} total budget</span>
+            <span>{fmt(totalBudget)} {L2('total budget','总预算')}</span>
           </div>
         </div>
       </div>
@@ -180,11 +182,11 @@ export default function BudgetStrategy() {
       <div style={{ ...s.grid2, marginBottom:16 }}>
         {/* Budget by tier */}
         <div style={s.card}>
-          <div style={s.cardHdr}>💎 Budget by Tier</div>
+          <div style={s.cardHdr}>💎 {L2('Budget by Tier','按等级预算')}</div>
           <div style={s.cardBody}>
             {editing && (
               <div style={{ marginBottom:16, padding:'12px 14px', background:'rgba(88,166,255,.08)', border:'1px solid rgba(88,166,255,.2)', borderRadius:8 }}>
-                <div style={{ fontSize:11, color:'var(--muted)', marginBottom:10 }}>Set monthly budget per tier ({CURRENCY_SYMBOL[currency]})</div>
+                <div style={{ fontSize:11, color:'var(--muted)', marginBottom:10 }}>{L2('Set monthly budget per tier','设置各等级每月预算')} ({CURRENCY_SYMBOL[currency]})</div>
                 <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:10 }}>
                   {['BLACK','DIAMOND','PLATINUM','GOLD','SILVER','BRONZE'].map(tier => (
                     <div key={tier}>
@@ -195,7 +197,7 @@ export default function BudgetStrategy() {
                   ))}
                 </div>
                 <div>
-                  <div style={s.flbl}>Total Monthly Budget ({CURRENCY_SYMBOL[currency]})</div>
+                  <div style={s.flbl}>{L2('Total Monthly Budget','每月总预算')} ({CURRENCY_SYMBOL[currency]})</div>
                   <input type="number" style={s.input} value={editB.total||''}
                     onChange={e=>setEditB({...editB,total:parseFloat(e.target.value)||0})} />
                 </div>
@@ -219,8 +221,8 @@ export default function BudgetStrategy() {
                     <div style={{ width:p+'%', height:'100%', background:color, borderRadius:3 }} />
                   </div>
                   <div style={{ display:'flex', justifyContent:'space-between', fontSize:11, color:'var(--muted)', marginTop:2 }}>
-                    <span>{tierStats[tier]?.count||0} bonuses</span>
-                    <span>{p}% used</span>
+                    <span>{tierStats[tier]?.count||0} {L2('bonuses','笔奖金')}</span>
+                    <span>{p}% {L2('used','已用')}</span>
                   </div>
                 </div>
               )
@@ -230,14 +232,14 @@ export default function BudgetStrategy() {
 
         {/* Bonus log */}
         <div style={s.card}>
-          <div style={s.cardHdr}>📋 Bonus Log — {MONTHS[month]} {year}
+          <div style={s.cardHdr}>📋 {L2('Bonus Log','奖金记录')} — {MN[month]} {year}
             <span style={{fontSize:11,fontWeight:400,color:'var(--muted)',display:'block',marginTop:2}}>
-              Auto-synced from Contact Log — no need to record separately
+              {L2('Auto-synced from Contact Log — no need to record separately','自动从联系记录同步 — 无需另行记录')}
             </span>
           </div>
           <div style={{ maxHeight:380, overflowY:'auto' }}>
             {loading ? (
-              <div style={{ padding:20, textAlign:'center', color:'var(--muted)' }}>Loading...</div>
+              <div style={{ padding:20, textAlign:'center', color:'var(--muted)' }}>{L2('Loading...','载入中...')}</div>
             ) : logs.length === 0 ? (
               <div style={{ padding:20, textAlign:'center', color:'var(--muted)', fontSize:13 }}>{t('budgetStrategy.noData')}</div>
             ) : (
@@ -245,10 +247,10 @@ export default function BudgetStrategy() {
                 <thead>
                   <tr>
                     <th style={s.th}>VIP</th>
-                    <th style={s.th}>Tier</th>
-                    <th style={s.th}>Amount</th>
-                    <th style={s.th}>Type</th>
-                    <th style={s.th}>Host</th>
+                    <th style={s.th}>{L2('Tier','等级')}</th>
+                    <th style={s.th}>{L2('Amount','金额')}</th>
+                    <th style={s.th}>{L2('Type','类型')}</th>
+                    <th style={s.th}>{L2('Host','负责人')}</th>
                   </tr>
                 </thead>
                 <tbody>

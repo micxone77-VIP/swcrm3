@@ -11,6 +11,8 @@ const MONTHS     = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct',
 // department_expenses.category — they intentionally stay in their original form
 // regardless of the language toggle, so existing records keep matching correctly.
 const CATEGORIES = ['Gold Bar', 'Bonus 红包', 'Cash Voucher', 'Concert/Event Ticket', 'Full Reward 1K', 'SG Deposit Privilege', 'Daily Reward', 'Service Fee', 'Other']
+const CATEGORY_ZH = { 'Gold Bar':'金条', 'Bonus 红包':'奖金红包', 'Cash Voucher':'现金券', 'Concert/Event Ticket':'演唱会/活动门票', 'Full Reward 1K':'满额奖励 1K', 'SG Deposit Privilege':'SG 存款特权', 'Daily Reward':'每日奖励', 'Service Fee':'服务费', 'Other':'其他' }
+const catLabel = (c, lang) => (lang === 'zh' ? (CATEGORY_ZH[c] || c) : c)
 const PLATFORMS  = ['MY', 'SG', 'KH', 'BOTH']
 const EXP_TYPES  = ['online', 'offline']
 const CURRENCIES = ['MYR', 'SGD', 'USD', 'KHUSD']
@@ -35,9 +37,10 @@ const currentYearMonth = () => {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`
 }
 
-const fmtMonthLabel = (m) => {
+const fmtMonthLabel = (m, lang) => {
   if (!m) return ''
   const [y, mo] = m.split('-')
+  if (lang === 'zh') return `${y}年${parseInt(mo,10)}月`
   return `${MONTHS[parseInt(mo,10)-1]} ${y}`
 }
 
@@ -76,7 +79,8 @@ const TYPE_COLOR = { online:'#58a6ff', offline:'#cd7f32' }
 
 export default function ExpenseTracker() {
   const { profile } = useAuth()
-  const { t } = useLanguage()
+  const { t, lang } = useLanguage()
+  const L2 = (en, zh) => (lang === 'zh' ? zh : en)
   const navigate = useNavigate()
   const isAdmin = profile?.role === 'admin'
 
@@ -189,8 +193,8 @@ export default function ExpenseTracker() {
     { key:'MY-offline', label:t('expenseTracker.sectionMyOffline'), platform:'MY', type:'offline', items:myOffline, total:myOfflineTotal, currency:'MYR',   color:'#58a6ff' },
     { key:'SG-online',  label:t('expenseTracker.sectionSgOnline'),  platform:'SG', type:'online',  items:sgOnline,  total:sgOnlineTotal,  currency:'SGD',   color:'#f59e0b' },
     { key:'SG-offline', label:t('expenseTracker.sectionSgOffline'), platform:'SG', type:'offline', items:sgOffline, total:sgOfflineTotal, currency:'SGD',   color:'#b9f2ff' },
-    { key:'KH-online',  label:'🇰🇭 Cambodia — Online',               platform:'KH', type:'online',  items:khOnline,  total:khOnlineTotal,  currency:'KHUSD', color:'#e879f9' },
-    { key:'KH-offline', label:'🇰🇭 Cambodia — Offline',              platform:'KH', type:'offline', items:khOffline, total:khOfflineTotal, currency:'KHUSD', color:'#fb923c' },
+    { key:'KH-online',  label:L2('🇰🇭 Cambodia — Online','🇰🇭 柬埔寨 — 线上'),               platform:'KH', type:'online',  items:khOnline,  total:khOnlineTotal,  currency:'KHUSD', color:'#e879f9' },
+    { key:'KH-offline', label:L2('🇰🇭 Cambodia — Offline','🇰🇭 柬埔寨 — 线下'),              platform:'KH', type:'offline', items:khOffline, total:khOfflineTotal, currency:'KHUSD', color:'#fb923c' },
   ]
 
   return (
@@ -199,7 +203,7 @@ export default function ExpenseTracker() {
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:4, flexWrap:'wrap', gap:12 }}>
         <div>
           <div style={s.title}>💼 {t('expenseTracker.pageTitle')}</div>
-          <div style={s.sub}>Department Expense Tracker — {fmtMonthLabel(month)}</div>
+          <div style={s.sub}>{L2('Department Expense Tracker','部门开支追踪')} — {fmtMonthLabel(month, lang)}</div>
         </div>
         <div style={{ display:'flex', gap:8, alignItems:'center' }}>
           <input type="month" value={month} onChange={e => setMonth(e.target.value)}
@@ -225,7 +229,7 @@ export default function ExpenseTracker() {
           <div style={{ fontSize:11, color:'var(--muted)' }}>{t('expenseTracker.online')} {fmt(sgOnlineTotal,'SGD')} · {t('expenseTracker.offline')} {fmt(sgOfflineTotal,'SGD')}</div>
         </div>
         <div style={s.statCard}>
-          <div style={s.lbl}>🇰🇭 KH Total</div>
+          <div style={s.lbl}>🇰🇭 {L2('KH Total','KH 总计')}</div>
           <div style={{ fontSize:22, fontWeight:800, color:'#e879f9' }}>{fmt(khTotal,'KHUSD')}</div>
           <div style={{ fontSize:11, color:'var(--muted)' }}>{t('expenseTracker.online')} {fmt(khOnlineTotal,'KHUSD')} · {t('expenseTracker.offline')} {fmt(khOfflineTotal,'KHUSD')}</div>
         </div>
@@ -250,12 +254,12 @@ export default function ExpenseTracker() {
           <div style={{ fontSize:11, color:'var(--muted)' }}>{t('expenseTracker.itemsCount', { n: sgOffline.length })}</div>
         </div>
         <div style={s.statCard}>
-          <div style={s.lbl}>🇰🇭 KH Online</div>
+          <div style={s.lbl}>🇰🇭 {L2('KH Online','KH 线上')}</div>
           <div style={{ fontSize:20, fontWeight:700, color:'#e879f9' }}>{fmt(khOnlineTotal,'KHUSD')}</div>
           <div style={{ fontSize:11, color:'var(--muted)' }}>{t('expenseTracker.itemsCount', { n: khOnline.length })}</div>
         </div>
         <div style={s.statCard}>
-          <div style={s.lbl}>🇰🇭 KH Offline</div>
+          <div style={s.lbl}>🇰🇭 {L2('KH Offline','KH 线下')}</div>
           <div style={{ fontSize:20, fontWeight:700, color:'#fb923c' }}>{fmt(khOfflineTotal,'KHUSD')}</div>
           <div style={{ fontSize:11, color:'var(--muted)' }}>{t('expenseTracker.itemsCount', { n: khOffline.length })}</div>
         </div>
@@ -272,7 +276,7 @@ export default function ExpenseTracker() {
               <div>
                 <div style={s.lbl}>{t('expenseTracker.category')}</div>
                 <select style={s.sel} value={form.category} onChange={e => setForm({...form, category:e.target.value})}>
-                  {CATEGORIES.map(c => <option key={c}>{c}</option>)}
+                  {CATEGORIES.map(c => <option key={c} value={c}>{catLabel(c, lang)}</option>)}
                 </select>
               </div>
               <div>
@@ -289,7 +293,7 @@ export default function ExpenseTracker() {
                   else if (p === 'KH') currency = 'KHUSD'
                   setForm({...form, platform:p, currency})
                 }}>
-                  {PLATFORMS.map(p => <option key={p}>{p}</option>)}
+                  {PLATFORMS.map(p => <option key={p} value={p}>{p === 'BOTH' ? L2('BOTH','两者') : p}</option>)}
                 </select>
               </div>
               <div>
@@ -324,12 +328,12 @@ export default function ExpenseTracker() {
             {/* VIP Username — full-width row below the grid */}
             <div style={{ marginBottom:14 }}>
               <div style={{ ...s.lbl, display:'flex', alignItems:'center', gap:6 }}>
-                <span>VIP Username</span>
-                <span style={{ fontSize:10, background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:4, padding:'1px 6px', color:'var(--muted)' }}>Optional — link to VIP 360</span>
+                <span>{L2('VIP Username','VIP 用户名')}</span>
+                <span style={{ fontSize:10, background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:4, padding:'1px 6px', color:'var(--muted)' }}>{L2('Optional — link to VIP 360','可选 — 链接至 VIP 360')}</span>
               </div>
               <input style={{ ...s.input, maxWidth:320 }} value={form.vip_username}
                 onChange={e => setForm({...form, vip_username:e.target.value})}
-                placeholder="e.g. jacky88, mralien23" />
+                placeholder={L2('e.g. jacky88, mralien23','例如 jacky88, mralien23')} />
             </div>
             <div style={{ display:'flex', gap:8 }}>
               <button style={s.btn('var(--accent)', !form.item_name.trim()||!form.amount)} disabled={saving||!form.item_name.trim()||!form.amount} onClick={handleSave}>
@@ -346,7 +350,7 @@ export default function ExpenseTracker() {
         <div style={{ textAlign:'center', padding:40, color:'var(--muted)' }}>{t('common.loading')}</div>
       ) : expenses.length === 0 ? (
         <div style={{ ...s.card, padding:40, textAlign:'center', color:'var(--muted)' }}>
-          {t('expenseTracker.noExpensesYet', { month: fmtMonthLabel(month) })}
+          {t('expenseTracker.noExpensesYet', { month: fmtMonthLabel(month, lang) })}
           {isAdmin && <span>{t('expenseTracker.clickAddHint')}</span>}
         </div>
       ) : (
@@ -366,7 +370,7 @@ export default function ExpenseTracker() {
                     <th style={s.th}>{t('expenseTracker.colItemName')}</th>
                     <th style={s.th}>{t('common.currency')}</th>
                     <th style={s.th}>{t('expenseTracker.colAmount')}</th>
-                    <th style={s.th}>VIP Player</th>
+                    <th style={s.th}>{L2('VIP Player','VIP 玩家')}</th>
                     <th style={s.th}>{t('expenseTracker.colLinkedCampaign')}</th>
                     <th style={s.th}>{t('common.notes')}</th>
                     {isAdmin && <th style={s.th}>{t('common.actions')}</th>}
@@ -377,12 +381,12 @@ export default function ExpenseTracker() {
                     <tr key={exp.id}
                       onMouseEnter={e => e.currentTarget.style.background='var(--surface2)'}
                       onMouseLeave={e => e.currentTarget.style.background='transparent'}>
-                      <td style={s.td}><span style={s.tag('#8b949e')}>{exp.category}</span></td>
+                      <td style={s.td}><span style={s.tag('#8b949e')}>{catLabel(exp.category, lang)}</span></td>
                       <td style={{ ...s.td, fontWeight:600 }}>
                         {exp.item_name}
                         {exp.platform === 'BOTH' && (
                           <span style={{ marginLeft:6, fontSize:10, color:'#8b5cf6', background:'#8b5cf622', borderRadius:4, padding:'1px 5px', fontWeight:600 }}>
-                            Both
+                            {L2('Both','两者')}
                           </span>
                         )}
                       </td>
@@ -430,21 +434,21 @@ export default function ExpenseTracker() {
           <div style={{ ...s.card, border:'2px solid var(--accent)' }}>
             <div style={{ padding:'16px 20px' }}>
               <div style={{ fontSize:13, fontWeight:700, color:'var(--muted)', marginBottom:12, textTransform:'uppercase', letterSpacing:'.5px' }}>
-                {t('expenseTracker.grandTotalTitle', { month: fmtMonthLabel(month) })}
+                {t('expenseTracker.grandTotalTitle', { month: fmtMonthLabel(month, lang) })}
               </div>
               <div style={{ display:'flex', gap:24, flexWrap:'wrap', alignItems:'flex-end' }}>
                 <div>
-                  <div style={{ fontSize:11, color:'var(--muted)', marginBottom:2 }}>TOTAL (MYR)</div>
+                  <div style={{ fontSize:11, color:'var(--muted)', marginBottom:2 }}>{L2('TOTAL','总计')} (MYR)</div>
                   <div style={{ fontSize:28, fontWeight:800, color:'#3fb950' }}>{fmt(myTotal,'MYR')}</div>
                 </div>
                 <div style={{ fontSize:22, color:'var(--muted)', alignSelf:'center' }}>+</div>
                 <div>
-                  <div style={{ fontSize:11, color:'var(--muted)', marginBottom:2 }}>TOTAL (SGD)</div>
+                  <div style={{ fontSize:11, color:'var(--muted)', marginBottom:2 }}>{L2('TOTAL','总计')} (SGD)</div>
                   <div style={{ fontSize:28, fontWeight:800, color:'#f59e0b' }}>{fmt(sgTotal,'SGD')}</div>
                 </div>
                 <div style={{ fontSize:22, color:'var(--muted)', alignSelf:'center' }}>+</div>
                 <div>
-                  <div style={{ fontSize:11, color:'var(--muted)', marginBottom:2 }}>TOTAL (KHUSD)</div>
+                  <div style={{ fontSize:11, color:'var(--muted)', marginBottom:2 }}>{L2('TOTAL','总计')} (KHUSD)</div>
                   <div style={{ fontSize:28, fontWeight:800, color:'#e879f9' }}>{fmt(khTotal,'KHUSD')}</div>
                 </div>
                 <div style={{ fontSize:12, color:'var(--muted)', alignSelf:'center', maxWidth:200 }}>
@@ -452,15 +456,15 @@ export default function ExpenseTracker() {
                 </div>
               </div>
               <div style={{fontSize:11, color:'var(--muted)', marginTop:4}}>
-                ✱ MY, SG, and KH totals are in different currencies — not additive
+                {L2('✱ MY, SG, and KH totals are in different currencies — not additive','✱ MY、SG 和 KH 总计为不同货币 — 不可相加')}
               </div>
               <div style={{ marginTop:12, display:'flex', gap:16, flexWrap:'wrap', fontSize:12, color:'var(--muted)' }}>
                 <span>{t('expenseTracker.myOnlineColon')} {fmt(myOnlineTotal,'MYR')}</span>
                 <span>{t('expenseTracker.myOfflineColon')} {fmt(myOfflineTotal,'MYR')}</span>
                 <span>{t('expenseTracker.sgOnlineColon')} {fmt(sgOnlineTotal,'SGD')}</span>
                 <span>{t('expenseTracker.sgOfflineColon')} {fmt(sgOfflineTotal,'SGD')}</span>
-                <span>🇰🇭 KH Online: {fmt(khOnlineTotal,'KHUSD')}</span>
-                <span>🇰🇭 KH Offline: {fmt(khOfflineTotal,'KHUSD')}</span>
+                <span>🇰🇭 {L2('KH Online:','KH 线上：')} {fmt(khOnlineTotal,'KHUSD')}</span>
+                <span>🇰🇭 {L2('KH Offline:','KH 线下：')} {fmt(khOfflineTotal,'KHUSD')}</span>
               </div>
             </div>
           </div>

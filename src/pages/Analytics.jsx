@@ -68,7 +68,8 @@ const s = {
 
 // ── Main Component ────────────────────────────────────────────────────────────
 export default function Analytics() {
-  const { t } = useLanguage()
+  const { t, lang } = useLanguage()
+  const L2 = (en, zh) => (lang === 'zh' ? zh : en)
   const { profile } = useAuth()
   const myName = profile?.full_name || 'VIP Team'
   const [month,     setMonth]     = useUrlParam('month', currentYM())
@@ -368,8 +369,8 @@ export default function Analytics() {
           ['activity',    t('analytics.tabActivity')],
           ['issues',      t('analytics.tabIssues')],
           ['decline',     '📉 ' + t('analytics.tabDecline')],
-          ['segments',    '🧭 Deposit Segments 充值分群'],
-          ['affiliates',  '🤝 Affiliates 代理'],
+          ['segments',    L2('🧭 Deposit Segments','🧭 充值分群')],
+          ['affiliates',  L2('🤝 Affiliates','🤝 代理')],
         ].map(([id,label]) => (
           <button key={id} onClick={()=>setTab(id)} style={{
             padding:'9px 20px', borderRadius:'8px 8px 0 0',

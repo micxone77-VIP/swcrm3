@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { fetchPPTData, generateMonthlyPPT } from '../lib/pptReportGenerator'
 import { generateServiceReport } from '../lib/serviceReportGenerator'
+import { useLanguage } from '../contexts/LanguageContext'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const fmt = (n, sym = 'RM') => {
@@ -15,13 +16,13 @@ const fmt = (n, sym = 'RM') => {
 const pct = n => (n == null || isNaN(n)) ? '—' : `${Number(n).toFixed(1)}%`
 
 // Generate last 12 months options
-function getMonthOptions() {
+function getMonthOptions(lang) {
   const opts = []
   const now = new Date()
   for (let i = 0; i < 12; i++) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
     const val = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-    const label = d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+    const label = d.toLocaleDateString(lang === 'zh' ? 'zh-CN' : 'en-US', { month: 'long', year: 'numeric' })
     opts.push({ val, label })
   }
   return opts
@@ -72,7 +73,9 @@ function SlideBadge({ num, label, type }) {
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function MonthlyReportExport() {
-  const monthOptions = getMonthOptions()
+  const { lang } = useLanguage()
+  const L2 = (en, zh) => (lang === 'zh' ? zh : en)
+  const monthOptions = getMonthOptions(lang)
   const [month, setMonth] = useState(monthOptions[1]?.val || monthOptions[0]?.val) // default = last month
   const [previewData, setPreviewData] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -88,7 +91,7 @@ export default function MonthlyReportExport() {
       const d = await fetchPPTData(m, supabase)
       setPreviewData(d)
     } catch (e) {
-      setError(e.message || 'Failed to load data')
+      setError(e.message || L2('Failed to load data','载入数据失败'))
     } finally {
       setLoading(false)
     }
@@ -107,7 +110,7 @@ export default function MonthlyReportExport() {
       const fileName = await generateMonthlyPPT(month, supabase)
       setGenerated(fileName)
     } catch (e) {
-      setError(e.message || 'PPT generation failed')
+      setError(e.message || L2('PPT generation failed','PPT 生成失败'))
     } finally {
       setGenerating(false)
     }
@@ -153,10 +156,10 @@ export default function MonthlyReportExport() {
       <div style={{ marginBottom: 28 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
           <span style={{ fontSize: 24 }}>📊</span>
-          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: '#FFFFFF' }}>Monthly PPT Report</h1>
+          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: '#FFFFFF' }}>{L2('Monthly PPT Report','每月 PPT 报告')}</h1>
         </div>
         <p style={{ margin: 0, fontSize: 13, color: '#8B9BB8' }}>
-          Generate a 33-slide VIP Operations PowerPoint report for any month.
+          {L2('Generate a 33-slide VIP Operations PowerPoint report for any month.','为任意月份生成 33 页 VIP 运营 PowerPoint 报告。')}
         </p>
       </div>
 
@@ -167,7 +170,7 @@ export default function MonthlyReportExport() {
       }}>
         <div style={{ flex: 1, maxWidth: 260 }}>
           <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#8B9BB8', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-            Report Month
+            {L2('Report Month','报告月份')}
           </label>
           <select
             value={month}
@@ -197,10 +200,10 @@ export default function MonthlyReportExport() {
           {generating ? (
             <>
               <span style={{ display: 'inline-block', animation: 'spin 1s linear infinite', fontSize: 16 }}>⏳</span>
-              Generating...
+              {L2('Generating...','生成中...')}
             </>
           ) : (
-            <>⬇ Generate & Download PPT</>
+            <>{L2('⬇ Generate & Download PPT','⬇ 生成并下载 PPT')}</>
           )}
         </button>
       </div>
@@ -221,7 +224,7 @@ export default function MonthlyReportExport() {
           marginBottom: 20, padding: '12px 16px', borderRadius: 8,
           background: '#1A3D2B', border: '1px solid #3FB950', color: '#3FB950', fontSize: 13,
         }}>
-          ✅ Downloaded: <strong>{generated}</strong>
+          ✅ {L2('Downloaded:','已下载：')} <strong>{generated}</strong>
         </div>
       )}
 
@@ -229,7 +232,7 @@ export default function MonthlyReportExport() {
       {loading && (
         <div style={{ textAlign: 'center', padding: '40px 0', color: '#8B9BB8' }}>
           <div style={{ fontSize: 32, marginBottom: 10 }}>⏳</div>
-          <div style={{ fontSize: 14 }}>Loading {selectedLabel} data…</div>
+          <div style={{ fontSize: 14 }}>{L2(`Loading ${selectedLabel} data…`, `正在载入 ${selectedLabel} 数据…`)}</div>
         </div>
       )}
 
@@ -237,27 +240,27 @@ export default function MonthlyReportExport() {
       {!loading && kpis && (
         <>
           <div style={{ marginBottom: 12, fontSize: 12, fontWeight: 700, color: '#8B9BB8', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-            Data Preview — {selectedLabel}
+            {L2('Data Preview','数据预览')} — {selectedLabel}
           </div>
 
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
-            <KpiTile icon="👥" label="Active VIPs" value={kpis.activeVips.toLocaleString()} sub={`of ${kpis.allVips} total`} color="#FFFFFF" />
-            <KpiTile icon="💰" label="Total Deposit" value={fmt(kpis.totalDeposit)}
-              sub={kpis.depositChg != null ? `${kpis.depositChg >= 0 ? '▲' : '▼'} ${Math.abs(kpis.depositChg).toFixed(1)}% vs prev month` : undefined}
+            <KpiTile icon="👥" label={L2('Active VIPs','活跃 VIP')} value={kpis.activeVips.toLocaleString()} sub={L2(`of ${kpis.allVips} total`, `共 ${kpis.allVips} 名`)} color="#FFFFFF" />
+            <KpiTile icon="💰" label={L2('Total Deposit','总存款')} value={fmt(kpis.totalDeposit)}
+              sub={kpis.depositChg != null ? `${kpis.depositChg >= 0 ? '▲' : '▼'} ${Math.abs(kpis.depositChg).toFixed(1)}% ${L2('vs prev month','较上月')}` : undefined}
               color={kpis.depositChg != null ? (kpis.depositChg >= 0 ? '#3FB950' : '#F85149') : '#FFFFFF'} />
-            <KpiTile icon="📈" label="GGR (Win/Loss)" value={fmt(previewData.currRows.reduce((s, r) => s + (r.win_loss || 0), 0))}
+            <KpiTile icon="📈" label={L2('GGR (Win/Loss)','GGR（输赢）')} value={fmt(previewData.currRows.reduce((s, r) => s + (r.win_loss || 0), 0))}
               sub={kpis.holdPct != null ? `Hold% ${pct(kpis.holdPct)}` : undefined} color="#4A90E2" />
-            <KpiTile icon="🔄" label="Reactivated" value={kpis.reactivated.toLocaleString()}
-              sub={kpis.reactivationRate != null ? `Rate: ${pct(kpis.reactivationRate)}` : undefined} color="#F59E0B" />
-            <KpiTile icon="📢" label="Campaigns" value={kpis.campaigns} sub="this month" color="#4A90E2" />
-            <KpiTile icon="💳" label="Total Expenses" value={fmt(kpis.totalExp)} sub="dept. expenses" color="#D29922" />
+            <KpiTile icon="🔄" label={L2('Reactivated','已重新激活')} value={kpis.reactivated.toLocaleString()}
+              sub={kpis.reactivationRate != null ? L2(`Rate: ${pct(kpis.reactivationRate)}`, `比率：${pct(kpis.reactivationRate)}`) : undefined} color="#F59E0B" />
+            <KpiTile icon="📢" label={L2('Campaigns','活动')} value={kpis.campaigns} sub={L2('this month','本月')} color="#4A90E2" />
+            <KpiTile icon="💳" label={L2('Total Expenses','总开支')} value={fmt(kpis.totalExp)} sub={L2('dept. expenses','部门开支')} color="#D29922" />
           </div>
 
           {/* Tier breakdown */}
           {kpis.tierBreakdown.length > 0 && (
             <div style={{ marginBottom: 24 }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: '#8B9BB8', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                Tier Breakdown
+                {L2('Tier Breakdown','等级分布')}
               </div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 {kpis.tierBreakdown.map(t => {
@@ -268,7 +271,7 @@ export default function MonthlyReportExport() {
                       display: 'flex', flexDirection: 'column', gap: 3,
                     }}>
                       <span style={{ fontSize: 11, fontWeight: 700, color: tierColors[t.tier] || '#FFFFFF' }}>{t.tier}</span>
-                      <span style={{ fontSize: 13, fontWeight: 700, color: '#FFFFFF' }}>{t.count} VIPs</span>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: '#FFFFFF' }}>{t.count} {L2('VIPs','位 VIP')}</span>
                       <span style={{ fontSize: 10, color: '#8B9BB8' }}>{fmt(t.deposit)}</span>
                     </div>
                   )
@@ -280,14 +283,14 @@ export default function MonthlyReportExport() {
           {/* PPT Scope Filters */}
           <div style={{ marginBottom: 16 }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: '#8B9BB8', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              PPT Report Scope
+              {L2('PPT Report Scope','PPT 报告范围')}
             </div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <div style={{ padding: '6px 12px', borderRadius: 6, background: '#1A3D2B', border: '1px solid #3FB950', fontSize: 12, color: '#3FB950' }}>
-                ✓ Host-Assigned VIPs Only
+                ✓ {L2('Host-Assigned VIPs Only','仅限已分配负责人的 VIP')}
               </div>
               <div style={{ padding: '6px 12px', borderRadius: 6, background: '#1A3D2B', border: '1px solid #3FB950', fontSize: 12, color: '#3FB950' }}>
-                ✓ Exclusion List Removed
+                ✓ {L2('Exclusion List Removed','已移除排除名单')}
               </div>
             </div>
           </div>
@@ -295,23 +298,23 @@ export default function MonthlyReportExport() {
           {/* Data source indicators */}
           <div style={{ marginBottom: 24 }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: '#8B9BB8', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              Data Sources
+              {L2('Data Sources','数据来源')}
             </div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <div style={{ padding: '6px 12px', borderRadius: 6, background: '#1A3D2B', border: '1px solid #3FB950', fontSize: 12, color: '#3FB950' }}>
-                ✓ VIP Monthly Totals ({previewData.currRows.length} records)
+                ✓ {L2('VIP Monthly Totals','VIP 每月总计')} ({previewData.currRows.length} {L2('records','条记录')})
               </div>
               <div style={{ padding: '6px 12px', borderRadius: 6, background: previewData.reactLogs.length > 0 ? '#1A3D2B' : '#1A2A3D', border: `1px solid ${previewData.reactLogs.length > 0 ? '#3FB950' : '#4A90E2'}`, fontSize: 12, color: previewData.reactLogs.length > 0 ? '#3FB950' : '#4A90E2' }}>
-                {previewData.reactLogs.length > 0 ? '✓' : '○'} Reactivation Logs ({previewData.reactLogs.length})
+                {previewData.reactLogs.length > 0 ? '✓' : '○'} {L2('Reactivation Logs','重新激活记录')} ({previewData.reactLogs.length})
               </div>
               <div style={{ padding: '6px 12px', borderRadius: 6, background: previewData.dailySnaps.length > 0 ? '#1A3D2B' : '#1A2A3D', border: `1px solid ${previewData.dailySnaps.length > 0 ? '#3FB950' : '#4A90E2'}`, fontSize: 12, color: previewData.dailySnaps.length > 0 ? '#3FB950' : '#4A90E2' }}>
-                {previewData.dailySnaps.length > 0 ? '✓' : '○'} Daily Snapshots ({previewData.dailySnaps.length})
+                {previewData.dailySnaps.length > 0 ? '✓' : '○'} {L2('Daily Snapshots','每日快照')} ({previewData.dailySnaps.length})
               </div>
               <div style={{ padding: '6px 12px', borderRadius: 6, background: previewData.campaigns.length > 0 ? '#1A3D2B' : '#1A2A3D', border: `1px solid ${previewData.campaigns.length > 0 ? '#3FB950' : '#4A90E2'}`, fontSize: 12, color: previewData.campaigns.length > 0 ? '#3FB950' : '#4A90E2' }}>
-                {previewData.campaigns.length > 0 ? '✓' : '○'} Campaigns ({previewData.campaigns.length})
+                {previewData.campaigns.length > 0 ? '✓' : '○'} {L2('Campaigns','活动')} ({previewData.campaigns.length})
               </div>
               <div style={{ padding: '6px 12px', borderRadius: 6, background: previewData.expenses.length > 0 ? '#1A3D2B' : '#1A2A3D', border: `1px solid ${previewData.expenses.length > 0 ? '#3FB950' : '#4A90E2'}`, fontSize: 12, color: previewData.expenses.length > 0 ? '#3FB950' : '#4A90E2' }}>
-                {previewData.expenses.length > 0 ? '✓' : '○'} Expenses ({previewData.expenses.length} items)
+                {previewData.expenses.length > 0 ? '✓' : '○'} {L2('Expenses','开支')} ({previewData.expenses.length} {L2('items','项')})
               </div>
             </div>
           </div>
@@ -320,44 +323,44 @@ export default function MonthlyReportExport() {
 
       {/* ─── Slide coverage map ─── */}
       <div style={{ background: '#162040', border: '1px solid #2A3F6F', borderRadius: 10, padding: '18px 20px', marginBottom: 24 }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: '#FFFFFF', marginBottom: 4 }}>Slide Coverage — 33 Slides</div>
+        <div style={{ fontSize: 13, fontWeight: 700, color: '#FFFFFF', marginBottom: 4 }}>{L2('Slide Coverage — 33 Slides','幻灯片覆盖 — 33 页')}</div>
         <div style={{ fontSize: 12, color: '#8B9BB8', marginBottom: 14 }}>
-          <span style={{ color: '#3FB950', marginRight: 16 }}>● Auto (26)</span>
-          <span style={{ color: '#D29922', marginRight: 16 }}>● Approximate (3)</span>
-          <span style={{ color: '#4A90E2' }}>● Placeholder (4)</span>
+          <span style={{ color: '#3FB950', marginRight: 16 }}>● {L2('Auto','自动')} (26)</span>
+          <span style={{ color: '#D29922', marginRight: 16 }}>● {L2('Approximate','近似')} (3)</span>
+          <span style={{ color: '#4A90E2' }}>● {L2('Placeholder','占位')} (4)</span>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
           {[
-            { num: 1,  label: 'Cover Page', type: 'auto' },
-            { num: 2,  label: 'Diamond + Platinum VIP Total KPIs', type: 'auto' },
-            { num: 3,  label: 'Tier Active Rate Overview', type: 'auto' },
-            { num: 4,  label: '3-Month Retention Trend', type: 'auto' },
-            { num: 5,  label: 'Deposit Behavior Quality', type: 'approx' },
-            { num: 6,  label: 'Top 10 Deposit Drop', type: 'auto' },
-            { num: 7,  label: 'MoM Active Rate Comparison', type: 'auto' },
-            { num: 8,  label: 'Behavior Quadrant', type: 'approx' },
-            { num: '9-10', label: 'Diamond VIP Detail', type: 'auto' },
-            { num: 11, label: 'Diamond Performance Table', type: 'auto' },
-            { num: 12, label: 'Deposit Surge Analysis', type: 'auto' },
-            { num: 13, label: 'Priority Retention List', type: 'auto' },
-            { num: 14, label: 'Platinum Performance Table', type: 'auto' },
-            { num: 15, label: 'Department Expenses Summary', type: 'auto' },
-            { num: '16-17', label: 'Campaign Report', type: 'auto' },
-            { num: '18-19', label: 'Festival Campaign ROI', type: 'auto' },
-            { num: 20, label: 'Monthly Retrospective', type: 'placeholder' },
-            { num: 21, label: 'Churn Rule Calibration', type: 'auto' },
-            { num: 22, label: 'Retention Analysis Detail', type: 'auto' },
-            { num: 23, label: 'Score Divergence', type: 'placeholder' },
-            { num: 24, label: 'GGR Concentration (Pareto)', type: 'auto' },
-            { num: 25, label: '5-Period Intra-Month Trend', type: 'auto' },
-            { num: 26, label: 'Action Plan', type: 'auto' },
-            { num: 27, label: 'Strategic Direction', type: 'placeholder' },
-            { num: 28, label: 'Upcoming Campaigns', type: 'auto' },
-            { num: 29, label: 'Hold% Analysis by Tier', type: 'auto' },
-            { num: 30, label: 'Expense Report by Platform', type: 'auto' },
-            { num: 31, label: 'Next Month Budget', type: 'placeholder' },
-            { num: 32, label: '3-Month Member Health Summary', type: 'auto' },
-            { num: 33, label: 'Closing Page', type: 'auto' },
+            { num: 1,  label: 'Cover Page', zh: '封面', type: 'auto' },
+            { num: 2,  label: 'Diamond + Platinum VIP Total KPIs', zh: '钻石 + 白金 VIP 总 KPI', type: 'auto' },
+            { num: 3,  label: 'Tier Active Rate Overview', zh: '等级活跃率概览', type: 'auto' },
+            { num: 4,  label: '3-Month Retention Trend', zh: '3个月留存趋势', type: 'auto' },
+            { num: 5,  label: 'Deposit Behavior Quality', zh: '存款行为质量', type: 'approx' },
+            { num: 6,  label: 'Top 10 Deposit Drop', zh: '存款下降前10名', type: 'auto' },
+            { num: 7,  label: 'MoM Active Rate Comparison', zh: '环比活跃率对比', type: 'auto' },
+            { num: 8,  label: 'Behavior Quadrant', zh: '行为象限', type: 'approx' },
+            { num: '9-10', label: 'Diamond VIP Detail', zh: '钻石 VIP 详情', type: 'auto' },
+            { num: 11, label: 'Diamond Performance Table', zh: '钻石表现表', type: 'auto' },
+            { num: 12, label: 'Deposit Surge Analysis', zh: '存款激增分析', type: 'auto' },
+            { num: 13, label: 'Priority Retention List', zh: '优先留存名单', type: 'auto' },
+            { num: 14, label: 'Platinum Performance Table', zh: '白金表现表', type: 'auto' },
+            { num: 15, label: 'Department Expenses Summary', zh: '部门开支汇总', type: 'auto' },
+            { num: '16-17', label: 'Campaign Report', zh: '活动报告', type: 'auto' },
+            { num: '18-19', label: 'Festival Campaign ROI', zh: '节日活动投资回报', type: 'auto' },
+            { num: 20, label: 'Monthly Retrospective', zh: '每月回顾', type: 'placeholder' },
+            { num: 21, label: 'Churn Rule Calibration', zh: '流失规则校准', type: 'auto' },
+            { num: 22, label: 'Retention Analysis Detail', zh: '留存分析详情', type: 'auto' },
+            { num: 23, label: 'Score Divergence', zh: '评分偏差', type: 'placeholder' },
+            { num: 24, label: 'GGR Concentration (Pareto)', zh: 'GGR 集中度（帕累托）', type: 'auto' },
+            { num: 25, label: '5-Period Intra-Month Trend', zh: '月内5期趋势', type: 'auto' },
+            { num: 26, label: 'Action Plan', zh: '行动计划', type: 'auto' },
+            { num: 27, label: 'Strategic Direction', zh: '战略方向', type: 'placeholder' },
+            { num: 28, label: 'Upcoming Campaigns', zh: '即将进行的活动', type: 'auto' },
+            { num: 29, label: 'Hold% Analysis by Tier', zh: '按等级 Hold% 分析', type: 'auto' },
+            { num: 30, label: 'Expense Report by Platform', zh: '按平台开支报告', type: 'auto' },
+            { num: 31, label: 'Next Month Budget', zh: '下月预算', type: 'placeholder' },
+            { num: 32, label: '3-Month Member Health Summary', zh: '3个月会员健康汇总', type: 'auto' },
+            { num: 33, label: 'Closing Page', zh: '结束页', type: 'auto' },
           ].map((s, i) => (
             <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <div style={{ width: 32, textAlign: 'right', fontSize: 10, color: '#4A90E2', fontWeight: 700, flexShrink: 0 }}>
@@ -370,13 +373,13 @@ export default function MonthlyReportExport() {
                 color: '#CBD5E1',
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between',
               }}>
-                <span>{s.label}</span>
+                <span>{lang === 'zh' ? (s.zh || s.label) : s.label}</span>
                 <span style={{
                   fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 4,
                   color: s.type === 'auto' ? '#3FB950' : s.type === 'approx' ? '#D29922' : '#4A90E2',
                   background: s.type === 'auto' ? '#3FB95022' : s.type === 'approx' ? '#D2992222' : '#4A90E222',
                 }}>
-                  {s.type === 'auto' ? 'AUTO' : s.type === 'approx' ? 'APPROX' : 'PLACEHOLDER'}
+                  {s.type === 'auto' ? L2('AUTO','自动') : s.type === 'approx' ? L2('APPROX','近似') : L2('PLACEHOLDER','占位')}
                 </span>
               </div>
             </div>
@@ -400,9 +403,9 @@ export default function MonthlyReportExport() {
           }}
         >
           {generating ? (
-            <>⏳ Generating PPT — please wait…</>
+            <>{L2('⏳ Generating PPT — please wait…','⏳ 正在生成 PPT — 请稍候…')}</>
           ) : (
-            <>⬇ Generate & Download {selectedLabel} Report (.pptx)</>
+            <>{L2(`⬇ Generate & Download ${selectedLabel} Report (.pptx)`, `⬇ 生成并下载 ${selectedLabel} 报告 (.pptx)`)}</>
           )}
         </button>
       </div>
@@ -419,7 +422,9 @@ export default function MonthlyReportExport() {
 
 // ─── 3-Month Service Report ───────────────────────────────────────────────────
 function ServiceReportSection() {
-  const monthOptions = getMonthOptions()
+  const { lang } = useLanguage()
+  const L2 = (en, zh) => (lang === 'zh' ? zh : en)
+  const monthOptions = getMonthOptions(lang)
   // Default: most recent month
   const [endMonth, setEndMonth] = useState(monthOptions[0].val)
   const [busy, setBusy] = useState(false)
@@ -435,7 +440,7 @@ function ServiceReportSection() {
   }
   function toLabel(ym) {
     const [y, m] = ym.split('-').map(Number)
-    return new Date(y, m - 1, 1).toLocaleString('en-US', { month: 'short', year: 'numeric' })
+    return new Date(y, m - 1, 1).toLocaleString(lang === 'zh' ? 'zh-CN' : 'en-US', { month: 'short', year: 'numeric' })
   }
   const m0 = shiftMonth(endMonth, -2)
   const m1 = shiftMonth(endMonth, -1)
@@ -448,7 +453,7 @@ function ServiceReportSection() {
     try {
       await generateServiceReport(endMonth, supabase)
     } catch (e) {
-      setError(e.message || 'Failed to generate report')
+      setError(e.message || L2('Failed to generate report','生成报告失败'))
     } finally {
       setBusy(false)
     }
@@ -467,10 +472,10 @@ function ServiceReportSection() {
         <span style={{ fontSize: 24 }}>📋</span>
         <div>
           <div style={{ fontSize: 18, fontWeight: 700, color: '#E2E8F0' }}>
-            3-Month VIP Service Report
+            {L2('3-Month VIP Service Report','3个月 VIP 服务报告')}
           </div>
           <div style={{ fontSize: 12, color: '#8B9BB8', marginTop: 2 }}>
-            Diamond &amp; Platinum contact coverage — exported as Excel (.xlsx)
+            {L2('Diamond & Platinum contact coverage — exported as Excel (.xlsx)','钻石与白金联系覆盖率 — 导出为 Excel (.xlsx)')}
           </div>
         </div>
       </div>
@@ -480,15 +485,14 @@ function ServiceReportSection() {
         background: '#162040', border: '1px solid #2A3F6F', borderRadius: 8,
         padding: '12px 16px', marginBottom: 22, fontSize: 13, color: '#94A3B8', lineHeight: 1.6,
       }}>
-        Shows every Diamond and Platinum VIP with a ✓ / ✗ for each of the 3 selected months.
-        Use it to track who has and hasn't been contacted, and to report coverage to management.
+        {L2("Shows every Diamond and Platinum VIP with a ✓ / ✗ for each of the 3 selected months. Use it to track who has and hasn't been contacted, and to report coverage to management.", '显示所有钻石和白金 VIP 在所选 3 个月中每月的 ✓ / ✗。用于追踪哪些玩家已联系或未联系，并向管理层汇报覆盖率。')}
       </div>
 
       {/* Controls row */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap', marginBottom: 20 }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           <label style={{ fontSize: 11, fontWeight: 700, color: '#8B9BB8', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-            End Month (most recent)
+            {L2('End Month (most recent)','结束月份（最近）')}
           </label>
           <select
             value={endMonth}
@@ -551,15 +555,15 @@ function ServiceReportSection() {
         {busy ? (
           <>
             <span style={{ display: 'inline-block', animation: 'spin 1s linear infinite' }}>⏳</span>
-            Fetching data &amp; building Excel…
+            {L2('Fetching data & building Excel…','正在获取数据并生成 Excel…')}
           </>
         ) : (
-          <>⬇ Generate Service Report — {rangeLabel} (.xlsx)</>
+          <>{L2('⬇ Generate Service Report','⬇ 生成服务报告')} — {rangeLabel} (.xlsx)</>
         )}
       </button>
 
       <div style={{ marginTop: 14, fontSize: 11, color: '#475569' }}>
-        The file downloads directly in your browser. 3 sheets: Overview, Diamond VIPs, Platinum VIPs.
+        {L2('The file downloads directly in your browser. 3 sheets: Overview, Diamond VIPs, Platinum VIPs.','文件将直接在浏览器中下载。包含 3 个工作表：Overview、Diamond VIPs、Platinum VIPs。')}
       </div>
     </div>
   )

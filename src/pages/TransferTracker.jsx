@@ -8,6 +8,7 @@ import { formatMoney } from '../lib/format'
 import { CURRENCY_LIST_MAIN } from '../lib/constants'
 
 const COST_TYPES = ['Cash Voucher', 'Bonus', 'Free Credit', 'Other']
+const COST_TYPE_ZH = { 'Cash Voucher':'现金券', 'Bonus':'奖金', 'Free Credit':'免费积分', 'Other':'其他' }
 
 const s = {
   page:    { padding: '28px 32px', maxWidth: 1400, margin: '0 auto' },
@@ -38,6 +39,8 @@ function PnlBadge({ value, currency = 'MYR' }) {
 
 // ── CSV Dropzone ──────────────────────────────────────────────────────────────
 function CsvDropzone({ onFile, file }) {
+  const { lang } = useLanguage()
+  const L2 = (en, zh) => (lang === 'zh' ? zh : en)
   const [dragging, setDragging] = useState(false)
   const inputRef = useRef()
   const handleDrop = useCallback((e) => {
@@ -52,7 +55,7 @@ function CsvDropzone({ onFile, file }) {
       {file ? (
         <div style={{ fontSize: 12, color: 'var(--accent)', fontWeight: 600 }}>📄 {file.name} ({(file.size/1024).toFixed(0)} KB)</div>
       ) : (
-        <div style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center' }}>Drop CSV or <span style={{ color: 'var(--accent)' }}>click to browse</span></div>
+        <div style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center' }}>{L2('Drop CSV or ','拖放 CSV 或 ')}<span style={{ color: 'var(--accent)' }}>{L2('click to browse','点击浏览')}</span></div>
       )}
     </div>
   )
@@ -60,7 +63,9 @@ function CsvDropzone({ onFile, file }) {
 
 export default function TransferTracker() {
   const navigate = useNavigate()
-  const { t } = useLanguage()
+  const { t, lang } = useLanguage()
+  const L2 = (en, zh) => (lang === 'zh' ? zh : en)
+  const costTypeLabel = (c) => (lang === 'zh' ? (COST_TYPE_ZH[c] || c) : c)
   const [players,   setPlayers]   = useState([])
   const [snapshots, setSnapshots] = useState({}) // {username: [snapshots]}
   const [costs,     setCosts]     = useState({})  // {username: [costs]}
@@ -159,10 +164,10 @@ export default function TransferTracker() {
   async function handleCsvImport() {
     if (!csvFile) return
     setCsvLoading(true)
-    setCsvMsg('Reading CSV…')
+    setCsvMsg(L2('Reading CSV…','正在读取 CSV…'))
     const text = await csvFile.text()
     const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
-    if (lines.length < 2) { setCsvMsg('No data found'); setCsvLoading(false); return }
+    if (lines.length < 2) { setCsvMsg(L2('No data found','未找到数据')); setCsvLoading(false); return }
 
     const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g,'').toLowerCase())
     const getCol  = (row, ...names) => {
@@ -193,9 +198,9 @@ export default function TransferTracker() {
         win_loss:         parseFloat(getCol(vals, 'win', 'winloss', 'win loss', 'net')) || 0,
       })
       imported++
-      if (i % 10 === 0) setCsvMsg(`Importing… ${imported} done`)
+      if (i % 10 === 0) setCsvMsg(L2(`Importing… ${imported} done`, `导入中… 已完成 ${imported}`))
     }
-    setCsvMsg(`✅ Done — ${imported} imported, ${skipped} skipped (not in tracker)`)
+    setCsvMsg(L2(`✅ Done — ${imported} imported, ${skipped} skipped (not in tracker)`, `✅ 完成 — 已导入 ${imported}，跳过 ${skipped}（不在追踪列表中）`))
     await loadAll()
     setCsvLoading(false)
     setCsvFile(null)
@@ -224,15 +229,15 @@ export default function TransferTracker() {
   const profitCount   = players.filter(p => (calcPnl(p.username)||0) > 0).length
   const lossCount     = players.filter(p => (calcPnl(p.username)||0) < 0).length
 
-  if (loading) return <div style={{ padding: 40, color: 'var(--muted)', textAlign: 'center' }}>Loading…</div>
+  if (loading) return <div style={{ padding: 40, color: 'var(--muted)', textAlign: 'center' }}>{L2('Loading…','载入中…')}</div>
 
   return (
     <div style={s.page}>
       {/* Header */}
       <div style={s.hdr}>
         <div>
-          <div style={s.title}>🔄 Transfer Player Tracker</div>
-          <div style={s.sub}>Track players transferred from other platforms · P&amp;L analysis</div>
+          <div style={s.title}>🔄 {L2('Transfer Player Tracker','转移玩家追踪')}</div>
+          <div style={s.sub}>{L2('Track players transferred from other platforms · P&L analysis','追踪从其他平台转移的玩家 · 盈亏分析')}</div>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <select value={currency} onChange={e => setCurrency(e.target.value)} style={{ ...s.input, width: 'auto', padding: '7px 10px', fontWeight: 700, color: 'var(--accent)' }}>
@@ -243,7 +248,7 @@ export default function TransferTracker() {
               ...s.btn(activeTab===tab ? 'var(--accent)' : 'var(--surface2)', activeTab===tab ? '#fff' : 'var(--muted)'),
               border: '1px solid var(--border)',
             }}>
-              {tab === 'overview' ? '📋 Overview' : tab === 'add' ? '➕ Add Player' : tab === 'import' ? '📥 Import CSV' : '💰 Add Cost'}
+              {tab === 'overview' ? L2('📋 Overview','📋 概览') : tab === 'add' ? L2('➕ Add Player','➕ 添加玩家') : tab === 'import' ? L2('📥 Import CSV','📥 导入 CSV') : L2('💰 Add Cost','💰 添加成本')}
             </button>
           ))}
         </div>
@@ -252,8 +257,8 @@ export default function TransferTracker() {
       {/* Summary Stats */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 20 }}>
         {[
-          { label: 'Total Players',    value: totalPlayers,  color: '#58a6ff' },
-          { label: 'Net P&L (All)',     value: <PnlBadge value={totalProfit} currency={currency} />, color: totalProfit >= 0 ? '#3fb950' : '#f85149' },
+          { label: L2('Total Players','玩家总数'),    value: totalPlayers,  color: '#58a6ff' },
+          { label: L2('Net P&L (All)','净盈亏（全部）'),     value: <PnlBadge value={totalProfit} currency={currency} />, color: totalProfit >= 0 ? '#3fb950' : '#f85149' },
           { label: t('transferTracker.statProfitCount'),          value: profitCount,   color: '#3fb950' },
           { label: t('transferTracker.statLossCount'),          value: lossCount,     color: '#f85149' },
         ].map((st, i) => (
@@ -269,13 +274,13 @@ export default function TransferTracker() {
         <div style={s.card}>
           <div style={s.cardHdr}>
             <span style={{ fontSize: 14, fontWeight: 700 }}>{t('transferTracker.playerListTitle')}</span>
-            <span style={{ fontSize: 12, color: 'var(--muted)' }}>{totalPlayers} players</span>
+            <span style={{ fontSize: 12, color: 'var(--muted)' }}>{totalPlayers} {L2('players','名玩家')}</span>
           </div>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ background: 'var(--surface2)' }}>
-                  {[ 'Username', t('transferTracker.colSourcePlatform'), t('transferTracker.colLatestDeposit'), t('transferTracker.colLatestWithdrawal'), t('common.winLoss'), t('transferTracker.colOurCost'), t('transferTracker.colNetProfit'), t('transferTracker.colLastSnapshot'), t('common.actions') ].map(h => (
+                  {[ L2('Username','用户名'), t('transferTracker.colSourcePlatform'), t('transferTracker.colLatestDeposit'), t('transferTracker.colLatestWithdrawal'), t('common.winLoss'), t('transferTracker.colOurCost'), t('transferTracker.colNetProfit'), t('transferTracker.colLastSnapshot'), t('common.actions') ].map(h => (
                     <th key={h} style={s.th}>{h}</th>
                   ))}
                 </tr>
@@ -364,7 +369,7 @@ export default function TransferTracker() {
                         {(costs[selected.username]||[]).map(c => (
                           <tr key={c.id}>
                             <td style={{ ...s.td, fontSize: 11 }}>{c.cost_date}</td>
-                            <td style={{ ...s.td, fontSize: 11 }}><span style={{ background: 'rgba(245,158,11,.15)', color: '#f59e0b', padding: '1px 7px', borderRadius: 4, fontWeight: 600 }}>{c.cost_type}</span></td>
+                            <td style={{ ...s.td, fontSize: 11 }}><span style={{ background: 'rgba(245,158,11,.15)', color: '#f59e0b', padding: '1px 7px', borderRadius: 4, fontWeight: 600 }}>{costTypeLabel(c.cost_type)}</span></td>
                             <td style={{ ...s.td, fontSize: 11, color: '#f85149', fontWeight: 700 }}>{fmtMoney(c.amount, currency)}</td>
                             <td style={{ ...s.td, fontSize: 11, color: 'var(--muted)' }}>{c.description || '—'}</td>
                           </tr>
@@ -386,12 +391,12 @@ export default function TransferTracker() {
           <div style={{ padding: 24 }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
               <div>
-                <label style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600, display: 'block', marginBottom: 6 }}>Username *</label>
-                <input style={s.input} value={addForm.username} onChange={e => setAddForm(f => ({ ...f, username: e.target.value }))} placeholder="e.g. player123" />
+                <label style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600, display: 'block', marginBottom: 6 }}>{L2('Username *','用户名 *')}</label>
+                <input style={s.input} value={addForm.username} onChange={e => setAddForm(f => ({ ...f, username: e.target.value }))} placeholder={L2('e.g. player123','例如 player123')} />
               </div>
               <div>
                 <label style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600, display: 'block', marginBottom: 6 }}>{t('transferTracker.sourcePlatformRequired')}</label>
-                <input style={s.input} value={addForm.source_platform} onChange={e => setAddForm(f => ({ ...f, source_platform: e.target.value }))} placeholder="e.g. Platform A" />
+                <input style={s.input} value={addForm.source_platform} onChange={e => setAddForm(f => ({ ...f, source_platform: e.target.value }))} placeholder={L2('e.g. Platform A','例如 平台 A')} />
               </div>
               <div>
                 <label style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600, display: 'block', marginBottom: 6 }}>{t('transferTracker.joinDate')}</label>
@@ -399,7 +404,7 @@ export default function TransferTracker() {
               </div>
               <div>
                 <label style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600, display: 'block', marginBottom: 6 }}>{t('common.notes')}</label>
-                <input style={s.input} value={addForm.notes} onChange={e => setAddForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional notes" />
+                <input style={s.input} value={addForm.notes} onChange={e => setAddForm(f => ({ ...f, notes: e.target.value }))} placeholder={L2('Optional notes','备注（可选）')} />
               </div>
             </div>
             <button onClick={handleAddPlayer} disabled={addLoading || !addForm.username || !addForm.source_platform}
@@ -476,16 +481,16 @@ export default function TransferTracker() {
               <div>
                 <label style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600, display: 'block', marginBottom: 6 }}>{t('transferTracker.typeRequired')}</label>
                 <select style={s.input} value={costForm.cost_type} onChange={e => setCostForm(f => ({ ...f, cost_type: e.target.value }))}>
-                  {COST_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                  {COST_TYPES.map(ct => <option key={ct} value={ct}>{costTypeLabel(ct)}</option>)}
                 </select>
               </div>
               <div>
                 <label style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600, display: 'block', marginBottom: 6 }}>{t('transferTracker.amountRMRequired')}</label>
-                <input type="number" style={s.input} value={costForm.amount} onChange={e => setCostForm(f => ({ ...f, amount: e.target.value }))} placeholder="e.g. 888" />
+                <input type="number" style={s.input} value={costForm.amount} onChange={e => setCostForm(f => ({ ...f, amount: e.target.value }))} placeholder={L2('e.g. 888','例如 888')} />
               </div>
               <div style={{ gridColumn: 'span 2' }}>
                 <label style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600, display: 'block', marginBottom: 6 }}>{t('transferTracker.descriptionLabel')}</label>
-                <input style={s.input} value={costForm.description} onChange={e => setCostForm(f => ({ ...f, description: e.target.value }))} placeholder="e.g. Cash Voucher 888, Welcome Bonus" />
+                <input style={s.input} value={costForm.description} onChange={e => setCostForm(f => ({ ...f, description: e.target.value }))} placeholder={L2('e.g. Cash Voucher 888, Welcome Bonus','例如 现金券 888、欢迎奖金')} />
               </div>
             </div>
             <button onClick={handleAddCost} disabled={costLoading || !costForm.username || !costForm.amount}
@@ -508,7 +513,7 @@ export default function TransferTracker() {
                   <tr key={c.id}>
                     <td style={s.td}><span style={{ fontWeight: 700 }}>{c.username}</span></td>
                     <td style={s.td}>{c.cost_date}</td>
-                    <td style={s.td}><span style={{ background: 'rgba(245,158,11,.15)', color: '#f59e0b', padding: '2px 8px', borderRadius: 5, fontSize: 11, fontWeight: 700 }}>{c.cost_type}</span></td>
+                    <td style={s.td}><span style={{ background: 'rgba(245,158,11,.15)', color: '#f59e0b', padding: '2px 8px', borderRadius: 5, fontSize: 11, fontWeight: 700 }}>{costTypeLabel(c.cost_type)}</span></td>
                     <td style={{ ...s.td, color: '#f85149', fontWeight: 700 }}>{fmtMoney(c.amount, currency)}</td>
                     <td style={{ ...s.td, color: 'var(--muted)' }}>{c.description || '—'}</td>
                   </tr>

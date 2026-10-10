@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
+import { useLanguage } from '../contexts/LanguageContext'
 
 const s = {
   page:  { padding:'24px 28px', minHeight:'100vh', color:'var(--text)' },
@@ -40,6 +41,8 @@ const DEFAULT_PRIZES = [
 
 export default function LuckySpinAdmin() {
   const { profile } = useAuth()
+  const { lang } = useLanguage()
+  const L2 = (en, zh) => (lang === 'zh' ? zh : en)
   const [prizes, setPrizes] = useState(DEFAULT_PRIZES)
   const [spinning, setSpinning] = useState(false)
   const [lastResult, setLastResult] = useState(null)
@@ -70,7 +73,7 @@ export default function LuckySpinAdmin() {
   }
 
   function addPrize() {
-    setPrizes(prev => [...prev, { label:'New Prize', prob:5, color:'#8b949e' }])
+    setPrizes(prev => [...prev, { label:L2('New Prize','新奖品'), prob:5, color:'#8b949e' }])
   }
 
   function removePrize(i) {
@@ -83,14 +86,14 @@ export default function LuckySpinAdmin() {
     <div style={s.page}>
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:20 }}>
         <div>
-          <div style={s.title}>🎰 Lucky Spin Admin</div>
-          <div style={s.sub}>Configure prizes, eligibility rules, and run test spins</div>
+          <div style={s.title}>🎰 {L2('Lucky Spin Admin','幸运转盘管理')}</div>
+          <div style={s.sub}>{L2('Configure prizes, eligibility rules, and run test spins','配置奖品、参与资格规则并进行测试转盘')}</div>
         </div>
         <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-          <span style={{ fontSize:12, color:'var(--muted)', fontWeight:600 }}>Campaign Status:</span>
+          <span style={{ fontSize:12, color:'var(--muted)', fontWeight:600 }}>{L2('Campaign Status:','活动状态：')}</span>
           <button onClick={() => setIsActive(a => !a)}
             style={{ ...s.btnSm, background: isActive ? '#3fb95022' : 'var(--surface)', color: isActive ? '#3fb950' : 'var(--muted)', border: `1px solid ${isActive ? '#3fb950' : 'var(--border)'}` }}>
-            {isActive ? '✅ Active' : '⏸ Paused'}
+            {isActive ? L2('✅ Active','✅ 活跃') : L2('⏸ Paused','⏸ 已暂停')}
           </button>
         </div>
       </div>
@@ -100,8 +103,8 @@ export default function LuckySpinAdmin() {
         <div>
           <div style={s.card}>
             <div style={s.cardHdr}>
-              <span>🎁 Prize Segments ({prizes.length})</span>
-              <button style={s.btnSm} onClick={addPrize}>+ Add Prize</button>
+              <span>🎁 {L2('Prize Segments','奖品分区')} ({prizes.length})</span>
+              <button style={s.btnSm} onClick={addPrize}>{L2('+ Add Prize','+ 添加奖品')}</button>
             </div>
             <div style={s.cardBody}>
               {prizes.map((p, i) => (
@@ -111,7 +114,7 @@ export default function LuckySpinAdmin() {
                     style={{ ...s.input, flex:2, padding:'5px 8px' }}
                     value={p.label}
                     onChange={e => updatePrize(i,'label',e.target.value)}
-                    placeholder="Prize name"
+                    placeholder={L2('Prize name','奖品名称')}
                   />
                   <input
                     style={{ ...s.input, width:60, padding:'5px 8px', textAlign:'center' }}
@@ -127,17 +130,17 @@ export default function LuckySpinAdmin() {
                 </div>
               ))}
               <div style={{ fontSize:11, color:'var(--muted)', marginTop:8 }}>
-                Total weight: {totalProb} — probabilities shown as percentages
+                {L2(`Total weight: ${totalProb} — probabilities shown as percentages`, `总权重：${totalProb} — 概率以百分比显示`)}
               </div>
             </div>
           </div>
 
           {/* Eligibility */}
           <div style={s.card}>
-            <div style={s.cardHdr}>🔒 Eligibility Rules</div>
+            <div style={s.cardHdr}>🔒 {L2('Eligibility Rules','参与资格规则')}</div>
             <div style={s.cardBody}>
               <div style={s.formRow}>
-                <label style={s.label}>Eligible Tiers</label>
+                <label style={s.label}>{L2('Eligible Tiers','符合资格的等级')}</label>
                 <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
                   {TIERS.map(t => (
                     <button key={t} onClick={() => setEligibleTiers(prev => prev.includes(t) ? prev.filter(x=>x!==t) : [...prev,t])}
@@ -148,7 +151,7 @@ export default function LuckySpinAdmin() {
                 </div>
               </div>
               <div style={s.formRow}>
-                <label style={s.label}>Min Deposit to Qualify (RM)</label>
+                <label style={s.label}>{L2('Min Deposit to Qualify (RM)','最低合格存款 (RM)')}</label>
                 <input type="number" style={{ ...s.input, maxWidth:160 }} value={minDeposit}
                   onChange={e => setMinDeposit(Number(e.target.value))} />
               </div>
@@ -159,7 +162,7 @@ export default function LuckySpinAdmin() {
         {/* Right: Spin simulator + log */}
         <div>
           <div style={s.card}>
-            <div style={s.cardHdr}>🎡 Spin Simulator</div>
+            <div style={s.cardHdr}>🎡 {L2('Spin Simulator','转盘模拟器')}</div>
             <div style={{ ...s.cardBody, display:'flex', flexDirection:'column', alignItems:'center', gap:20 }}>
               <div style={{ ...s.spinWheel, opacity: spinning ? 0.7 : 1, transition:'opacity .3s', fontSize:40 }}>
                 {spinning ? '🌀' : lastResult ? '🎉' : '🎰'}
@@ -168,31 +171,31 @@ export default function LuckySpinAdmin() {
               {lastResult && !spinning && (
                 <div style={{ textAlign:'center', padding:'12px 20px', background: lastResult.color+'22', border:`1px solid ${lastResult.color}`, borderRadius:10 }}>
                   <div style={{ fontSize:20, marginBottom:4 }}>{lastResult.label}</div>
-                  <div style={{ fontSize:12, color:'var(--muted)' }}>Prize awarded!</div>
+                  <div style={{ fontSize:12, color:'var(--muted)' }}>{L2('Prize awarded!','奖品已发放！')}</div>
                 </div>
               )}
 
               <button style={{ ...s.btn, padding:'12px 32px', fontSize:15, opacity: spinning ? 0.6 : 1 }}
                 onClick={spin} disabled={spinning}>
-                {spinning ? 'Spinning…' : '🎰 Test Spin'}
+                {spinning ? L2('Spinning…','转动中…') : L2('🎰 Test Spin','🎰 测试转盘')}
               </button>
               <div style={{ fontSize:11, color:'var(--muted)', textAlign:'center' }}>
-                Test spins are for preview only — they don't record in the database
+                {L2("Test spins are for preview only — they don't record in the database",'测试转盘仅供预览 — 不会记录到数据库')}
               </div>
             </div>
           </div>
 
           {/* Spin log */}
           <div style={s.card}>
-            <div style={s.cardHdr}>📜 Test Spin Log</div>
+            <div style={s.cardHdr}>📜 {L2('Test Spin Log','测试转盘记录')}</div>
             {spinLog.length === 0 ? (
-              <div style={{ ...s.cardBody, color:'var(--muted)', fontSize:13 }}>No spins yet — click Test Spin to try it.</div>
+              <div style={{ ...s.cardBody, color:'var(--muted)', fontSize:13 }}>{L2('No spins yet — click Test Spin to try it.','暂无转盘记录 — 点击测试转盘试试。')}</div>
             ) : (
               <table style={s.tbl}>
                 <thead><tr>
-                  <th style={s.th}>Time</th>
-                  <th style={s.th}>Result</th>
-                  <th style={s.th}>By</th>
+                  <th style={s.th}>{L2('Time','时间')}</th>
+                  <th style={s.th}>{L2('Result','结果')}</th>
+                  <th style={s.th}>{L2('By','操作人')}</th>
                 </tr></thead>
                 <tbody>
                   {spinLog.map((l,i) => (

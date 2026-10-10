@@ -15,86 +15,90 @@ import { formatMoney } from './format'
 // source: 'auto' = calculated from DB, 'manual' = user fills in
 export const KPI_FRAMEWORK = [
   {
-    category: 'C', label: '整线绩效', weight: 30, color: '#06b6d4',
+    category: 'C', label: '整线绩效', labelEn: 'Line Performance', weight: 30, color: '#06b6d4',
     items: [
       {
         key: 'reactivation_rate', label: 'VIP 挽回成功率', labelEn: 'Reactivation Success Rate',
         weight: 12, target: 30, unit: '%', source: 'auto',
-        fmt: (v) => `${v}%`, icon: '🔁', desc: '目标 ≥ 30%',
+        fmt: (v) => `${v}%`, icon: '🔁', desc: '目标 ≥ 30%', descEn: 'Target ≥ 30%',
       },
       {
         key: 'diamond_coverage', label: 'Diamond+ 1对1覆盖率', labelEn: 'Diamond 1:1 Coverage',
         weight: 10, target: 100, unit: '%', source: 'auto',
-        fmt: (v) => `${v}%`, icon: '💎', desc: '目标 100%',
+        fmt: (v) => `${v}%`, icon: '💎', desc: '目标 100%', descEn: 'Target 100%',
       },
       {
         key: 'campaign_output', label: 'VIP 专属活动产出', labelEn: 'Campaign Output',
         weight: 8, target: 3, unit: '个', source: 'manual',
-        fmt: (v) => `${v} 个`, icon: '🎯', desc: '目标 ≥ 3个/月',
+        fmt: (v) => `${v} 个`, fmtEn: (v) => `${v}`, icon: '🎯', desc: '目标 ≥ 3个/月', descEn: 'Target ≥ 3 / month',
       },
     ]
   },
   {
-    category: 'B', label: '业务专属', weight: 25, color: '#f59e0b',
+    category: 'B', label: '业务专属', labelEn: 'Business Specific', weight: 25, color: '#f59e0b',
     items: [
       {
         key: 'total_turnover', label: 'VIP 总流水', labelEn: 'Total VIP Turnover',
         weight: 20, target: 150000000, unit: 'RM', source: 'auto',
         fmt: (v) => formatMoney(v, 'MYR'),
-        icon: '💰', desc: '目标 ≥ RM 1.5亿/月',
+        icon: '💰', desc: '目标 ≥ RM 1.5亿/月', descEn: 'Target ≥ RM 150M / month',
       },
       {
         key: 'retention_rate', label: 'VIP 留存率', labelEn: 'VIP Retention Rate',
         weight: 15, target: 85, unit: '%', source: 'auto',
-        fmt: (v) => `${v}%`, icon: '🔄', desc: '目标 ≥ 85%',
+        fmt: (v) => `${v}%`, icon: '🔄', desc: '目标 ≥ 85%', descEn: 'Target ≥ 85%',
       },
       {
         key: 'upgrade_count', label: 'VIP 升级数(VIP-VIP)', labelEn: 'VIP Upgrades (VIP-VIP)',
         weight: 5, target: 4, unit: '人', source: 'auto',
-        fmt: (v) => `${v} 人`, icon: '⬆️', desc: '目标 ≥ 4人/月 · 来源: Optimove / 手填',
+        fmt: (v) => `${v} 人`, fmtEn: (v) => `${v} players`, icon: '⬆️', desc: '目标 ≥ 4人/月 · 来源: Optimove / 手填', descEn: 'Target ≥ 4 / month · Source: Optimove / manual',
       },
       {
         key: 'upgrade_count_nor', label: 'VIP 升级数(NOR-VIP)', labelEn: 'VIP Upgrades (NOR-VIP)',
         weight: 5, target: 10, unit: '人', source: 'manual',
-        fmt: (v) => `${v} 人`, icon: '⬆️', desc: '目标 ≥ 10人/月 · 来源: Optimove / 手填',
+        fmt: (v) => `${v} 人`, fmtEn: (v) => `${v} players`, icon: '⬆️', desc: '目标 ≥ 10人/月 · 来源: Optimove / 手填', descEn: 'Target ≥ 10 / month · Source: Optimove / manual',
       },
     ]
   },
   {
-    category: 'D', label: '战略协同', weight: 15, color: '#8b5cf6',
+    category: 'D', label: '战略协同', labelEn: 'Strategic Collaboration', weight: 15, color: '#8b5cf6',
     items: [
       {
         key: 'cross_team_score', label: '跨线协同（与客服/客维）', labelEn: 'Cross-team Collaboration',
         weight: 7, target: 85, unit: '分', source: 'manual',
-        fmt: (v) => `${v} 分`, icon: '🤝', desc: '目标 ≥ 85分',
+        fmt: (v) => `${v} 分`, fmtEn: (v) => `${v} pts`, icon: '🤝', desc: '目标 ≥ 85分', descEn: 'Target ≥ 85 pts',
       },
       {
         key: 'report_quality', label: '数据复盘与汇报质量', labelEn: 'Report Quality',
         weight: 5, target: 85, unit: '分', source: 'manual',
-        fmt: (v) => `${v} 分`, icon: '📊', desc: '目标 ≥ 85分',
+        fmt: (v) => `${v} 分`, fmtEn: (v) => `${v} pts`, icon: '📊', desc: '目标 ≥ 85分', descEn: 'Target ≥ 85 pts',
       },
       {
         key: 'innovation_output', label: '新策略/创新提案产出', labelEn: 'Innovation Proposals',
         weight: 3, target: 1, unit: '个', source: 'manual',
-        fmt: (v) => `${v} 个`, icon: '💡', desc: '目标 ≥ 1/月',
+        fmt: (v) => `${v} 个`, fmtEn: (v) => `${v}`, icon: '💡', desc: '目标 ≥ 1/月', descEn: 'Target ≥ 1 / month',
       },
     ]
   },
   {
-    category: 'A', label: '团队管理/筹建', weight: 10, color: '#10b981',
+    category: 'A', label: '团队管理/筹建', labelEn: 'Team Management / Setup', weight: 10, color: '#10b981',
     items: [
       {
         key: 'sop_output', label: 'VIP服务SOP沉淀', labelEn: 'SOP Documentation',
         weight: 10, target: 3, unit: '项', source: 'manual',
-        fmt: (v) => `${v} 项`, icon: '📋', desc: '目标 ≥ 3项/月',
+        fmt: (v) => `${v} 项`, fmtEn: (v) => `${v}`, icon: '📋', desc: '目标 ≥ 3项/月', descEn: 'Target ≥ 3 / month',
       },
     ]
   },
 ]
 
 export const ALL_ITEMS = KPI_FRAMEWORK.flatMap(cat =>
-  cat.items.map(item => ({ ...item, category: cat.category, categoryLabel: cat.label, categoryColor: cat.color }))
+  cat.items.map(item => ({ ...item, category: cat.category, categoryLabel: cat.label, categoryLabelEn: cat.labelEn, categoryColor: cat.color }))
 )
+// Language-aware display helpers (lang: 'en' | 'zh'; default 'en')
+export const kpiLabel = (o, lang = 'en') => (lang === 'zh' ? o.label : (o.labelEn || o.label))
+export const kpiDesc = (item, lang = 'en') => (lang === 'zh' ? item.desc : (item.descEn || item.desc))
+export const kpiFmt = (item, v, lang = 'en') => (lang !== 'zh' && item.fmtEn ? item.fmtEn(v) : item.fmt(v))
 export const TOTAL_WEIGHT = ALL_ITEMS.reduce((s, i) => s + i.weight, 0) // Should be 100
 
 export function getScore(actual, target, weight) {

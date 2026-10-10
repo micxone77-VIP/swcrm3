@@ -95,6 +95,7 @@ const s = {
 
 export default function PeriodReport() {
   const { lang, t } = useLanguage()
+  const L2 = (en, zh) => (lang === 'zh' ? zh : en)
   const d = defaultRanges()
   const [currency, setCurrency] = useUrlParam('currency', 'MYR')
   const [aStart, setAStart] = useUrlParam('aStart', d.aStart)
@@ -179,7 +180,7 @@ export default function PeriodReport() {
       })
       setAnalysis(result.analysis)
     } catch (e) {
-      alert('Could not generate analysis: ' + e.message)
+      alert(L2('Could not generate analysis: ','无法生成分析：') + e.message)
     } finally {
       setAnalyzing(false)
     }
@@ -199,7 +200,7 @@ export default function PeriodReport() {
       <div style={{ fontSize:13, color:'var(--muted)', marginBottom:12 }}>{t('periodReport.subtitle')}</div>
 
       <div style={{background:'var(--surface2)',border:'1px solid var(--border)',borderRadius:8,padding:'12px 16px',marginBottom:16,fontSize:13,color:'var(--muted)'}}>
-        📋 Compare two date ranges for selected tiers — deposit totals, depositor counts, valid bet, and daily averages. Currently supports Platinum, Diamond, Black, and Gold tiers.
+        📋 {L2('Compare two date ranges for selected tiers — deposit totals, depositor counts, valid bet, and daily averages. Currently supports Platinum, Diamond, Black, and Gold tiers.','比较所选等级在两个日期范围内的表现 — 存款总额、存款人数、有效投注及每日平均。目前支持白金、钻石、黑卡和黄金等级。')}
       </div>
 
       <div style={s.card}>

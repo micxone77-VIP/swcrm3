@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
+import { useLanguage } from '../contexts/LanguageContext'
 import * as XLSX from 'xlsx'
 
 // ─── i18n strings ────────────────────────────────────────────────
@@ -435,8 +436,8 @@ function RetentionCard({ lang, retention, retentionLoading }) {
 
   const cards = [
     { key:'overall',  label: isZh?'整体留存':'Overall',  icon:'📈' },
-    { key:'diamond',  label: 'Diamond',                   icon:'💎' },
-    { key:'platinum', label: 'Platinum',                  icon:'🥈' },
+    { key:'diamond',  label: isZh?'钻石':'Diamond',      icon:'💎' },
+    { key:'platinum', label: isZh?'白金':'Platinum',     icon:'🥈' },
   ]
 
   // Summary line for month
@@ -514,13 +515,15 @@ function RetentionCard({ lang, retention, retentionLoading }) {
 
 // ─── Campaign Tracker ─────────────────────────────────────────────
 const STATUS_CONFIG = {
-  active:  { label:'进行中', color:'#22c55e', dot:'🟢' },
-  draft:   { label:'草稿',   color:'#f97316', dot:'🟡' },
-  ended:   { label:'已结束', color:'#6b7280', dot:'⚫' },
-  paused:  { label:'暂停',   color:'#f59e0b', dot:'🟠' },
+  active:  { label:'进行中', labelEn:'Active', color:'#22c55e', dot:'🟢' },
+  draft:   { label:'草稿',   labelEn:'Draft',  color:'#f97316', dot:'🟡' },
+  ended:   { label:'已结束', labelEn:'Ended',  color:'#6b7280', dot:'⚫' },
+  paused:  { label:'暂停',   labelEn:'Paused', color:'#f59e0b', dot:'🟠' },
 }
 
 function CampaignCard({ c, reportDate }) {
+  const { lang } = useLanguage()
+  const isZh = lang === 'zh'
   const today = new Date(reportDate + 'T00:00:00')
   const start = new Date(c.start_date + 'T00:00:00')
   const end   = new Date(c.end_date   + 'T00:00:00')
@@ -567,7 +570,7 @@ function CampaignCard({ c, reportDate }) {
           <div style={{ fontWeight:800, fontSize:15, lineHeight:1.3, marginBottom:4 }}>{c.campaign_name}</div>
           <div style={{ display:'flex', gap:6, flexWrap:'wrap', alignItems:'center' }}>
             <span style={{ fontSize:11, background:`${sc.color}20`, color:sc.color, padding:'2px 8px', borderRadius:8, fontWeight:700 }}>
-              {sc.dot} {sc.label}
+              {sc.dot} {isZh ? sc.label : sc.labelEn}
             </span>
             {c.campaign_type && (
               <span style={{ fontSize:11, color:'var(--muted)', background:'var(--border)', padding:'2px 7px', borderRadius:8 }}>
@@ -580,16 +583,16 @@ function CampaignCard({ c, reportDate }) {
         <button onClick={copyName} style={{
           padding:'5px 11px', borderRadius:8, border:'1px solid var(--border)',
           background:'transparent', color:'var(--muted)', fontSize:11, cursor:'pointer', whiteSpace:'nowrap',
-        }}>📋 复制名称</button>
+        }}>{isZh ? '📋 复制名称' : '📋 Copy Name'}</button>
       </div>
 
       {/* Stats row */}
       <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:10, marginBottom:14 }}>
         {[
-          { label:'预算', val: budgetRm > 0 ? `RM ${(budgetRm/1000).toFixed(0)}K` : '—' },
-          { label:'参与', val: c.enrolled },
-          { label:'达标', val: `${c.converted} (${convRate}%)` },
-          { label:'总存款', val: c.totalDeposit > 0 ? `RM ${(c.totalDeposit/1000).toFixed(1)}K` : '—' },
+          { label:isZh?'预算':'Budget', val: budgetRm > 0 ? `RM ${(budgetRm/1000).toFixed(0)}K` : '—' },
+          { label:isZh?'参与':'Enrolled', val: c.enrolled },
+          { label:isZh?'达标':'Converted', val: `${c.converted} (${convRate}%)` },
+          { label:isZh?'总存款':'Total Deposit', val: c.totalDeposit > 0 ? `RM ${(c.totalDeposit/1000).toFixed(1)}K` : '—' },
         ].map(s => (
           <div key={s.label} style={{ textAlign:'center', background:'var(--surface)', borderRadius:9, padding:'8px 4px' }}>
             <div style={{ fontSize:11, color:'var(--muted)', marginBottom:2 }}>{s.label}</div>
@@ -600,18 +603,18 @@ function CampaignCard({ c, reportDate }) {
 
       {/* Progress bars */}
       <BarRow
-        label={`📅 活动进度 · 第 ${elapsed}/${totalDays} 天`}
+        label={isZh ? `📅 活动进度 · 第 ${elapsed}/${totalDays} 天` : `📅 Campaign Progress · Day ${elapsed}/${totalDays}`}
         pct={dayPct}
         color='#3b82f6'
-        leftText={c.status === 'ended' ? '已结束' : `还剩 ${daysLeft} 天`}
+        leftText={c.status === 'ended' ? (isZh ? '已结束' : 'Ended') : (isZh ? `还剩 ${daysLeft} 天` : `${daysLeft} days left`)}
         rightText={`${dayPct}%`}
       />
       {budgetRm > 0 && (
         <BarRow
-          label='💸 预算使用'
+          label={isZh ? '💸 预算使用' : '💸 Budget Used'}
           pct={budgetPct}
           color={barColor}
-          leftText={`已发 RM ${c.rewardsPaid.toLocaleString()} / 预算 RM ${budgetRm.toLocaleString()}`}
+          leftText={isZh ? `已发 RM ${c.rewardsPaid.toLocaleString()} / 预算 RM ${budgetRm.toLocaleString()}` : `Paid RM ${c.rewardsPaid.toLocaleString()} / Budget RM ${budgetRm.toLocaleString()}`}
           rightText={`${budgetPct}%`}
         />
       )}
@@ -808,8 +811,9 @@ function WatchpointRow({ icon, label, detail, badge, color, actions }) {
 export default function DailyReport() {
   const { profile } = useAuth()
   const navigate = useNavigate()
-  const [lang, setLang] = useState('zh')
-  const t = T[lang]
+  // Follow the app-wide EN / 中文 toggle (the in-page toggle below switches it too)
+  const { lang, setLang } = useLanguage()
+  const t = T[lang] || T.en
 
   // ── filters ──
   const yesterday = isoDate(addDays(new Date(), -1))
@@ -2177,7 +2181,7 @@ export default function DailyReport() {
                           return groups.map(g => (
                             <th key={g.month} colSpan={g.count}
                               style={{padding:'4px 0',fontSize:10,textAlign:'center',color:'#94a3b8',borderBottom:'1px solid #1e293b',borderLeft:'1px solid #1e293b'}}>
-                              {g.month.slice(5)}月
+                              {isZh ? `${Number(g.month.slice(5))}月` : new Date(g.month + '-01T00:00:00').toLocaleDateString('en-MY', { month:'short' })}
                             </th>
                           ))
                         })()}

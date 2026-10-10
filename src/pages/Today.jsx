@@ -18,18 +18,19 @@ const FollowUpTab = lazy(() => import('./FollowUp'))
 const RetentionQueueTab = lazy(() => import('./RetentionQueue'))
 
 const MAIN_TABS = [
-  { key: 'today',     label: '📅 Today' },
-  { key: 'followup',  label: '📞 Follow Up' },
-  { key: 'retention', label: '🎯 Retention Queue' },
+  { key: 'today',     label: '📅 Today', zh: '📅 今天' },
+  { key: 'followup',  label: '📞 Follow Up', zh: '📞 跟进' },
+  { key: 'retention', label: '🎯 Retention Queue', zh: '🎯 留存队列' },
 ]
 
 function TabBar({ active, onChange }) {
+  const { lang } = useLanguage()
   return (
     <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border)', marginBottom: 20 }}>
       {MAIN_TABS.map(tab => (
         <button key={tab.key} onClick={() => onChange(tab.key)}
           style={{ padding: '9px 18px', background: 'none', border: 'none', borderBottom: active === tab.key ? '2px solid var(--accent)' : '2px solid transparent', color: active === tab.key ? 'var(--accent)' : 'var(--muted)', fontWeight: active === tab.key ? 700 : 400, fontSize: 13, cursor: 'pointer', marginBottom: -1, transition: 'color .15s' }}>
-          {tab.label}
+          {lang === 'zh' ? tab.zh : tab.label}
         </button>
       ))}
     </div>
@@ -37,21 +38,30 @@ function TabBar({ active, onChange }) {
 }
 
 const OUTCOMES = ['Contacted', 'No Reply', 'Replied', 'Deposited', 'Reactivated']
+const OUTCOME_ZH = { Contacted: '已联系', 'No Reply': '未回复', Replied: '已回复', Deposited: '已存款', Reactivated: '已召回' }
+const TIER_ZH = { BLACK: '黑金', DIAMOND: '钻石', PLATINUM: '白金', GOLD: '黄金', SILVER: '白银', BRONZE: '青铜' }
+// Display-only translation of queue trigger labels produced by useDashboard
+const REASON_ZH = {
+  '🎂 Birthday today': '🎂 今天生日', '🔴 Critical risk': '🔴 严重风险', '⚠️ High risk': '⚠️ 高风险',
+  '🔴 Lost yesterday': '🔴 昨日输钱', '⚡ 2-3 day gap': '⚡ 2-3天未活跃', '📅 Follow-up due': '📅 待跟进',
+}
 const TIER_ORDER = { BLACK:0, DIAMOND:1, PLATINUM:2, GOLD:3, SILVER:4, BRONZE:5 }
 
-function timeAgo(d) {
+function timeAgo(d, lang = 'en') {
   if (!d) return '—'
+  const zh = lang === 'zh'
   const diff = Math.floor((Date.now() - new Date(d)) / 86400000)
-  if (diff === 0) return 'Today'
-  if (diff === 1) return 'Yesterday'
-  return `${diff}d ago`
+  if (diff === 0) return zh ? '今天' : 'Today'
+  if (diff === 1) return zh ? '昨天' : 'Yesterday'
+  return zh ? `${diff}天前` : `${diff}d ago`
 }
 
 export default function Today() {
   const navigate = useNavigate()
   const { profile } = useAuth()
   const { toast, ToastContainer } = useToast()
-  const { t } = useLanguage()
+  const { t, lang } = useLanguage()
+  const L2 = (en, zh) => (lang === 'zh' ? zh : en)
   const [mainTab, setMainTab] = useState('today')
   const [host, setHost] = useState('All')
   const [tierFilter, setTierFilter] = useState(['PLATINUM','DIAMOND'])
@@ -138,8 +148,8 @@ export default function Today() {
 
   const now = new Date()
   const hour = now.getHours()
-  const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'
-  const dateStr = now.toLocaleDateString('en-MY', { weekday:'long', day:'numeric', month:'long', year:'numeric' })
+  const greeting = hour < 12 ? L2('Good morning', '早上好') : hour < 18 ? L2('Good afternoon', '下午好') : L2('Good evening', '晚上好')
+  const dateStr = now.toLocaleDateString(lang === 'zh' ? 'zh-CN' : 'en-MY', { weekday:'long', day:'numeric', month:'long', year:'numeric' })
 
   async function submitLog() {
     if (!logTarget || logSaving) return
@@ -155,11 +165,11 @@ export default function Today() {
       wa_number_used: logWaNumber || null,
     })
     setLogSaving(false)
-    if (err) { toast('Failed to log contact: ' + err.message, 'error'); return }
+    if (err) { toast(L2('Failed to log contact: ', '记录联系失败：') + err.message, 'error'); return }
     // Sync last_contacted on vip_members
     const _now = new Date().toISOString()
     await supabase.from('vip_members').update({ last_contacted: _now, last_contact_date: _now.slice(0,10) }).eq('id', logTarget.id)
-    toast(`Logged: ${logTarget.username} — ${logOutcome}`, 'success')
+    toast(L2(`Logged: ${logTarget.username} — ${logOutcome}`, `已记录：${logTarget.username} — ${OUTCOME_ZH[logOutcome] || logOutcome}`), 'success')
     setLogTarget(null); setLogNote(''); setLogOutcome('Replied'); setLogWaNumber('')
     refresh()
   }
@@ -177,7 +187,7 @@ export default function Today() {
   }
   const displayItems = (queueMap[activeQueue] || applyTier(priorityQueue)).slice(0, 30)
 
-  if (loading) return <div style={{ padding: 32 }}><LoadingState message="Loading today's work…" /></div>
+  if (loading) return <div style={{ padding: 32 }}><LoadingState message={L2("Loading today's work…", '载入今日工作中…')} /></div>
   if (error) return <div style={{ padding: 32 }}><ErrorState message={error} onRetry={refresh} /></div>
 
   // Sub-tab shortcut renders — bypass dashboard data for non-today tabs
@@ -204,7 +214,7 @@ export default function Today() {
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
           <div>
             <h1 style={{ fontSize: 26, fontWeight: 700, margin: 0 }}>
-              {greeting}, {profile?.full_name?.split(' ')[0] || 'there'}
+              {greeting}{L2(', ', '，')}{profile?.full_name?.split(' ')[0] || L2('there', '')}
             </h1>
             <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 4 }}>
               {dateStr} · {t('today.subtitle')}
@@ -219,7 +229,7 @@ export default function Today() {
         {/* Host filter */}
         <div style={{ marginTop: 16 }}>
           <FilterPills
-            options={hostList.map(h => ({ value: h, label: h === 'All' ? 'All Hosts' : h }))}
+            options={hostList.map(h => ({ value: h, label: h === 'All' ? L2('All Hosts', '全部负责人') : h }))}
             active={host}
             onChange={setHost}
           />
@@ -227,7 +237,7 @@ export default function Today() {
 
         {/* Tier filter */}
         <div style={{ marginTop: 10, display:'flex', alignItems:'center', gap:6, flexWrap:'wrap' }}>
-          <span style={{ fontSize:11, color:'var(--muted)', fontWeight:600, marginRight:4 }}>Tier:</span>
+          <span style={{ fontSize:11, color:'var(--muted)', fontWeight:600, marginRight:4 }}>{L2('Tier:', '等级：')}</span>
           <button
             onClick={() => setTierFilter([])}
             style={{
@@ -236,7 +246,7 @@ export default function Today() {
               background: tierFilter.length===0?'var(--brand-dim)':'transparent',
               color: tierFilter.length===0?'var(--brand)':'var(--muted)',
             }}
-          >All</button>
+          >{L2('All', '全部')}</button>
           {TIER_OPTS.map(tier => {
             const active = tierFilter.includes(tier)
             return (
@@ -245,7 +255,7 @@ export default function Today() {
                 border:`1px solid ${active?'var(--brand)':'var(--border)'}`,
                 background: active?'var(--brand-dim)':'transparent',
                 color: active?'var(--brand)':'var(--muted)',
-              }}>{tier.charAt(0)+tier.slice(1).toLowerCase()}</button>
+              }}>{L2(tier.charAt(0)+tier.slice(1).toLowerCase(), TIER_ZH[tier] || tier)}</button>
             )
           })}
         </div>
@@ -289,7 +299,7 @@ export default function Today() {
           <div style={{ fontSize: 13, fontWeight: 600 }}>
             {t('today.contactedToday')}
             <span style={{ marginLeft: 12, fontSize: 22, fontWeight: 700, color: 'var(--success)' }}>{contactedToday}</span>
-            <span style={{ marginLeft: 6, fontSize: 13, color: 'var(--muted)' }}>/ {contactedToday + needContact} VIPs</span>
+            <span style={{ marginLeft: 6, fontSize: 13, color: 'var(--muted)' }}>/ {contactedToday + needContact} {L2('VIPs', '位VIP')}</span>
           </div>
           <div style={{ fontSize: 13, color: 'var(--muted)' }}>
             {contactedToday + needContact > 0 ? Math.round(contactedToday / (contactedToday + needContact) * 100) : 0}{t('today.pctDone')}
@@ -309,19 +319,19 @@ export default function Today() {
       {waAlerts.length > 0 && (
         <div style={{ background: waAlerts.some(a=>a.level==='urgent') ? 'rgba(248,81,73,.1)' : 'rgba(210,153,34,.1)', border: `1px solid ${waAlerts.some(a=>a.level==='urgent') ? 'rgba(248,81,73,.4)' : 'rgba(210,153,34,.4)'}`, borderRadius: 10, padding: '12px 16px', marginBottom: 16 }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: waAlerts.some(a=>a.level==='urgent') ? '#f85149' : '#d29922', marginBottom: 8 }}>
-            📱 {waAlerts.some(a=>a.level==='urgent') ? '🚨 URGENT' : '⚠️'} WA Number Reload Reminder ({waAlerts.length})
+            📱 {waAlerts.some(a=>a.level==='urgent') ? L2('🚨 URGENT', '🚨 紧急') : '⚠️'} {L2('WA Number Reload Reminder', 'WA号码充值提醒')} ({waAlerts.length})
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
             {waAlerts.map(n => (
               <span key={n.id} style={{ display:'inline-flex', alignItems:'center', gap:5, background: n.level==='urgent'?'rgba(248,81,73,.15)':'rgba(210,153,34,.15)', border:`1px solid ${n.level==='urgent'?'rgba(248,81,73,.5)':'rgba(210,153,34,.5)'}`, borderRadius:7, padding:'4px 10px', fontSize:11 }}>
                 <span style={{ fontWeight:700, color: n.level==='urgent'?'#f85149':'#d29922' }}>{n.codename}</span>
                 <span style={{ color:'var(--muted)' }}>{n.number}</span>
-                {n.last_reload_date && <span style={{ color:'var(--muted)' }}>· {Math.floor((new Date()-new Date(n.last_reload_date))/86400000)}d since reload</span>}
+                {n.last_reload_date && <span style={{ color:'var(--muted)' }}>· {L2(`${Math.floor((new Date()-new Date(n.last_reload_date))/86400000)}d since reload`, `距上次充值${Math.floor((new Date()-new Date(n.last_reload_date))/86400000)}天`)}</span>}
               </span>
             ))}
           </div>
           <div style={{ marginTop:8, fontSize:11, color:'var(--muted)' }}>
-            Go to <a href="/wa-numbers" style={{ color:'var(--accent)' }}>WA Numbers</a> to update reload dates.
+            {L2('Go to ', '前往 ')}<a href="/wa-numbers" style={{ color:'var(--accent)' }}>{L2('WA Numbers', 'WA号码')}</a>{L2(' to update reload dates.', ' 更新充值日期。')}
           </div>
         </div>
       )}
@@ -392,14 +402,14 @@ export default function Today() {
                           color: v._color || 'var(--text)',
                           background: (v._color || '#888') + '18',
                           padding: '3px 9px', borderRadius: 6,
-                        }}>{v._reason || '—'}</span>
+                        }}>{(lang === 'zh' && REASON_ZH[v._reason]) || v._reason || '—'}</span>
                       </td>
                       <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', color: 'var(--muted)', fontSize: 12 }}>
-                        {timeAgo(v.last_contacted || v.last_contact_date)}
+                        {timeAgo(v.last_contacted || v.last_contact_date, lang)}
                       </td>
                       <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', fontSize: 12 }}>
                         {v.last_deposit_date
-                          ? <><div style={{ color:'var(--text)', fontWeight:600 }}>{new Date(v.last_deposit_date).toLocaleDateString('en-MY',{day:'2-digit',month:'short',year:'numeric'})}</div><div style={{ fontSize:11, color:'var(--muted)' }}>{timeAgo(v.last_deposit_date)}</div></>
+                          ? <><div style={{ color:'var(--text)', fontWeight:600 }}>{new Date(v.last_deposit_date).toLocaleDateString(lang === 'zh' ? 'zh-CN' : 'en-MY',{day:'2-digit',month:'short',year:'numeric'})}</div><div style={{ fontSize:11, color:'var(--muted)' }}>{timeAgo(v.last_deposit_date, lang)}</div></>
                           : <span style={{ color:'var(--muted)' }}>—</span>}
                       </td>
                       <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)' }}>
@@ -431,14 +441,14 @@ export default function Today() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               <label style={{ fontSize: 12, color: 'var(--muted)' }}>{t('today.outcome')}</label>
               <Select value={logOutcome} onChange={e => setLogOutcome(e.target.value)}>
-                {OUTCOMES.map(o => <option key={o} value={o}>{o}</option>)}
+                {OUTCOMES.map(o => <option key={o} value={o}>{L2(o, OUTCOME_ZH[o])}</option>)}
               </Select>
             </div>
             {waNumbers.length > 0 && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <label style={{ fontSize: 12, color: 'var(--muted)' }}>📱 Send as (WA number)</label>
+                <label style={{ fontSize: 12, color: 'var(--muted)' }}>{L2('📱 Send as (WA number)', '📱 发送号码 (WA)')}</label>
                 <Select value={logWaNumber} onChange={e => setLogWaNumber(e.target.value)}>
-                  <option value="">— Not specified —</option>
+                  <option value="">{L2('— Not specified —', '— 未指定 —')}</option>
                   {waNumbers.map(n => <option key={n.id} value={n.codename}>{n.codename} ({n.number}{n.telco ? ' · '+n.telco : ''})</option>)}
                 </Select>
               </div>

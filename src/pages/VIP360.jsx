@@ -4,7 +4,7 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { formatMoney, fmtDate } from '../lib/format'
-import { TIER_CONFIG, STATUS_CONFIG, RISK_CONFIG, CONTACT_TYPE, CONTACT_OUTCOME } from '../lib/enums'
+import { TIER_CONFIG, STATUS_CONFIG, RISK_CONFIG, CONTACT_TYPE, CONTACT_OUTCOME, enumLabel } from '../lib/enums'
 import {
 Card, CardHeader, CardBody, Tabs, Btn, Badge,
 LoadingState, ErrorState, EmptyState, Modal,
@@ -17,21 +17,22 @@ import DepositProfileCard from '../components/vip/DepositProfileCard'
 
 const TIERS = ['BRONZE','SILVER','GOLD','PLATINUM','DIAMOND','BLACK']
 const PERIODS = [
-{ value: '30', label: '30D' },
-{ value: 'mtd', label: 'MTD' },
-{ value: '90', label: '90D' },
-{ value: '180', label: '6M' },
-{ value: '365', label: '1Y' },
+{ value: '30', label: '30D', zh: '30天' },
+{ value: 'mtd', label: 'MTD', zh: '本月' },
+{ value: '90', label: '90D', zh: '90天' },
+{ value: '180', label: '6M', zh: '6个月' },
+{ value: '365', label: '1Y', zh: '1年' },
 ]
 
-function timeAgo(d) {
+function timeAgo(d, lang = 'en') {
 if (!d) return '—'
 const diff = Math.floor((Date.now() - new Date(d)) / 1000)
-if (diff < 60) return 'just now'
-if (diff < 3600) return Math.floor(diff/60) + 'm ago'
-if (diff < 86400) return Math.floor(diff/3600) + 'h ago'
-if (diff < 86400*30) return Math.floor(diff/86400) + 'd ago'
-return fmtDate(d)
+const zh = lang === 'zh'
+if (diff < 60) return zh ? '刚刚' : 'just now'
+if (diff < 3600) return Math.floor(diff/60) + (zh ? '分钟前' : 'm ago')
+if (diff < 86400) return Math.floor(diff/3600) + (zh ? '小时前' : 'h ago')
+if (diff < 86400*30) return Math.floor(diff/86400) + (zh ? '天前' : 'd ago')
+return fmtDate(d, lang)
 }
 
 function SectionLabel({ children }) {
@@ -53,7 +54,9 @@ const playerQuery = searchParams.get('player')
 const navigate = useNavigate()
 const { profile } = useAuth()
 const { toast, ToastContainer } = useToast()
-const { t } = useLanguage()
+const { t, lang } = useLanguage()
+const L2 = (en, zh) => (lang === 'zh' ? zh : en)
+const ago = d => timeAgo(d, lang)
 
 const [vip, setVip] = useState(null)
 const [monthly, setMonthly] = useState([])
@@ -296,7 +299,7 @@ logged_at: nowStr,
 })
 await supabase.from('vip_members').update({ last_contacted: nowStr, last_contact_date: nowStr.slice(0,10) }).eq('id', id)
 setLogSaving(false)
-if (err) { toast('Error: ' + err.message, 'error'); return }
+if (err) { toast(L2('Error: ', '错误：') + err.message, 'error'); return }
 toast(t('vip360.contactLogged'), 'success')
 setShowLog(false); setLogNote('')
 load()
@@ -311,7 +314,7 @@ const clean = Object.fromEntries(
 )
 const { error: err } = await supabase.from('vip_members').update(clean).eq('id', id)
 setEditSaving(false)
-if (err) { toast('Error: ' + err.message, 'error'); return }
+if (err) { toast(L2('Error: ', '错误：') + err.message, 'error'); return }
 toast(t('vip360.savedMsg'), 'success')
 setShowEdit(false)
 load()
@@ -341,7 +344,7 @@ Active providers: ${gl?.active_providers||0}.
 System suggestion: ${gl?.offer_recommendation||'N/A'}.`
 const result = await callAI(`Based on this VIP player's gaming data, provide a specific campaign offer recommendation with reasoning. Be concise and actionable (2-3 sentences): ${summary}`)
 setGamingAI(result)
-} catch(e) { toast('AI unavailable', 'error') }
+} catch(e) { toast(L2('AI unavailable', 'AI 不可用'), 'error') }
 setGamingAILoading(false)
 }
 
@@ -366,8 +369,8 @@ const payload = {
 const { error: err } = await supabase.from('vip_profiles')
   .upsert(payload, { onConflict: 'username' })
 setProfileSaving(false)
-if (err) { toast('Error: ' + err.message, 'error'); return }
-toast('Profile saved ✓', 'success')
+if (err) { toast(L2('Error: ', '错误：') + err.message, 'error'); return }
+toast(L2('Profile saved ✓', '档案已保存 ✓'), 'success')
 setVipProfile(payload)
 }
 
@@ -381,15 +384,15 @@ setProfileForm(f => {
 const TABS = [
 { key: 'overview', label: t('vip360.tabOverview') },
 { key: 'financial', label: t('vip360.tabFinancial') },
-{ key: 'gaming', label: '🎮 Gaming' },
-{ key: 'profile', label: '👤 Profile' },
+{ key: 'gaming', label: L2('🎮 Gaming', '🎮 游戏') },
+{ key: 'profile', label: L2('👤 Profile', '👤 档案') },
 { key: 'activity', label: t('vip360.tabActivity') },
 { key: 'campaigns', label: t('vip360.tabCampaigns'), count: campaigns.length },
 { key: 'contact', label: t('vip360.tabContact'), count: contacts.length },
 { key: 'calendar', label: t('vip360.tabCalendar') },
 { key: 'notes', label: t('vip360.tabNotes') },
 { key: 'insights', label: t('vip360.tabInsights') },
-{ key: 'spending', label: '💸 Dept Spending' },
+{ key: 'spending', label: L2('💸 Dept Spending', '💸 部门开支') },
 ]
 
 if (loading) return <div style={{ padding: 32 }}><LoadingState message={t('vip360.loadingMsg')} /></div>
@@ -424,7 +427,7 @@ fontSize:22, fontWeight:700, color:tierCfg.color, flexShrink:0,
 <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:2 }}>
 <h2 style={{ fontSize:22, fontWeight:700, margin:0 }}>{vip.username}</h2>
 <button
-title="Copy username"
+title={L2('Copy username', '复制用户名')}
 onClick={() => navigator.clipboard.writeText(vip.username)}
 style={{ background:'none', border:'none', color:'var(--muted)', cursor:'pointer', fontSize:14, padding:'0 2px', lineHeight:1, opacity:.6 }}
 onMouseEnter={e => e.currentTarget.style.opacity=1}
@@ -439,22 +442,22 @@ onMouseLeave={e => e.currentTarget.style.opacity=.6}
 </div>
 <div style={{ fontSize:12, color:'var(--muted)', marginTop:4 }}>
 {vip.region && <span>{vip.region}</span>}
-{vip.host_assigned && <span> · Host: {vip.host_assigned}</span>}
-{vip.affiliate_login && <span> · Affiliate: <b style={{ color:'var(--brand)' }}>{vip.affiliate_login}</b></span>}
+{vip.host_assigned && <span> · {L2('Host', '负责人')}: {vip.host_assigned}</span>}
+{vip.affiliate_login && <span> · {L2('Affiliate', '代理')}: <b style={{ color:'var(--brand)' }}>{vip.affiliate_login}</b></span>}
 {vip.currency && <span> · {vip.currency}</span>}
 </div>
 {gamingLabel && (
 <div style={{ marginTop:6 }}>
   <span
     onClick={() => setTab('gaming')}
-    title="Click to view Gaming tab"
+    title={L2('Click to view Gaming tab', '点击查看游戏分页')}
     style={{
       display:'inline-flex', alignItems:'center', gap:5,
       fontSize:11, fontWeight:700, padding:'3px 10px', borderRadius:20, cursor:'pointer',
       background:'rgba(139,92,246,.15)', border:'1px solid rgba(139,92,246,.35)', color:'#a78bfa',
     }}
   >
-    {gamingLabel.player_type_icon} {gamingLabel.player_type}
+    {gamingLabel.player_type_icon} {lang === 'zh' ? ({ 'Slots King':'老虎机之王','Live Casino VIP':'真人娱乐VIP','Sports Punter':'体育投注玩家','Slots + Live':'老虎机 + 真人','Live + Sports':'真人 + 体育','Multi-Platform':'多平台','Casual':'休闲' }[gamingLabel.player_type] || gamingLabel.player_type) : gamingLabel.player_type}
   </span>
 </div>
 )}
@@ -471,10 +474,10 @@ onMouseLeave={e => e.currentTarget.style.opacity=.6}
 {/* ── Financial Summary ── */}
 <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:14, marginTop:20 }}>
 {[
-{ label:'Deposit', value:formatMoney(sumDeposit, vip.currency), trend:null },
-{ label:'Turnover', value:formatMoney(sumTurnover, vip.currency), trend:null },
-{ label:'Win/Loss', value:formatMoney(Math.abs(sumWL), vip.currency), isWL:true, wl:sumWL },
-{ label:'Last Deposit', value:daysInactive != null ? `${daysInactive}d ago` : '—', sub:vip.last_deposit_date ? fmtDate(vip.last_deposit_date) : null },
+{ label:L2('Deposit', '存款'), value:formatMoney(sumDeposit, vip.currency), trend:null },
+{ label:L2('Turnover', '流水'), value:formatMoney(sumTurnover, vip.currency), trend:null },
+{ label:L2('Win/Loss', '输赢'), value:formatMoney(Math.abs(sumWL), vip.currency), isWL:true, wl:sumWL },
+{ label:L2('Last Deposit', '最后存款'), value:daysInactive != null ? L2(`${daysInactive}d ago`, `${daysInactive}天前`) : '—', sub:vip.last_deposit_date ? fmtDate(vip.last_deposit_date, lang) : null },
 ].map((m,i) => (
 <div key={i} style={{ background:'var(--surface2)', borderRadius:8, padding:'12px 14px' }}>
 <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:6 }}>
@@ -487,7 +490,7 @@ onMouseLeave={e => e.currentTarget.style.opacity=.6}
 fontSize:10, fontWeight:700, padding:'2px 6px', borderRadius:4, border:'none',
 background: period===p.value ? 'var(--brand)' : 'var(--surface)',
 color: period===p.value ? '#fff' : 'var(--muted)', cursor:'pointer',
-}}>{p.label}</button>
+}}>{L2(p.label, p.zh)}</button>
 ))}
 </div>
 )}
@@ -518,54 +521,54 @@ color: m.isWL ? (m.wl <= 0 ? 'var(--success)' : 'var(--danger)') : 'var(--text)'
 <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:20 }}>
 {/* Left: profile summary */}
 <div>
-<SectionLabel>Profile</SectionLabel>
-<Field label="Username">{vip.username}</Field>
-<Field label="Full Name">{vip.full_name}</Field>
-<Field label="Tier"><TierBadge tier={vip.tier} /></Field>
-<Field label="Status"><StatusBadge status={vip.activity_status} /></Field>
-<Field label="Risk"><RiskBadge risk={vip.churn_risk} /></Field>
-<Field label="Region">{vip.region}</Field>
-<Field label="Currency">{vip.currency}</Field>
-<Field label="Host">{vip.host_assigned}</Field>
-<Field label="Affiliate">{vip.affiliate_login ? vip.affiliate_login : vip.affiliate_updated_at ? 'Direct (no affiliate)' : '—'}</Field>
-<Field label="Phone">{vip.phone}</Field>
-<Field label="WhatsApp">{vip.whatsapp}</Field>
-<Field label="Email">{vip.email}</Field>
-<Field label="Telegram">{vip.telegram ? `@${vip.telegram}` : '—'}</Field>
-<Field label="Address">{vip.address}</Field>
-<Field label="Remark">{vip.special_requests}</Field>
-<Field label="Birthday">{vip.birthday ? fmtDate(vip.birthday) : '—'}</Field>
-<Field label="Registered">{fmtDate(vip.registration_date || vip.created_at)}</Field>
-<Field label="T&G Verify">
+<SectionLabel>{L2('Profile', '档案')}</SectionLabel>
+<Field label={L2('Username', '用户名')}>{vip.username}</Field>
+<Field label={L2('Full Name', '全名')}>{vip.full_name}</Field>
+<Field label={L2('Tier', '等级')}><TierBadge tier={vip.tier} /></Field>
+<Field label={L2('Status', '状态')}><StatusBadge status={vip.activity_status} /></Field>
+<Field label={L2('Risk', '风险')}><RiskBadge risk={vip.churn_risk} /></Field>
+<Field label={L2('Region', '地区')}>{vip.region}</Field>
+<Field label={L2('Currency', '货币')}>{vip.currency}</Field>
+<Field label={L2('Host', '负责人')}>{vip.host_assigned}</Field>
+<Field label={L2('Affiliate', '代理')}>{vip.affiliate_login ? vip.affiliate_login : vip.affiliate_updated_at ? L2('Direct (no affiliate)', '直客（无代理）') : '—'}</Field>
+<Field label={L2('Phone', '电话')}>{vip.phone}</Field>
+<Field label={L2('WhatsApp', 'WhatsApp')}>{vip.whatsapp}</Field>
+<Field label={L2('Email', '电邮')}>{vip.email}</Field>
+<Field label={L2('Telegram', 'Telegram')}>{vip.telegram ? `@${vip.telegram}` : '—'}</Field>
+<Field label={L2('Address', '地址')}>{vip.address}</Field>
+<Field label={L2('Remark', '备注')}>{vip.special_requests}</Field>
+<Field label={L2('Birthday', '生日')}>{vip.birthday ? fmtDate(vip.birthday, lang) : '—'}</Field>
+<Field label={L2('Registered', '注册日期')}>{fmtDate(vip.registration_date || vip.created_at, lang)}</Field>
+<Field label={L2('T&G Verify', 'T&G 验证')}>
   {vip.tng_verify_status === 'verified' ? (
-    <span style={{ color:'#3fb950', fontWeight:700 }}>✓ Verified — {vip.tng_verified_name || '—'}</span>
+    <span style={{ color:'#3fb950', fontWeight:700 }}>✓ {L2('Verified', '已验证')} — {vip.tng_verified_name || '—'}</span>
   ) : vip.tng_verify_status === 'mismatch' ? (
-    <span style={{ color:'#d29922', fontWeight:700 }}>⚠ Mismatch — {vip.tng_verified_name || '—'}</span>
+    <span style={{ color:'#d29922', fontWeight:700 }}>⚠ {L2('Mismatch', '不匹配')} — {vip.tng_verified_name || '—'}</span>
   ) : (
-    <span style={{ color:'var(--muted)' }}>Not checked</span>
+    <span style={{ color:'var(--muted)' }}>{L2('Not checked', '未检查')}</span>
   )}
-  {vip.tng_verified_at && <span style={{ fontSize:11, color:'var(--muted)', marginLeft:8 }}>({fmtDate(vip.tng_verified_at)})</span>}
+  {vip.tng_verified_at && <span style={{ fontSize:11, color:'var(--muted)', marginLeft:8 }}>({fmtDate(vip.tng_verified_at, lang)})</span>}
 </Field>
 </div>
 {/* Right: recent activity */}
 <div>
-<SectionLabel>Recent Activity</SectionLabel>
+<SectionLabel>{L2('Recent Activity', '近期活动')}</SectionLabel>
 {contacts.slice(0,5).length === 0 ? (
-<EmptyState icon="📋" title="No activity yet" />
+<EmptyState icon="📋" title={L2('No activity yet', '暂无活动')} />
 ) : contacts.slice(0,5).map(c => (
 <div key={c.id} style={{ borderBottom:'1px solid var(--border)', padding:'10px 0' }}>
 <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-<span style={{ fontSize:13, fontWeight:600 }}>{c.channel || c.outcome || 'Contact'}</span>
-<span style={{ fontSize:11, color:'var(--muted)' }}>{timeAgo(c.logged_at)}</span>
+<span style={{ fontSize:13, fontWeight:600 }}>{enumLabel(c.channel || c.outcome, lang) || L2('Contact', '联系')}</span>
+<span style={{ fontSize:11, color:'var(--muted)' }}>{ago(c.logged_at)}</span>
 </div>
 {(c.notes || c.outcome) && (
-<div style={{ fontSize:12, color:'var(--muted)', marginTop:3 }}>{c.outcome}{c.notes ? ' — ' + c.notes : ''}</div>
+<div style={{ fontSize:12, color:'var(--muted)', marginTop:3 }}>{enumLabel(c.outcome, lang)}{c.notes ? ' — ' + c.notes : ''}</div>
 )}
-{c.host_name && <div style={{ fontSize:11, color:'var(--disabled)', marginTop:2 }}>by {c.host_name}</div>}
+{c.host_name && <div style={{ fontSize:11, color:'var(--disabled)', marginTop:2 }}>{L2('by', '由')} {c.host_name}</div>}
 </div>
 ))}
 {contacts.length > 5 && (
-<Btn size="sm" variant="link" onClick={() => setTab('contact')}>View all {contacts.length} contacts →</Btn>
+<Btn size="sm" variant="link" onClick={() => setTab('contact')}>{L2(`View all ${contacts.length} contacts →`, `查看全部 ${contacts.length} 条联系 →`)}</Btn>
 )}
 </div>
 </div>
@@ -576,27 +579,27 @@ color: m.isWL ? (m.wl <= 0 ? 'var(--success)' : 'var(--danger)') : 'var(--text)'
 {tab === 'financial' && (
 <div>
 <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
-<SectionLabel>Financial History</SectionLabel>
+<SectionLabel>{L2('Financial History', '财务记录')}</SectionLabel>
 <div style={{ display:'flex', gap:4 }}>
 {PERIODS.map(p => (
 <button key={p.value} onClick={() => setPeriod(p.value)} style={{
 fontSize:12, fontWeight:700, padding:'4px 10px', borderRadius:6, border:'none',
 background: period===p.value ? 'var(--brand)' : 'var(--surface2)',
 color: period===p.value ? '#fff' : 'var(--muted)', cursor:'pointer',
-}}>{p.label}</button>
+}}>{L2(p.label, p.zh)}</button>
 ))}
 </div>
 </div>
 {monthly.length === 0 ? (
-<EmptyState icon="💰" title="No financial data" message="No monthly totals found for this VIP." />
+<EmptyState icon="💰" title={L2('No financial data', '暂无财务数据')} message={L2('No monthly totals found for this VIP.', '未找到此VIP的月度汇总。')} />
 ) : (
 <div style={{ overflowX:'auto' }}>
 <table style={{ width:'100%', borderCollapse:'collapse', fontSize:13 }}>
 <thead>
 <tr>
-{['Month','Deposit','Withdrawal','Turnover','Win/Loss','Rebate'].map(h => (
+{[['Month','月份'],['Deposit','存款'],['Withdrawal','提款'],['Turnover','流水'],['Win/Loss','输赢'],['Rebate','返水']].map(([h, hz]) => (
 <th key={h} style={{ padding:'9px 12px', textAlign: h==='Month'?'left':'right', background:'var(--surface)', color:'var(--muted)', fontWeight:600, fontSize:11, borderBottom:'1px solid var(--border)' }}
->{h}</th>
+>{L2(h, hz)}</th>
 ))}
 </tr>
 </thead>
@@ -637,7 +640,8 @@ const SLOTS_PROVIDERS = new Set(['PP Slot','JL','NS','FC','PT4','MEGA','SG','BNG
 const SPORTS_PROVIDERS = new Set(['CBX','IBC','CMD','L365','BTI2'])
 const getCat = p => LIVE_PROVIDERS.has(p) ? 'live' : SLOTS_PROVIDERS.has(p) ? 'slots' : SPORTS_PROVIDERS.has(p) ? 'sports' : 'other'
 const CAT_COLOR = { live:'#f59e0b', slots:'#8b5cf6', sports:'#22c55e', other:'var(--muted)' }
-const CAT_LABEL = { live:'Live Casino', slots:'Slots', sports:'Sports', other:'Other' }
+const CAT_LABEL = lang === 'zh' ? { live:'真人娱乐', slots:'老虎机', sports:'体育', other:'其他' } : { live:'Live Casino', slots:'Slots', sports:'Sports', other:'Other' }
+const PT_ZH = { 'Slots King':'老虎机之王','Live Casino VIP':'真人娱乐VIP','Sports Punter':'体育投注玩家','Slots + Live':'老虎机 + 真人','Live + Sports':'真人 + 体育','Multi-Platform':'多平台','Casual':'休闲' }
 const CAT_ICON  = { live:'🎲', slots:'🎰', sports:'⚽', other:'🃏' }
 
 // Sort by turnover
@@ -660,29 +664,29 @@ const ptColor = gl ? (PLAYER_TYPE_COLOR[gl.player_type] || 'var(--muted)') : 'va
 return (
 <div>
   {gamingLoading ? (
-    <LoadingState message="Loading gaming data…" />
+    <LoadingState message={L2('Loading gaming data…', '载入游戏数据中…')} />
   ) : gaming.length === 0 ? (
-    <EmptyState icon="🎮" title="No gaming data" message="No provider stats found for this player. Upload gaming data via CSV Import." />
+    <EmptyState icon="🎮" title={L2('No gaming data', '暂无游戏数据')} message={L2('No provider stats found for this player. Upload gaming data via CSV Import.', '未找到此玩家的供应商数据。请通过CSV导入上传游戏数据。')} />
   ) : (
     <div>
       {/* Player Type Badge + Category Summary */}
       <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16, marginBottom:20 }}>
         {/* Player Type */}
         <div style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:10, padding:'16px 18px' }}>
-          <div style={{ fontSize:11, fontWeight:700, color:'var(--muted)', letterSpacing:'.5px', textTransform:'uppercase', marginBottom:10 }}>Player Type</div>
+          <div style={{ fontSize:11, fontWeight:700, color:'var(--muted)', letterSpacing:'.5px', textTransform:'uppercase', marginBottom:10 }}>{L2('Player Type', '玩家类型')}</div>
           {gl ? (
             <div>
               <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:8 }}>
                 <span style={{ fontSize:28 }}>{gl.player_type_icon}</span>
-                <span style={{ fontSize:18, fontWeight:800, color: ptColor }}>{gl.player_type}</span>
+                <span style={{ fontSize:18, fontWeight:800, color: ptColor }}>{lang === 'zh' ? (PT_ZH[gl.player_type] || gl.player_type) : gl.player_type}</span>
               </div>
               <div style={{ fontSize:12, color:'var(--muted)', marginBottom:8 }}>
-                {gl.snapshot_month} · {gl.active_providers} active provider{gl.active_providers !== 1 ? 's':''}</div>
+                {gl.snapshot_month} · {L2(`${gl.active_providers} active provider${gl.active_providers !== 1 ? 's':''}`, `${gl.active_providers} 个活跃供应商`)}</div>
               {/* Category bars */}
               {[
-                { label:'Slots', pct: gl.slots_pct, color: CAT_COLOR.slots },
-                { label:'Live Casino', pct: gl.live_pct, color: CAT_COLOR.live },
-                { label:'Sports', pct: gl.sports_pct, color: CAT_COLOR.sports },
+                { label:CAT_LABEL.slots, pct: gl.slots_pct, color: CAT_COLOR.slots },
+                { label:CAT_LABEL.live, pct: gl.live_pct, color: CAT_COLOR.live },
+                { label:CAT_LABEL.sports, pct: gl.sports_pct, color: CAT_COLOR.sports },
               ].filter(b => b.pct > 0).map(b => (
                 <div key={b.label} style={{ marginBottom:6 }}>
                   <div style={{ display:'flex', justifyContent:'space-between', fontSize:11, marginBottom:2 }}>
@@ -696,16 +700,16 @@ return (
               ))}
             </div>
           ) : (
-            <div style={{ fontSize:13, color:'var(--muted)' }}>Label not yet computed. Run the SQL migration first.</div>
+            <div style={{ fontSize:13, color:'var(--muted)' }}>{L2('Label not yet computed. Run the SQL migration first.', '标签尚未计算。请先运行SQL迁移。')}</div>
           )}
         </div>
 
         {/* Good at / Bad at */}
         <div style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:10, padding:'16px 18px' }}>
-          <div style={{ fontSize:11, fontWeight:700, color:'var(--muted)', letterSpacing:'.5px', textTransform:'uppercase', marginBottom:10 }}>Strengths & Weaknesses</div>
+          <div style={{ fontSize:11, fontWeight:700, color:'var(--muted)', letterSpacing:'.5px', textTransform:'uppercase', marginBottom:10 }}>{L2('Strengths & Weaknesses', '强项与弱项')}</div>
           {gl?.best_provider && (
             <div style={{ marginBottom:12 }}>
-              <div style={{ fontSize:11, color:'var(--success)', fontWeight:700, marginBottom:4 }}>✅ Best at (player wins)</div>
+              <div style={{ fontSize:11, color:'var(--success)', fontWeight:700, marginBottom:4 }}>{L2('✅ Best at (player wins)', '✅ 强项（玩家赢）')}</div>
               <div style={{ fontSize:14, fontWeight:700 }}>{gl.best_provider}</div>
               <div style={{ fontSize:11, color:'var(--muted)' }}>
                 {CAT_ICON[getCat(gl.best_provider)]} {CAT_LABEL[getCat(gl.best_provider)]}
@@ -714,7 +718,7 @@ return (
           )}
           {gl?.worst_provider && (
             <div style={{ marginBottom:12 }}>
-              <div style={{ fontSize:11, color:'var(--danger)', fontWeight:700, marginBottom:4 }}>⚠️ Worst at (house wins most)</div>
+              <div style={{ fontSize:11, color:'var(--danger)', fontWeight:700, marginBottom:4 }}>{L2('⚠️ Worst at (house wins most)', '⚠️ 弱项（庄家赢最多）')}</div>
               <div style={{ fontSize:14, fontWeight:700 }}>{gl.worst_provider}</div>
               <div style={{ fontSize:11, color:'var(--muted)' }}>
                 {CAT_ICON[getCat(gl.worst_provider)]} {CAT_LABEL[getCat(gl.worst_provider)]}
@@ -722,11 +726,11 @@ return (
             </div>
           )}
           {!gl?.best_provider && !gl?.worst_provider && (
-            <div style={{ fontSize:13, color:'var(--muted)' }}>No win/loss data available yet.</div>
+            <div style={{ fontSize:13, color:'var(--muted)' }}>{L2('No win/loss data available yet.', '暂无输赢数据。')}</div>
           )}
           {gl?.top_providers && (
             <div style={{ marginTop:4 }}>
-              <div style={{ fontSize:11, color:'var(--muted)', fontWeight:700, marginBottom:4 }}>TOP PROVIDERS (by turnover)</div>
+              <div style={{ fontSize:11, color:'var(--muted)', fontWeight:700, marginBottom:4 }}>{L2('TOP PROVIDERS (by turnover)', '主要供应商（按流水）')}</div>
               <div style={{ fontSize:12 }}>{gl.top_providers}</div>
             </div>
           )}
@@ -738,11 +742,11 @@ return (
         <div style={{ background:'rgba(59,130,246,.07)', border:'1px solid rgba(59,130,246,.2)', borderRadius:10, padding:'14px 18px', marginBottom:20 }}>
           <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:16 }}>
             <div style={{ flex:1 }}>
-              <div style={{ fontSize:11, fontWeight:700, color:'var(--info)', letterSpacing:'.5px', textTransform:'uppercase', marginBottom:6 }}>💡 Suggested Offer</div>
+              <div style={{ fontSize:11, fontWeight:700, color:'var(--info)', letterSpacing:'.5px', textTransform:'uppercase', marginBottom:6 }}>{L2('💡 Suggested Offer', '💡 建议优惠')}</div>
               <div style={{ fontSize:13, fontWeight:500 }}>{gl.offer_recommendation}</div>
             </div>
             <Btn size="sm" variant="secondary" onClick={getGamingAI} disabled={gamingAILoading} style={{ flexShrink:0 }}>
-              {gamingAILoading ? 'Thinking…' : '🤖 AI Recommendation'}
+              {gamingAILoading ? L2('Thinking…', '思考中…') : L2('🤖 AI Recommendation', '🤖 AI 建议')}
             </Btn>
           </div>
           {gamingAI && (
@@ -755,13 +759,13 @@ return (
 
       {/* Provider Breakdown Table */}
       <div>
-        <SectionLabel>Provider Breakdown</SectionLabel>
+        <SectionLabel>{L2('Provider Breakdown', '供应商明细')}</SectionLabel>
         <div style={{ overflowX:'auto' }}>
           <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12 }}>
             <thead>
               <tr>
-                {['Provider','Category','Turnover','Win/Loss','Rebate','Bonus','Sessions'].map(h => (
-                  <th key={h} style={{ padding:'8px 10px', textAlign: h==='Provider'||h==='Category'?'left':'right', background:'var(--surface)', color:'var(--muted)', fontWeight:600, fontSize:11, borderBottom:'1px solid var(--border)' }}>{h}</th>
+                {[['Provider','供应商'],['Category','类别'],['Turnover','流水'],['Win/Loss','输赢'],['Rebate','返水'],['Bonus','奖励'],['Sessions','场次']].map(([h, hz]) => (
+                  <th key={h} style={{ padding:'8px 10px', textAlign: h==='Provider'||h==='Category'?'left':'right', background:'var(--surface)', color:'var(--muted)', fontWeight:600, fontSize:11, borderBottom:'1px solid var(--border)' }}>{L2(h, hz)}</th>
                 ))}
               </tr>
             </thead>
@@ -812,11 +816,11 @@ return (
 {tab === 'activity' && (
 <div>
 <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
-<SectionLabel>Activity Timeline</SectionLabel>
-<Btn size="sm" variant="primary" onClick={() => setShowLog(true)}>+ Log Contact</Btn>
+<SectionLabel>{L2('Activity Timeline', '活动时间线')}</SectionLabel>
+<Btn size="sm" variant="primary" onClick={() => setShowLog(true)}>{L2('+ Log Contact', '+ 记录联系')}</Btn>
 </div>
 {contacts.length === 0 ? (
-<EmptyState icon="📋" title="No activity yet" message="Log the first contact to start the timeline." />
+<EmptyState icon="📋" title={L2('No activity yet', '暂无活动')} message={L2('Log the first contact to start the timeline.', '记录第一次联系以开始时间线。')} />
 ) : contacts.map(c => (
 <div key={c.id} style={{ borderBottom:'1px solid var(--border)', padding:'12px 0', display:'flex', gap:12 }}>
 <div style={{ width:36, height:36, borderRadius:'50%', background:'var(--surface2)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:16, flexShrink:0 }}>
@@ -824,8 +828,8 @@ return (
 </div>
 <div style={{ flex:1 }}>
 <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-<div style={{ fontSize:13, fontWeight:600 }}>{c.channel || 'Contact'}</div>
-<div style={{ fontSize:11, color:'var(--muted)' }}>{timeAgo(c.logged_at)}</div>
+<div style={{ fontSize:13, fontWeight:600 }}>{c.channel ? enumLabel(c.channel, lang) : L2('Contact', '联系')}</div>
+<div style={{ fontSize:11, color:'var(--muted)' }}>{ago(c.logged_at)}</div>
 </div>
 <div style={{ fontSize:12, marginTop:3 }}>
 <span style={{
@@ -833,10 +837,10 @@ fontSize:11, fontWeight:700, padding:'1px 7px', borderRadius:10,
 background: c.outcome==='Deposited'||c.outcome==='Reactivated' ? 'rgba(34,197,94,.15)' : c.outcome==='No Reply' ? 'rgba(239,68,68,.12)' : 'var(--surface2)',
 color: c.outcome==='Deposited'||c.outcome==='Reactivated' ? 'var(--success)' : c.outcome==='No Reply' ? 'var(--danger)' : 'var(--muted)',
 marginRight:8,
-}}>{c.outcome}</span>
+}}>{enumLabel(c.outcome, lang)}</span>
 {c.notes}
 </div>
-{c.host_name && <div style={{ fontSize:11, color:'var(--disabled)', marginTop:3 }}>by {c.host_name}{c.wa_number_used && <span style={{ marginLeft:8, color:'#25d366', fontWeight:600 }}>📱 {c.wa_number_used}</span>}</div>}
+{c.host_name && <div style={{ fontSize:11, color:'var(--disabled)', marginTop:3 }}>{L2('by', '由')} {c.host_name}{c.wa_number_used && <span style={{ marginLeft:8, color:'#25d366', fontWeight:600 }}>📱 {c.wa_number_used}</span>}</div>}
 </div>
 </div>
 ))}
@@ -846,24 +850,24 @@ marginRight:8,
 {/* CAMPAIGNS */}
 {tab === 'campaigns' && (
 <div>
-<SectionLabel>Campaign Participation</SectionLabel>
+<SectionLabel>{L2('Campaign Participation', '活动参与')}</SectionLabel>
 {campaigns.length === 0 ? (
-<EmptyState icon="📢" title="No campaigns" message="This VIP has not joined any campaigns." />
+<EmptyState icon="📢" title={L2('No campaigns', '暂无活动')} message={L2('This VIP has not joined any campaigns.', '此VIP尚未参加任何活动。')} />
 ) : campaigns.map(cp => (
 <div key={cp.id} style={{ borderBottom:'1px solid var(--border)', padding:'12px 0' }}>
 <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
 <div>
-<div style={{ fontSize:13, fontWeight:600 }}>{cp.campaigns?.campaign_name || 'Campaign'}</div>
+<div style={{ fontSize:13, fontWeight:600 }}>{cp.campaigns?.campaign_name || L2('Campaign', '活动')}</div>
 <div style={{ fontSize:11, color:'var(--muted)', marginTop:2 }}>
-Joined {fmtDate(cp.added_at)}
-{cp.campaigns?.start_date && ` · ${fmtDate(cp.campaigns.start_date)} – ${fmtDate(cp.campaigns.end_date)}`}
+{L2('Joined', '加入于')} {fmtDate(cp.added_at, lang)}
+{cp.campaigns?.start_date && ` · ${fmtDate(cp.campaigns.start_date, lang)} – ${fmtDate(cp.campaigns.end_date, lang)}`}
 </div>
 </div>
 <span style={{
 fontSize:11, fontWeight:700, padding:'2px 9px', borderRadius:20,
 background: cp.campaigns?.status==='Active' ? 'rgba(34,197,94,.12)' : 'var(--surface2)',
 color: cp.campaigns?.status==='Active' ? 'var(--success)' : 'var(--muted)',
-}}>{cp.campaigns?.status || '—'}</span>
+}}>{enumLabel(cp.campaigns?.status, lang) || '—'}</span>
 </div>
 </div>
 ))}
@@ -874,27 +878,27 @@ color: cp.campaigns?.status==='Active' ? 'var(--success)' : 'var(--muted)',
 {tab === 'contact' && (
 <div>
 <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
-<SectionLabel>Contact History</SectionLabel>
-<Btn size="sm" variant="primary" onClick={() => setShowLog(true)}>+ Log Contact</Btn>
+<SectionLabel>{L2('Contact History', '联系记录')}</SectionLabel>
+<Btn size="sm" variant="primary" onClick={() => setShowLog(true)}>{L2('+ Log Contact', '+ 记录联系')}</Btn>
 </div>
 <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, marginBottom:20 }}>
-<Field label="Phone">{vip.phone || '—'}</Field>
-<Field label="WhatsApp">{vip.whatsapp || '—'}</Field>
-<Field label="Email">{vip.email || '—'}</Field>
-<Field label="Telegram">{vip.telegram ? `@${vip.telegram}` : '—'}</Field>
-<Field label="Address">{vip.address || '—'}</Field>
-<Field label="Remark">{vip.special_requests || '—'}</Field>
+<Field label={L2('Phone', '电话')}>{vip.phone || '—'}</Field>
+<Field label={L2('WhatsApp', 'WhatsApp')}>{vip.whatsapp || '—'}</Field>
+<Field label={L2('Email', '电邮')}>{vip.email || '—'}</Field>
+<Field label={L2('Telegram', 'Telegram')}>{vip.telegram ? `@${vip.telegram}` : '—'}</Field>
+<Field label={L2('Address', '地址')}>{vip.address || '—'}</Field>
+<Field label={L2('Remark', '备注')}>{vip.special_requests || '—'}</Field>
 </div>
 {contacts.length === 0 ? (
-<EmptyState icon="📞" title="No contact records" message="No contact logs found for this VIP." />
+<EmptyState icon="📞" title={L2('No contact records', '暂无联系记录')} message={L2('No contact logs found for this VIP.', '未找到此VIP的联系记录。')} />
 ) : contacts.map(c => (
 <div key={c.id} style={{ borderBottom:'1px solid var(--border)', padding:'10px 0' }}>
 <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-<span style={{ fontSize:13, fontWeight:600 }}>{c.channel || 'Contact'}</span>
-<span style={{ fontSize:11, color:'var(--muted)' }}>{timeAgo(c.logged_at)}</span>
+<span style={{ fontSize:13, fontWeight:600 }}>{c.channel ? enumLabel(c.channel, lang) : L2('Contact', '联系')}</span>
+<span style={{ fontSize:11, color:'var(--muted)' }}>{ago(c.logged_at)}</span>
 </div>
-<div style={{ fontSize:12, color:'var(--muted)', marginTop:3 }}>{c.outcome}{c.notes?' — '+c.notes:''}</div>
-{c.host_name && <div style={{ fontSize:11, color:'var(--disabled)', marginTop:2 }}>by {c.host_name}</div>}
+<div style={{ fontSize:12, color:'var(--muted)', marginTop:3 }}>{enumLabel(c.outcome, lang)}{c.notes?' — '+c.notes:''}</div>
+{c.host_name && <div style={{ fontSize:11, color:'var(--disabled)', marginTop:2 }}>{L2('by', '由')} {c.host_name}</div>}
 </div>
 ))}
 </div>
@@ -903,17 +907,17 @@ color: cp.campaigns?.status==='Active' ? 'var(--success)' : 'var(--muted)',
 {/* NOTES */}
 {tab === 'notes' && (
 <div>
-<SectionLabel>Internal Notes</SectionLabel>
+<SectionLabel>{L2('Internal Notes', '内部备注')}</SectionLabel>
 {vip.notes ? (
 <div style={{ background:'var(--surface2)', borderRadius:8, padding:14, fontSize:13, lineHeight:1.6, whiteSpace:'pre-wrap' }}>
 {vip.notes}
 </div>
 ) : (
-<EmptyState icon="📝" title="No notes" message="Notes added about this VIP will appear here." />
+<EmptyState icon="📝" title={L2('No notes', '暂无备注')} message={L2('Notes added about this VIP will appear here.', '关于此VIP的备注将显示在这里。')} />
 )}
 {profile?.role !== 'readonly' && (
 <div style={{ marginTop:14 }}>
-<Btn variant="secondary" size="sm" onClick={() => setShowEdit(true)}>Edit Notes</Btn>
+<Btn variant="secondary" size="sm" onClick={() => setShowEdit(true)}>{L2('Edit Notes', '编辑备注')}</Btn>
 </div>
 )}
 </div>
@@ -961,12 +965,12 @@ const activeDays = depositDays + turnoverOnlyDays
 const fmtK = v => v >= 1000000 ? (v/1000000).toFixed(2)+'M' : v >= 1000 ? (v/1000).toFixed(1)+'K' : v.toFixed(0)
 const prevMonth = () => { const d=new Date(y,m-2,1); setCalMonth(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`) }
 const nextMonth = () => { const d=new Date(y,m,1); setCalMonth(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`) }
-const monthName = new Date(y, m-1, 1).toLocaleString('default', { month: 'long', year: 'numeric' })
+const monthName = lang === 'zh' ? `${y}年${m}月` : new Date(y, m-1, 1).toLocaleString('en-US', { month: 'long', year: 'numeric' })
 return (
 <div>
 {/* Header + nav */}
 <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
-<div style={{ fontSize:13, fontWeight:800, letterSpacing:'.3px' }}>📅 {monthName.toUpperCase()} DEPOSIT RECORDS</div>
+<div style={{ fontSize:13, fontWeight:800, letterSpacing:'.3px' }}>📅 {L2(`${monthName.toUpperCase()} DEPOSIT RECORDS`, `${monthName} 存款记录`)}</div>
 <div style={{ display:'flex', gap:6 }}>
 <Btn size="sm" variant="ghost" onClick={prevMonth}>‹</Btn>
 <Btn size="sm" variant="ghost" onClick={nextMonth}>›</Btn>
@@ -975,10 +979,10 @@ return (
 {/* Stats */}
 <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:10, marginBottom:12 }}>
 {[
-{ label: `${calMonth} Deposit Days`, value: `${depositDays}/${daysInMonth} days`, color:'var(--success)' },
-{ label: 'Turnover Only, No Deposit', value: turnoverOnlyDays, color:'#c9a961' },
-{ label: `${calMonth} Deposit`, value: 'RM '+fmtK(totalDeposit), color:'var(--text)' },
-{ label: `${calMonth} Valid Bet`, value: 'RM '+fmtK(totalBet), color:'var(--muted)' },
+{ label: L2(`${calMonth} Deposit Days`, `${calMonth} 存款天数`), value: L2(`${depositDays}/${daysInMonth} days`, `${depositDays}/${daysInMonth} 天`), color:'var(--success)' },
+{ label: L2('Turnover Only, No Deposit', '仅流水，无存款'), value: turnoverOnlyDays, color:'#c9a961' },
+{ label: L2(`${calMonth} Deposit`, `${calMonth} 存款`), value: 'RM '+fmtK(totalDeposit), color:'var(--text)' },
+{ label: L2(`${calMonth} Valid Bet`, `${calMonth} 有效投注`), value: 'RM '+fmtK(totalBet), color:'var(--muted)' },
 ].map(s => (
 <div key={s.label} style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:9, padding:'10px 14px' }}>
 <div style={{ fontSize:17, fontWeight:800, color:s.color }}>{s.value}</div>
@@ -988,9 +992,9 @@ return (
 </div>
 <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:10, marginBottom:18 }}>
 {[
-{ label: `${calMonth} Active Rate`, value: Math.round(activeDays/daysInMonth*100)+'%', color: activeDays/daysInMonth >= 0.5 ? 'var(--success)' : 'var(--warning)' },
-{ label: `${calMonth} Deposit Rate`, value: Math.round(depositDays/daysInMonth*100)+'%', color:'var(--success)' },
-{ label: `${calMonth} Withdrawal Rate`, value: Math.round(withdrawalDays/daysInMonth*100)+'%', color:'var(--danger)' },
+{ label: L2(`${calMonth} Active Rate`, `${calMonth} 活跃率`), value: Math.round(activeDays/daysInMonth*100)+'%', color: activeDays/daysInMonth >= 0.5 ? 'var(--success)' : 'var(--warning)' },
+{ label: L2(`${calMonth} Deposit Rate`, `${calMonth} 存款率`), value: Math.round(depositDays/daysInMonth*100)+'%', color:'var(--success)' },
+{ label: L2(`${calMonth} Withdrawal Rate`, `${calMonth} 提款率`), value: Math.round(withdrawalDays/daysInMonth*100)+'%', color:'var(--danger)' },
 ].map(s => (
 <div key={s.label} style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:9, padding:'10px 14px' }}>
 <div style={{ fontSize:17, fontWeight:800, color:s.color }}>{s.value}</div>
@@ -1000,15 +1004,15 @@ return (
 </div>
 {/* Legend */}
 <div style={{ display:'flex', gap:16, marginBottom:12, fontSize:11, color:'var(--muted)' }}>
-<span style={{ display:'flex', alignItems:'center', gap:5 }}><span style={{ width:12, height:12, borderRadius:3, background:'rgba(34,197,94,.85)', display:'inline-block' }}></span>Deposited</span>
-<span style={{ display:'flex', alignItems:'center', gap:5 }}><span style={{ width:12, height:12, borderRadius:3, background:'rgba(201,169,97,.85)', display:'inline-block' }}></span>Turnover only</span>
-<span style={{ display:'flex', alignItems:'center', gap:5 }}><span style={{ width:12, height:12, borderRadius:3, background:'var(--surface2)', border:'1px solid var(--border)', display:'inline-block' }}></span>Absent</span>
+<span style={{ display:'flex', alignItems:'center', gap:5 }}><span style={{ width:12, height:12, borderRadius:3, background:'rgba(34,197,94,.85)', display:'inline-block' }}></span>{L2('Deposited', '已存款')}</span>
+<span style={{ display:'flex', alignItems:'center', gap:5 }}><span style={{ width:12, height:12, borderRadius:3, background:'rgba(201,169,97,.85)', display:'inline-block' }}></span>{L2('Turnover only', '仅流水')}</span>
+<span style={{ display:'flex', alignItems:'center', gap:5 }}><span style={{ width:12, height:12, borderRadius:3, background:'var(--surface2)', border:'1px solid var(--border)', display:'inline-block' }}></span>{L2('Absent', '无活动')}</span>
 </div>
 {/* Calendar grid */}
 {calLoading ? <LoadingState /> : (
 <div style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:10, overflow:'hidden' }}>
 <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)', borderBottom:'1px solid var(--border)' }}>
-{['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => (
+{(lang === 'zh' ? ['周日','周一','周二','周三','周四','周五','周六'] : ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']).map(d => (
 <div key={d} style={{ padding:'7px 0', textAlign:'center', fontSize:10, fontWeight:700, color:'var(--muted)' }}>{d}</div>
 ))}
 </div>
@@ -1030,12 +1034,12 @@ const textColor = (isDeposit || isTurnover) ? '#fff' : 'var(--muted)'
 const today = new Date()
 const isToday = today.getFullYear()===y && today.getMonth()+1===m && today.getDate()===d
 return (
-<div key={d} title={row ? `Deposit: RM${dep} · Bet: RM${fmtK(bet)}` : 'No activity'}
+<div key={d} title={row ? L2(`Deposit: RM${dep} · Bet: RM${fmtK(bet)}`, `存款: RM${dep} · 投注: RM${fmtK(bet)}`) : L2('No activity', '无活动')}
 style={{ background:bg, borderRadius:6, padding:'8px 4px', textAlign:'center', minHeight:52, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:2,
 outline: isToday ? '2px solid var(--accent)' : 'none', outlineOffset:'-2px' }}>
 <div style={{ fontSize:12, fontWeight:700, color: isToday && !row ? 'var(--accent)' : textColor }}>{d}</div>
 {isDeposit && <div style={{ fontSize:9, fontWeight:600, color:'rgba(255,255,255,.9)' }}>+{fmtK(dep)}</div>}
-{isTurnover && <div style={{ fontSize:9, fontWeight:600, color:'rgba(255,255,255,.9)' }}>bet</div>}
+{isTurnover && <div style={{ fontSize:9, fontWeight:600, color:'rgba(255,255,255,.9)' }}>{L2('bet', '投注')}</div>}
 </div>
 )
 })}
@@ -1049,21 +1053,21 @@ outline: isToday ? '2px solid var(--accent)' : 'none', outlineOffset:'-2px' }}>
 {/* INSIGHTS */}
 {tab === 'insights' && (
 <div>
-<SectionLabel>AI Insights</SectionLabel>
+<SectionLabel>{L2('AI Insights', 'AI 洞察')}</SectionLabel>
 <div style={{ background:'var(--surface2)', borderRadius:8, padding:14, marginBottom:16 }}>
-<div style={{ fontSize:11, fontWeight:700, color:'var(--muted)', marginBottom:8, letterSpacing:'.4px' }}>SYSTEM FACTS</div>
+<div style={{ fontSize:11, fontWeight:700, color:'var(--muted)', marginBottom:8, letterSpacing:'.4px' }}>{L2('SYSTEM FACTS', '系统数据')}</div>
 <div style={{ fontSize:13, lineHeight:1.6 }}>
-<div>Tier: <strong>{vip.tier}</strong> · Status: <strong>{vip.activity_status}</strong> · Risk: <strong>{vip.churn_risk}</strong></div>
-<div>Days inactive: <strong>{daysInactive != null ? daysInactive + 'd' : '—'}</strong></div>
-<div>Total deposit: <strong>{formatMoney(vip.total_deposit, vip.currency)}</strong></div>
-<div>Last deposit: <strong>{fmtDate(vip.last_deposit_date)}</strong></div>
-<div>Last contact: <strong>{fmtDate(vip.last_contacted || vip.last_contact_date)}</strong></div>
+<div>{L2('Tier', '等级')}: <strong>{vip.tier}</strong> · {L2('Status', '状态')}: <strong>{enumLabel(vip.activity_status, lang)}</strong> · {L2('Risk', '风险')}: <strong>{enumLabel(vip.churn_risk, lang)}</strong></div>
+<div>{L2('Days inactive', '不活跃天数')}: <strong>{daysInactive != null ? daysInactive + L2('d', '天') : '—'}</strong></div>
+<div>{L2('Total deposit', '总存款')}: <strong>{formatMoney(vip.total_deposit, vip.currency)}</strong></div>
+<div>{L2('Last deposit', '最后存款')}: <strong>{fmtDate(vip.last_deposit_date, lang)}</strong></div>
+<div>{L2('Last contact', '最后联系')}: <strong>{fmtDate(vip.last_contacted || vip.last_contact_date, lang)}</strong></div>
 </div>
 </div>
 
 {aiInsight ? (
 <div style={{ background:'rgba(59,130,246,.08)', border:'1px solid rgba(59,130,246,.2)', borderRadius:8, padding:14 }}>
-<div style={{ fontSize:11, fontWeight:700, color:'var(--info)', marginBottom:8, letterSpacing:'.4px' }}>AI INSIGHT</div>
+<div style={{ fontSize:11, fontWeight:700, color:'var(--info)', marginBottom:8, letterSpacing:'.4px' }}>{L2('AI INSIGHT', 'AI 洞察')}</div>
 <div style={{ fontSize:13, lineHeight:1.6, whiteSpace:'pre-wrap' }}>{aiInsight}</div>
 </div>
 ) : (
@@ -1072,7 +1076,7 @@ outline: isToday ? '2px solid var(--accent)' : 'none', outlineOffset:'-2px' }}>
 {aiLoading ? t('vip360.aiLoading') : t('vip360.getInsight')}
 </Btn>
 <div style={{ fontSize:11, color:'var(--muted)', marginTop:8 }}>
-AI insights are labeled and separate from confirmed CRM data.
+{L2('AI insights are labeled and separate from confirmed CRM data.', 'AI 洞察已标注，并与已确认的CRM数据分开。')}
 </div>
 </div>
 )}
@@ -1082,55 +1086,55 @@ AI insights are labeled and separate from confirmed CRM data.
 {/* PROFILE & INTERESTS */}
 {tab === 'profile' && (() => {
 const GAME_OPTIONS = [
-  { val:'slots',        label:'🎰 Slots' },
-  { val:'live_casino',  label:'🃏 Live Casino' },
-  { val:'sports',       label:'⚽ Sports Betting' },
-  { val:'fishing',      label:'🎣 Fishing' },
-  { val:'poker',        label:'♠️ Poker' },
-  { val:'esports',      label:'🕹️ E-Sports' },
-  { val:'arcade',       label:'🕹 Arcade' },
-  { val:'mixed',        label:'🎲 Mixed / All' },
+  { val:'slots',        label:L2('🎰 Slots', '🎰 老虎机') },
+  { val:'live_casino',  label:L2('🃏 Live Casino', '🃏 真人娱乐') },
+  { val:'sports',       label:L2('⚽ Sports Betting', '⚽ 体育投注') },
+  { val:'fishing',      label:L2('🎣 Fishing', '🎣 捕鱼') },
+  { val:'poker',        label:L2('♠️ Poker', '♠️ 扑克') },
+  { val:'esports',      label:L2('🕹️ E-Sports', '🕹️ 电竞') },
+  { val:'arcade',       label:L2('🕹 Arcade', '🕹 街机') },
+  { val:'mixed',        label:L2('🎲 Mixed / All', '🎲 混合 / 全部') },
 ]
 const INTEREST_OPTIONS = [
-  { val:'gadgets_3c',   label:'📱 Gadgets / 3C' },
-  { val:'travel',       label:'✈️ Travel' },
-  { val:'fine_dining',  label:'🍜 Fine Dining' },
-  { val:'luxury_cars',  label:'🚗 Luxury Cars' },
-  { val:'fashion',      label:'👗 Fashion' },
-  { val:'watches',      label:'⌚ Watches' },
-  { val:'property',     label:'🏠 Property' },
-  { val:'sports_fan',   label:'🏆 Sports Fan' },
-  { val:'family',       label:'👨‍👩‍👧 Family Oriented' },
-  { val:'nightlife',    label:'🍸 Nightlife' },
-  { val:'crypto',       label:'₿ Crypto / Finance' },
-  { val:'health',       label:'💪 Health & Fitness' },
+  { val:'gadgets_3c',   label:L2('📱 Gadgets / 3C', '📱 电子产品 / 3C') },
+  { val:'travel',       label:L2('✈️ Travel', '✈️ 旅行') },
+  { val:'fine_dining',  label:L2('🍜 Fine Dining', '🍜 美食') },
+  { val:'luxury_cars',  label:L2('🚗 Luxury Cars', '🚗 豪车') },
+  { val:'fashion',      label:L2('👗 Fashion', '👗 时尚') },
+  { val:'watches',      label:L2('⌚ Watches', '⌚ 手表') },
+  { val:'property',     label:L2('🏠 Property', '🏠 房产') },
+  { val:'sports_fan',   label:L2('🏆 Sports Fan', '🏆 体育迷') },
+  { val:'family',       label:L2('👨‍👩‍👧 Family Oriented', '👨‍👩‍👧 顾家') },
+  { val:'nightlife',    label:L2('🍸 Nightlife', '🍸 夜生活') },
+  { val:'crypto',       label:L2('₿ Crypto / Finance', '₿ 加密货币 / 金融') },
+  { val:'health',       label:L2('💪 Health & Fitness', '💪 健康健身') },
 ]
 const PERSONALITY_OPTIONS = [
-  { val:'risk_taker',          label:'🔥 Risk Taker' },
-  { val:'bonus_hunter',        label:'🎁 Bonus Hunter' },
-  { val:'consistent_bettor',   label:'📊 Consistent Bettor' },
-  { val:'relationship_driven', label:'🤝 Relationship Driven' },
-  { val:'competitive',         label:'🏅 Competitive' },
-  { val:'vip_conscious',       label:'💎 VIP Conscious' },
-  { val:'price_sensitive',     label:'💰 Price Sensitive' },
-  { val:'big_spender',         label:'💸 Big Spender' },
-  { val:'quiet_player',        label:'🤫 Quiet / Private' },
-  { val:'social',              label:'😄 Social / Chatty' },
+  { val:'risk_taker',          label:L2('🔥 Risk Taker', '🔥 爱冒险') },
+  { val:'bonus_hunter',        label:L2('🎁 Bonus Hunter', '🎁 奖励猎人') },
+  { val:'consistent_bettor',   label:L2('📊 Consistent Bettor', '📊 稳定投注') },
+  { val:'relationship_driven', label:L2('🤝 Relationship Driven', '🤝 重视关系') },
+  { val:'competitive',         label:L2('🏅 Competitive', '🏅 好胜') },
+  { val:'vip_conscious',       label:L2('💎 VIP Conscious', '💎 重视VIP身份') },
+  { val:'price_sensitive',     label:L2('💰 Price Sensitive', '💰 价格敏感') },
+  { val:'big_spender',         label:L2('💸 Big Spender', '💸 大手笔') },
+  { val:'quiet_player',        label:L2('🤫 Quiet / Private', '🤫 安静 / 低调') },
+  { val:'social',              label:L2('😄 Social / Chatty', '😄 健谈 / 爱社交') },
 ]
 const RELATIONSHIP_OPTIONS = [
-  { val:'cold',     label:'🥶 Cold',    color:'#60a5fa' },
-  { val:'warming',  label:'🌤 Warming', color:'#fbbf24' },
-  { val:'neutral',  label:'😐 Neutral', color:'var(--muted)' },
-  { val:'loyal',    label:'❤️ Loyal',   color:'#34d399' },
-  { val:'at_risk',  label:'⚠️ At Risk', color:'#f87171' },
+  { val:'cold',     label:L2('🥶 Cold', '🥶 冷淡'),    color:'#60a5fa' },
+  { val:'warming',  label:L2('🌤 Warming', '🌤 升温'), color:'#fbbf24' },
+  { val:'neutral',  label:L2('😐 Neutral', '😐 一般'), color:'var(--muted)' },
+  { val:'loyal',    label:L2('❤️ Loyal', '❤️ 忠诚'),   color:'#34d399' },
+  { val:'at_risk',  label:L2('⚠️ At Risk', '⚠️ 有风险'), color:'#f87171' },
 ]
 const CHANNEL_OPTIONS = [
   { val:'whatsapp', label:'WhatsApp' },
-  { val:'call',     label:'Phone Call' },
+  { val:'call',     label:L2('Phone Call', '电话') },
   { val:'telegram', label:'Telegram' },
-  { val:'sms',      label:'SMS' },
+  { val:'sms',      label:L2('SMS', '短信') },
 ]
-const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+const MONTHS = lang === 'zh' ? ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'] : ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
 function ChipRow({ options, selected, onToggle }) {
   return (
@@ -1153,7 +1157,7 @@ function ChipRow({ options, selected, onToggle }) {
   )
 }
 
-if (profileLoading) return <div style={{ padding:32, textAlign:'center', color:'var(--muted)' }}>Loading profile…</div>
+if (profileLoading) return <div style={{ padding:32, textAlign:'center', color:'var(--muted)' }}>{L2('Loading profile…', '载入档案中…')}</div>
 
 const relOpt = RELATIONSHIP_OPTIONS.find(r => r.val === profileForm.relationship_level) || RELATIONSHIP_OPTIONS[2]
 
@@ -1163,7 +1167,7 @@ return (
   <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16, marginBottom:20 }}>
     {/* Relationship Level */}
     <div style={{ background:'var(--surface2)', borderRadius:10, padding:'14px 16px' }}>
-      <SectionLabel>Relationship Level</SectionLabel>
+      <SectionLabel>{L2('Relationship Level', '关系等级')}</SectionLabel>
       <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
         {RELATIONSHIP_OPTIONS.map(o => (
           <button key={o.val} onClick={() => setProfileForm(f=>({...f,relationship_level:o.val}))} style={{
@@ -1179,7 +1183,7 @@ return (
 
     {/* Contact Preference */}
     <div style={{ background:'var(--surface2)', borderRadius:10, padding:'14px 16px' }}>
-      <SectionLabel>Preferred Contact</SectionLabel>
+      <SectionLabel>{L2('Preferred Contact', '偏好联系方式')}</SectionLabel>
       <div style={{ display:'flex', gap:7, flexWrap:'wrap', marginBottom:10 }}>
         {CHANNEL_OPTIONS.map(o => (
           <button key={o.val} onClick={() => setProfileForm(f=>({...f,preferred_contact_channel:o.val}))} style={{
@@ -1194,7 +1198,7 @@ return (
       <input
         value={profileForm.preferred_contact_time}
         onChange={e => setProfileForm(f=>({...f,preferred_contact_time:e.target.value}))}
-        placeholder="Best time (e.g. Weekday evenings 8–10pm)"
+        placeholder={L2('Best time (e.g. Weekday evenings 8–10pm)', '最佳时间（例如：平日晚上8–10点）')}
         style={{ width:'100%', fontSize:12, padding:'6px 10px', borderRadius:6, border:'1px solid var(--border)', background:'var(--surface)', color:'var(--text)', boxSizing:'border-box' }}
       />
     </div>
@@ -1202,7 +1206,7 @@ return (
 
   {/* Game Preferences */}
   <div style={{ background:'var(--surface2)', borderRadius:10, padding:'14px 16px', marginBottom:14 }}>
-    <SectionLabel>Game Type Preferences</SectionLabel>
+    <SectionLabel>{L2('Game Type Preferences', '游戏类型偏好')}</SectionLabel>
     <ChipRow
       options={GAME_OPTIONS}
       selected={profileForm.preferred_games}
@@ -1212,24 +1216,24 @@ return (
 
   {/* Deposit Behaviour */}
   <div style={{ background:'var(--surface2)', borderRadius:10, padding:'14px 16px', marginBottom:14 }}>
-    <SectionLabel>Deposit Behaviour</SectionLabel>
+    <SectionLabel>{L2('Deposit Behaviour', '存款行为')}</SectionLabel>
     <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
       <div>
-        <label style={{ fontSize:11, color:'var(--muted)', display:'block', marginBottom:4 }}>Usual Deposit Time / Pattern</label>
+        <label style={{ fontSize:11, color:'var(--muted)', display:'block', marginBottom:4 }}>{L2('Usual Deposit Time / Pattern', '惯常存款时间 / 模式')}</label>
         <textarea
           value={profileForm.deposit_pattern}
           onChange={e => setProfileForm(f=>({...f,deposit_pattern:e.target.value}))}
-          placeholder="e.g. Friday nights 9–11pm, after weekend football"
+          placeholder={L2('e.g. Friday nights 9–11pm, after weekend football', '例如：周五晚上9–11点，周末足球赛后')}
           rows={3}
           style={{ width:'100%', fontSize:12, padding:'7px 10px', borderRadius:6, border:'1px solid var(--border)', background:'var(--surface)', color:'var(--text)', resize:'vertical', boxSizing:'border-box' }}
         />
       </div>
       <div>
-        <label style={{ fontSize:11, color:'var(--muted)', display:'block', marginBottom:4 }}>What Triggers Deposit</label>
+        <label style={{ fontSize:11, color:'var(--muted)', display:'block', marginBottom:4 }}>{L2('What Triggers Deposit', '存款触发因素')}</label>
         <textarea
           value={profileForm.deposit_trigger}
           onChange={e => setProfileForm(f=>({...f,deposit_trigger:e.target.value}))}
-          placeholder="e.g. Redeposits same day after big loss, or tops up after big win"
+          placeholder={L2('e.g. Redeposits same day after big loss, or tops up after big win', '例如：大输后当天再存款，或大赢后加码')}
           rows={3}
           style={{ width:'100%', fontSize:12, padding:'7px 10px', borderRadius:6, border:'1px solid var(--border)', background:'var(--surface)', color:'var(--text)', resize:'vertical', boxSizing:'border-box' }}
         />
@@ -1239,7 +1243,7 @@ return (
 
   {/* Real-Life Interests */}
   <div style={{ background:'var(--surface2)', borderRadius:10, padding:'14px 16px', marginBottom:14 }}>
-    <SectionLabel>Real-Life Interests</SectionLabel>
+    <SectionLabel>{L2('Real-Life Interests', '生活兴趣')}</SectionLabel>
     <ChipRow
       options={INTEREST_OPTIONS}
       selected={profileForm.interests}
@@ -1249,7 +1253,7 @@ return (
 
   {/* Personality Tags */}
   <div style={{ background:'var(--surface2)', borderRadius:10, padding:'14px 16px', marginBottom:14 }}>
-    <SectionLabel>Personality / Betting Style</SectionLabel>
+    <SectionLabel>{L2('Personality / Betting Style', '性格 / 投注风格')}</SectionLabel>
     <ChipRow
       options={PERSONALITY_OPTIONS}
       selected={profileForm.personality_tags}
@@ -1260,7 +1264,7 @@ return (
   {/* VIP Since & Birthday */}
   <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, marginBottom:14 }}>
     <div style={{ background:'var(--surface2)', borderRadius:10, padding:'14px 16px' }}>
-      <SectionLabel>VIP Since</SectionLabel>
+      <SectionLabel>{L2('VIP Since', 'VIP 起始日')}</SectionLabel>
       <input
         type="date"
         value={profileForm.vip_since}
@@ -1269,14 +1273,14 @@ return (
       />
     </div>
     <div style={{ background:'var(--surface2)', borderRadius:10, padding:'14px 16px' }}>
-      <SectionLabel>Birthday (for campaigns)</SectionLabel>
+      <SectionLabel>{L2('Birthday (for campaigns)', '生日（用于活动）')}</SectionLabel>
       <div style={{ display:'flex', gap:8 }}>
         <select
           value={profileForm.birthday_month}
           onChange={e => setProfileForm(f=>({...f,birthday_month:e.target.value}))}
           style={{ flex:1, fontSize:13, padding:'6px 8px', borderRadius:6, border:'1px solid var(--border)', background:'var(--surface)', color:'var(--text)' }}
         >
-          <option value="">Month</option>
+          <option value="">{L2('Month', '月')}</option>
           {MONTHS.map((m,i) => <option key={m} value={String(i+1)}>{m}</option>)}
         </select>
         <select
@@ -1284,7 +1288,7 @@ return (
           onChange={e => setProfileForm(f=>({...f,birthday_day:e.target.value}))}
           style={{ flex:1, fontSize:13, padding:'6px 8px', borderRadius:6, border:'1px solid var(--border)', background:'var(--surface)', color:'var(--text)' }}
         >
-          <option value="">Day</option>
+          <option value="">{L2('Day', '日')}</option>
           {Array.from({length:31},(_,i)=>i+1).map(d => <option key={d} value={String(d)}>{d}</option>)}
         </select>
       </div>
@@ -1293,11 +1297,11 @@ return (
 
   {/* Host Notes */}
   <div style={{ background:'var(--surface2)', borderRadius:10, padding:'14px 16px', marginBottom:20 }}>
-    <SectionLabel>Host Notes (private)</SectionLabel>
+    <SectionLabel>{L2('Host Notes (private)', '负责人备注（私密）')}</SectionLabel>
     <textarea
       value={profileForm.host_notes}
       onChange={e => setProfileForm(f=>({...f,host_notes:e.target.value}))}
-      placeholder="Anything the host knows about this VIP — family, hobbies, what gifts worked, what to avoid…"
+      placeholder={L2('Anything the host knows about this VIP — family, hobbies, what gifts worked, what to avoid…', '负责人对此VIP的了解 — 家庭、爱好、哪些礼物有效、应避免什么…')}
       rows={4}
       style={{ width:'100%', fontSize:13, padding:'8px 12px', borderRadius:6, border:'1px solid var(--border)', background:'var(--surface)', color:'var(--text)', resize:'vertical', boxSizing:'border-box' }}
     />
@@ -1306,7 +1310,7 @@ return (
   {/* Save */}
   <div style={{ display:'flex', justifyContent:'flex-end' }}>
     <Btn variant="primary" onClick={saveProfile} disabled={profileSaving}>
-      {profileSaving ? 'Saving…' : '💾 Save Profile'}
+      {profileSaving ? L2('Saving…', '保存中…') : L2('💾 Save Profile', '💾 保存档案')}
     </Btn>
   </div>
 </div>
@@ -1331,21 +1335,21 @@ const TYPE_COLOR = { online: 'var(--info)', offline: '#f59e0b' }
 return (
 <div>
   <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
-    <SectionLabel>Department Spending on {vip.username}</SectionLabel>
+    <SectionLabel>{L2('Department Spending on', '部门开支 —')} {vip.username}</SectionLabel>
   </div>
   {expensesLoading ? (
-    <LoadingState message="Loading spending records…" />
+    <LoadingState message={L2('Loading spending records…', '载入开支记录中…')} />
   ) : vipExpenses.length === 0 ? (
-    <EmptyState icon="💸" title="No spending records" message="No department expenses have been linked to this VIP yet. Add expenses in the Expense Tracker and tag this player's username." />
+    <EmptyState icon="💸" title={L2('No spending records', '暂无开支记录')} message={L2('No department expenses have been linked to this VIP yet. Add expenses in the Expense Tracker and tag this player\'s username.', '尚无部门开支关联到此VIP。请在开支追踪中添加开支并标记此玩家的用户名。')} />
   ) : (
     <div>
       {/* Lifetime total cards */}
       <div style={{ display:'flex', gap:12, marginBottom:20, flexWrap:'wrap' }}>
         {Object.entries(totals).map(([cur, total]) => (
           <div key={cur} style={{ background:'linear-gradient(135deg,rgba(249,97,103,.12),rgba(249,97,103,.05))', border:'1px solid rgba(249,97,103,.25)', borderRadius:10, padding:'14px 20px', minWidth:160 }}>
-            <div style={{ fontSize:11, fontWeight:700, color:'var(--muted)', letterSpacing:'.5px', textTransform:'uppercase', marginBottom:6 }}>Total Spent ({cur})</div>
+            <div style={{ fontSize:11, fontWeight:700, color:'var(--muted)', letterSpacing:'.5px', textTransform:'uppercase', marginBottom:6 }}>{L2('Total Spent', '总开支')} ({cur})</div>
             <div style={{ fontSize:22, fontWeight:800, color:'#f96167' }}>{fmtExact(total, cur)}</div>
-            <div style={{ fontSize:11, color:'var(--muted)', marginTop:3 }}>{vipExpenses.filter(e=>(e.currency||'MYR')===cur).length} record{vipExpenses.filter(e=>(e.currency||'MYR')===cur).length!==1?'s':''} · all time</div>
+            <div style={{ fontSize:11, color:'var(--muted)', marginTop:3 }}>{vipExpenses.filter(e=>(e.currency||'MYR')===cur).length} {L2('record' + (vipExpenses.filter(e=>(e.currency||'MYR')===cur).length!==1?'s':'') + ' · all time', '条记录 · 全部时间')}</div>
           </div>
         ))}
       </div>
@@ -1355,8 +1359,8 @@ return (
         <table style={{ width:'100%', borderCollapse:'collapse', fontSize:13 }}>
           <thead>
             <tr>
-              {['Date','Category','Item','Platform','Type','Amount','Notes'].map(h => (
-                <th key={h} style={{ padding:'9px 12px', textAlign: h==='Amount'?'right':'left', background:'var(--surface)', color:'var(--muted)', fontWeight:600, fontSize:11, borderBottom:'1px solid var(--border)', whiteSpace:'nowrap' }}>{h}</th>
+              {[['Date','日期'],['Category','类别'],['Item','项目'],['Platform','平台'],['Type','类型'],['Amount','金额'],['Notes','备注']].map(([h, hz]) => (
+                <th key={h} style={{ padding:'9px 12px', textAlign: h==='Amount'?'right':'left', background:'var(--surface)', color:'var(--muted)', fontWeight:600, fontSize:11, borderBottom:'1px solid var(--border)', whiteSpace:'nowrap' }}>{L2(h, hz)}</th>
               ))}
             </tr>
           </thead>
@@ -1376,7 +1380,7 @@ return (
                 </td>
                 <td style={{ padding:'9px 12px', borderBottom:'1px solid var(--border)' }}>
                   <span style={{ fontSize:11, fontWeight:700, padding:'1px 7px', borderRadius:10, background: e.expense_type==='online'?'rgba(59,130,246,.12)':'rgba(245,158,11,.12)', color: TYPE_COLOR[e.expense_type] || 'var(--muted)' }}>
-                    {e.expense_type || '—'}
+                    {e.expense_type ? (lang === 'zh' ? ({ online:'线上', offline:'线下' }[e.expense_type] || e.expense_type) : e.expense_type) : '—'}
                   </span>
                 </td>
                 <td style={{ padding:'9px 12px', borderBottom:'1px solid var(--border)', textAlign:'right', fontWeight:700, whiteSpace:'nowrap' }}>
@@ -1399,127 +1403,127 @@ return (
 </div>
 
 {/* ── Log Contact Modal ── */}
-<Modal open={showLog} onClose={() => setShowLog(false)} title="Log Contact" width={440}>
+<Modal open={showLog} onClose={() => setShowLog(false)} title={L2('Log Contact', '记录联系')} width={440}>
 <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
 <div style={{ fontSize:14, fontWeight:600 }}>{vip.full_name || vip.username}</div>
 <div>
-<label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>Contact Type</label>
+<label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>{L2('Contact Type', '联系类型')}</label>
 <Select value={logType} onChange={e => setLogType(e.target.value)} style={{ width:'100%' }}>
-{CONTACT_TYPE.map(t => <option key={t} value={t}>{t}</option>)}
+{CONTACT_TYPE.map(t => <option key={t} value={t}>{enumLabel(t, lang)}</option>)}
 </Select>
 </div>
 <div>
-<label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>Outcome</label>
+<label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>{L2('Outcome', '结果')}</label>
 <Select value={logOutcome} onChange={e => setLogOutcome(e.target.value)} style={{ width:'100%' }}>
-{CONTACT_OUTCOME.map(o => <option key={o} value={o}>{o}</option>)}
+{CONTACT_OUTCOME.map(o => <option key={o} value={o}>{enumLabel(o, lang)}</option>)}
 </Select>
 </div>
 <div>
-<label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>Notes (optional)</label>
+<label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>{L2('Notes (optional)', '备注（可选）')}</label>
 <Textarea value={logNote} onChange={e => setLogNote(e.target.value)} rows={3} />
 </div>
 <div style={{ display:'flex', gap:8, justifyContent:'flex-end' }}>
-<Btn variant="ghost" onClick={() => setShowLog(false)}>Cancel</Btn>
-<Btn variant="primary" onClick={submitLog} disabled={logSaving}>{logSaving?'Saving…':'Save Log'}</Btn>
+<Btn variant="ghost" onClick={() => setShowLog(false)}>{L2('Cancel', '取消')}</Btn>
+<Btn variant="primary" onClick={submitLog} disabled={logSaving}>{logSaving?L2('Saving…', '保存中…'):L2('Save Log', '保存记录')}</Btn>
 </div>
 </div>
 </Modal>
 
 {/* ── Edit VIP Modal ── */}
-<Modal open={showEdit} onClose={() => setShowEdit(false)} title="Edit VIP" width={480}>
+<Modal open={showEdit} onClose={() => setShowEdit(false)} title={L2('Edit VIP', '编辑VIP')} width={480}>
 <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
 <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
 <div>
-<label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>Full Name</label>
-<Input value={editForm.full_name||''} onChange={e => setEditForm(f=>({...f,full_name:e.target.value}))} placeholder="Real name" />
+<label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>{L2('Full Name', '全名')}</label>
+<Input value={editForm.full_name||''} onChange={e => setEditForm(f=>({...f,full_name:e.target.value}))} placeholder={L2('Real name', '真实姓名')} />
 </div>
 <div>
-<label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>Birthday</label>
+<label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>{L2('Birthday', '生日')}</label>
 <Input type="date" value={editForm.birthday||''} onChange={e => setEditForm(f=>({...f,birthday:e.target.value}))} />
 </div>
 </div>
 <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
 <div>
-<label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>Tier</label>
+<label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>{L2('Tier', '等级')}</label>
 <Select value={editForm.tier} onChange={e => setEditForm(f=>({...f,tier:e.target.value}))} style={{ width:'100%' }}>
 {TIERS.map(t => <option key={t} value={t}>{t}</option>)}
 </Select>
 </div>
 <div>
-<label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>Host</label>
+<label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>{L2('Host', '负责人')}</label>
 <Select value={editForm.host_assigned||''} onChange={e => setEditForm(f=>({...f,host_assigned:e.target.value}))} style={{ width:'100%' }}>
-<option value="">— Unassigned —</option>
+<option value="">{L2('— Unassigned —', '— 未分配 —')}</option>
 {hosts.map(h => <option key={h} value={h}>{h}</option>)}
 </Select>
 </div>
 </div>
 <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
 <div>
-<label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>Status</label>
+<label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>{L2('Status', '状态')}</label>
 <Select value={editForm.activity_status||''} onChange={e => setEditForm(f=>({...f,activity_status:e.target.value}))} style={{ width:'100%' }}>
-{['Active','Watch','At Risk','Dormant'].map(s => <option key={s} value={s}>{s}</option>)}
+{['Active','Watch','At Risk','Dormant'].map(s => <option key={s} value={s}>{enumLabel(s, lang)}</option>)}
 </Select>
 </div>
 <div>
-<label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>Risk Level</label>
+<label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>{L2('Risk Level', '风险等级')}</label>
 <Select value={editForm.churn_risk||''} onChange={e => setEditForm(f=>({...f,churn_risk:e.target.value}))} style={{ width:'100%' }}>
-{['','LOW','MEDIUM','HIGH','CRITICAL'].map(r => <option key={r} value={r}>{r||'— None —'}</option>)}
+{['','LOW','MEDIUM','HIGH','CRITICAL'].map(r => <option key={r} value={r}>{r ? (lang === 'zh' ? ({ LOW:'低', MEDIUM:'中', HIGH:'高', CRITICAL:'严重' }[r] || r) : r) : L2('— None —', '— 无 —')}</option>)}
 </Select>
 </div>
 </div>
 <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
 <div>
-<label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>Phone</label>
+<label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>{L2('Phone', '电话')}</label>
 <Input value={editForm.phone||''} onChange={e => setEditForm(f=>({...f,phone:e.target.value}))} />
 </div>
 <div>
-<label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>WhatsApp</label>
+<label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>{L2('WhatsApp', 'WhatsApp')}</label>
 <Input value={editForm.whatsapp||''} onChange={e => setEditForm(f=>({...f,whatsapp:e.target.value}))} />
 </div>
 </div>
 <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
 <div>
-<label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>Email</label>
+<label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>{L2('Email', '电邮')}</label>
 <Input value={editForm.email||''} onChange={e => setEditForm(f=>({...f,email:e.target.value}))} />
 </div>
 <div>
-<label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>Telegram</label>
-<Input value={editForm.telegram||''} onChange={e => setEditForm(f=>({...f,telegram:e.target.value}))} placeholder="without @" />
+<label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>{L2('Telegram', 'Telegram')}</label>
+<Input value={editForm.telegram||''} onChange={e => setEditForm(f=>({...f,telegram:e.target.value}))} placeholder={L2('without @', '不含 @')} />
 </div>
 </div>
 <div>
-<label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>Address</label>
+<label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>{L2('Address', '地址')}</label>
 <Textarea value={editForm.address||''} onChange={e => setEditForm(f=>({...f,address:e.target.value}))} rows={2} />
 </div>
 <div>
-<label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>Remark</label>
+<label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>{L2('Remark', '备注')}</label>
 <Textarea value={editForm.special_requests||''} onChange={e => setEditForm(f=>({...f,special_requests:e.target.value}))} rows={2} />
 </div>
 <div style={{ borderTop:'1px solid var(--border)', paddingTop:14, marginTop:4 }}>
-<label style={{ fontSize:12, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:10, textTransform:'uppercase', letterSpacing:'.5px' }}>T&G Verification</label>
+<label style={{ fontSize:12, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:10, textTransform:'uppercase', letterSpacing:'.5px' }}>{L2('T&G Verification', 'T&G 验证')}</label>
 <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
   <div>
-    <label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>Verified Name</label>
-    <Input value={editForm.tng_verified_name||''} onChange={e => setEditForm(f=>({...f,tng_verified_name:e.target.value}))} placeholder="Name from T&G" />
+    <label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>{L2('Verified Name', '验证姓名')}</label>
+    <Input value={editForm.tng_verified_name||''} onChange={e => setEditForm(f=>({...f,tng_verified_name:e.target.value}))} placeholder={L2('Name from T&G', 'T&G 上的姓名')} />
   </div>
   <div>
-    <label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>Status</label>
+    <label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>{L2('Status', '状态')}</label>
     <Select value={editForm.tng_verify_status||''} onChange={e => setEditForm(f=>({...f,tng_verify_status:e.target.value}))}>
-      <option value="">— Not checked —</option>
-      <option value="verified">✓ Verified (name matches)</option>
-      <option value="mismatch">⚠ Mismatch (name differs)</option>
-      <option value="pending">Pending</option>
+      <option value="">{L2('— Not checked —', '— 未检查 —')}</option>
+      <option value="verified">{L2('✓ Verified (name matches)', '✓ 已验证（姓名相符）')}</option>
+      <option value="mismatch">{L2('⚠ Mismatch (name differs)', '⚠ 不匹配（姓名不同）')}</option>
+      <option value="pending">{L2('Pending', '待定')}</option>
     </Select>
   </div>
 </div>
 <div style={{ marginTop:10 }}>
-  <label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>Date Checked</label>
+  <label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>{L2('Date Checked', '检查日期')}</label>
   <Input type="date" value={editForm.tng_verified_at||''} onChange={e => setEditForm(f=>({...f,tng_verified_at:e.target.value}))} style={{ maxWidth:180 }} />
 </div>
 </div>
 <div style={{ display:'flex', gap:8, justifyContent:'flex-end' }}>
-<Btn variant="ghost" onClick={() => setShowEdit(false)}>Cancel</Btn>
-<Btn variant="primary" onClick={saveEdit} disabled={editSaving}>{editSaving?'Saving…':'Save Changes'}</Btn>
+<Btn variant="ghost" onClick={() => setShowEdit(false)}>{L2('Cancel', '取消')}</Btn>
+<Btn variant="primary" onClick={saveEdit} disabled={editSaving}>{editSaving?L2('Saving…', '保存中…'):L2('Save Changes', '保存更改')}</Btn>
 </div>
 </div>
 </Modal>

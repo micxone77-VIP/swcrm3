@@ -9,6 +9,12 @@ import { TIER_COLOR, TIER_BG } from '../lib/constants'
 
 // ── Tier config ───────────────────────────────────────────────────────────────
 const TIER_ORDER = ['BRONZE', 'SILVER', 'GOLD', 'PLATINUM', 'DIAMOND', 'BLACK']
+const TIER_ZH = { BLACK:'黑金', DIAMOND:'钻石', PLATINUM:'白金', GOLD:'黄金', SILVER:'白银', BRONZE:'青铜', ALL:'全部' }
+// UI-language helper: returns [L2(en, zh), lang]
+function useL2() {
+  const { lang } = useLanguage()
+  return [(en, zh) => (lang === 'zh' ? zh : en), lang]
+}
 
 // VIP upgrade thresholds (monthly valid bet)
 const VIP_THRESHOLDS = {
@@ -51,9 +57,9 @@ function getNextUpgradeTarget(tier, allThresholds) {
 
 // Format numbers — pass a row's own `currency` where available (see lib/format.js)
 const fmt = (n, currency = 'MYR') => formatMoney(n, currency)
-const fmtDate = (d) => {
+const fmtDate = (d, lang = 'en') => {
   if (!d) return '—'
-  return new Date(d).toLocaleDateString('en-MY', { day: '2-digit', month: 'short', year: 'numeric' })
+  return new Date(d).toLocaleDateString(lang === 'zh' ? 'zh-CN' : 'en-MY', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 const monthsAgo = (dateStr) => {
   if (!dateStr) return null
@@ -196,6 +202,7 @@ const s = {
 
 // ── Copy Button helper ────────────────────────────────────────────────────────
 function CopyBtn({ text, style }) {
+  const [L2] = useL2()
   const [done, setDone] = useState(false)
   const copy = (e) => {
     e.stopPropagation()
@@ -208,7 +215,7 @@ function CopyBtn({ text, style }) {
   return (
     <button
       onClick={copy}
-      title={`Copy ${text}`}
+      title={L2(`Copy ${text}`, `复制 ${text}`)}
       style={{
         border: 'none', background: 'transparent',
         cursor: text ? 'pointer' : 'default',
@@ -226,6 +233,7 @@ function CopyBtn({ text, style }) {
 // ── Confirm Upgrade Modal ─────────────────────────────────────────────────────
 function ConfirmUpgradeModal({ player, isPotential, onClose, onConfirm }) {
   const { t } = useLanguage()
+  const [L2] = useL2()
   const [newTier, setNewTier] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -257,7 +265,7 @@ function ConfirmUpgradeModal({ player, isPotential, onClose, onConfirm }) {
         </div>
         <div style={s.row}>
           <span style={s.label}>{t('upgrades.modal.currentTier', 'Current tier')}</span>
-          <span style={s.tierBadge(player.tier)}>{player.tier}</span>
+          <span style={s.tierBadge(player.tier)}>{L2(player.tier, TIER_ZH[player.tier] || player.tier)}</span>
         </div>
         <div style={s.row}>
           <span style={s.label}>{t('upgrades.modal.validBetMonth', 'Valid bet (this month)')}</span>
@@ -287,7 +295,7 @@ function ConfirmUpgradeModal({ player, isPotential, onClose, onConfirm }) {
                 }}
                 onClick={() => setNewTier(t)}
               >
-                {t}
+                {L2(t, TIER_ZH[t] || t)}
               </button>
             ))}
           </div>
@@ -300,7 +308,7 @@ function ConfirmUpgradeModal({ player, isPotential, onClose, onConfirm }) {
             padding: '10px 12px', marginBottom: 18,
             border: '1px solid var(--border)',
           }}>
-            ℹ️ Their deposit history, valid bet, and months active will carry over to vip_members automatically.
+            {L2('ℹ️ Their deposit history, valid bet, and months active will carry over to vip_members automatically.', 'ℹ️ 其存款记录、有效投注和活跃月数会自动转入VIP会员表。')}
           </div>
         )}
 
@@ -311,7 +319,7 @@ function ConfirmUpgradeModal({ player, isPotential, onClose, onConfirm }) {
             disabled={!newTier || loading}
             onClick={handle}
           >
-            {loading ? t('upgrades.modal.upgrading', 'Upgrading…') : `${t('upgrades.modal.confirm', 'Confirm')} → ${newTier || '?'}`}
+            {loading ? t('upgrades.modal.upgrading', 'Upgrading…') : `${t('upgrades.modal.confirm', 'Confirm')} → ${newTier ? L2(newTier, TIER_ZH[newTier] || newTier) : '?'}`}
           </button>
         </div>
       </div>
@@ -323,6 +331,7 @@ function ConfirmUpgradeModal({ player, isPotential, onClose, onConfirm }) {
 // ── WhatsApp Template Modal ───────────────────────────────────────────────────
 function WhatsAppModal({ player, agentName, waNumbers = [], onClose }) {
   const [lang, setLang]     = useState('en')
+  const [L2] = useL2()
   const [copied, setCopied] = useState(false)
   const [sender, setSender] = useState(waNumbers[0]?.codename || '')
 
@@ -381,12 +390,12 @@ function WhatsAppModal({ player, agentName, waNumbers = [], onClose }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
           <span style={{ fontSize: 22 }}>💬</span>
           <div>
-            <div style={s.modalTitle}>WhatsApp Template</div>
+            <div style={s.modalTitle}>{L2('WhatsApp Template', 'WhatsApp 模板')}</div>
             <div style={s.modalSub}>
-              <span style={s.tierBadge(player.tier)}>{player.tier}</span>
+              <span style={s.tierBadge(player.tier)}>{L2(player.tier, TIER_ZH[player.tier] || player.tier)}</span>
               <span style={{ marginLeft: 8 }}>{player.username}</span>
-              <span style={{ marginLeft: 8 }}>· Turnover: {turnover}</span>
-              {nextTier && <span style={{ marginLeft: 8 }}>· Next: {nextTier}</span>}
+              <span style={{ marginLeft: 8 }}>· {L2('Turnover', '流水')}: {turnover}</span>
+              {nextTier && <span style={{ marginLeft: 8 }}>· {L2('Next', '下一级')}: {L2(nextTier, TIER_ZH[nextTier] || nextTier)}</span>}
             </div>
           </div>
         </div>
@@ -416,7 +425,7 @@ function WhatsAppModal({ player, agentName, waNumbers = [], onClose }) {
               background: 'rgba(74,222,128,0.1)', borderRadius: 20,
               border: '1px solid rgba(74,222,128,0.3)',
             }}>
-              ✓ Ready to Upgrade
+              {L2('✓ Ready to Upgrade', '✓ 可升级')}
             </span>
           )}
         </div>
@@ -457,20 +466,20 @@ function WhatsAppModal({ player, agentName, waNumbers = [], onClose }) {
             }}
             onClick={handleCopy}
           >
-            {copied ? '✓ Copied!' : '📋 Copy Message'}
+            {copied ? L2('✓ Copied!', '✓ 已复制！') : L2('📋 Copy Message', '📋 复制信息')}
           </button>
           <button
             style={{ ...s.btn('#25D366'), flex: 1 }}
             onClick={handleWhatsApp}
           >
-            💬 Open WhatsApp
+            {L2('💬 Open WhatsApp', '💬 打开WhatsApp')}
           </button>
-          <button style={s.outlineBtn('var(--muted)')} onClick={onClose}>Close</button>
+          <button style={s.outlineBtn('var(--muted)')} onClick={onClose}>{L2('Close', '关闭')}</button>
         </div>
 
         {waNumbers.length > 0 && (
           <div style={{ marginTop: 12 }}>
-            <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>📱 Send as (codename)</div>
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>{L2('📱 Send as (codename)', '📱 发送号码 (代号)')}</div>
             <select value={sender} onChange={e => setSender(e.target.value)}
               style={{ width:'100%', background:'var(--surface2)', border:'1px solid var(--border)', color:'var(--text)', padding:'7px 10px', borderRadius:8, fontSize:12, outline:'none' }}>
               {waNumbers.map(n => <option key={n.id} value={n.codename}>{n.codename} — {n.number}{n.telco?' ('+n.telco+')':''}</option>)}
@@ -480,8 +489,8 @@ function WhatsAppModal({ player, agentName, waNumbers = [], onClose }) {
 
         <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 10, textAlign: 'center' }}>
           {waNumber
-            ? <>📱 Will open chat with <strong>{rawWa}</strong> directly</>
-            : <>No phone number on file — select the contact manually.</>
+            ? <>{L2('📱 Will open chat with ', '📱 将直接打开与 ')}<strong>{rawWa}</strong>{L2(' directly', ' 的聊天')}</>
+            : <>{L2('No phone number on file — select the contact manually.', '没有电话号码记录 — 请手动选择联系人。')}</>
           }
         </div>
       </div>
@@ -497,6 +506,7 @@ function ChallengeModal({ player, challenge, agentName, waNumbers = [], onClose,
   const [saving, setSaving]             = useState(false)
   const [copied, setCopied]             = useState(false)
   const [lang, setLang]                 = useState('en')
+  const [L2, uiLang] = useL2()
 
   const currency    = player.currency || 'MYR'
   const baseline    = challenge?.baseline_bet ?? player.monthly_valid_bet ?? 0
@@ -549,7 +559,7 @@ function ChallengeModal({ player, challenge, agentName, waNumbers = [], onClose,
         status:          'active',
       }))
     }
-    if (error) { alert('Save failed: ' + error.message); setSaving(false); return }
+    if (error) { alert(L2('Save failed: ', '保存失败：') + error.message); setSaving(false); return }
     setSaving(false)
     onSaved?.()
     onClose()
@@ -557,7 +567,7 @@ function ChallengeModal({ player, challenge, agentName, waNumbers = [], onClose,
 
   const handleCancel = async () => {
     if (!challenge?.id) return
-    if (!window.confirm('Cancel this challenge?')) return
+    if (!window.confirm(L2('Cancel this challenge?', '确定取消此挑战？'))) return
     await supabase.from('upgrade_challenges').update({ status: 'cancelled' }).eq('id', challenge.id)
     onSaved?.()
     onClose()
@@ -576,11 +586,11 @@ function ChallengeModal({ player, challenge, agentName, waNumbers = [], onClose,
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
           <span style={{ fontSize: 22 }}>🎯</span>
           <div>
-            <div style={s.modalTitle}>Upgrade Challenge — {player.username}</div>
+            <div style={s.modalTitle}>{L2('Upgrade Challenge', '升级挑战')} — {player.username}</div>
             <div style={s.modalSub}>
-              <span style={s.tierBadge(player.tier)}>{player.tier}</span>
-              <span style={{ marginLeft: 8 }}>Valid Bet: {fmt(player.monthly_valid_bet, currency)}</span>
-              <span style={{ marginLeft: 8 }}>→ <span style={s.tierBadge(nextTier)}>{nextTier}</span></span>
+              <span style={s.tierBadge(player.tier)}>{L2(player.tier, TIER_ZH[player.tier] || player.tier)}</span>
+              <span style={{ marginLeft: 8 }}>{L2('Valid Bet', '有效投注')}: {fmt(player.monthly_valid_bet, currency)}</span>
+              <span style={{ marginLeft: 8 }}>→ <span style={s.tierBadge(nextTier)}>{L2(nextTier, TIER_ZH[nextTier] || '下一级')}</span></span>
             </div>
           </div>
         </div>
@@ -593,7 +603,7 @@ function ChallengeModal({ player, challenge, agentName, waNumbers = [], onClose,
             borderRadius: 10, padding: '12px 16px', marginTop: 12, marginBottom: 16,
           }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: achieved ? '#4ade80' : isExpired ? '#f85149' : '#fbbf24', marginBottom: 8 }}>
-              {achieved ? '✅ Challenge Completed!' : isExpired ? '⏰ Challenge Expired' : `🎯 Challenge Active · ${daysLeft}d left`}
+              {achieved ? L2('✅ Challenge Completed!', '✅ 挑战已完成！') : isExpired ? L2('⏰ Challenge Expired', '⏰ 挑战已过期') : L2(`🎯 Challenge Active · ${daysLeft}d left`, `🎯 挑战进行中 · 剩余${daysLeft}天`)}
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
               <div style={{ flex: 1, height: 8, background: 'var(--border)', borderRadius: 4, overflow: 'hidden' }}>
@@ -602,8 +612,8 @@ function ChallengeModal({ player, challenge, agentName, waNumbers = [], onClose,
               <span style={{ fontSize: 12, fontWeight: 700, color: achieved ? '#4ade80' : 'var(--text)', minWidth: 36 }}>{chProgress.toFixed(0)}%</span>
             </div>
             <div style={{ fontSize: 11, color: 'var(--muted)', display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-              <span>Progress: <strong style={{ color: 'var(--text)' }}>{fmt(Math.max(0, currentBet - baseline), currency)}</strong> / {fmt(challenge.target_amount, currency)}</span>
-              <span>Deadline: <strong style={{ color: 'var(--text)' }}>{new Date(challenge.deadline + 'T12:00:00').toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })}</strong></span>
+              <span>{L2('Progress', '进度')}: <strong style={{ color: 'var(--text)' }}>{fmt(Math.max(0, currentBet - baseline), currency)}</strong> / {fmt(challenge.target_amount, currency)}</span>
+              <span>{L2('Deadline', '截止日期')}: <strong style={{ color: 'var(--text)' }}>{new Date(challenge.deadline + 'T12:00:00').toLocaleDateString(uiLang === 'zh' ? 'zh-CN' : 'en-MY', { day: 'numeric', month: 'short', year: 'numeric' })}</strong></span>
             </div>
           </div>
         )}
@@ -611,18 +621,18 @@ function ChallengeModal({ player, challenge, agentName, waNumbers = [], onClose,
         {/* Form */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
           <div>
-            <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>Custom Target Amount ({currency})</div>
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>{L2('Custom Target Amount', '自定义目标金额')} ({currency})</div>
             <input
               type="number"
               value={targetAmount}
               onChange={e => setTargetAmount(e.target.value)}
-              placeholder="e.g. 150000"
+              placeholder={L2('e.g. 150000', '例如 150000')}
               style={{ width: '100%', padding: '8px 10px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13, boxSizing: 'border-box' }}
             />
             {target > 0 && <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>= {fmt(target, currency)}</div>}
           </div>
           <div>
-            <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>Deadline</div>
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>{L2('Deadline', '截止日期')}</div>
             <input
               type="date"
               value={deadline}
@@ -632,18 +642,18 @@ function ChallengeModal({ player, challenge, agentName, waNumbers = [], onClose,
           </div>
         </div>
         <div style={{ marginBottom: 14 }}>
-          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>Notes (optional)</div>
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>{L2('Notes (optional)', '备注（选填）')}</div>
           <input
             value={notes}
             onChange={e => setNotes(e.target.value)}
-            placeholder="e.g. Special offer: 150k in 2 days for upgrade"
+            placeholder={L2('e.g. Special offer: 150k in 2 days for upgrade', '例如：特别优惠 — 2天内完成15万即可升级')}
             style={{ width: '100%', padding: '8px 10px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13, boxSizing: 'border-box' }}
           />
         </div>
 
         {/* WhatsApp template */}
         <div style={{ marginBottom: 14 }}>
-          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6, fontWeight: 600 }}>💬 WhatsApp Message Template</div>
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6, fontWeight: 600 }}>{L2('💬 WhatsApp Message Template', '💬 WhatsApp 信息模板')}</div>
           <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
             {[['en', 'English'], ['cn', '中文']].map(([k, label]) => (
               <button key={k}
@@ -651,7 +661,7 @@ function ChallengeModal({ player, challenge, agentName, waNumbers = [], onClose,
                 onClick={() => { setLang(k); setCopied(false) }}
               >{label}</button>
             ))}
-            {achieved && <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 700, color: '#4ade80', padding: '4px 10px', background: 'rgba(74,222,128,0.1)', borderRadius: 20, border: '1px solid rgba(74,222,128,0.3)' }}>✅ Achievement message</span>}
+            {achieved && <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 700, color: '#4ade80', padding: '4px 10px', background: 'rgba(74,222,128,0.1)', borderRadius: 20, border: '1px solid rgba(74,222,128,0.3)' }}>{L2('✅ Achievement message', '✅ 达成信息')}</span>}
           </div>
           <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px', fontSize: 12, lineHeight: 1.7, whiteSpace: 'pre-wrap', color: 'var(--text)', maxHeight: 150, overflowY: 'auto', fontFamily: 'inherit' }}>
             {message.split('\n').map((line, i) => {
@@ -669,10 +679,10 @@ function ChallengeModal({ player, challenge, agentName, waNumbers = [], onClose,
               style={{ ...s.btn(copied ? '#10b981' : 'var(--surface)'), color: copied ? '#fff' : 'var(--text)', border: `1px solid ${copied ? '#10b981' : 'var(--border)'}`, flex: 1, fontSize: 11 }}
               onClick={() => navigator.clipboard.writeText(message).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000) })}
             >
-              {copied ? '✓ Copied!' : '📋 Copy Message'}
+              {copied ? L2('✓ Copied!', '✓ 已复制！') : L2('📋 Copy Message', '📋 复制信息')}
             </button>
             <button style={{ ...s.btn('#25D366'), flex: 1, fontSize: 11 }} onClick={openWa}>
-              💬 Open WhatsApp
+              {L2('💬 Open WhatsApp', '💬 打开WhatsApp')}
             </button>
           </div>
         </div>
@@ -681,16 +691,16 @@ function ChallengeModal({ player, challenge, agentName, waNumbers = [], onClose,
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
           {challenge?.id && challenge.status === 'active' && (
             <button style={{ ...s.outlineBtn('#f85149'), fontSize: 11 }} onClick={handleCancel}>
-              ✕ Cancel Challenge
+              {L2('✕ Cancel Challenge', '✕ 取消挑战')}
             </button>
           )}
-          <button style={s.outlineBtn('var(--muted)')} onClick={onClose}>Close</button>
+          <button style={s.outlineBtn('var(--muted)')} onClick={onClose}>{L2('Close', '关闭')}</button>
           <button
             style={{ ...s.btn('#fbbf24'), color: '#000', fontWeight: 700, opacity: (targetAmount && deadline) ? 1 : 0.5 }}
             disabled={!targetAmount || !deadline || saving}
             onClick={handleSave}
           >
-            {saving ? 'Saving…' : challenge?.id ? '💾 Update Challenge' : '🎯 Set Challenge'}
+            {saving ? L2('Saving…', '保存中…') : challenge?.id ? L2('💾 Update Challenge', '💾 更新挑战') : L2('🎯 Set Challenge', '🎯 设置挑战')}
           </button>
         </div>
       </div>
@@ -701,6 +711,9 @@ function ChallengeModal({ player, challenge, agentName, waNumbers = [], onClose,
 // ── Inline Contact Log Form ────────────────────────────────────────────────────
 function ContactLogForm({ player, onClose }) {
   const [channel, setChannel]   = useState('WhatsApp')
+  const [L2] = useL2()
+  const CHANNEL_ZH = { WhatsApp:'WhatsApp', Call:'电话', 'In-person':'面对面', Other:'其他' }
+  const OUTCOME_ZH = { Contacted:'已联系', 'No Reply':'未回复', Replied:'已回复', Deposited:'已存款', Reactivated:'已召回' }
   const [outcome, setOutcome]   = useState('Contacted')
   const [notes, setNotes]       = useState('')
   const [saving, setSaving]     = useState(false)
@@ -732,7 +745,7 @@ function ContactLogForm({ player, onClose }) {
       log_month:       new Date().toISOString().slice(0,7),
       log_week:        String(Math.ceil(new Date().getDate()/7)),
     })
-    if (error) { alert('Save failed: ' + error.message); setSaving(false); return }
+    if (error) { alert(L2('Save failed: ', '保存失败：') + error.message); setSaving(false); return }
     // Sync last_contacted on vip_members
     const _now = new Date().toISOString()
     await supabase.from('vip_members').update({ last_contacted: _now, last_contact_date: _now.slice(0,10) }).eq('username', player.username)
@@ -744,32 +757,32 @@ function ContactLogForm({ player, onClose }) {
     <div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
         <div>
-          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>Contact Type</div>
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>{L2('Contact Type', '联系方式')}</div>
           <select value={channel} onChange={e => setChannel(e.target.value)}
             style={{ width: '100%', padding: '8px 10px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13 }}>
-            {CHANNELS.map(c => <option key={c}>{c}</option>)}
+            {CHANNELS.map(c => <option key={c} value={c}>{L2(c, CHANNEL_ZH[c])}</option>)}
           </select>
         </div>
         <div>
-          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>Outcome</div>
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>{L2('Outcome', '结果')}</div>
           <select value={outcome} onChange={e => setOutcome(e.target.value)}
             style={{ width: '100%', padding: '8px 10px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13 }}>
-            {OUTCOMES.map(o => <option key={o}>{o}</option>)}
+            {OUTCOMES.map(o => <option key={o} value={o}>{L2(o, OUTCOME_ZH[o])}</option>)}
           </select>
         </div>
       </div>
       <div style={{ marginBottom: 14 }}>
-        <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>Notes *</div>
+        <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>{L2('Notes *', '备注 *')}</div>
         <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3}
-          placeholder="What happened? Response, follow-up needed..."
+          placeholder={L2('What happened? Response, follow-up needed...', '发生了什么？回应、是否需要跟进…')}
           style={{ width: '100%', padding: '9px 12px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13, resize: 'vertical', fontFamily: 'inherit', boxSizing: 'border-box' }} />
       </div>
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-        <button style={s.outlineBtn('var(--muted)')} onClick={onClose}>Cancel</button>
+        <button style={s.outlineBtn('var(--muted)')} onClick={onClose}>{L2('Cancel', '取消')}</button>
         <button
           style={{ ...s.btn('#58a6ff'), opacity: notes.trim() ? 1 : 0.5 }}
           disabled={saving || !notes.trim()} onClick={handleSave}>
-          {saving ? 'Saving…' : 'Save Log'}
+          {saving ? L2('Saving…', '保存中…') : L2('Save Log', '保存记录')}
         </button>
       </div>
     </div>
@@ -778,6 +791,7 @@ function ContactLogForm({ player, onClose }) {
 
 // ── TAB 1: VIP Upgrade Candidates ─────────────────────────────────────────────
 function VIPCandidatesTab({ hostFilter = 'ALL' }) {
+  const [L2, uiLang] = useL2()
   const navigate = useNavigate()
   const { profile } = useAuth()
   const { t } = useLanguage()
@@ -929,10 +943,10 @@ function VIPCandidatesTab({ hostFilter = 'ALL' }) {
       {/* Stats */}
       <div style={s.statGrid}>
         {[
-          { label: 'Gold members',      val: vips.filter(v => v.tier === 'GOLD').length,      color: TIER_COLOR.GOLD },
-          { label: 'Platinum members',  val: vips.filter(v => v.tier === 'PLATINUM').length,  color: TIER_COLOR.PLATINUM },
-          { label: 'Qualify for upgrade', val: qualified, color: '#10b981' },
-          { label: 'Skip-tier upgrades',  val: vips.filter(v => v.upgrade && TIER_ORDER.indexOf(v.upgrade.tier) - TIER_ORDER.indexOf(v.tier) > 1).length, color: '#f59e0b' },
+          { label: L2('Gold members', '黄金会员'),      val: vips.filter(v => v.tier === 'GOLD').length,      color: TIER_COLOR.GOLD },
+          { label: L2('Platinum members', '白金会员'),  val: vips.filter(v => v.tier === 'PLATINUM').length,  color: TIER_COLOR.PLATINUM },
+          { label: L2('Qualify for upgrade', '符合升级'), val: qualified, color: '#10b981' },
+          { label: L2('Skip-tier upgrades', '跳级升级'),  val: vips.filter(v => v.upgrade && TIER_ORDER.indexOf(v.upgrade.tier) - TIER_ORDER.indexOf(v.tier) > 1).length, color: '#f59e0b' },
         ].map((st, i) => (
           <div key={i} style={s.statCard(st.color)}>
             <div style={{ ...s.statNum, color: st.color }}>{st.val}</div>
@@ -943,18 +957,18 @@ function VIPCandidatesTab({ hostFilter = 'ALL' }) {
 
       {/* Filters */}
       <div style={s.filterRow}>
-        <input placeholder="Search username…" value={search} onChange={e => setSearch(e.target.value)} style={s.searchInput} />
+        <input placeholder={L2('Search username…', '搜索用户名…')} value={search} onChange={e => setSearch(e.target.value)} style={s.searchInput} />
         <select value={tierF} onChange={e => setTierF(e.target.value)} style={s.select}>
-          <option value="ALL">All Tiers</option>
-          <option value="GOLD">Gold</option>
-          <option value="PLATINUM">Platinum</option>
+          <option value="ALL">{L2('All Tiers', '全部等级')}</option>
+          <option value="GOLD">{L2('Gold', '黄金')}</option>
+          <option value="PLATINUM">{L2('Platinum', '白金')}</option>
         </select>
         <select value={upgradeF} onChange={e => setUpgradeF(e.target.value)} style={s.select}>
-          <option value="ALL">All</option>
-          <option value="QUALIFIES">✅ Qualifies Now</option>
-          <option value="SKIP">⚡ Skip-Tier</option>
-          <option value="PLATINUM">→ Platinum</option>
-          <option value="DIAMOND">→ Diamond</option>
+          <option value="ALL">{L2('All', '全部')}</option>
+          <option value="QUALIFIES">{L2('✅ Qualifies Now', '✅ 现在符合')}</option>
+          <option value="SKIP">{L2('⚡ Skip-Tier', '⚡ 跳级')}</option>
+          <option value="PLATINUM">{L2('→ Platinum', '→ 白金')}</option>
+          <option value="DIAMOND">{L2('→ Diamond', '→ 钻石')}</option>
         </select>
         <select value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} style={{ ...s.select, color: 'var(--accent)', fontWeight: 700 }}>
           {availableMonths.map(m => (
@@ -962,11 +976,11 @@ function VIPCandidatesTab({ hostFilter = 'ALL' }) {
           ))}
         </select>
         <span style={{ fontSize: 12, color: 'var(--muted)', marginLeft: 'auto' }}>
-          {filtered.length} members shown
+          {L2(`${filtered.length} members shown`, `显示 ${filtered.length} 位会员`)}
         </span>
       </div>
 
-      {loading ? <div style={s.loading}>Loading…</div> : (
+      {loading ? <div style={s.loading}>{L2('Loading…', '载入中…')}</div> : (
         <div style={{ overflowX: 'auto' }}>
           <table style={s.table}>
             <thead>
@@ -978,7 +992,7 @@ function VIPCandidatesTab({ hostFilter = 'ALL' }) {
             </thead>
             <tbody>
               {filtered.length === 0
-                ? <tr><td colSpan={11}><div style={s.empty}>No members match this filter</div></td></tr>
+                ? <tr><td colSpan={11}><div style={s.empty}>{L2('No members match this filter', '没有符合筛选的会员')}</div></td></tr>
                 : filtered.map(v => {
                   const pct = v.upgrade ? Math.min(100, (v.monthly_valid_bet / v.upgrade.threshold) * 100) : 0
                   const isSkip = v.upgrade && TIER_ORDER.indexOf(v.upgrade.tier) - TIER_ORDER.indexOf(v.tier) > 1
@@ -1000,7 +1014,7 @@ function VIPCandidatesTab({ hostFilter = 'ALL' }) {
                           <CopyBtn text={v.username} />
                         </div>
                       </td>
-                      <td style={s.td}><span style={s.tierBadge(v.tier)}>{v.tier}</span></td>
+                      <td style={s.td}><span style={s.tierBadge(v.tier)}>{L2(v.tier, TIER_ZH[v.tier] || v.tier)}</span></td>
                       <td style={s.td}>{fmt(v.monthly_valid_bet, v.currency)}</td>
                       <td style={s.td}>
                         {v.prev_valid_bet !== null
@@ -1031,7 +1045,7 @@ function VIPCandidatesTab({ hostFilter = 'ALL' }) {
                                     <div style={{ height: 4, background: 'var(--border)', borderRadius: 2, overflow: 'hidden' }}>
                                       <div style={{ width: `${chPct}%`, height: '100%', background: chPct >= 100 ? '#4ade80' : '#fbbf24', borderRadius: 2 }} />
                                     </div>
-                                    <div style={{ fontSize: 9, color: '#fbbf24', marginTop: 2 }}>🎯 {chPct.toFixed(0)}% challenge</div>
+                                    <div style={{ fontSize: 9, color: '#fbbf24', marginTop: 2 }}>🎯 {chPct.toFixed(0)}% {L2('challenge', '挑战')}</div>
                                   </div>
                                 )
                               })()}
@@ -1042,24 +1056,24 @@ function VIPCandidatesTab({ hostFilter = 'ALL' }) {
                       <td style={s.td}>
                         {v.upgrade
                           ? <span>
-                              <span style={s.tierBadge(v.upgrade.tier)}>{v.upgrade.tier}</span>
-                              {isSkip && <span style={{ marginLeft: 5, fontSize: 10, color: '#f59e0b', fontWeight: 700 }}>⚡SKIP</span>}
+                              <span style={s.tierBadge(v.upgrade.tier)}>{L2(v.upgrade.tier, TIER_ZH[v.upgrade.tier] || v.upgrade.tier)}</span>
+                              {isSkip && <span style={{ marginLeft: 5, fontSize: 10, color: '#f59e0b', fontWeight: 700 }}>{L2('⚡SKIP', '⚡跳级')}</span>}
                             </span>
-                          : <span style={{ fontSize: 12, color: 'var(--muted)' }}>Not yet</span>
+                          : <span style={{ fontSize: 12, color: 'var(--muted)' }}>{L2('Not yet', '未达到')}</span>
                         }
                       </td>
                       <td style={s.td}>
                         {v.upgrade
-                          ? <span style={{ fontSize: 12, color: '#4ade80', fontWeight: 600 }}>✓ Ready</span>
+                          ? <span style={{ fontSize: 12, color: '#4ade80', fontWeight: 600 }}>{L2('✓ Ready', '✓ 可升级')}</span>
                           : nextTarget
                             ? <span style={{ fontSize: 12, color: 'var(--muted)' }}>
                                 {fmt(nextTarget.threshold - v.monthly_valid_bet)}
-                                <span style={{ fontSize: 10, color: 'var(--muted)', marginLeft: 4 }}>to {nextTarget.tier}</span>
+                                <span style={{ fontSize: 10, color: 'var(--muted)', marginLeft: 4 }}>{L2(`to ${nextTarget.tier}`, `距${TIER_ZH[nextTarget.tier] || nextTarget.tier}`)}</span>
                               </span>
                             : '—'
                         }
                       </td>
-                      <td style={s.td}>{fmtDate(v.last_deposit_date)}</td>
+                      <td style={s.td}>{fmtDate(v.last_deposit_date, uiLang)}</td>
                       <td style={{ ...s.td, fontSize: 12, color: 'var(--muted)' }}>{v.host_assigned || '—'}</td>
                       <td style={s.td} onClick={e => e.stopPropagation()}>
                         {(v.phone || v.whatsapp)
@@ -1085,14 +1099,14 @@ function VIPCandidatesTab({ hostFilter = 'ALL' }) {
                                       }}
                                       onClick={() => setChallengeModal(v)}
                                     >
-                                      {challengeMap[v.username].status === 'active' ? '🎯 Challenge' : '⏰ Expired'}
+                                      {challengeMap[v.username].status === 'active' ? L2('🎯 Challenge', '🎯 挑战') : L2('⏰ Expired', '⏰ 已过期')}
                                     </button>
                                   : <button style={s.outlineBtn('#58a6ff')} onClick={() => setContactModal(v)}>
                                       {t('upgrades.btn.contact', 'Contact')}
                                     </button>
                                 }
                                 <button
-                                  title="Set / view upgrade challenge"
+                                  title={L2('Set / view upgrade challenge', '设置/查看升级挑战')}
                                   style={{ ...s.outlineBtn('#fbbf24'), padding: '3px 7px', fontSize: 12 }}
                                   onClick={() => setChallengeModal(v)}
                                 >
@@ -1101,7 +1115,7 @@ function VIPCandidatesTab({ hostFilter = 'ALL' }) {
                               </>
                           }
                           <button
-                            title="Send WhatsApp message"
+                            title={L2('Send WhatsApp message', '发送WhatsApp信息')}
                             style={{ ...s.btn('#25D366', true), padding: '4px 9px', fontSize: 14 }}
                             onClick={() => setWaModal(v)}
                           >💬</button>
@@ -1127,10 +1141,10 @@ function VIPCandidatesTab({ hostFilter = 'ALL' }) {
       {contactModal && (
         <div style={s.modal} onClick={() => setContactModal(null)}>
           <div style={s.modalBox} onClick={e => e.stopPropagation()}>
-            <div style={s.modalTitle}>Log Contact — {contactModal.username}</div>
+            <div style={s.modalTitle}>{L2('Log Contact', '记录联系')} — {contactModal.username}</div>
             <div style={s.modalSub}>
               <span style={{ ...s.tierBadge(contactModal.tier), marginRight: 8 }}>{contactModal.tier}</span>
-              Valid Bet: {fmt(contactModal.monthly_valid_bet)} · Last Deposit: {fmtDate(contactModal.last_deposit_date)}
+              Valid Bet: {fmt(contactModal.monthly_valid_bet)} · Last Deposit: {fmtDate(contactModal.last_deposit_date, uiLang)}
             </div>
             <ContactLogForm player={contactModal} onClose={() => setContactModal(null)} />
           </div>
@@ -1165,6 +1179,7 @@ const DEFAULT_THRESHOLDS = { BRONZE: 500, SILVER: 3000 }
 
 // ── TAB 2: Potential Players ───────────────────────────────────────────────────
 function PotentialsTab({ hostFilter = 'ALL' }) {
+  const [L2, uiLang] = useL2()
   const { t } = useLanguage()
   const { profile } = useAuth()
   const myName = profile?.full_name || ''
@@ -1282,10 +1297,10 @@ function PotentialsTab({ hostFilter = 'ALL' }) {
       {/* Stats */}
       <div style={s.statGrid}>
         {[
-          { label: 'Bronze players',  val: players.filter(p => p.tier === 'BRONZE').length, color: TIER_COLOR.BRONZE },
-          { label: 'Silver players',  val: players.filter(p => p.tier === 'SILVER').length, color: TIER_COLOR.SILVER },
-          { label: 'Upgrade flagged', val: players.filter(p => p.upgrade_flag).length,       color: '#10b981' },
-          { label: 'Total potentials', val: players.length,                                   color: 'var(--accent)' },
+          { label: L2('Bronze players', '青铜玩家'),  val: players.filter(p => p.tier === 'BRONZE').length, color: TIER_COLOR.BRONZE },
+          { label: L2('Silver players', '白银玩家'),  val: players.filter(p => p.tier === 'SILVER').length, color: TIER_COLOR.SILVER },
+          { label: L2('Upgrade flagged', '已标记升级'), val: players.filter(p => p.upgrade_flag).length,       color: '#10b981' },
+          { label: L2('Total potentials', '潜力玩家总数'), val: players.length,                                   color: 'var(--accent)' },
         ].map((st, i) => (
           <div key={i} style={s.statCard(st.color)}>
             <div style={{ ...s.statNum, color: st.color }}>{st.val}</div>
@@ -1301,29 +1316,29 @@ function PotentialsTab({ hostFilter = 'ALL' }) {
         borderRadius: 8, padding: '8px 14px', marginBottom: 14,
         display: 'flex', gap: 20,
       }}>
-        <span>🏅 Bronze → Silver at <strong style={{ color: TIER_COLOR.SILVER }}>{fmt(threshMap.BRONZE)}</strong> valid bet</span>
-        <span>🥈 Silver → Gold at <strong style={{ color: TIER_COLOR.GOLD }}>{fmt(threshMap.SILVER)}</strong> valid bet</span>
+        <span>{L2('🏅 Bronze → Silver at ', '🏅 青铜 → 白银：有效投注 ')}<strong style={{ color: TIER_COLOR.SILVER }}>{fmt(threshMap.BRONZE)}</strong>{L2(' valid bet', '')}</span>
+        <span>{L2('🥈 Silver → Gold at ', '🥈 白银 → 黄金：有效投注 ')}<strong style={{ color: TIER_COLOR.GOLD }}>{fmt(threshMap.SILVER)}</strong>{L2(' valid bet', '')}</span>
       </div>
 
       {/* Filters */}
       <div style={s.filterRow}>
-        <input placeholder="Search username…" value={search} onChange={e => setSearch(e.target.value)} style={s.searchInput} />
+        <input placeholder={L2('Search username…', '搜索用户名…')} value={search} onChange={e => setSearch(e.target.value)} style={s.searchInput} />
         <select value={tierF} onChange={e => setTierF(e.target.value)} style={s.select}>
-          <option value="ALL">All Tiers</option>
-          <option value="BRONZE">Bronze</option>
-          <option value="SILVER">Silver</option>
+          <option value="ALL">{L2('All Tiers', '全部等级')}</option>
+          <option value="BRONZE">{L2('Bronze', '青铜')}</option>
+          <option value="SILVER">{L2('Silver', '白银')}</option>
         </select>
         <select value={flagF} onChange={e => setFlagF(e.target.value)} style={s.select}>
-          <option value="ALL">All Status</option>
-          <option value="FLAGGED">🚀 Upgrade Flagged</option>
-          <option value="CLEAN">Active</option>
+          <option value="ALL">{L2('All Status', '全部状态')}</option>
+          <option value="FLAGGED">{L2('🚀 Upgrade Flagged', '🚀 已标记升级')}</option>
+          <option value="CLEAN">{L2('Active', '活跃')}</option>
         </select>
         <span style={{ fontSize: 12, color: 'var(--muted)', marginLeft: 'auto' }}>
-          {filtered.length} players · page {page + 1}/{totalPages || 1}
+          {L2(`${filtered.length} players · page ${page + 1}/${totalPages || 1}`, `${filtered.length} 位玩家 · 第 ${page + 1}/${totalPages || 1} 页`)}
         </span>
       </div>
 
-      {loading ? <div style={s.loading}>Loading…</div> : (
+      {loading ? <div style={s.loading}>{L2('Loading…', '载入中…')}</div> : (
         <>
           <div style={{ overflowX: 'auto' }}>
             <table style={s.table}>
@@ -1336,7 +1351,7 @@ function PotentialsTab({ hostFilter = 'ALL' }) {
               </thead>
               <tbody>
                 {paginated.length === 0
-                  ? <tr><td colSpan={9}><div style={s.empty}>No players match this filter</div></td></tr>
+                  ? <tr><td colSpan={9}><div style={s.empty}>{L2('No players match this filter', '没有符合筛选的玩家')}</div></td></tr>
                   : paginated.map(p => {
                     const target = getPotentialUpgradeTarget(p.tier, p.monthly_valid_bet, thresholds)
                     const nextTarget = getNextUpgradeTarget(p.tier, thresholds)
@@ -1350,7 +1365,7 @@ function PotentialsTab({ hostFilter = 'ALL' }) {
                         onMouseLeave={() => setHovered(null)}
                       >
                         <td style={s.td}><strong>{p.username}</strong></td>
-                        <td style={s.td}><span style={s.tierBadge(p.tier)}>{p.tier}</span></td>
+                        <td style={s.td}><span style={s.tierBadge(p.tier)}>{L2(p.tier, TIER_ZH[p.tier] || p.tier)}</span></td>
                         <td style={s.td}>{fmt(p.monthly_valid_bet, p.currency)}</td>
                         <td style={{ ...s.td, minWidth: 100 }}>
                           <div style={s.progressWrap}>
@@ -1362,15 +1377,15 @@ function PotentialsTab({ hostFilter = 'ALL' }) {
                           {target
                             ? <span style={{ fontSize: 12, color: '#4ade80', fontWeight: 600 }}>
                                 ✓ →{' '}
-                                <span style={s.tierBadge(target.to_tier)}>{target.to_tier}</span>
+                                <span style={s.tierBadge(target.to_tier)}>{L2(target.to_tier, TIER_ZH[target.to_tier] || target.to_tier)}</span>
                                 {TIER_ORDER.indexOf(target.to_tier) - TIER_ORDER.indexOf(p.tier) > 1 &&
-                                  <span style={{ fontSize: 10, color: '#f59e0b', fontWeight: 700, marginLeft: 4 }}>⚡SKIP</span>
+                                  <span style={{ fontSize: 10, color: '#f59e0b', fontWeight: 700, marginLeft: 4 }}>{L2('⚡SKIP', '⚡跳级')}</span>
                                 }
                               </span>
                             : nextTarget
                               ? <span style={{ fontSize: 12, color: 'var(--muted)' }}>
                                   {fmt(nextTarget.threshold - (p.monthly_valid_bet ?? 0))}
-                                  <span style={{ fontSize: 10, marginLeft: 3 }}>to {nextTarget.to_tier}</span>
+                                  <span style={{ fontSize: 10, marginLeft: 3 }}>{L2(`to ${nextTarget.to_tier}`, `距${TIER_ZH[nextTarget.to_tier] || nextTarget.to_tier}`)}</span>
                                 </span>
                               : '—'
                           }
@@ -1378,15 +1393,15 @@ function PotentialsTab({ hostFilter = 'ALL' }) {
                         <td style={s.td}>{fmt(p.total_deposit, p.currency)}</td>
                         <td style={{ ...s.td, fontSize: 12, color: 'var(--muted)', textAlign: 'center' }}>
                           {p.registration_date
-                            ? new Date(p.registration_date).toLocaleDateString('en-MY', { month: 'short', year: 'numeric' })
+                            ? new Date(p.registration_date).toLocaleDateString(uiLang === 'zh' ? 'zh-CN' : 'en-MY', { month: 'short', year: 'numeric' })
                             : '—'
                           }
                         </td>
                         <td style={{ ...s.td, fontSize: 12, color: 'var(--muted)' }}>{p.last_import_month || '—'}</td>
                         <td style={s.td}>
                           {p.upgrade_flag
-                            ? <span style={{ color: '#4ade80', fontWeight: 600, fontSize: 12 }}>🚀 Ready</span>
-                            : <span style={{ color: 'var(--muted)', fontSize: 12 }}>Active</span>
+                            ? <span style={{ color: '#4ade80', fontWeight: 600, fontSize: 12 }}>{L2('🚀 Ready', '🚀 可升级')}</span>
+                            : <span style={{ color: 'var(--muted)', fontSize: 12 }}>{L2('Active', '活跃')}</span>
                           }
                         </td>
                         <td style={s.td} onClick={e => e.stopPropagation()}>
@@ -1414,9 +1429,9 @@ function PotentialsTab({ hostFilter = 'ALL' }) {
 
           {totalPages > 1 && (
             <div style={{ display: 'flex', gap: 6, justifyContent: 'center', marginTop: 16 }}>
-              <button style={s.outlineBtn()} disabled={page === 0} onClick={() => setPage(p => p - 1)}>‹ Prev</button>
+              <button style={s.outlineBtn()} disabled={page === 0} onClick={() => setPage(p => p - 1)}>{L2('‹ Prev', '‹ 上一页')}</button>
               <span style={{ fontSize: 13, padding: '4px 8px', color: 'var(--muted)' }}>{page + 1} / {totalPages}</span>
-              <button style={s.outlineBtn()} disabled={page >= totalPages - 1} onClick={() => setPage(p => p + 1)}>Next ›</button>
+              <button style={s.outlineBtn()} disabled={page >= totalPages - 1} onClick={() => setPage(p => p + 1)}>{L2('Next ›', '下一页 ›')}</button>
             </div>
           )}
         </>
@@ -1434,7 +1449,7 @@ function PotentialsTab({ hostFilter = 'ALL' }) {
       {contactModal && (
         <div style={s.modal} onClick={() => setContactModal(null)}>
           <div style={s.modalBox} onClick={e => e.stopPropagation()}>
-            <div style={s.modalTitle}>Log Contact — {contactModal.username}</div>
+            <div style={s.modalTitle}>{L2('Log Contact', '记录联系')} — {contactModal.username}</div>
             <div style={s.modalSub}>
               <span style={{ ...s.tierBadge(contactModal.tier), marginRight: 8 }}>{contactModal.tier}</span>
               Valid Bet: {fmt(contactModal.monthly_valid_bet, contactModal.currency)} · Total Deposit: {fmt(contactModal.total_deposit, contactModal.currency)}
@@ -1449,6 +1464,7 @@ function PotentialsTab({ hostFilter = 'ALL' }) {
 
 // ── TAB 3: Graduated History ───────────────────────────────────────────────────
 function GraduatedTab({ hostFilter = 'ALL' }) {
+  const [L2, uiLang] = useL2()
   const { t } = useLanguage()
   const navigate = useNavigate()
   const [players, setPlayers] = useState([])
@@ -1482,10 +1498,10 @@ function GraduatedTab({ hostFilter = 'ALL' }) {
       {/* Stats */}
       <div style={s.statGrid}>
         {[
-          { label: 'Total graduated',  val: players.length,                                                  color: '#10b981' },
-          { label: 'Bronze → VIP',     val: players.filter(p => p.tier === 'BRONZE').length,                 color: TIER_COLOR.BRONZE },
-          { label: 'Silver → VIP',     val: players.filter(p => p.tier === 'SILVER').length,                 color: TIER_COLOR.SILVER },
-          { label: 'Graduated to Gold', val: players.filter(p => p.upgraded_to_tier === 'GOLD').length,      color: TIER_COLOR.GOLD },
+          { label: L2('Total graduated', '已晋升总数'),  val: players.length,                                                  color: '#10b981' },
+          { label: L2('Bronze → VIP', '青铜 → VIP'),     val: players.filter(p => p.tier === 'BRONZE').length,                 color: TIER_COLOR.BRONZE },
+          { label: L2('Silver → VIP', '白银 → VIP'),     val: players.filter(p => p.tier === 'SILVER').length,                 color: TIER_COLOR.SILVER },
+          { label: L2('Graduated to Gold', '晋升至黄金'), val: players.filter(p => p.upgraded_to_tier === 'GOLD').length,      color: TIER_COLOR.GOLD },
         ].map((st, i) => (
           <div key={i} style={s.statCard(st.color)}>
             <div style={{ ...s.statNum, color: st.color }}>{st.val}</div>
@@ -1495,13 +1511,13 @@ function GraduatedTab({ hostFilter = 'ALL' }) {
       </div>
 
       <div style={s.filterRow}>
-        <input placeholder="Search username…" value={search} onChange={e => setSearch(e.target.value)} style={s.searchInput} />
+        <input placeholder={L2('Search username…', '搜索用户名…')} value={search} onChange={e => setSearch(e.target.value)} style={s.searchInput} />
         <span style={{ fontSize: 12, color: 'var(--muted)', marginLeft: 'auto' }}>
-          {filtered.length} graduated players
+          {L2(`${filtered.length} graduated players`, `${filtered.length} 位已晋升玩家`)}
         </span>
       </div>
 
-      {loading ? <div style={s.loading}>Loading…</div> : (
+      {loading ? <div style={s.loading}>{L2('Loading…', '载入中…')}</div> : (
         <div style={{ overflowX: 'auto' }}>
           <table style={s.table}>
             <thead>
@@ -1513,7 +1529,7 @@ function GraduatedTab({ hostFilter = 'ALL' }) {
             </thead>
             <tbody>
               {filtered.length === 0
-                ? <tr><td colSpan={8}><div style={s.empty}>No graduated players yet</div></td></tr>
+                ? <tr><td colSpan={8}><div style={s.empty}>{L2('No graduated players yet', '暂无已晋升玩家')}</div></td></tr>
                 : filtered.map(p => (
                   <tr
                     key={p.id}
@@ -1522,13 +1538,13 @@ function GraduatedTab({ hostFilter = 'ALL' }) {
                     onMouseLeave={() => setHovered(null)}
                   >
                     <td style={s.td}><strong>{p.username}</strong></td>
-                    <td style={s.td}><span style={s.tierBadge(p.tier)}>{p.tier}</span></td>
+                    <td style={s.td}><span style={s.tierBadge(p.tier)}>{L2(p.tier, TIER_ZH[p.tier] || p.tier)}</span></td>
                     <td style={s.td}>
                       <span style={s.tierBadge(p.upgraded_to_tier || 'GOLD')}>
-                        {p.upgraded_to_tier || '—'}
+                        {p.upgraded_to_tier ? L2(p.upgraded_to_tier, TIER_ZH[p.upgraded_to_tier] || p.upgraded_to_tier) : '—'}
                       </span>
                     </td>
-                    <td style={s.td}>{fmtDate(p.upgraded_at)}</td>
+                    <td style={s.td}>{fmtDate(p.upgraded_at, uiLang)}</td>
                     <td style={{ ...s.td, textAlign: 'center' }}>{p.months_active ?? '—'}</td>
                     <td style={s.td}>{fmt(p.total_deposit, p.currency)}</td>
                     <td style={s.td}>{fmt(p.monthly_valid_bet, p.currency)}</td>
@@ -1559,6 +1575,7 @@ function GraduatedTab({ hostFilter = 'ALL' }) {
 
 // ── TAB 4: Tier History ─────────────────────────────────────────────────────
 function TierHistoryTab({ hostFilter = 'ALL' }) {
+  const [L2, uiLang] = useL2()
   const navigate  = useNavigate()
   const [logs,    setLogs]    = useState([])
   const [loading, setLoading] = useState(true)
@@ -1593,7 +1610,7 @@ function TierHistoryTab({ hostFilter = 'ALL' }) {
         fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 20,
         background: c + '22', color: c, border: `1px solid ${c}55`,
         display: 'inline-block',
-      }}>{tier || '?'}</span>
+      }}>{tier ? L2(tier, TIER_ZH[tier] || tier) : '?'}</span>
     )
   }
 
@@ -1614,7 +1631,7 @@ function TierHistoryTab({ hostFilter = 'ALL' }) {
 
   const fmtDate = (val) => {
     if (!val) return '—'
-    return new Date(val).toLocaleDateString('en-MY', { day: '2-digit', month: 'short', year: 'numeric' })
+    return new Date(val).toLocaleDateString(uiLang === 'zh' ? 'zh-CN' : 'en-MY', { day: '2-digit', month: 'short', year: 'numeric' })
   }
 
   const chip = (active, color) => ({
@@ -1629,9 +1646,9 @@ function TierHistoryTab({ hostFilter = 'ALL' }) {
       {/* ── Summary Stats ── */}
       <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
         {[
-          { count: upgrades,   label: 'Upgrades',   color: '#10b981' },
-          { count: downgrades, label: 'Downgrades',  color: '#f85149' },
-          { count: logs.length,label: 'Total Events', color: 'var(--text)' },
+          { count: upgrades,   label: L2('Upgrades', '升级'),   color: '#10b981' },
+          { count: downgrades, label: L2('Downgrades', '降级'),  color: '#f85149' },
+          { count: logs.length,label: L2('Total Events', '事件总数'), color: 'var(--text)' },
         ].map(({ count, label, color }) => (
           <div key={label} style={{ background: 'var(--surface2)', borderRadius: 10, padding: '12px 18px',
             display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -1639,7 +1656,7 @@ function TierHistoryTab({ hostFilter = 'ALL' }) {
             <div>
               <div style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 700,
                 textTransform: 'uppercase', letterSpacing: '.5px' }}>{label}</div>
-              <div style={{ fontSize: 11, color: 'var(--muted)' }}>recorded</div>
+              <div style={{ fontSize: 11, color: 'var(--muted)' }}>{L2('recorded', '已记录')}</div>
             </div>
           </div>
         ))}
@@ -1648,9 +1665,9 @@ function TierHistoryTab({ hostFilter = 'ALL' }) {
       {/* ── Filters ── */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
         <div style={{ display: 'flex', gap: 4 }}>
-          <button style={chip(typeF==='ALL',       'var(--brand)')} onClick={() => setTypeF('ALL')}>All</button>
-          <button style={chip(typeF==='UPGRADE',   '#10b981')}     onClick={() => setTypeF('UPGRADE')}>▲ Upgrades</button>
-          <button style={chip(typeF==='DOWNGRADE', '#f85149')}     onClick={() => setTypeF('DOWNGRADE')}>▼ Downgrades</button>
+          <button style={chip(typeF==='ALL',       'var(--brand)')} onClick={() => setTypeF('ALL')}>{L2('All', '全部')}</button>
+          <button style={chip(typeF==='UPGRADE',   '#10b981')}     onClick={() => setTypeF('UPGRADE')}>{L2('▲ Upgrades', '▲ 升级')}</button>
+          <button style={chip(typeF==='DOWNGRADE', '#f85149')}     onClick={() => setTypeF('DOWNGRADE')}>{L2('▼ Downgrades', '▼ 降级')}</button>
         </div>
         <select value={tierF} onChange={e => setTierF(e.target.value)} style={{
           fontSize: 12, padding: '5px 10px', borderRadius: 8,
@@ -1658,31 +1675,31 @@ function TierHistoryTab({ hostFilter = 'ALL' }) {
           color: 'var(--text)', cursor: 'pointer',
         }}>
           {['ALL','SILVER','GOLD','PLATINUM','DIAMOND','BLACK'].map(t => (
-            <option key={t} value={t}>{t === 'ALL' ? 'All Tiers' : t}</option>
+            <option key={t} value={t}>{t === 'ALL' ? L2('All Tiers', '全部等级') : L2(t, TIER_ZH[t] || t)}</option>
           ))}
         </select>
         <input value={search} onChange={e => setSearch(e.target.value)}
-          placeholder="Search username…"
+          placeholder={L2('Search username…', '搜索用户名…')}
           style={{ fontSize: 12, padding: '5px 10px', borderRadius: 8,
             border: '1px solid var(--border)', background: 'var(--surface2)',
             color: 'var(--text)', width: 160 }}
         />
         <span style={{ fontSize: 12, color: 'var(--muted)' }}>
-          {filtered.length} event{filtered.length !== 1 ? 's' : ''}
+          {L2(`${filtered.length} event${filtered.length !== 1 ? 's' : ''}`, `${filtered.length} 个事件`)}
         </span>
       </div>
 
       {/* ── Table ── */}
       {loading ? (
-        <div style={{ textAlign: 'center', padding: 40, color: 'var(--muted)' }}>Loading…</div>
+        <div style={{ textAlign: 'center', padding: 40, color: 'var(--muted)' }}>{L2('Loading…', '载入中…')}</div>
       ) : filtered.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: 40, color: 'var(--muted)' }}>No events match your filter.</div>
+        <div style={{ textAlign: 'center', padding: 40, color: 'var(--muted)' }}>{L2('No events match your filter.', '没有符合筛选的事件。')}</div>
       ) : (
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead>
               <tr style={{ borderBottom: '2px solid var(--border)' }}>
-                {['Date', 'Player', 'Change', 'Type', 'Source'].map(h => (
+                {[L2('Date', '日期'), L2('Player', '玩家'), L2('Change', '变动'), L2('Type', '类型'), L2('Source', '来源')].map(h => (
                   <th key={h} style={{ padding: '8px 12px', textAlign: 'left',
                     fontSize: 11, fontWeight: 700, color: 'var(--muted)',
                     textTransform: 'uppercase', letterSpacing: '.5px' }}>{h}</th>
@@ -1705,9 +1722,9 @@ function TierHistoryTab({ hostFilter = 'ALL' }) {
                       transition: 'background .1s',
                     }}>
                     <td style={{ padding: '10px 12px', color: 'var(--muted)', fontSize: 12, whiteSpace: 'nowrap' }}>
-                      {fmtDate(log.changed_at || log.import_month)}
+                      {fmtDate(log.changed_at || log.import_month, uiLang)}
                       {!log.changed_at && log.import_month && (
-                        <span style={{ marginLeft: 4, opacity: 0.5, fontSize: 10 }}>(month)</span>
+                        <span style={{ marginLeft: 4, opacity: 0.5, fontSize: 10 }}>{L2('(month)', '(月)')}</span>
                       )}
                     </td>
                     <td style={{ padding: '10px 12px', fontWeight: 700, color: 'var(--text)' }}>
@@ -1725,10 +1742,10 @@ function TierHistoryTab({ hostFilter = 'ALL' }) {
                         fontSize: 10, fontWeight: 700, color: dotColor,
                         background: dotColor + '18', padding: '2px 8px', borderRadius: 20,
                         border: `1px solid ${dotColor}33`,
-                      }}>{up ? '▲ UPGRADED' : '▼ DOWNGRADED'}</span>
+                      }}>{up ? L2('▲ UPGRADED', '▲ 已升级') : L2('▼ DOWNGRADED', '▼ 已降级')}</span>
                     </td>
                     <td style={{ padding: '10px 12px', fontSize: 11, color: 'var(--muted)' }}>
-                      {log.source === 'csv_import' ? 'CSV Import' : log.source || '—'}
+                      {log.source === 'csv_import' ? L2('CSV Import', 'CSV导入') : log.source || '—'}
                     </td>
                   </tr>
                 )
@@ -1743,6 +1760,7 @@ function TierHistoryTab({ hostFilter = 'ALL' }) {
 
 // ── TAB 5: Downgrade Risk ─────────────────────────────────────────────────────
 function DowngradeRiskTab({ hostFilter = 'ALL' }) {
+  const [L2, uiLang] = useL2()
   const navigate = useNavigate()
   const [rows, setRows]       = useState([])
   const [loading, setLoading] = useState(true)
@@ -1803,18 +1821,18 @@ function DowngradeRiskTab({ hostFilter = 'ALL' }) {
           border: '1px solid var(--border)', borderRadius: 7,
           display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
         }}>
-          <span>📅 Rolling quarter: <strong style={{ color: 'var(--text)' }}>{period}</strong></span>
+          <span>{L2('📅 Rolling quarter: ', '📅 滚动季度：')}<strong style={{ color: 'var(--text)' }}>{period}</strong></span>
           <span style={{ color: 'var(--border)' }}>·</span>
-          <span>Maintenance quota: <strong style={{ color: TIER_COLOR.GOLD }}>Gold 250K</strong> / <strong style={{ color: TIER_COLOR.PLATINUM }}>Platinum 1M</strong> / <strong style={{ color: TIER_COLOR.DIAMOND }}>Diamond 3M</strong> quarterly VB</span>
+          <span>{L2('Maintenance quota: ', '保级门槛：')}<strong style={{ color: TIER_COLOR.GOLD }}>{L2('Gold 250K', '黄金 250K')}</strong> / <strong style={{ color: TIER_COLOR.PLATINUM }}>{L2('Platinum 1M', '白金 1M')}</strong> / <strong style={{ color: TIER_COLOR.DIAMOND }}>{L2('Diamond 3M', '钻石 3M')}</strong>{L2(' quarterly VB', ' 季度有效投注')}</span>
         </div>
       )}
 
       <div style={s.statGrid}>
         {[
-          { label: 'Diamond at risk',  val: diamond,  color: TIER_COLOR.DIAMOND  || '#a78bfa' },
-          { label: 'Platinum at risk', val: platinum, color: TIER_COLOR.PLATINUM || '#e5e7eb' },
-          { label: 'Gold at risk',     val: gold,     color: TIER_COLOR.GOLD     || '#f59e0b' },
-          { label: 'Met quota (safe)', val: safe,     color: '#10b981' },
+          { label: L2('Diamond at risk', '钻石有风险'),  val: diamond,  color: TIER_COLOR.DIAMOND  || '#a78bfa' },
+          { label: L2('Platinum at risk', '白金有风险'), val: platinum, color: TIER_COLOR.PLATINUM || '#e5e7eb' },
+          { label: L2('Gold at risk', '黄金有风险'),     val: gold,     color: TIER_COLOR.GOLD     || '#f59e0b' },
+          { label: L2('Met quota (safe)', '已达门槛（安全）'), val: safe,     color: '#10b981' },
         ].map((st, i) => (
           <div key={i} style={s.statCard(st.color)}>
             <div style={{ ...s.statNum, color: st.color }}>{st.val}</div>
@@ -1825,40 +1843,40 @@ function DowngradeRiskTab({ hostFilter = 'ALL' }) {
 
       <div style={s.filterRow}>
         <input
-          placeholder="Search username…"
+          placeholder={L2('Search username…', '搜索用户名…')}
           value={search}
           onChange={e => setSearch(e.target.value)}
           style={s.searchInput}
         />
         <select value={tierF} onChange={e => setTierF(e.target.value)} style={s.select}>
-          <option value="ALL">All Tiers</option>
-          <option value="DIAMOND">Diamond</option>
-          <option value="PLATINUM">Platinum</option>
-          <option value="GOLD">Gold</option>
+          <option value="ALL">{L2('All Tiers', '全部等级')}</option>
+          <option value="DIAMOND">{L2('Diamond', '钻石')}</option>
+          <option value="PLATINUM">{L2('Platinum', '白金')}</option>
+          <option value="GOLD">{L2('Gold', '黄金')}</option>
         </select>
         <select value={riskF} onChange={e => setRiskF(e.target.value)} style={s.select}>
-          <option value="AT RISK">⚠️ At Risk Only</option>
-          <option value="ALL">All (incl. Safe)</option>
-          <option value="SAFE">✅ Safe Only</option>
+          <option value="AT RISK">{L2('⚠️ At Risk Only', '⚠️ 仅有风险')}</option>
+          <option value="ALL">{L2('All (incl. Safe)', '全部（含安全）')}</option>
+          <option value="SAFE">{L2('✅ Safe Only', '✅ 仅安全')}</option>
         </select>
         <span style={{ fontSize: 12, color: 'var(--muted)', marginLeft: 'auto' }}>
           {filtered.length} players shown
         </span>
       </div>
 
-      {loading ? <div style={s.loading}>Loading…</div> : (
+      {loading ? <div style={s.loading}>{L2('Loading…', '载入中…')}</div> : (
         <div style={{ overflowX: 'auto' }}>
           <table style={s.table}>
             <thead>
               <tr>
-                {['Username', 'Tier', 'Quarterly VB', 'Quota', 'Gap', 'Months', 'Downgrade To', 'Host', 'Status'].map(h => (
+                {[L2('Username', '用户名'), L2('Tier', '等级'), L2('Quarterly VB', '季度有效投注'), L2('Quota', '门槛'), L2('Gap', '差距'), L2('Months', '月数'), L2('Downgrade To', '降级至'), L2('Host', '负责人'), L2('Status', '状态')].map(h => (
                   <th key={h} style={s.th}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0
-                ? <tr><td colSpan={9}><div style={s.empty}>No players match this filter</div></td></tr>
+                ? <tr><td colSpan={9}><div style={s.empty}>{L2('No players match this filter', '没有符合筛选的玩家')}</div></td></tr>
                 : filtered.map(r => {
                   const pct = r.maintenance_threshold > 0
                     ? Math.min(100, (r.quarterly_vb / r.maintenance_threshold) * 100)
@@ -1888,7 +1906,7 @@ function DowngradeRiskTab({ hostFilter = 'ALL' }) {
                           <CopyBtn text={r.username} />
                         </div>
                       </td>
-                      <td style={s.td}><span style={s.tierBadge(r.tier)}>{r.tier}</span></td>
+                      <td style={s.td}><span style={s.tierBadge(r.tier)}>{L2(r.tier, TIER_ZH[r.tier] || r.tier)}</span></td>
                       <td style={{ ...s.td, minWidth: 130 }}>
                         <div style={{ fontWeight: 600, marginBottom: 3 }}>{fmt(r.quarterly_vb)}</div>
                         <div style={s.progressWrap}>
@@ -1913,17 +1931,17 @@ function DowngradeRiskTab({ hostFilter = 'ALL' }) {
                       </td>
                       <td style={s.td}>
                         {r.downgrade_to
-                          ? <span style={s.tierBadge(r.downgrade_to)}>{r.downgrade_to}</span>
-                          : <span style={{ color: '#10b981', fontSize: 12 }}>✓ Safe</span>}
+                          ? <span style={s.tierBadge(r.downgrade_to)}>{L2(r.downgrade_to, TIER_ZH[r.downgrade_to] || r.downgrade_to)}</span>
+                          : <span style={{ color: '#10b981', fontSize: 12 }}>{L2('✓ Safe', '✓ 安全')}</span>}
                       </td>
                       <td style={{ ...s.td, fontSize: 12, color: 'var(--muted)' }}>
                         {r.host_assigned || '—'}
                       </td>
                       <td style={s.td}>
                         {isAtRisk ? (
-                          <span style={{ fontSize: 11, fontWeight: 700, color: '#f85149', background: 'rgba(248,81,73,0.1)', border: '1px solid rgba(248,81,73,0.3)', borderRadius: 20, padding: '2px 8px' }}>⚠️ AT RISK</span>
+                          <span style={{ fontSize: 11, fontWeight: 700, color: '#f85149', background: 'rgba(248,81,73,0.1)', border: '1px solid rgba(248,81,73,0.3)', borderRadius: 20, padding: '2px 8px' }}>{L2('⚠️ AT RISK', '⚠️ 有风险')}</span>
                         ) : (
-                          <span style={{ fontSize: 11, fontWeight: 700, color: '#10b981', background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: 20, padding: '2px 8px' }}>✓ SAFE</span>
+                          <span style={{ fontSize: 11, fontWeight: 700, color: '#10b981', background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: 20, padding: '2px 8px' }}>{L2('✓ SAFE', '✓ 安全')}</span>
                         )}
                       </td>
                     </tr>
@@ -1940,6 +1958,7 @@ function DowngradeRiskTab({ hostFilter = 'ALL' }) {
 
 // ── MAIN ──────────────────────────────────────────────────────────────────────
 export default function Upgrades() {
+  const [L2, uiLang] = useL2()
   const { t } = useLanguage()
   const { profile } = useAuth()
   const [tab, setTab] = useUrlParam('tab', 'vip')
@@ -1983,7 +2002,7 @@ export default function Upgrades() {
 
         {/* ── Global Host Filter ── */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-          <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 500 }}>Host:</span>
+          <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 500 }}>{L2('Host:', '负责人：')}</span>
           <select
             value={hostFilter}
             onChange={e => setHostFilter(e.target.value)}
@@ -1994,19 +2013,19 @@ export default function Upgrades() {
               minWidth: 160,
             }}
           >
-            <option value="ALL">All Hosts</option>
-            {myName && <option value={myName}>👤 My Players ({myName})</option>}
+            <option value="ALL">{L2('All Hosts', '全部负责人')}</option>
+            {myName && <option value={myName}>{L2('👤 My Players', '👤 我的玩家')} ({myName})</option>}
             {hosts.filter(h => h !== myName).map(h => (
               <option key={h} value={h}>{h}</option>
             ))}
-            <option value="UNASSIGNED">— Unassigned —</option>
+            <option value="UNASSIGNED">{L2('— Unassigned —', '— 未分配 —')}</option>
           </select>
           {hostFilter !== 'ALL' && (
             <button
               style={{ ...s.outlineBtn('var(--muted)'), fontSize: 11, padding: '4px 10px' }}
               onClick={() => setHostFilter('ALL')}
             >
-              ✕ Clear
+              {L2('✕ Clear', '✕ 清除')}
             </button>
           )}
         </div>
@@ -2026,10 +2045,10 @@ export default function Upgrades() {
           {counts.graduated > 0 && <span style={s.tabBadge('var(--muted)')}>{counts.graduated}</span>}
         </button>
         <button style={s.tab(tab === 'history')} onClick={() => setTab('history')}>
-          Tier History
+          {L2('Tier History', '等级历史')}
         </button>
         <button style={s.tab(tab === 'downgrade')} onClick={() => setTab('downgrade')}>
-          Downgrade Risk
+          {L2('Downgrade Risk', '降级风险')}
           {counts.downgradeAtRisk > 0 && (
             <span style={s.tabBadge('#f85149')}>{counts.downgradeAtRisk}</span>
           )}

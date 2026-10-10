@@ -26,9 +26,10 @@ function getAge(birthdayStr) {
   return age
 }
 
-function fmtBday(str) {
+function fmtBday(str, lang = 'en') {
   if (!str) return '—'
   const d = new Date(str)
+  if (lang === 'zh') return `${d.getMonth() + 1}月${d.getDate()}日`
   return `${d.getDate()} ${MONTHS[d.getMonth()]}`
 }
 
@@ -58,7 +59,11 @@ const s = {
 
 export default function BirthdayReminder() {
   const { profile }         = useAuth()
-  const { t }               = useLanguage()
+  const { t, lang }         = useLanguage()
+  const L2 = (en, zh) => (lang === 'zh' ? zh : en)
+  const TIER_ZH = { BLACK:'黑金', DIAMOND:'钻石', PLATINUM:'白金', GOLD:'黄金', SILVER:'白银', BRONZE:'青铜' }
+  const CHANNEL_ZH = { WhatsApp:'WhatsApp', Call:'电话', 'In-person':'面对面', Other:'其他' }
+  const OUTCOME_ZH = { Contacted:'已联系', 'No Reply':'未回复', Replied:'已回复', Deposited:'已存款' }
   const myName    = profile?.full_name || ''
   const [mineOnly, setMineOnly] = useUrlParamBool('mine', false)
   const navigate            = useNavigate()
@@ -172,7 +177,7 @@ export default function BirthdayReminder() {
       log_month:       new Date().toISOString().slice(0,7),
       log_week:        String(Math.ceil(new Date().getDate()/7)),
     })
-    if (error) { alert('Save failed: ' + error.message); return }
+    if (error) { alert(L2('Save failed: ', '保存失败：') + error.message); return }
     // Sync last_contacted on vip_members
     const _now = new Date().toISOString()
     await supabase.from('vip_members').update({ last_contacted: _now, last_contact_date: _now.slice(0,10) }).eq('id', vip.id)
@@ -240,11 +245,11 @@ export default function BirthdayReminder() {
           }}>{label}</button>
         ))}
         <button onClick={() => setMineOnly(m => !m)} style={{ background:mineOnly?'var(--accent)':'var(--surface2)', color:mineOnly?'#fff':'var(--text)', border:mineOnly?'none':'1px solid var(--border)', padding:'6px 12px', borderRadius:7, fontSize:12, fontWeight:600, cursor:'pointer' }}>
-          {mineOnly ? '★ Mine' : '☆ Mine'}
+          {mineOnly ? L2('★ Mine', '★ 我的') : L2('☆ Mine', '☆ 我的')}
         </button>
         <select style={{ background:'var(--surface)', border:'1px solid var(--border)', color:'var(--text)', padding:'6px 10px', borderRadius:8, fontSize:13, outline:'none' }} value={tierF} onChange={e => setTierF(e.target.value)}>
           <option value="ALL">{t('birthdayReminder.allTiers')}</option>
-          {['BLACK','DIAMOND','PLATINUM','GOLD','SILVER','BRONZE'].map(t => <option key={t}>{t}</option>)}
+          {['BLACK','DIAMOND','PLATINUM','GOLD','SILVER','BRONZE'].map(t => <option key={t} value={t}>{L2(t, TIER_ZH[t])}</option>)}
         </select>
         <input style={{ ...s.finput, width:180 }} placeholder={t('birthdayReminder.searchPlaceholder')} value={search} onChange={e => setSearch(e.target.value)} />
         <span style={{ marginLeft:'auto', fontSize:12, color:'var(--muted)' }}>{filtered.length} {t('birthdayReminder.shown')}</span>
@@ -295,20 +300,20 @@ export default function BirthdayReminder() {
                       {isToday && <span style={{ marginRight:6 }}>🎂</span>}
                       {v.username}
                     </td>
-                    <td style={s.td}><span style={{ ...s.badge, background:TIER_BG[v.tier], color:TIER_COLOR[v.tier] }}>{v.tier}</span></td>
-                    <td style={{ ...s.td, fontWeight:600 }}>{fmtBday(v.birthday)}</td>
-                    <td style={{ ...s.td, color:'var(--muted)', fontSize:12 }}>{v.age ? `${v.age} yrs` : '—'}</td>
+                    <td style={s.td}><span style={{ ...s.badge, background:TIER_BG[v.tier], color:TIER_COLOR[v.tier] }}>{L2(v.tier, TIER_ZH[v.tier] || v.tier)}</span></td>
+                    <td style={{ ...s.td, fontWeight:600 }}>{fmtBday(v.birthday, lang)}</td>
+                    <td style={{ ...s.td, color:'var(--muted)', fontSize:12 }}>{v.age ? L2(`${v.age} yrs`, `${v.age} 岁`) : '—'}</td>
                     <td style={s.td}>
                       {isToday
-                        ? <span style={{ color:'#ffd700', fontWeight:700 }}>🎉 TODAY!</span>
+                        ? <span style={{ color:'#ffd700', fontWeight:700 }}>{L2('🎉 TODAY!', '🎉 今天！')}</span>
                         : days !== null
-                          ? <span style={{ color: days<=7?'#f85149':days<=14?'#f0883e':'var(--muted)', fontWeight: days<=7?700:400 }}>{days}d</span>
+                          ? <span style={{ color: days<=7?'#f85149':days<=14?'#f0883e':'var(--muted)', fontWeight: days<=7?700:400 }}>{L2(`${days}d`, `${days}天`)}</span>
                           : '—'
                       }
                     </td>
                     <td style={s.td}>
                       {gifted
-                        ? <span style={{ fontSize:12, color:'#3fb950' }}>✓ {thisYearGifts[0].gift_type || 'Gift logged'}</span>
+                        ? <span style={{ fontSize:12, color:'#3fb950' }}>✓ {thisYearGifts[0].gift_type || L2('Gift logged', '已记录礼物')}</span>
                         : <span style={{ fontSize:12, color:'var(--muted)' }}>—</span>
                       }
                     </td>
@@ -317,7 +322,7 @@ export default function BirthdayReminder() {
                     </td>
                     <td style={s.td}>
                       {gifted && gifts[v.username]?.[0]?.contacted
-                        ? <span style={{ fontSize:11, color:'#3fb950', fontWeight:600 }}>✓ Yes</span>
+                        ? <span style={{ fontSize:11, color:'#3fb950', fontWeight:600 }}>{L2('✓ Yes', '✓ 是')}</span>
                         : <span style={{ fontSize:11, color:'var(--muted)' }}>—</span>
                       }
                     </td>
@@ -348,7 +353,7 @@ export default function BirthdayReminder() {
               <div>
                 <div style={{ fontSize:16, fontWeight:700 }}>🎁 {t('birthdayReminder.giftLogTitle')} — {modal.vip.username}</div>
                 <div style={{ fontSize:12, color:'var(--muted)', marginTop:2, display:'flex', alignItems:'center', gap:10, flexWrap:'wrap' }}>
-                  <span>{fmtBday(modal.vip.birthday)} · Age {modal.vip.age}</span>
+                  <span>{fmtBday(modal.vip.birthday, lang)} · {L2('Age', '年龄')} {modal.vip.age}</span>
                   <span style={{ color:'var(--accent)' }}>{t('birthdayReminder.year')}:</span>
                   <select style={{ background:'var(--surface2)', border:'1px solid var(--border)', color:'var(--text)', padding:'3px 8px', borderRadius:6, fontSize:12, outline:'none' }}
                     value={giftYear} onChange={e => setGiftYear(parseInt(e.target.value))}>
@@ -361,7 +366,7 @@ export default function BirthdayReminder() {
             <div style={{ padding:'18px 22px' }}>
               <div style={s.frow}>
                 <div style={s.flbl}>{t('birthdayReminder.giftType')}</div>
-                <input style={s.finput} value={giftForm.gift_type} onChange={e => setGiftForm({...giftForm, gift_type:e.target.value})} placeholder="e.g. Ang Pao, Cake, Voucher, Watch..." />
+                <input style={s.finput} value={giftForm.gift_type} onChange={e => setGiftForm({...giftForm, gift_type:e.target.value})} placeholder={L2('e.g. Ang Pao, Cake, Voucher, Watch...', '例如：红包、蛋糕、礼券、手表…')} />
               </div>
               <div style={{ ...s.g3, marginBottom:12 }}>
                 <div>
@@ -392,7 +397,7 @@ export default function BirthdayReminder() {
               </div>
               <div style={s.frow}>
                 <div style={s.flbl}>{t('birthdayReminder.notes')}</div>
-                <textarea style={{ ...s.fta, marginTop:0 }} rows={3} value={giftForm.notes} onChange={e => setGiftForm({...giftForm, notes:e.target.value})} placeholder="VIP reaction, preferences, anything to remember..." />
+                <textarea style={{ ...s.fta, marginTop:0 }} rows={3} value={giftForm.notes} onChange={e => setGiftForm({...giftForm, notes:e.target.value})} placeholder={L2('VIP reaction, preferences, anything to remember...', 'VIP反应、喜好、需要记住的事项…')} />
               </div>
 
               {/* History */}
@@ -424,8 +429,8 @@ export default function BirthdayReminder() {
                       <span style={{ fontSize:12, flex:1, color:'var(--text)' }}>{g.gift_type||'—'}</span>
                       {g.gift_cost>0 && <span style={{ fontSize:11, color:'#ffd700' }}>🎁 {formatMoney(g.gift_cost, modal.vip?.currency)}</span>}
                       {g.bonus_given>0 && <span style={{ fontSize:11, color:'#3fb950' }}>💰 {formatMoney(g.bonus_given, modal.vip?.currency)}</span>}
-                      {g.contact_date && <span style={{ fontSize:10, color:'var(--muted)' }}>{new Date(g.contact_date).toLocaleDateString('en-MY',{day:'numeric',month:'short'})}</span>}
-                      {g.birthday_year===giftYear && <span style={{ fontSize:10, color:'var(--accent)', fontWeight:600 }}>✎ editing</span>}
+                      {g.contact_date && <span style={{ fontSize:10, color:'var(--muted)' }}>{new Date(g.contact_date).toLocaleDateString(lang === 'zh' ? 'zh-CN' : 'en-MY',{day:'numeric',month:'short'})}</span>}
+                      {g.birthday_year===giftYear && <span style={{ fontSize:10, color:'var(--accent)', fontWeight:600 }}>{L2('✎ editing', '✎ 编辑中')}</span>}
                     </div>
                   ))}
                 </div>
@@ -453,13 +458,13 @@ export default function BirthdayReminder() {
                 <div>
                   <div style={s.flbl}>{t('birthdayReminder.contactType')}</div>
                   <select style={{ ...s.finput, marginTop:0 }} value={contactForm.channel} onChange={e => setContactForm({...contactForm, channel:e.target.value})}>
-                    {['WhatsApp','Call','In-person','Other'].map(c => <option key={c}>{c}</option>)}
+                    {['WhatsApp','Call','In-person','Other'].map(c => <option key={c} value={c}>{L2(c, CHANNEL_ZH[c])}</option>)}
                   </select>
                 </div>
                 <div>
                   <div style={s.flbl}>{t('birthdayReminder.outcome')}</div>
                   <select style={{ ...s.finput, marginTop:0 }} value={contactForm.outcome} onChange={e => setContactForm({...contactForm, outcome:e.target.value})}>
-                    {['Contacted','No Reply','Replied','Deposited'].map(o => <option key={o}>{o}</option>)}
+                    {['Contacted','No Reply','Replied','Deposited'].map(o => <option key={o} value={o}>{L2(o, OUTCOME_ZH[o])}</option>)}
                   </select>
                 </div>
               </div>

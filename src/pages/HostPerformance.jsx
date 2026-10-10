@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { formatMoney } from '../lib/format'
+import { useLanguage } from '../contexts/LanguageContext'
 
 /* ─── Tier config ─── */
 const TIERS = ['GOLD', 'PLATINUM', 'DIAMOND']
@@ -26,9 +27,9 @@ function weekRanges() {
   const mon1 = addDays(mon0, -7)
   const mon2 = addDays(mon0, -14)
   return [
-    { label: 'This Week', start: toDateStr(mon0), end: toDateStr(today) },
-    { label: 'Last Week', start: toDateStr(mon1), end: toDateStr(addDays(mon0, -1)) },
-    { label: '2 Wks Ago', start: toDateStr(mon2), end: toDateStr(addDays(mon1, -1)) },
+    { label: 'This Week', labelZh: '本周', start: toDateStr(mon0), end: toDateStr(today) },
+    { label: 'Last Week', labelZh: '上周', start: toDateStr(mon1), end: toDateStr(addDays(mon0, -1)) },
+    { label: '2 Wks Ago', labelZh: '2周前', start: toDateStr(mon2), end: toDateStr(addDays(mon1, -1)) },
   ]
 }
 
@@ -44,7 +45,8 @@ function monthRanges() {
       ? toDateStr(today)
       : toDateStr(new Date(year, month + 1, 0))
     const label = d.toLocaleDateString('en-MY', { month: 'short', year: '2-digit' })
-    months.push({ label, start, end })
+    const labelZh = d.toLocaleDateString('zh-CN', { month: 'short', year: '2-digit' })
+    months.push({ label, labelZh, start, end })
   }
   return months
 }
@@ -144,6 +146,8 @@ const DeltaBadge = ({ curr, prev }) => {
 // monthVb = running monthly total (for upgrade threshold progress)
 // weekVb  = this-week-only contribution (earned in the selected period)
 function TierBar({ monthVb, weekVb, tier }) {
+  const { lang } = useLanguage()
+  const L2 = (en, zh) => (lang === 'zh' ? zh : en)
   const target = TIER_NEXT_VB[tier]
   const pct = Math.min((monthVb / target) * 100, 100)
   const color = TIER_COLOR[tier]
@@ -153,8 +157,8 @@ function TierBar({ monthVb, weekVb, tier }) {
     <div style={{ width: '100%', minWidth: 180 }}>
       {/* Monthly total vs threshold */}
       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--muted)', marginBottom: 3 }}>
-        <span>Monthly: <strong style={{ color: 'var(--text)' }}>{fmtNum(monthVb)}</strong></span>
-        <span style={{ color }}>{isDiamond ? '✓ MAX TIER' : `${TIER_NEXT_LABEL[tier]} @ ${fmtNum(target)}`}</span>
+        <span>{L2('Monthly','本月')}: <strong style={{ color: 'var(--text)' }}>{fmtNum(monthVb)}</strong></span>
+        <span style={{ color }}>{isDiamond ? L2('✓ MAX TIER','✓ 最高等级') : `${TIER_NEXT_LABEL[tier]} @ ${fmtNum(target)}`}</span>
       </div>
       <div style={{ height: 6, borderRadius: 3, background: 'var(--border)', overflow: 'hidden' }}>
         <div style={{ height: '100%', width: pct + '%', background: color, borderRadius: 3, transition: 'width .3s' }} />
@@ -162,12 +166,12 @@ function TierBar({ monthVb, weekVb, tier }) {
       <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 3, fontSize: 10 }}>
         {/* This week's contribution */}
         <span style={{ color: weekVb > 0 ? '#22C55E' : 'var(--muted)' }}>
-          +{fmtNum(weekVb)} this wk
+          +{fmtNum(weekVb)} {L2('this wk','本周')}
         </span>
         {/* Remaining to upgrade */}
         {!isDiamond && (
           <span style={{ color: remaining <= 200_000 ? '#F59E0B' : 'var(--disabled)' }}>
-            {remaining <= 0 ? '🎯 Ready!' : `${fmtNum(remaining)} left`}
+            {remaining <= 0 ? L2('🎯 Ready!','🎯 已达标！') : L2(`${fmtNum(remaining)} left`,`尚差 ${fmtNum(remaining)}`)}
           </span>
         )}
       </div>
@@ -207,6 +211,9 @@ async function exportExcel(rows, periodLabel, prevLabel) {
    Main component
 ════════════════════════════════════════════════ */
 export default function HostPerformance() {
+  const { lang } = useLanguage()
+  const L2 = (en, zh) => (lang === 'zh' ? zh : en)
+  const PL = (p) => (p ? (lang === 'zh' ? (p.labelZh || p.label) : p.label) : null)
   const weeks  = useMemo(() => weekRanges(), [])
   const months = useMemo(() => monthRanges(), [])
 
@@ -380,6 +387,11 @@ export default function HostPerformance() {
   const labelB = periodB != null ? (periodB === -1 ? 'Custom B' : periods[periodB]?.label) : null
   const labelC = periodC != null ? periods[periodC]?.label : null
   const periodLabel = periodMode === 'month' ? 'Month VB' : 'Week VB'
+  // Display-only (translated) labels; English labels above are kept for Excel export
+  const dispA = periodA === -1 ? L2('Custom A','自定义 A') : PL(periods[periodA])
+  const dispB = periodB != null ? (periodB === -1 ? L2('Custom B','自定义 B') : PL(periods[periodB])) : null
+  const dispC = periodC != null ? PL(periods[periodC]) : null
+  const dispPeriodLabel = periodMode === 'month' ? L2('Month VB','本月有效投注') : L2('Week VB','本周有效投注')
 
   function toggleTier(t) {
     setSelectedTiers(prev =>
@@ -401,9 +413,9 @@ export default function HostPerformance() {
       {/* ─── Header ─── */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20, gap: 16, flexWrap: 'wrap' }}>
         <div>
-          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800 }}>🏆 Host Performance</h1>
+          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800 }}>🏆 {L2('Host Performance','负责人表现')}</h1>
           <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--muted)' }}>
-            Compare VIP player performance across hosts — week or month view
+            {L2('Compare VIP player performance across hosts — week or month view','比较各负责人的 VIP 玩家表现 — 周或月视图')}
           </p>
         </div>
         <button
@@ -413,7 +425,7 @@ export default function HostPerformance() {
             padding: '9px 18px', fontSize: 13, fontWeight: 700, cursor: 'pointer', flexShrink: 0,
           }}
         >
-          📥 Export Excel
+          📥 {L2('Export Excel','导出 Excel')}
         </button>
       </div>
 
@@ -422,9 +434,9 @@ export default function HostPerformance() {
 
         {/* Mode toggle */}
         <div>
-          <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '.5px' }}>View Mode</label>
+          <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '.5px' }}>{L2('View Mode','视图模式')}</label>
           <div style={{ display: 'flex', gap: 4 }}>
-            {[['week','📅 Week'],['month','📆 Month']].map(([mode, lbl]) => (
+            {[['week',L2('📅 Week','📅 周')],['month',L2('📆 Month','📆 月')]].map(([mode, lbl]) => (
               <button key={mode} onClick={() => { setPeriodMode(mode); setPeriodA(0); setPeriodB(1); setPeriodC(null); setShowCustom(false) }}
                 style={{
                   padding: '6px 12px', fontSize: 12, borderRadius: 6, cursor: 'pointer', fontWeight: 700,
@@ -439,7 +451,7 @@ export default function HostPerformance() {
         {/* Period A */}
         <div>
           <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '.5px' }}>
-            {periodMode === 'month' ? 'Month A (Primary)' : 'Current Period'}
+            {periodMode === 'month' ? L2('Month A (Primary)','月份 A（主要）') : L2('Current Period','当前期间')}
           </label>
           <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
             {periods.map((w, i) => (
@@ -450,7 +462,7 @@ export default function HostPerformance() {
                   background: periodA === i ? 'rgba(255,106,0,.12)' : 'var(--surface2)',
                   color: periodA === i ? 'var(--brand)' : 'var(--muted)',
                 }}>
-                {w.label}
+                {PL(w)}
               </button>
             ))}
             {periodMode === 'week' && (
@@ -460,7 +472,7 @@ export default function HostPerformance() {
                   border: '1px solid ' + (periodA === -1 ? 'var(--brand)' : 'var(--border)'),
                   background: periodA === -1 ? 'rgba(255,106,0,.12)' : 'var(--surface2)',
                   color: periodA === -1 ? 'var(--brand)' : 'var(--muted)',
-                }}>Custom</button>
+                }}>{L2('Custom','自定义')}</button>
             )}
           </div>
           {showCustom && periodA === -1 && (
@@ -477,7 +489,7 @@ export default function HostPerformance() {
         {/* Period B (compare to) */}
         <div>
           <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '.5px' }}>
-            {periodMode === 'month' ? 'Month B' : 'Compare To'}
+            {periodMode === 'month' ? L2('Month B','月份 B') : L2('Compare To','比较对象')}
           </label>
           <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
             <button onClick={() => setPeriodB(null)}
@@ -486,7 +498,7 @@ export default function HostPerformance() {
                 border: '1px solid var(--border)',
                 background: periodB === null ? 'var(--surface)' : 'var(--surface2)',
                 color: 'var(--muted)',
-              }}>None</button>
+              }}>{L2('None','无')}</button>
             {periods.map((w, i) => (
               <button key={i} onClick={() => setPeriodB(i)}
                 style={{
@@ -495,7 +507,7 @@ export default function HostPerformance() {
                   background: periodB === i ? '#818CF818' : 'var(--surface2)',
                   color: periodB === i ? '#818CF8' : 'var(--muted)',
                 }}>
-                {w.label}
+                {PL(w)}
               </button>
             ))}
           </div>
@@ -505,7 +517,7 @@ export default function HostPerformance() {
         {periodMode === 'month' && (
           <div>
             <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '.5px' }}>
-              Month C (3rd Compare)
+              {L2('Month C (3rd Compare)','月份 C（第三比较）')}
             </label>
             <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
               <button onClick={() => setPeriodC(null)}
@@ -514,7 +526,7 @@ export default function HostPerformance() {
                   border: '1px solid var(--border)',
                   background: periodC === null ? 'var(--surface)' : 'var(--surface2)',
                   color: 'var(--muted)',
-                }}>None</button>
+                }}>{L2('None','无')}</button>
               {months.map((m, i) => (
                 <button key={i} onClick={() => setPeriodC(i)}
                   style={{
@@ -523,7 +535,7 @@ export default function HostPerformance() {
                     background: periodC === i ? '#34D39918' : 'var(--surface2)',
                     color: periodC === i ? '#34D399' : 'var(--muted)',
                   }}>
-                  {m.label}
+                  {PL(m)}
                 </button>
               ))}
             </div>
@@ -532,7 +544,7 @@ export default function HostPerformance() {
 
         {/* Tier filter */}
         <div>
-          <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '.5px' }}>Tier</label>
+          <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '.5px' }}>{L2('Tier','等级')}</label>
           <div style={{ display: 'flex', gap: 4 }}>
             {TIERS.map(t => (
               <button key={t} onClick={() => toggleTier(t)}
@@ -548,19 +560,19 @@ export default function HostPerformance() {
 
         {/* Host filter */}
         <div>
-          <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '.5px' }}>Host</label>
+          <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '.5px' }}>{L2('Host','负责人')}</label>
           <select value={hostFilter} onChange={e => setHostFilter(e.target.value)}
             style={{ fontSize: 13, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)', padding: '6px 10px', cursor: 'pointer' }}>
-            <option value="all">All Hosts</option>
+            <option value="all">{L2('All Hosts','全部负责人')}</option>
             {hosts.map(h => <option key={h} value={h}>{h}</option>)}
           </select>
         </div>
 
         {/* Search */}
         <div>
-          <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '.5px' }}>Search</label>
+          <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '.5px' }}>{L2('Search','搜索')}</label>
           <input value={search} onChange={e => setSearch(e.target.value)}
-            placeholder="Username…"
+            placeholder={L2('Username…','用户名…')}
             style={{ fontSize: 13, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)', padding: '6px 10px', width: 130 }} />
         </div>
 
@@ -568,13 +580,13 @@ export default function HostPerformance() {
         <label style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 13, color: 'var(--muted)', cursor: 'pointer', paddingBottom: 1 }}>
           <input type="checkbox" checked={showInactive} onChange={e => setShowInactive(e.target.checked)}
             style={{ width: 15, height: 15, accentColor: 'var(--brand)', cursor: 'pointer' }} />
-          Show 30+ day inactive
+          {L2('Show 30+ day inactive','显示30天以上不活跃')}
         </label>
 
         {loading && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--muted)', fontSize: 13, paddingBottom: 1 }}>
             <div style={{ width: 14, height: 14, border: '2px solid var(--border)', borderTopColor: 'var(--brand)', borderRadius: '50%', animation: 'spin .7s linear infinite' }} />
-            Loading…
+            {L2('Loading…','载入中…')}
             <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
           </div>
         )}
@@ -588,21 +600,21 @@ export default function HostPerformance() {
               onClick={() => setHostFilter(hostFilter === h.host ? 'all' : h.host)}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
                 <div>
-                  <div style={{ fontWeight: 800, fontSize: 15 }}>{h.host === '-' ? 'Unassigned' : h.host.split('@')[0]}</div>
-                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{h.count} players · {h.active} active 7d</div>
+                  <div style={{ fontWeight: 800, fontSize: 15 }}>{h.host === '-' ? L2('Unassigned','未分配') : h.host.split('@')[0]}</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{L2(`${h.count} players · ${h.active} active 7d`,`${h.count} 位玩家 · 7天内活跃 ${h.active}`)}</div>
                 </div>
                 <div style={{ fontSize: 11, background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 6, padding: '3px 8px', color: 'var(--muted)' }}>
-                  {hostContactCounts[h.host] || 0} contacts
+                  {L2(`${hostContactCounts[h.host] || 0} contacts`,`${hostContactCounts[h.host] || 0} 次联系`)}
                 </div>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <div>
-                  <div style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.4px' }}>Total Deposit</div>
+                  <div style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.4px' }}>{L2('Total Deposit','总存款')}</div>
                   <div style={{ fontSize: 18, fontWeight: 800, marginTop: 2 }}>{fmtNum(h.deposit)}</div>
                   <DeltaBadge curr={h.deposit} prev={h.prevDeposit} />
                 </div>
                 <div>
-                  <div style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.4px' }}>This Week VB</div>
+                  <div style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.4px' }}>{L2('This Week VB','本周有效投注')}</div>
                   <div style={{ fontSize: 18, fontWeight: 800, marginTop: 2 }}>{fmtNum(h.weekVb)}</div>
                 </div>
               </div>
@@ -614,12 +626,12 @@ export default function HostPerformance() {
       {/* ─── Sort bar + count ─── */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
         <div style={{ fontSize: 13, color: 'var(--muted)' }}>
-          Showing <strong style={{ color: 'var(--text)' }}>{visibleRows.length}</strong> players
-          {periodBRange ? <> · <span style={{ color: 'var(--brand)' }}>{labelA}</span> vs <span style={{ color: '#818CF8' }}>{labelB}</span>{periodCRange ? <> vs <span style={{ color: '#34D399' }}>{labelC}</span></> : null}</> : null}
+          {L2('Showing','显示')} <strong style={{ color: 'var(--text)' }}>{visibleRows.length}</strong> {L2('players','位玩家')}
+          {periodBRange ? <> · <span style={{ color: 'var(--brand)' }}>{dispA}</span> {L2('vs','对比')} <span style={{ color: '#818CF8' }}>{dispB}</span>{periodCRange ? <> {L2('vs','对比')} <span style={{ color: '#34D399' }}>{dispC}</span></> : null}</> : null}
         </div>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          <span style={{ fontSize: 12, color: 'var(--muted)' }}>Sort:</span>
-          {[['vb', `📊 ${periodLabel}`], ['monthly', '📅 Monthly VB'], ['deposit', '💰 Deposit'], ['days', '💤 Inactive']].map(([k, lbl]) => (
+          <span style={{ fontSize: 12, color: 'var(--muted)' }}>{L2('Sort:','排序：')}</span>
+          {[['vb', `📊 ${dispPeriodLabel}`], ['monthly', L2('📅 Monthly VB','📅 本月有效投注')], ['deposit', L2('💰 Deposit','💰 存款')], ['days', L2('💤 Inactive','💤 不活跃')]].map(([k, lbl]) => (
             <button key={k} onClick={() => setSortBy(k)}
               style={{
                 fontSize: 12, padding: '4px 9px', borderRadius: 6, cursor: 'pointer', fontWeight: 600,
@@ -637,17 +649,17 @@ export default function HostPerformance() {
           <thead>
             <tr style={{ background: 'var(--surface2)', borderBottom: '2px solid var(--border)' }}>
               {[
-                ['Username', '140px'],
-                ['Tier', '80px'],
-                ['Host', '120px'],
-                ['Days Inactive', '90px'],
-                [labelA + ' Deposit', '120px'],
-                [labelB ? labelB + ' Deposit' : null, '120px'],
-                [labelC ? labelC + ' Deposit' : null, '120px'],
-                [labelA + ' ' + periodLabel, '120px'],
-                [labelB ? labelB + ' ' + periodLabel : null, '110px'],
-                [labelC ? labelC + ' ' + periodLabel : null, '110px'],
-                ['Monthly Progress → Next Tier', '200px'],
+                [L2('Username','用户名'), '140px'],
+                [L2('Tier','等级'), '80px'],
+                [L2('Host','负责人'), '120px'],
+                [L2('Days Inactive','不活跃天数'), '90px'],
+                [dispA + L2(' Deposit',' 存款'), '120px'],
+                [dispB ? dispB + L2(' Deposit',' 存款') : null, '120px'],
+                [dispC ? dispC + L2(' Deposit',' 存款') : null, '120px'],
+                [dispA + ' ' + dispPeriodLabel, '120px'],
+                [dispB ? dispB + ' ' + dispPeriodLabel : null, '110px'],
+                [dispC ? dispC + ' ' + dispPeriodLabel : null, '110px'],
+                [L2('Monthly Progress → Next Tier','本月进度 → 下一等级'), '200px'],
               ].filter(([h]) => h != null).map(([h, w]) => (
                 <th key={h} style={{ padding: '10px 14px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '.4px', whiteSpace: 'nowrap', width: w }}>{h}</th>
               ))}
@@ -655,7 +667,7 @@ export default function HostPerformance() {
           </thead>
           <tbody>
             {visibleRows.length === 0 && !loading && (
-              <tr><td colSpan={9} style={{ padding: '40px 14px', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>No data found. Try loading data first.</td></tr>
+              <tr><td colSpan={9} style={{ padding: '40px 14px', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>{L2('No data found. Try loading data first.','未找到数据。请先载入数据。')}</td></tr>
             )}
             {visibleRows.map((r, idx) => {
               const isInactive30 = r.daysInactive > 30
@@ -669,7 +681,7 @@ export default function HostPerformance() {
                   {/* Username */}
                   <td style={{ padding: '10px 14px' }}>
                     <div style={{ fontWeight: 700, fontSize: 13 }}>{r.username}</div>
-                    {r.lastDeposit && <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 1 }}>Last dep: {r.lastDeposit}</div>}
+                    {r.lastDeposit && <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 1 }}>{L2('Last dep','最后存款')}: {r.lastDeposit}</div>}
                   </td>
                   {/* Tier */}
                   <td style={{ padding: '10px 14px' }}>
@@ -688,7 +700,7 @@ export default function HostPerformance() {
                       fontWeight: 700, fontSize: 13,
                       color: isInactive30 ? '#EF4444' : isInactive7 ? '#F59E0B' : '#22C55E',
                     }}>
-                      {r.daysInactive != null ? r.daysInactive + 'd' : '—'}
+                      {r.daysInactive != null ? r.daysInactive + L2('d','天') : '—'}
                     </span>
                   </td>
                   {/* Period A deposit */}
@@ -729,10 +741,10 @@ export default function HostPerformance() {
 
       {/* ─── Legend ─── */}
       <div style={{ display: 'flex', gap: 18, marginTop: 12, fontSize: 12, color: 'var(--muted)' }}>
-        <span><span style={{ color: '#22C55E', fontWeight: 700 }}>●</span> Active ≤ 7 days</span>
-        <span><span style={{ color: '#F59E0B', fontWeight: 700 }}>●</span> 8–30 days</span>
-        <span><span style={{ color: '#EF4444', fontWeight: 700 }}>●</span> 30+ days inactive</span>
-        <span style={{ marginLeft: 'auto' }}>Metrics from latest snapshot in period · Valid Bet based on monthly_valid_bet column</span>
+        <span><span style={{ color: '#22C55E', fontWeight: 700 }}>●</span> {L2('Active ≤ 7 days','活跃 ≤ 7天')}</span>
+        <span><span style={{ color: '#F59E0B', fontWeight: 700 }}>●</span> {L2('8–30 days','8–30天')}</span>
+        <span><span style={{ color: '#EF4444', fontWeight: 700 }}>●</span> {L2('30+ days inactive','30天以上不活跃')}</span>
+        <span style={{ marginLeft: 'auto' }}>{L2('Metrics from latest snapshot in period · Valid Bet based on monthly_valid_bet column','指标取自期间内最新快照 · 有效投注基于 monthly_valid_bet 栏位')}</span>
       </div>
     </div>
   )

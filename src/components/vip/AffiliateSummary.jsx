@@ -4,12 +4,15 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import * as XLSX from 'xlsx'
 import { SEGMENTS, fmtRM, fetchAll } from '../../lib/depositProfile'
+import { useLanguage } from '../../contexts/LanguageContext'
 
 const th = { textAlign: 'right', padding: '10px 12px', color: 'var(--muted)', fontWeight: 600, whiteSpace: 'nowrap', cursor: 'pointer', userSelect: 'none' }
 const td = { padding: '9px 12px', textAlign: 'right', whiteSpace: 'nowrap' }
 
 export default function AffiliateSummary() {
   const navigate = useNavigate()
+  const { lang } = useLanguage()
+  const L2 = (en, zh) => (lang === 'zh' ? zh : en)
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState(null)
@@ -53,8 +56,8 @@ export default function AffiliateSummary() {
   }
   const arrow = k => (sortKey === k ? (sortDir === 'asc' ? ' ▲' : ' ▼') : '')
 
-  if (loading) return <div style={{ textAlign: 'center', padding: 60, color: 'var(--muted)' }}>Loading affiliates…</div>
-  if (err) return <div style={{ padding: 24, color: '#f87171' }}>Error loading affiliates: {err}</div>
+  if (loading) return <div style={{ textAlign: 'center', padding: 60, color: 'var(--muted)' }}>{L2('Loading affiliates…', '载入代理中…')}</div>
+  if (err) return <div style={{ padding: 24, color: '#f87171' }}>{L2('Error loading affiliates', '载入代理出错')}: {err}</div>
 
   // Export: sheet 1 = affiliate summary (as shown), sheet 2 = every VIP with its affiliate
   async function exportExcel() {
@@ -113,7 +116,7 @@ export default function AffiliateSummary() {
       XLSX.writeFile(wb, `Affiliates_VIPs_${new Date().toISOString().slice(0, 10)}.xlsx`)
     } catch (e) {
       console.error('Affiliate export error', e)
-      alert('Export failed: ' + (e.message || e))
+      alert(L2('Export failed: ', '导出失败：') + (e.message || e))
     }
     setExporting(false)
   }
@@ -127,16 +130,16 @@ export default function AffiliateSummary() {
     <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '0 8px 8px 8px', overflow: 'hidden' }}>
       <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)' }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
-          <div style={{ fontSize: 15, fontWeight: 800 }}>🤝 Affiliates 代理分析</div>
-          <div style={{ fontSize: 12, color: 'var(--muted)' }}>Affiliate taken from BO deposit records (Jul–Sep). Click a row to open those VIPs in All VIPs.</div>
+          <div style={{ fontSize: 15, fontWeight: 800 }}>{L2('🤝 Affiliates', '🤝 代理分析')}</div>
+          <div style={{ fontSize: 12, color: 'var(--muted)' }}>{L2('Affiliate taken from BO deposit records (Jul–Sep). Click a row to open those VIPs in All VIPs.', '代理数据取自BO存款记录（7–9月）。点击一行可在全部VIP中打开这些VIP。')}</div>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
           {[
-            ['Affiliates with VIPs', totals.aff],
-            ['VIPs via affiliate', totals.vips - totals.direct - totals.unknown],
-            ['Direct (no affiliate)', totals.direct],
-            ['Unknown (no deposit data)', totals.unknown],
-            ['Deposits Jul–Sep', fmtRM(totals.dep)],
+            [L2('Affiliates with VIPs', '有VIP的代理'), totals.aff],
+            [L2('VIPs via affiliate', '经代理的VIP'), totals.vips - totals.direct - totals.unknown],
+            [L2('Direct (no affiliate)', '直客（无代理）'), totals.direct],
+            [L2('Unknown (no deposit data)', '未知（无存款数据）'), totals.unknown],
+            [L2('Deposits Jul–Sep', '7–9月存款'), fmtRM(totals.dep)],
           ].map(([l, v]) => (
             <div key={l} style={{ background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px' }}>
               <div style={{ fontSize: 11, color: 'var(--muted)' }}>{l}</div>
@@ -147,30 +150,30 @@ export default function AffiliateSummary() {
       </div>
 
       <div style={{ padding: '12px 20px', borderBottom: '1px solid var(--border)', display: 'flex', gap: 10, alignItems: 'center' }}>
-        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search affiliate"
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder={L2('Search affiliate', '搜索代理')}
           style={{ background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 10px', fontSize: 12, color: 'var(--text)', minWidth: 200 }} />
-        <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--muted)' }}>{list.length} rows</span>
+        <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--muted)' }}>{L2(`${list.length} rows`, `${list.length} 行`)}</span>
         <button onClick={exportExcel} disabled={exporting} style={{
           background: 'var(--brand, #FF6B00)', color: '#fff', border: 'none', borderRadius: 6,
           padding: '7px 14px', fontSize: 12, fontWeight: 700, cursor: exporting ? 'wait' : 'pointer', opacity: exporting ? 0.6 : 1,
-        }}>{exporting ? 'Exporting…' : '⬇ Export Excel'}</button>
+        }}>{exporting ? L2('Exporting…', '导出中…') : L2('⬇ Export Excel', '⬇ 导出Excel')}</button>
       </div>
 
       <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
           <thead>
             <tr style={{ borderBottom: '1px solid var(--border)' }}>
-              <th style={{ ...th, textAlign: 'left' }} onClick={() => sortBy('affiliate')}>Affiliate{arrow('affiliate')}</th>
-              <th style={th} onClick={() => sortBy('vips')}>VIPs{arrow('vips')}</th>
-              <th style={th} onClick={() => sortBy('gold')}>Gold{arrow('gold')}</th>
-              <th style={th} onClick={() => sortBy('platinum')}>Plat{arrow('platinum')}</th>
-              <th style={th} onClick={() => sortBy('diamond_plus')}>Diamond+{arrow('diamond_plus')}</th>
-              <th style={th} onClick={() => sortBy('dep_total_3m')}>Deposits Jul–Sep{arrow('dep_total_3m')}</th>
-              <th style={th} onClick={() => sortBy('normal_month')}>Normal / mth{arrow('normal_month')}</th>
-              <th style={th} onClick={() => sortBy('dep_30d')}>Last 30d{arrow('dep_30d')}</th>
-              <th style={th} onClick={() => sortBy('trend')}>Trend{arrow('trend')}</th>
-              <th style={th} onClick={() => sortBy('risk')} title="Silent + Declining — click the number to open the list">🚨 Need action{arrow('risk')}</th>
-              <th style={th} onClick={() => sortBy('growing')}>📈 Growing{arrow('growing')}</th>
+              <th style={{ ...th, textAlign: 'left' }} onClick={() => sortBy('affiliate')}>{L2('Affiliate', '代理')}{arrow('affiliate')}</th>
+              <th style={th} onClick={() => sortBy('vips')}>{L2('VIPs', 'VIP数')}{arrow('vips')}</th>
+              <th style={th} onClick={() => sortBy('gold')}>{L2('Gold', '黄金')}{arrow('gold')}</th>
+              <th style={th} onClick={() => sortBy('platinum')}>{L2('Plat', '白金')}{arrow('platinum')}</th>
+              <th style={th} onClick={() => sortBy('diamond_plus')}>{L2('Diamond+', '钻石+')}{arrow('diamond_plus')}</th>
+              <th style={th} onClick={() => sortBy('dep_total_3m')}>{L2('Deposits Jul–Sep', '7–9月存款')}{arrow('dep_total_3m')}</th>
+              <th style={th} onClick={() => sortBy('normal_month')}>{L2('Normal / mth', '平常 / 月')}{arrow('normal_month')}</th>
+              <th style={th} onClick={() => sortBy('dep_30d')}>{L2('Last 30d', '近30天')}{arrow('dep_30d')}</th>
+              <th style={th} onClick={() => sortBy('trend')}>{L2('Trend', '趋势')}{arrow('trend')}</th>
+              <th style={th} onClick={() => sortBy('risk')} title={L2('Silent + Declining — click the number to open the list', '沉默 + 下滑 — 点击数字打开名单')}>{L2('🚨 Need action', '🚨 需跟进')}{arrow('risk')}</th>
+              <th style={th} onClick={() => sortBy('growing')}>{L2('📈 Growing', '📈 增长')}{arrow('growing')}</th>
             </tr>
           </thead>
           <tbody>
@@ -184,7 +187,7 @@ export default function AffiliateSummary() {
                   onMouseEnter={e => { e.currentTarget.style.background = 'var(--surface2)' }}
                   onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}>
                   <td style={{ ...td, textAlign: 'left', fontWeight: 700, color: special ? 'var(--muted)' : 'var(--brand, #FF6B00)' }}>
-                    {r.affiliate === '(direct)' ? 'Direct (no affiliate)' : r.affiliate === '(unknown)' ? 'Unknown (no deposit data)' : r.affiliate}
+                    {r.affiliate === '(direct)' ? L2('Direct (no affiliate)', '直客（无代理）') : r.affiliate === '(unknown)' ? L2('Unknown (no deposit data)', '未知（无存款数据）') : r.affiliate}
                   </td>
                   <td style={{ ...td, fontWeight: 700 }}>{r.vips}</td>
                   <td style={td}>{r.gold || '—'}</td>

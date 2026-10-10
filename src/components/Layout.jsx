@@ -2,9 +2,11 @@ import { Navigate, Outlet } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import Sidebar from './Sidebar'
 import ForcePasswordChange from './ForcePasswordChange'
+import { useLanguage } from '../contexts/LanguageContext'
 
 export default function Layout() {
   const { user, profile, loading } = useAuth()
+  const { lang } = useLanguage()
 
   if (loading) return (
     <div style={{
@@ -14,7 +16,7 @@ export default function Layout() {
     }}>
       <div style={{ width: 18, height: 18, border: '2px solid var(--border)', borderTopColor: 'var(--brand)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
       <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
-      Loading…
+      {lang === 'zh' ? '载入中…' : 'Loading…'}
     </div>
   )
 

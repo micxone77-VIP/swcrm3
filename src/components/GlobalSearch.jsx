@@ -2,18 +2,19 @@
 import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { useLanguage } from '../contexts/LanguageContext'
 
 const TIER_COLOR = { BLACK:'#e2e8f0', DIAMOND:'#58a6ff', PLATINUM:'#cbd5e1', GOLD:'#fbbf24', SILVER:'#94a3b8', BRONZE:'#c2855a' }
 
 const QUICK_LINKS = [
-  { label:'📋 Today',        path:'/' },
-  { label:'👥 All VIPs',     path:'/vips' },
-  { label:'⚠️ At Risk',      path:'/at-risk' },
-  { label:'💬 Ask Data',     path:'/ask' },
-  { label:'📞 Contact Log',  path:'/contact-log' },
-  { label:'📊 Analytics',    path:'/analytics' },
-  { label:'✅ My Tasks',     path:'/tasks' },
-  { label:'🎂 Birthdays',    path:'/birthdays' },
+  { label:'📋 Today',        zh:'📋 今天',     path:'/' },
+  { label:'👥 All VIPs',     zh:'👥 全部VIP',  path:'/vips' },
+  { label:'⚠️ At Risk',      zh:'⚠️ 有风险',   path:'/at-risk' },
+  { label:'💬 Ask Data',     zh:'💬 数据问答', path:'/ask' },
+  { label:'📞 Contact Log',  zh:'📞 联系记录', path:'/contact-log' },
+  { label:'📊 Analytics',    zh:'📊 分析',     path:'/analytics' },
+  { label:'✅ My Tasks',     zh:'✅ 我的任务', path:'/tasks' },
+  { label:'🎂 Birthdays',    zh:'🎂 生日',     path:'/birthdays' },
 ]
 
 export default function GlobalSearch({ open, onClose }) {
@@ -23,6 +24,8 @@ export default function GlobalSearch({ open, onClose }) {
   const [focused, setFocused] = useState(-1)
   const inputRef = useRef(null)
   const navigate = useNavigate()
+  const { lang } = useLanguage()
+  const L2 = (en, zh) => (lang === 'zh' ? zh : en)
 
   useEffect(() => {
     if (open) { setQuery(''); setResults([]); setFocused(-1); setTimeout(() => inputRef.current?.focus(), 50) }
@@ -82,10 +85,10 @@ export default function GlobalSearch({ open, onClose }) {
             value={query}
             onChange={e => { setQuery(e.target.value); setFocused(-1) }}
             onKeyDown={handleKey}
-            placeholder="Search VIP by username or name…"
+            placeholder={L2('Search VIP by username or name…', '按用户名或姓名搜索VIP…')}
             style={{ flex:1, background:'transparent', border:'none', outline:'none', fontSize:16, color:'var(--text)' }}
           />
-          {loading && <span style={{ fontSize:11, color:'var(--muted)', flexShrink:0 }}>Searching…</span>}
+          {loading && <span style={{ fontSize:11, color:'var(--muted)', flexShrink:0 }}>{L2('Searching…', '搜索中…')}</span>}
           <kbd style={{ fontSize:11, padding:'2px 7px', borderRadius:5, border:'1px solid var(--border)', color:'var(--muted)', background:'var(--surface2)', flexShrink:0 }}>ESC</kbd>
         </div>
 
@@ -108,13 +111,13 @@ export default function GlobalSearch({ open, onClose }) {
                     {v.full_name && v.full_name !== '(Name)' ? v.full_name : v.username}
                   </div>
                   <div style={{ fontSize:12, color:'var(--muted)', marginTop:2 }}>
-                    @{v.username}{v.host_assigned ? ` · ${v.host_assigned}` : ''}{v.days_inactive > 0 ? ` · ${v.days_inactive}d inactive` : ''}
+                    @{v.username}{v.host_assigned ? ` · ${v.host_assigned}` : ''}{v.days_inactive > 0 ? L2(` · ${v.days_inactive}d inactive`, ` · ${v.days_inactive}天不活跃`) : ''}
                   </div>
                 </div>
                 <div style={{ display:'flex', gap:6, alignItems:'center', flexShrink:0 }}>
                   <span style={{ fontSize:11, fontWeight:700, color: TIER_COLOR[v.tier] || 'var(--muted)' }}>{v.tier}</span>
                   {v.churn_risk === 'HIGH' && (
-                    <span style={{ fontSize:10, background:'rgba(220,38,38,.15)', color:'#dc2626', padding:'2px 6px', borderRadius:4, fontWeight:700 }}>HIGH RISK</span>
+                    <span style={{ fontSize:10, background:'rgba(220,38,38,.15)', color:'#dc2626', padding:'2px 6px', borderRadius:4, fontWeight:700 }}>{L2('HIGH RISK', '高风险')}</span>
                   )}
                 </div>
               </div>
@@ -124,14 +127,14 @@ export default function GlobalSearch({ open, onClose }) {
 
         {!loading && query.trim().length >= 2 && results.length === 0 && (
           <div style={{ padding:'24px', textAlign:'center', color:'var(--muted)', fontSize:13 }}>
-            No VIP found for "{query}"
+            {L2(`No VIP found for "${query}"`, `未找到 "${query}" 相关VIP`)}
           </div>
         )}
 
         {/* Quick links (when no query) */}
         {query.trim().length < 2 && (
           <div style={{ padding:'16px 18px' }}>
-            <div style={{ fontSize:11, color:'var(--muted)', fontWeight:700, marginBottom:10, textTransform:'uppercase', letterSpacing:'.5px' }}>Quick navigate</div>
+            <div style={{ fontSize:11, color:'var(--muted)', fontWeight:700, marginBottom:10, textTransform:'uppercase', letterSpacing:'.5px' }}>{L2('Quick navigate', '快速导航')}</div>
             <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
               {QUICK_LINKS.map(item => (
                 <button key={item.path}
@@ -141,7 +144,7 @@ export default function GlobalSearch({ open, onClose }) {
                     background:'var(--surface2)', border:'1px solid var(--border)',
                     color:'var(--text)', cursor:'pointer',
                   }}>
-                  {item.label}
+                  {lang === 'zh' ? item.zh : item.label}
                 </button>
               ))}
             </div>
@@ -153,7 +156,7 @@ export default function GlobalSearch({ open, onClose }) {
           padding:'10px 18px', borderTop:'1px solid var(--border)',
           display:'flex', gap:16, fontSize:11, color:'var(--disabled)',
         }}>
-          {[['↵','open'],['↑↓','navigate'],['ESC','close'],['⌘K','toggle']].map(([k,l]) => (
+          {[['↵',L2('open','打开')],['↑↓',L2('navigate','导航')],['ESC',L2('close','关闭')],['⌘K',L2('toggle','切换')]].map(([k,l]) => (
             <span key={k}>
               <kbd style={{ padding:'1px 5px', borderRadius:3, border:'1px solid var(--border)', background:'var(--surface2)' }}>{k}</kbd> {l}
             </span>

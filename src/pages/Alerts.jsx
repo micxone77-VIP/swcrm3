@@ -6,18 +6,19 @@ import { PageHeader, Card, Tabs, Btn, Badge, LoadingState, EmptyState } from '..
 import { TierBadge, RiskBadge } from '../components/ui'
 import { useLanguage } from '../contexts/LanguageContext'
 
-function timeAgo(d) {
+function timeAgo(d, lang = 'en') {
   if (!d) return '—'
+  const zh = lang === 'zh'
   const diff = Math.floor((Date.now() - new Date(d)) / 1000)
-  if (diff < 60) return 'just now'
-  if (diff < 3600) return Math.floor(diff/60) + 'm ago'
-  if (diff < 86400) return Math.floor(diff/3600) + 'h ago'
-  return Math.floor(diff/86400) + 'd ago'
+  if (diff < 60) return zh ? '刚刚' : 'just now'
+  if (diff < 3600) return Math.floor(diff/60) + (zh ? '分钟前' : 'm ago')
+  if (diff < 86400) return Math.floor(diff/3600) + (zh ? '小时前' : 'h ago')
+  return Math.floor(diff/86400) + (zh ? '天前' : 'd ago')
 }
 
 export default function Alerts() {
   const navigate = useNavigate()
-  const { t } = useLanguage()
+  const { t, lang } = useLanguage()
   const [vips, setVips]       = useState([])
   const [loading, setLoading] = useState(true)
   const [tab, setTab]         = useState('critical')
@@ -92,10 +93,10 @@ export default function Alerts() {
                       <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)' }}><TierBadge tier={v.tier} /></td>
                       <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)' }}><RiskBadge risk={v.churn_risk} /></td>
                       <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', color: 'var(--muted)' }}>
-                        {getDays(v) != null ? `${getDays(v)}d` : '—'}
+                        {getDays(v) != null ? (lang === 'zh' ? `${getDays(v)}天` : `${getDays(v)}d`) : '—'}
                       </td>
                       <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', color: 'var(--muted)', fontSize: 12 }}>
-                        {timeAgo(v.last_contacted || v.last_contact_date)}
+                        {timeAgo(v.last_contacted || v.last_contact_date, lang)}
                       </td>
                       <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', color: 'var(--muted)' }}>{v.host_assigned || '—'}</td>
                       <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)' }}>

@@ -44,6 +44,7 @@ const s = {
 
 export default function PlayerProfiling() {
   const { t, lang } = useLanguage()
+  const L2 = (en, zh) => (lang === 'zh' ? zh : en)
   const [players,    setPlayers]    = useState([])
   const [loading,    setLoading]    = useState(true)
   const [month,      setMonth]      = useUrlParam('month', currentYearMonth())
@@ -250,7 +251,7 @@ export default function PlayerProfiling() {
     const display = suffix === '%' ? Math.abs(diff).toFixed(1) + '%' : fmtM(Math.abs(diff))
     return (
       <span style={{ fontSize: 10, color, marginLeft: 6, fontWeight: 700 }}>
-        {arrow} {display} vs {prevStats.month}
+        {arrow} {display} {L2('vs','对比')} {prevStats.month}
       </span>
     )
   }
@@ -260,8 +261,8 @@ export default function PlayerProfiling() {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 24, flexWrap: 'wrap', gap: 12 }}>
         <div>
-          <div style={{ fontSize: 22, fontWeight: 800 }}>VIP Player Profiling</div>
-          <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 4 }}>Weekly analysis - ROI classification & behavior metrics — {REGION_LABEL[CURRENCY_REGION[currency]]} ({CURRENCY_SYMBOL[currency]}) only</div>
+          <div style={{ fontSize: 22, fontWeight: 800 }}>{L2('VIP Player Profiling','VIP 玩家画像')}</div>
+          <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 4 }}>{L2('Weekly analysis - ROI classification & behavior metrics','每周分析 - ROI 分类与行为指标')} — {REGION_LABEL[CURRENCY_REGION[currency]]} ({CURRENCY_SYMBOL[currency]}) {L2('only','专属')}</div>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <div style={{ display:'flex', background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, overflow:'hidden' }}>
@@ -280,7 +281,7 @@ export default function PlayerProfiling() {
       {/* Summary stat cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 20 }}>
         {[
-          { label: 'Total VIPs', value: total, color: '#58a6ff', delta: <DeltaBadge current={total} previous={prevStats?.total} /> },
+          { label: L2('Total VIPs','VIP 总数'), value: total, color: '#58a6ff', delta: <DeltaBadge current={total} previous={prevStats?.total} /> },
           { label: t('playerProfiling.statTotalTurnover'), value: fmtM(totalVb), color: '#a78bfa', delta: <DeltaBadge current={totalVb} previous={prevStats?.totalVb} /> },
           { label: t('playerProfiling.statPlatformPnl'), value: fmtM(-totalWl), color: totalWl > 0 ? '#f85149' : '#3fb950', delta: <DeltaBadge current={-totalWl} previous={prevStats ? -prevStats.totalWl : null} /> },
           { label: t('playerProfiling.statAvgRoi'), value: fmtPct(avgRoi ? -avgRoi : null), color: '#f59e0b', delta: <DeltaBadge current={avgRoi ? -avgRoi : null} previous={prevStats?.avgRoi !== null && prevStats?.avgRoi !== undefined ? -prevStats.avgRoi : null} suffix="%" invert /> },
@@ -312,7 +313,7 @@ export default function PlayerProfiling() {
                 {pt.key === 'abnormal' ? 'ROI > +10%' :
                  pt.key === 'pro'      ? 'ROI +3% ~ +8%' :
                  pt.key === 'good'     ? 'ROI 0 ~ +3%' :
-                 pt.key === 'normal'   ? 'ROI -3% ~ -15%' : 'ROI < -15% or N/A'}
+                 pt.key === 'normal'   ? 'ROI -3% ~ -15%' : L2('ROI < -15% or N/A','ROI < -15% 或无数据')}
               </div>
               <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
                 {total > 0 ? Math.round(pt.count / total * 100) : 0}%
@@ -325,23 +326,23 @@ export default function PlayerProfiling() {
 
       {/* Filters */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
-        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search username..." style={{ ...s.input, width: 200 }} />
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder={L2('Search username...','搜索用户名...')} style={{ ...s.input, width: 200 }} />
         <select value={tierFilter} onChange={e => setTierFilter(e.target.value)} style={s.input}>
-          <option value="ALL">All Tiers</option>
+          <option value="ALL">{L2('All Tiers','全部等级')}</option>
           {TIERS.map(t => <option key={t} value={t}>{t}</option>)}
         </select>
         <select value={hostFilter} onChange={e => setHostFilter(e.target.value)} style={s.input}>
-          <option value="ALL">All Hosts</option>
+          <option value="ALL">{L2('All Hosts','全部负责人')}</option>
           <option value="Marcus">Marcus</option>
           <option value="Angel">Angel</option>
         </select>
         <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)} style={s.input}>
-          <option value="ALL">All Types</option>
+          <option value="ALL">{L2('All Types','全部类型')}</option>
           {PLAYER_TYPES.map(pt => <option key={pt.key} value={pt.key}>{lang === 'en' ? pt.labelEn : pt.label}</option>)}
         </select>
         {(typeFilter !== 'ALL' || tierFilter !== 'ALL' || search) && (
           <button onClick={() => urlRaw.set({ type: 'ALL', tier: 'ALL', search: '' }, { type: 'ALL', tier: 'ALL', search: '' })}
-            style={{ ...s.input, cursor: 'pointer', color: 'var(--accent)' }}>Clear</button>
+            style={{ ...s.input, cursor: 'pointer', color: 'var(--accent)' }}>{L2('Clear','清除')}</button>
         )}
         <button
           onClick={() => {
@@ -350,9 +351,9 @@ export default function PlayerProfiling() {
             if (turningOn) urlRaw.set({ sort: 'combinedWl', asc: 'true' }, { sort: 'roi', asc: 'false' })
           }}
           style={{ ...s.input, cursor: 'pointer', background: combineMode ? 'var(--accent)' : undefined, color: combineMode ? '#fff' : undefined, borderColor: combineMode ? 'var(--accent)' : undefined }}>
-          {combineMode ? '✓ ' : ''}Combine with Previous Month
+          {combineMode ? '✓ ' : ''}{L2('Combine with Previous Month','合并上月数据')}
         </button>
-        <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--muted)' }}>{filtered.length} players</span>
+        <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--muted)' }}>{L2(`${filtered.length} players`,`${filtered.length} 位玩家`)}</span>
       </div>
 
       {/* Main Table */}
@@ -362,31 +363,31 @@ export default function PlayerProfiling() {
             <thead>
               <tr>
                 <th style={s.th}>#</th>
-                <th style={s.th}>Username</th>
-                <th style={s.th}>Tier</th>
+                <th style={s.th}>{L2('Username','用户名')}</th>
+                <th style={s.th}>{L2('Tier','等级')}</th>
                 <th style={s.th}>{t('playerProfiling.colType')}</th>
                 <th style={{ ...s.th, cursor: 'pointer' }} onClick={() => toggleSort('roi')}>{t('playerProfiling.colRoiThisMonth')}<SortIcon col="roi" /></th>
                 <th style={{ ...s.th, cursor: 'pointer' }} onClick={() => toggleSort('vb')}>{t('common.validBet')}<SortIcon col="vb" /></th>
                 <th style={{ ...s.th, cursor: 'pointer' }} onClick={() => toggleSort('wl')}>{t('common.winLoss')}<SortIcon col="wl" /></th>
                 {combineMode && (
-                  <th style={{ ...s.th, cursor: 'pointer' }} onClick={() => toggleSort('combinedWl')}>Combined W/L (2mo)<SortIcon col="combinedWl" /></th>
+                  <th style={{ ...s.th, cursor: 'pointer' }} onClick={() => toggleSort('combinedWl')}>{L2('Combined W/L (2mo)','合并输赢（2个月）')}<SortIcon col="combinedWl" /></th>
                 )}
                 <th style={{ ...s.th, cursor: 'pointer' }} onClick={() => toggleSort('avg_bet')}>{t('playerProfiling.colAvgBet')}<SortIcon col="avg_bet" /></th>
                 <th style={{ ...s.th, cursor: 'pointer' }} onClick={() => toggleSort('bets')}>{t('playerProfiling.colBetCount')}<SortIcon col="bets" /></th>
                 <th style={{ ...s.th, cursor: 'pointer' }} onClick={() => toggleSort('rebate_rate')}>{t('playerProfiling.colRebateRate')}<SortIcon col="rebate_rate" /></th>
                 <th style={{ ...s.th, cursor: 'pointer' }} onClick={() => toggleSort('rebate')}>{t('playerProfiling.colRebateAmount')}<SortIcon col="rebate" /></th>
-                <th style={s.th}>Promo</th>
+                <th style={s.th}>{L2('Promo','优惠')}</th>
                 <th style={{ ...s.th, cursor: 'pointer' }} onClick={() => toggleSort('bonus')}>{t('playerProfiling.colBonusAmount')}<SortIcon col="bonus" /></th>
                 <th style={{ ...s.th, cursor: 'pointer' }} onClick={() => toggleSort('ltv_roi')}>LTV ROI<SortIcon col="ltv_roi" /></th>
-                <th style={s.th}>Host</th>
+                <th style={s.th}>{L2('Host','负责人')}</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={15} style={{ ...s.td, textAlign: 'center', color: 'var(--muted)', padding: 40 }}>Loading...</td></tr>
+                <tr><td colSpan={15} style={{ ...s.td, textAlign: 'center', color: 'var(--muted)', padding: 40 }}>{L2('Loading...','载入中...')}</td></tr>
               ) : filtered.length === 0 ? (
                 <tr><td colSpan={15} style={{ ...s.td, textAlign: 'center', color: 'var(--muted)', padding: 40 }}>
-                  {players.length === 0 ? `No data for ${month} — import CSV for this month first` : 'No players match filters'}
+                  {players.length === 0 ? L2(`No data for ${month} — import CSV for this month first`,`${month} 没有数据 — 请先导入该月的 CSV`) : L2('No players match filters','没有符合筛选条件的玩家')}
                 </td></tr>
               ) : filtered.map((p, i) => {
                 const pt = p.playerType
@@ -417,7 +418,7 @@ export default function PlayerProfiling() {
                     {combineMode && (
                       <td style={{ ...s.td, fontWeight: 700, color: (p.combinedWl ?? p.wl) > 0 ? '#f85149' : '#3fb950' }}>
                         {p.combinedWl !== undefined ? fmtM(p.combinedWl) : fmtM(p.wl)}
-                        {p.hasPrevMonth === false && <span title="No data for previous month — this month only" style={{ fontSize: 10, color: 'var(--muted)', marginLeft: 4 }}>*</span>}
+                        {p.hasPrevMonth === false && <span title={L2('No data for previous month — this month only','上月无数据 — 仅本月')} style={{ fontSize: 10, color: 'var(--muted)', marginLeft: 4 }}>*</span>}
                       </td>
                     )}
                     {/* Avg bet */}
@@ -433,8 +434,8 @@ export default function PlayerProfiling() {
                     {/* Promo */}
                     <td style={s.td}>
                       {p.has_promo
-                        ? <span style={s.badge('rgba(63,185,80,.12)', '#3fb950')}>Yes ({p.bonus_count}x)</span>
-                        : <span style={{ color: 'var(--muted)', fontSize: 11 }}>No</span>}
+                        ? <span style={s.badge('rgba(63,185,80,.12)', '#3fb950')}>{L2('Yes','是')} ({p.bonus_count}x)</span>
+                        : <span style={{ color: 'var(--muted)', fontSize: 11 }}>{L2('No','否')}</span>}
                     </td>
                     {/* Bonus amount */}
                     <td style={s.td}>{p.bonus > 0 ? fmtM(p.bonus) : '--'}</td>

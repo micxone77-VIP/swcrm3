@@ -91,8 +91,8 @@ export default function VipQuickSearch() {
               <div style={{ flex: 1 }}>
                 <div style={{ fontWeight: 600, fontSize: 14 }}>{v.username}</div>
                 <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
-                  {v.host_assigned ? `Host: ${v.host_assigned} · ` : ''}
-                  {v.days_inactive > 0 ? `${v.days_inactive}d inactive` : 'Active recently'}
+                  {v.host_assigned ? `${lang === 'zh' ? '负责人' : 'Host'}: ${v.host_assigned} · ` : ''}
+                  {v.days_inactive > 0 ? (lang === 'zh' ? `${v.days_inactive}天不活跃` : `${v.days_inactive}d inactive`) : (lang === 'zh' ? '近期活跃' : 'Active recently')}
                 </div>
               </div>
               <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
@@ -104,7 +104,7 @@ export default function VipQuickSearch() {
                     fontSize: 10, background: 'rgba(220,38,38,.15)', color: '#dc2626',
                     padding: '2px 6px', borderRadius: 4, fontWeight: 700,
                   }}>
-                    HIGH RISK
+                    {lang === 'zh' ? '高风险' : 'HIGH RISK'}
                   </span>
                 )}
               </div>

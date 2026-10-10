@@ -3,15 +3,19 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { Card, LoadingState } from '../components/ui'
+import { useLanguage } from '../contexts/LanguageContext'
 
 const TIER_COLOR  = { DIAMOND:'#58a6ff', PLATINUM:'#cbd5e1' }
 const TIERS       = ['DIAMOND', 'PLATINUM']
+const TIER_ZH     = { DIAMOND: '钻石', PLATINUM: '白金' }
 
 function fmt(d) { return d.toISOString().slice(0, 10) }
 function pad(n)  { return new Date(Date.now() - n * 86400000) }
 
 export default function ActiveTracker() {
   const navigate  = useNavigate()
+  const { lang } = useLanguage()
+  const L2 = (en, zh) => (lang === 'zh' ? zh : en)
   const [tier, setTier]       = useState('DIAMOND')
   const [data, setData]       = useState(null)
   const [loading, setLoading] = useState(true)
@@ -81,21 +85,21 @@ export default function ActiveTracker() {
 
   useEffect(() => { load() }, [load])
 
-  if (loading) return <div style={{ padding:32 }}><LoadingState message="Loading activity data…" /></div>
+  if (loading) return <div style={{ padding:32 }}><LoadingState message={L2('Loading activity data…', '载入活跃数据中…')} /></div>
 
   const { result, thisStart, thisEnd, lastStart, lastEnd, monthStart } = data
   const d = result[tier]
   const color = TIER_COLOR[tier] || '#888'
-  const tierLabel = tier.charAt(0) + tier.slice(1).toLowerCase()
+  const tierLabel = L2(tier.charAt(0) + tier.slice(1).toLowerCase(), TIER_ZH[tier] || tier)
 
   return (
     <div style={{ padding:'24px 28px', maxWidth:1100 }}>
 
       {/* Header */}
       <div style={{ marginBottom:24 }}>
-        <h1 style={{ fontSize:24, fontWeight:700, margin:0 }}>Active Player Tracker</h1>
+        <h1 style={{ fontSize:24, fontWeight:700, margin:0 }}>{L2('Active Player Tracker', '活跃玩家追踪')}</h1>
         <div style={{ fontSize:12, color:'var(--muted)', marginTop:4 }}>
-          Active = valid bet OR deposit moved · Login-only excluded
+          {L2('Active = valid bet OR deposit moved · Login-only excluded', '活跃 = 有有效投注或存款 · 仅登录不计')}
         </div>
       </div>
 
@@ -109,23 +113,23 @@ export default function ActiveTracker() {
             color: t === tier ? TIER_COLOR[t] : 'var(--muted)',
             transition:'all .15s',
           }}>
-            {t.charAt(0) + t.slice(1).toLowerCase()}
+            {L2(t.charAt(0) + t.slice(1).toLowerCase(), TIER_ZH[t] || t)}
             <span style={{ marginLeft:8, fontSize:11, opacity:.8 }}>({result[t].members.length})</span>
           </button>
         ))}
         <button onClick={load} style={{
           marginLeft:'auto', padding:'8px 16px', borderRadius:8, fontSize:12, fontWeight:600,
           border:'1px solid var(--border)', background:'transparent', color:'var(--muted)', cursor:'pointer',
-        }}>↻ Refresh</button>
+        }}>{L2('↻ Refresh', '↻ 刷新')}</button>
       </div>
 
       {/* Summary tiles */}
       <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:12, marginBottom:24 }}>
         {[
-          { label:'Total Members',        val: d.members.length,        color:'var(--text)',  sub: tierLabel },
-          { label:'Active This Month',    val: d.members.filter(m=>d.activeThisMonth.has(m.username)).length, color:'#3fb950', sub: monthStart + ' → today' },
-          { label:'Active This Week',     val: d.activeNow.length,      color:'#58a6ff',      sub: thisStart + ' → ' + thisEnd },
-          { label:'⚠️ Need Attention',   val: d.dropped.length + d.inactiveMonth.length, color:'#f85149', sub: 'dropped off + inactive all month' },
+          { label:L2('Total Members', '会员总数'),        val: d.members.length,        color:'var(--text)',  sub: tierLabel },
+          { label:L2('Active This Month', '本月活跃'),    val: d.members.filter(m=>d.activeThisMonth.has(m.username)).length, color:'#3fb950', sub: monthStart + L2(' → today', ' → 今天') },
+          { label:L2('Active This Week', '本周活跃'),     val: d.activeNow.length,      color:'#58a6ff',      sub: thisStart + ' → ' + thisEnd },
+          { label:L2('⚠️ Need Attention', '⚠️ 需关注'),   val: d.dropped.length + d.inactiveMonth.length, color:'#f85149', sub: L2('dropped off + inactive all month', '本周流失 + 整月不活跃') },
         ].map(tile => (
           <Card key={tile.label} style={{ padding:'14px 18px' }}>
             <div style={{ fontSize:10, color:'var(--muted)', fontWeight:700, letterSpacing:'.4px', textTransform:'uppercase', marginBottom:4 }}>{tile.label}</div>
@@ -137,8 +141,8 @@ export default function ActiveTracker() {
 
       {/* ── Section 1: Dropped off — was active last week, gone this week ── */}
       <Section
-        title="⚠️ Dropped Off This Week"
-        subtitle={`Active ${lastStart} – ${lastEnd} but NOT active this week — contact these players`}
+        title={L2('⚠️ Dropped Off This Week', '⚠️ 本周流失')}
+        subtitle={L2(`Active ${lastStart} – ${lastEnd} but NOT active this week — contact these players`, `${lastStart} – ${lastEnd} 活跃但本周不活跃 — 请联系这些玩家`)}
         color="#f85149"
         players={d.dropped}
         activeThisWeek={d.activeThisWeek}
@@ -146,14 +150,14 @@ export default function ActiveTracker() {
         activeThisMonth={d.activeThisMonth}
         lastActiveDateMap={d.lastActiveDateMap}
         navigate={navigate}
-        emptyMsg="No players dropped off — great retention this week!"
+        emptyMsg={L2('No players dropped off — great retention this week!', '本周无玩家流失 — 留存表现很好！')}
         tierColor={color}
       />
 
       {/* ── Section 2: Inactive all month ── */}
       <Section
-        title="❌ Inactive All Month"
-        subtitle={`No valid bet or deposit since ${monthStart} — needs follow-up`}
+        title={L2('❌ Inactive All Month', '❌ 整月不活跃')}
+        subtitle={L2(`No valid bet or deposit since ${monthStart} — needs follow-up`, `自 ${monthStart} 起无有效投注或存款 — 需要跟进`)}
         color="#d29922"
         players={d.inactiveMonth}
         activeThisWeek={d.activeThisWeek}
@@ -161,14 +165,14 @@ export default function ActiveTracker() {
         activeThisMonth={d.activeThisMonth}
         lastActiveDateMap={d.lastActiveDateMap}
         navigate={navigate}
-        emptyMsg="All members have had activity this month!"
+        emptyMsg={L2('All members have had activity this month!', '所有会员本月都有活跃！')}
         tierColor={color}
       />
 
       {/* ── Section 3: Active this week ── */}
       <Section
-        title="✅ Active This Week"
-        subtitle={`Had valid bet or deposit from ${thisStart} to ${thisEnd}`}
+        title={L2('✅ Active This Week', '✅ 本周活跃')}
+        subtitle={L2(`Had valid bet or deposit from ${thisStart} to ${thisEnd}`, `${thisStart} 至 ${thisEnd} 期间有有效投注或存款`)}
         color="#3fb950"
         players={d.activeNow}
         activeThisWeek={d.activeThisWeek}
@@ -176,7 +180,7 @@ export default function ActiveTracker() {
         activeThisMonth={d.activeThisMonth}
         lastActiveDateMap={d.lastActiveDateMap}
         navigate={navigate}
-        emptyMsg="No active players this week yet."
+        emptyMsg={L2('No active players this week yet.', '本周暂无活跃玩家。')}
         tierColor={color}
         defaultCollapsed={true}
       />
@@ -186,6 +190,8 @@ export default function ActiveTracker() {
 
 function Section({ title, subtitle, color, players, activeThisWeek, activeLastWeek, activeThisMonth, lastActiveDateMap, navigate, emptyMsg, tierColor, defaultCollapsed = false }) {
   const [open, setOpen] = useState(!defaultCollapsed)
+  const { lang } = useLanguage()
+  const L2 = (en, zh) => (lang === 'zh' ? zh : en)
 
   return (
     <Card style={{ marginBottom:16 }}>
@@ -215,7 +221,7 @@ function Section({ title, subtitle, color, players, activeThisWeek, activeLastWe
             <table style={{ width:'100%', borderCollapse:'collapse', fontSize:13 }}>
               <thead>
                 <tr style={{ background:'var(--surface)' }}>
-                  {['Username', 'Host', 'Days Inactive', 'Active Last Week?', 'Active This Month?', ''].map(h => (
+                  {[L2('Username', '用户名'), L2('Host', '负责人'), L2('Days Inactive', '不活跃天数'), L2('Active Last Week?', '上周活跃？'), L2('Active This Month?', '本月活跃？'), ''].map(h => (
                     <th key={h} style={{ padding:'8px 16px', textAlign:'left', color:'var(--muted)', fontWeight:600, fontSize:11, borderBottom:'1px solid var(--border)', whiteSpace:'nowrap' }}>{h}</th>
                   ))}
                 </tr>
@@ -228,7 +234,7 @@ function Section({ title, subtitle, color, players, activeThisWeek, activeLastWe
                   const daysVal = lastActiveDate
                     ? Math.floor((Date.now() - new Date(lastActiveDate).getTime()) / 86400000)
                     : null
-                  const daysLabel = daysVal === null ? 'No data' : daysVal === 0 ? 'Today' : daysVal === 1 ? '1 day' : `${daysVal} days`
+                  const daysLabel = daysVal === null ? L2('No data', '无数据') : daysVal === 0 ? L2('Today', '今天') : daysVal === 1 ? L2('1 day', '1天') : L2(`${daysVal} days`, `${daysVal}天`)
                   const daysColor = daysVal === null ? 'var(--muted)' : daysVal >= 14 ? '#f85149' : daysVal >= 7 ? '#d29922' : '#3fb950'
                   return (
                     <tr key={p.id}
@@ -251,12 +257,12 @@ function Section({ title, subtitle, color, players, activeThisWeek, activeLastWe
                       </td>
                       <td style={{ padding:'10px 16px', borderBottom:'1px solid var(--border)' }}>
                         <span style={{ fontSize:12, fontWeight:600, color: wasLW ? '#3fb950' : '#f85149' }}>
-                          {wasLW ? '✓ Yes' : '✗ No'}
+                          {wasLW ? L2('✓ Yes', '✓ 是') : L2('✗ No', '✗ 否')}
                         </span>
                       </td>
                       <td style={{ padding:'10px 16px', borderBottom:'1px solid var(--border)' }}>
                         <span style={{ fontSize:12, fontWeight:600, color: activeMo ? '#3fb950' : '#f85149' }}>
-                          {activeMo ? '✓ Yes' : '✗ No'}
+                          {activeMo ? L2('✓ Yes', '✓ 是') : L2('✗ No', '✗ 否')}
                         </span>
                       </td>
                       <td style={{ padding:'10px 16px', borderBottom:'1px solid var(--border)' }}>
@@ -264,7 +270,7 @@ function Section({ title, subtitle, color, players, activeThisWeek, activeLastWe
                           onClick={e => { e.stopPropagation(); navigate(`/vips/${p.id}`) }}
                           style={{ fontSize:11, padding:'4px 10px', borderRadius:6, border:'1px solid var(--border)', background:'transparent', color:'var(--muted)', cursor:'pointer' }}
                         >
-                          Open →
+                          {L2('Open →', '打开 →')}
                         </button>
                       </td>
                     </tr>

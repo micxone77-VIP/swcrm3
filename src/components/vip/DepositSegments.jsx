@@ -3,7 +3,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { TIER_COLOR, TIER_BG } from '../../lib/constants'
-import { SEGMENTS, STYLES, fmtHour, fmtRM, fetchAll } from '../../lib/depositProfile'
+import { SEGMENTS, STYLES, fmtHour, fmtRM, fetchAll, dayNameZh } from '../../lib/depositProfile'
+import { useLanguage } from '../../contexts/LanguageContext'
 
 const sel = { background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 10px', fontSize: 12, color: 'var(--text)' }
 const th = { textAlign: 'left', padding: '10px 12px', color: 'var(--muted)', fontWeight: 600, whiteSpace: 'nowrap', cursor: 'pointer', userSelect: 'none' }
@@ -11,6 +12,8 @@ const td = { padding: '9px 12px', whiteSpace: 'nowrap' }
 
 export default function DepositSegments({ myName = 'VIP Team' }) {
   const navigate = useNavigate()
+  const { lang } = useLanguage()
+  const L2 = (en, zh) => (lang === 'zh' ? zh : en)
   const [rows, setRows] = useState([])
   const [members, setMembers] = useState({})
   const [loading, setLoading] = useState(true)
@@ -90,8 +93,8 @@ export default function DepositSegments({ myName = 'VIP Team' }) {
   }
   const arrow = k => (sortKey === k ? (sortDir === 'asc' ? ' ▲' : ' ▼') : '')
 
-  if (loading) return <div style={{ textAlign: 'center', padding: 60, color: 'var(--muted)' }}>Loading deposit segments…</div>
-  if (err) return <div style={{ padding: 24, color: '#f87171' }}>Error loading deposit segments: {err}</div>
+  if (loading) return <div style={{ textAlign: 'center', padding: 60, color: 'var(--muted)' }}>{L2('Loading deposit segments…', '载入存款分群中…')}</div>
+  if (err) return <div style={{ padding: 24, color: '#f87171' }}>{L2('Error loading deposit segments', '载入存款分群出错')}: {err}</div>
 
   const asOf = String(rows[0]?.data_as_of || '').slice(0, 10)
 
@@ -100,16 +103,16 @@ export default function DepositSegments({ myName = 'VIP Team' }) {
       {/* Segment cards */}
       <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)' }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 12 }}>
-          <div style={{ fontSize: 15, fontWeight: 800 }}>🧭 Deposit Segments 充值分群</div>
-          <div style={{ fontSize: 12, color: 'var(--muted)' }}>Based on deposit logs · data up to {asOf} · "normal" = monthly average of the 60 days before the last 30</div>
+          <div style={{ fontSize: 15, fontWeight: 800 }}>{L2('🧭 Deposit Segments', '🧭 充值分群')}</div>
+          <div style={{ fontSize: 12, color: 'var(--muted)' }}>{L2(`Based on deposit logs · data up to ${asOf} · "normal" = monthly average of the 60 days before the last 30`, `基于存款记录 · 数据截至 ${asOf} · “平常” = 近30天之前60天的月平均`)}</div>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
           {[['RISK', null], ...Object.keys(SEGMENTS).map(k => [k, SEGMENTS[k]]), ['ALL', null]].map(([k, s]) => {
             const active = segF === k
             const n = k === 'ALL' ? scoped.length : k === 'RISK' ? counts.Silent.n + counts.Declining.n : counts[k].n
             const color = s ? s.color : k === 'RISK' ? '#FF6B00' : 'var(--text)'
-            const title = k === 'RISK' ? '🚨 Need action 需跟进' : k === 'ALL' ? '👥 All 全部' : `${s.icon} ${k} ${s.zh}`
-            const sub = k === 'RISK' ? 'Silent + Declining' : k === 'ALL' ? 'All depositors' : s.desc
+            const title = k === 'RISK' ? L2('🚨 Need action', '🚨 需跟进') : k === 'ALL' ? L2('👥 All', '👥 全部') : `${s.icon} ${L2(k, s.zh)}`
+            const sub = k === 'RISK' ? L2('Silent + Declining', '沉默 + 下滑') : k === 'ALL' ? L2('All depositors', '全部存款玩家') : L2(s.desc, s.descZh)
             return (
               <button key={k} onClick={() => setSegF(k)} style={{
                 textAlign: 'left', cursor: 'pointer', borderRadius: 10, padding: '10px 12px',
@@ -128,21 +131,21 @@ export default function DepositSegments({ myName = 'VIP Team' }) {
       {/* Filters */}
       <div style={{ padding: '12px 20px', borderBottom: '1px solid var(--border)', display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
         <select value={tierF} onChange={e => setTierF(e.target.value)} style={sel}>
-          <option value="ALL">All tiers</option>
+          <option value="ALL">{L2('All tiers', '全部等级')}</option>
           {tiers.map(t => <option key={t} value={t}>{t}</option>)}
         </select>
         <select value={hostF} onChange={e => setHostF(e.target.value)} style={sel}>
-          <option value="ALL">All hosts</option>
-          <option value="__none">(No host)</option>
+          <option value="ALL">{L2('All hosts', '全部负责人')}</option>
+          <option value="__none">{L2('(No host)', '（无负责人）')}</option>
           {hosts.map(h => <option key={h} value={h}>{h}</option>)}
         </select>
         <select value={affF} onChange={e => setAffF(e.target.value)} style={sel}>
-          <option value="ALL">All affiliates</option>
-          <option value="__direct">Direct (no affiliate)</option>
+          <option value="ALL">{L2('All affiliates', '全部代理')}</option>
+          <option value="__direct">{L2('Direct (no affiliate)', '直客（无代理）')}</option>
           {affs.map(a => <option key={a} value={a}>{a}</option>)}
         </select>
-        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search username / name" style={{ ...sel, minWidth: 180 }} />
-        <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--muted)' }}>{list.length} players</span>
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder={L2('Search username / name', '搜索用户名 / 姓名')} style={{ ...sel, minWidth: 180 }} />
+        <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--muted)' }}>{L2(`${list.length} players`, `${list.length} 位玩家`)}</span>
       </div>
 
       {/* Table */}
@@ -150,25 +153,25 @@ export default function DepositSegments({ myName = 'VIP Team' }) {
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
           <thead>
             <tr style={{ borderBottom: '1px solid var(--border)' }}>
-              <th style={th} onClick={() => sortBy('login')}>Player{arrow('login')}</th>
-              <th style={th}>Tier</th>
-              <th style={th}>Host</th>
-              <th style={th}>Affiliate</th>
-              <th style={th}>Segment</th>
-              <th style={th}>Style</th>
-              <th style={{ ...th, textAlign: 'right' }} onClick={() => sortBy('normal')}>Normal / mth{arrow('normal')}</th>
-              <th style={{ ...th, textAlign: 'right' }} onClick={() => sortBy('dep_30d')}>Last 30d{arrow('dep_30d')}</th>
-              <th style={{ ...th, textAlign: 'right' }} onClick={() => sortBy('at_risk')} title="Normal monthly minus last 30 days">Shortfall{arrow('at_risk')}</th>
-              <th style={{ ...th, textAlign: 'right' }} onClick={() => sortBy('trend')}>Trend{arrow('trend')}</th>
-              <th style={{ ...th, textAlign: 'right' }} onClick={() => sortBy('days')}>Days since{arrow('days')}</th>
-              <th style={{ ...th, textAlign: 'right' }} onClick={() => sortBy('overdue')} title="Days since last deposit ÷ usual gap">Overdue{arrow('overdue')}</th>
-              <th style={th}>Best time</th>
+              <th style={th} onClick={() => sortBy('login')}>{L2('Player', '玩家')}{arrow('login')}</th>
+              <th style={th}>{L2('Tier', '等级')}</th>
+              <th style={th}>{L2('Host', '负责人')}</th>
+              <th style={th}>{L2('Affiliate', '代理')}</th>
+              <th style={th}>{L2('Segment', '分群')}</th>
+              <th style={th}>{L2('Style', '类型')}</th>
+              <th style={{ ...th, textAlign: 'right' }} onClick={() => sortBy('normal')}>{L2('Normal / mth', '平常 / 月')}{arrow('normal')}</th>
+              <th style={{ ...th, textAlign: 'right' }} onClick={() => sortBy('dep_30d')}>{L2('Last 30d', '近30天')}{arrow('dep_30d')}</th>
+              <th style={{ ...th, textAlign: 'right' }} onClick={() => sortBy('at_risk')} title={L2('Normal monthly minus last 30 days', '平常月额减去近30天')}>{L2('Shortfall', '差额')}{arrow('at_risk')}</th>
+              <th style={{ ...th, textAlign: 'right' }} onClick={() => sortBy('trend')}>{L2('Trend', '趋势')}{arrow('trend')}</th>
+              <th style={{ ...th, textAlign: 'right' }} onClick={() => sortBy('days')}>{L2('Days since', '距今天数')}{arrow('days')}</th>
+              <th style={{ ...th, textAlign: 'right' }} onClick={() => sortBy('overdue')} title={L2('Days since last deposit ÷ usual gap', '距上次存款天数 ÷ 平常间隔')}>{L2('Overdue', '逾期倍数')}{arrow('overdue')}</th>
+              <th style={th}>{L2('Best time', '最佳时间')}</th>
               <th style={{ ...th, textAlign: 'center', cursor: 'default' }}>WA</th>
             </tr>
           </thead>
           <tbody>
             {list.length === 0 ? (
-              <tr><td colSpan={14} style={{ textAlign: 'center', padding: 32, color: 'var(--muted)' }}>No players in this segment.</td></tr>
+              <tr><td colSpan={14} style={{ textAlign: 'center', padding: 32, color: 'var(--muted)' }}>{L2('No players in this segment.', '此分群没有玩家。')}</td></tr>
             ) : list.map(r => {
               const m = members[r.login] || {}
               const seg = SEGMENTS[r.segment] || SEGMENTS.Stable
@@ -195,11 +198,11 @@ export default function DepositSegments({ myName = 'VIP Team' }) {
                     {r.tier && <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: TIER_BG[r.tier] || 'transparent', color: TIER_COLOR[r.tier] || 'var(--text)' }}>{r.tier}</span>}
                   </td>
                   <td style={{ ...td, color: r.host_assigned ? 'var(--text)' : 'var(--muted)' }}>{r.host_assigned || '—'}</td>
-                  <td style={{ ...td, color: r.affiliate_login ? 'var(--brand, #FF6B00)' : 'var(--muted)', fontWeight: r.affiliate_login ? 600 : 400 }}>{r.affiliate_login || 'Direct'}</td>
+                  <td style={{ ...td, color: r.affiliate_login ? 'var(--brand, #FF6B00)' : 'var(--muted)', fontWeight: r.affiliate_login ? 600 : 400 }}>{r.affiliate_login || L2('Direct', '直客')}</td>
                   <td style={td}>
-                    <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: seg.bg, color: seg.color }}>{seg.icon} {r.segment}</span>
+                    <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: seg.bg, color: seg.color }}>{seg.icon} {L2(r.segment, seg.zh)}</span>
                   </td>
-                  <td style={td} title={r.deposit_style}>{sty.icon} {sty.zh}</td>
+                  <td style={td} title={r.deposit_style}>{sty.icon} {L2(r.deposit_style, sty.zh)}</td>
                   <td style={{ ...td, textAlign: 'right' }}>{fmtRM(normal)}</td>
                   <td style={{ ...td, textAlign: 'right', fontWeight: 600 }}>{fmtRM(r.dep_30d)}</td>
                   <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: shortfall > 0 ? '#f87171' : 'var(--muted)' }}>{shortfall > 0 ? fmtRM(shortfall) : '—'}</td>
@@ -210,7 +213,7 @@ export default function DepositSegments({ myName = 'VIP Team' }) {
                   <td style={{ ...td, textAlign: 'right', fontWeight: overdue >= 2 ? 700 : 400, color: overdue >= 2 ? '#f87171' : 'var(--text)' }}>
                     {r.avg_gap_days ? `${overdue}×` : '—'}
                   </td>
-                  <td style={td}>{r.peak_day_name} {fmtHour(r.peak_hour)}</td>
+                  <td style={td}>{L2(r.peak_day_name, dayNameZh(r.peak_day_name))} {fmtHour(r.peak_hour, lang)}</td>
                   <td style={{ ...td, textAlign: 'center' }}>
                     {waNumber ? (
                       <a href={`https://wa.me/${waNumber}?text=${greeting}`} target="_blank" rel="noopener noreferrer"

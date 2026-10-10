@@ -23,14 +23,20 @@ const TYPE_COLOR = {
   WhatsApp:'#3fb950', Call:'#58a6ff', 'In-person':'#b9f2ff', Other:'#8b949e',
 }
 
-function timeAgo(dateStr) {
+// Display-only labels for stored English values
+const OUTCOME_ZH = { Contacted:'已联系', 'No Reply':'未回复', Replied:'已回复', Deposited:'已存款', Reactivated:'已召回' }
+const CHANNEL_ZH = { WhatsApp:'WhatsApp', Call:'电话', 'In-person':'面对面', Other:'其他' }
+const TIER_ZH = { ALL:'全部', BLACK:'黑金', DIAMOND:'钻石', PLATINUM:'白金', GOLD:'黄金', SILVER:'白银', BRONZE:'青铜' }
+
+function timeAgo(dateStr, lang = 'en') {
   if (!dateStr) return '-'
+  const zh = lang === 'zh'
   const diff = Math.floor((Date.now() - new Date(dateStr)) / 1000)
-  if (diff < 60)      return 'just now'
-  if (diff < 3600)    return Math.floor(diff/60) + 'm ago'
-  if (diff < 86400)   return Math.floor(diff/3600) + 'h ago'
-  if (diff < 86400*7) return Math.floor(diff/86400) + 'd ago'
-  return new Date(dateStr).toLocaleDateString('en-MY', { day:'numeric', month:'short', year:'numeric' })
+  if (diff < 60)      return zh ? '刚刚' : 'just now'
+  if (diff < 3600)    return Math.floor(diff/60) + (zh ? '分钟前' : 'm ago')
+  if (diff < 86400)   return Math.floor(diff/3600) + (zh ? '小时前' : 'h ago')
+  if (diff < 86400*7) return Math.floor(diff/86400) + (zh ? '天前' : 'd ago')
+  return new Date(dateStr).toLocaleDateString(zh ? 'zh-CN' : 'en-MY', { day:'numeric', month:'short', year:'numeric' })
 }
 
 const s = {
@@ -68,6 +74,8 @@ function StatCard({ label, value, color, sub }) {
 }
 
 function BenefitsTab({ onBack }) {
+  const { lang } = useLanguage()
+  const L2 = (en, zh) => (lang === 'zh' ? zh : en)
   const [month, setMonth] = useState(() => {
     const now = new Date()
     return `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`
@@ -150,26 +158,26 @@ function BenefitsTab({ onBack }) {
     <div style={s.page}>
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:20, flexWrap:'wrap', gap:12 }}>
         <div>
-          <div style={s.title}>🎁 VIP Benefits</div>
-          <div style={s.sub}>Bonuses and gifts given to specific VIPs, with their deposit change after</div>
+          <div style={s.title}>{L2('🎁 VIP Benefits', '🎁 VIP福利')}</div>
+          <div style={s.sub}>{L2('Bonuses and gifts given to specific VIPs, with their deposit change after', '发给特定VIP的奖金和礼物，以及之后的存款变化')}</div>
         </div>
         <div style={{ display:'flex', gap:8, alignItems:'center' }}>
           <input type="month" value={month} onChange={e => setMonth(e.target.value)} style={s.input} />
-          <button style={{ ...s.btn, background:'var(--surface2)', color:'var(--text)', border:'1px solid var(--border)' }} onClick={onBack}>← Back to Log</button>
+          <button style={{ ...s.btn, background:'var(--surface2)', color:'var(--text)', border:'1px solid var(--border)' }} onClick={onBack}>{L2('← Back to Log', '← 返回记录')}</button>
         </div>
       </div>
 
       <div style={{ display:'flex', gap:12, marginBottom:20, flexWrap:'wrap' }}>
-        <StatCard label="Benefit Events" value={filtered.length} color="var(--accent)" />
-        <StatCard label="Total Given (mixed currencies — see rows)" value={filtered.length ? formatMoney(totalAmount, 'MYR') + '*' : '—'} color="#ffd700" />
-        <StatCard label="Deposit Increased After" value={positiveCount}
+        <StatCard label={L2('Benefit Events', '福利次数')} value={filtered.length} color="var(--accent)" />
+        <StatCard label={L2('Total Given (mixed currencies — see rows)', '发放总额（混合货币 — 见各行）')} value={filtered.length ? formatMoney(totalAmount, 'MYR') + '*' : '—'} color="#ffd700" />
+        <StatCard label={L2('Deposit Increased After', '之后存款增加')} value={positiveCount}
           sub={filtered.length ? Math.round(positiveCount/filtered.length*100)+'%' : '-'} color="#3fb950" />
         <select value={tierF} onChange={e => setTierF(e.target.value)} style={s.sel}>
-          {['ALL','BLACK','DIAMOND','PLATINUM','GOLD','SILVER','BRONZE'].map(tOpt => <option key={tOpt}>{tOpt}</option>)}
+          {['ALL','BLACK','DIAMOND','PLATINUM','GOLD','SILVER','BRONZE'].map(tOpt => <option key={tOpt} value={tOpt}>{L2(tOpt, TIER_ZH[tOpt])}</option>)}
         </select>
       </div>
       <div style={{ fontSize:11, color:'var(--muted)', marginTop:-14, marginBottom:16 }}>
-        * "Total Given" mixes currencies if this VIP list spans regions — check each row's own currency for the real amount.
+        {L2('* "Total Given" mixes currencies if this VIP list spans regions — check each row\'s own currency for the real amount.', '*「发放总额」在VIP跨地区时会混合货币 — 实际金额请看每行自己的货币。')}
       </div>
 
       <div style={s.card}>
@@ -178,37 +186,37 @@ function BenefitsTab({ onBack }) {
             <thead>
               <tr>
                 <th style={s.th}>VIP</th>
-                <th style={s.th}>Tier</th>
-                <th style={s.th}>Type</th>
-                <th style={s.th}>Detail</th>
-                <th style={s.th}>Amount</th>
-                <th style={s.th}>Date</th>
-                <th style={s.th}>TD Before</th>
-                <th style={s.th}>TD After</th>
-                <th style={s.th}>TD Change</th>
+                <th style={s.th}>{L2('Tier', '等级')}</th>
+                <th style={s.th}>{L2('Type', '类型')}</th>
+                <th style={s.th}>{L2('Detail', '详情')}</th>
+                <th style={s.th}>{L2('Amount', '金额')}</th>
+                <th style={s.th}>{L2('Date', '日期')}</th>
+                <th style={s.th}>{L2('TD Before', '之前总存款')}</th>
+                <th style={s.th}>{L2('TD After', '之后总存款')}</th>
+                <th style={s.th}>{L2('TD Change', '总存款变化')}</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={9} style={{ ...s.td, textAlign:'center', color:'var(--muted)', padding:40 }}>Loading...</td></tr>
+                <tr><td colSpan={9} style={{ ...s.td, textAlign:'center', color:'var(--muted)', padding:40 }}>{L2('Loading...', '载入中…')}</td></tr>
               ) : filtered.length === 0 ? (
-                <tr><td colSpan={9} style={{ ...s.td, textAlign:'center', color:'var(--muted)', padding:40 }}>No bonuses or gifts recorded this month.</td></tr>
+                <tr><td colSpan={9} style={{ ...s.td, textAlign:'center', color:'var(--muted)', padding:40 }}>{L2('No bonuses or gifts recorded this month.', '本月没有记录奖金或礼物。')}</td></tr>
               ) : filtered.map((e, i) => (
                 <tr key={i}
                   onMouseEnter={ev => ev.currentTarget.style.background='var(--surface2)'}
                   onMouseLeave={ev => ev.currentTarget.style.background='transparent'}>
                   <td style={{ ...s.td, fontWeight:700 }}>{e.username}</td>
                   <td style={s.td}>
-                    {e.tier && <span style={{ ...s.badge, background:TIER_BG[e.tier]||'transparent', color:TIER_COLOR[e.tier]||'var(--text)' }}>{e.tier}</span>}
+                    {e.tier && <span style={{ ...s.badge, background:TIER_BG[e.tier]||'transparent', color:TIER_COLOR[e.tier]||'var(--text)' }}>{L2(e.tier, TIER_ZH[e.tier] || e.tier)}</span>}
                   </td>
-                  <td style={{ ...s.td, fontSize:12 }}>{e.type}</td>
+                  <td style={{ ...s.td, fontSize:12 }}>{L2(e.type, e.type === 'Host Bonus' ? '负责人奖金' : e.type === 'Birthday Gift' ? '生日礼物' : e.type)}</td>
                   <td style={{ ...s.td, fontSize:12, color:'var(--muted)' }}>{e.detail || '—'}</td>
                   <td style={{ ...s.td, fontWeight:700, color:'#ffd700' }}>{formatMoney(e.amount, e.currency)}</td>
-                  <td style={{ ...s.td, fontSize:12, color:'var(--muted)' }}>{e.date ? new Date(e.date).toLocaleDateString('en-MY',{day:'numeric',month:'short'}) : '—'}</td>
-                  <td style={{ ...s.td, fontSize:12 }}>{e.tdBefore !== undefined ? formatMoney(e.tdBefore, e.currency) : 'N/A'}</td>
-                  <td style={{ ...s.td, fontSize:12 }}>{e.tdAfter !== undefined ? formatMoney(e.tdAfter, e.currency) : 'N/A'}</td>
+                  <td style={{ ...s.td, fontSize:12, color:'var(--muted)' }}>{e.date ? new Date(e.date).toLocaleDateString(lang === 'zh' ? 'zh-CN' : 'en-MY',{day:'numeric',month:'short'}) : '—'}</td>
+                  <td style={{ ...s.td, fontSize:12 }}>{e.tdBefore !== undefined ? formatMoney(e.tdBefore, e.currency) : L2('N/A', '无')}</td>
+                  <td style={{ ...s.td, fontSize:12 }}>{e.tdAfter !== undefined ? formatMoney(e.tdAfter, e.currency) : L2('N/A', '无')}</td>
                   <td style={{ ...s.td, fontWeight:700, color: e.tdChange === null ? 'var(--muted)' : e.tdChange > 0 ? '#3fb950' : e.tdChange < 0 ? '#f85149' : 'var(--muted)' }}>
-                    {e.tdChange === null ? 'N/A' : (e.tdChange >= 0 ? '+' : '') + formatMoney(e.tdChange, e.currency)}
+                    {e.tdChange === null ? L2('N/A', '无') : (e.tdChange >= 0 ? '+' : '') + formatMoney(e.tdChange, e.currency)}
                   </td>
                 </tr>
               ))}
@@ -221,7 +229,8 @@ function BenefitsTab({ onBack }) {
 }
 
 function AwaitingReplyTab({ onBack, myName, viewMode }) {
-  const { t } = useLanguage()
+  const { t, lang } = useLanguage()
+  const L2 = (en, zh) => (lang === 'zh' ? zh : en)
   const [loading, setLoading] = useState(true)
   const [rows, setRows] = useState([])
 
@@ -271,8 +280,8 @@ function AwaitingReplyTab({ onBack, myName, viewMode }) {
     <div style={s.page}>
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:20 }}>
         <div>
-          <div style={s.title}>⏳ Awaiting Reply</div>
-          <div style={s.sub}>VIPs where the last thing logged was "Contacted" — 1+ days ago, no follow-up recorded since</div>
+          <div style={s.title}>{L2('⏳ Awaiting Reply', '⏳ 等待回复')}</div>
+          <div style={s.sub}>{L2('VIPs where the last thing logged was "Contacted" — 1+ days ago, no follow-up recorded since', '最后一条记录为「已联系」的VIP — 已超过1天，之后没有跟进记录')}</div>
         </div>
         <button style={{ ...s.btn, background:'var(--surface2)', color:'var(--text)', border:'1px solid var(--border)' }} onClick={onBack}>← {t('common.back')}</button>
       </div>
@@ -280,18 +289,18 @@ function AwaitingReplyTab({ onBack, myName, viewMode }) {
       {loading ? (
         <div style={{ textAlign:'center', padding:60, color:'var(--muted)' }}>{t('common.loading')}</div>
       ) : rows.length === 0 ? (
-        <div style={{ textAlign:'center', padding:60, color:'#3fb950' }}>✓ Nothing waiting on a reply right now.</div>
+        <div style={{ textAlign:'center', padding:60, color:'#3fb950' }}>{L2('✓ Nothing waiting on a reply right now.', '✓ 目前没有等待回复的VIP。')}</div>
       ) : (
         <div style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:10, overflow:'hidden' }}>
           <table style={{ width:'100%', borderCollapse:'collapse', fontSize:13 }}>
             <thead>
               <tr style={{ borderBottom:'1px solid var(--border)' }}>
                 <th style={{ ...s.th }}>VIP</th>
-                <th style={{ ...s.th }}>Tier</th>
-                <th style={{ ...s.th }}>Contacted By</th>
-                <th style={{ ...s.th }}>Days Waiting</th>
-                <th style={{ ...s.th }}>Note</th>
-                <th style={{ ...s.th }}>Follow Up</th>
+                <th style={{ ...s.th }}>{L2('Tier', '等级')}</th>
+                <th style={{ ...s.th }}>{L2('Contacted By', '联系人')}</th>
+                <th style={{ ...s.th }}>{L2('Days Waiting', '等待天数')}</th>
+                <th style={{ ...s.th }}>{L2('Note', '备注')}</th>
+                <th style={{ ...s.th }}>{L2('Follow Up', '跟进')}</th>
               </tr>
             </thead>
             <tbody>
@@ -303,9 +312,9 @@ function AwaitingReplyTab({ onBack, myName, viewMode }) {
                 return (
                   <tr key={r.username} style={{ borderBottom:'1px solid var(--border)' }}>
                     <td style={{ ...s.td, fontWeight:700 }}>{r.username}</td>
-                    <td style={s.td}>{r.tier && <span style={{ ...s.badge, background:TIER_BG[r.tier]||'transparent', color:TIER_COLOR[r.tier]||'var(--text)' }}>{r.tier}</span>}</td>
+                    <td style={s.td}>{r.tier && <span style={{ ...s.badge, background:TIER_BG[r.tier]||'transparent', color:TIER_COLOR[r.tier]||'var(--text)' }}>{L2(r.tier, TIER_ZH[r.tier] || r.tier)}</span>}</td>
                     <td style={{ ...s.td, fontSize:12, color:'var(--muted)' }}>{r.host_name || '—'}</td>
-                    <td style={{ ...s.td, fontWeight:700, color: r.daysSince >= 3 ? '#f85149' : '#d29922' }}>{r.daysSince}d</td>
+                    <td style={{ ...s.td, fontWeight:700, color: r.daysSince >= 3 ? '#f85149' : '#d29922' }}>{L2(`${r.daysSince}d`, `${r.daysSince}天`)}</td>
                     <td style={{ ...s.td, fontSize:12, color:'var(--muted)', maxWidth:260, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{r.notes || '—'}</td>
                     <td style={s.td}>
                       {waNumber ? (
@@ -326,6 +335,8 @@ function AwaitingReplyTab({ onBack, myName, viewMode }) {
 
 export default function ContactLog() {
   const { profile } = useAuth()
+  const { lang } = useLanguage()
+  const L2 = (en, zh) => (lang === 'zh' ? zh : en)
   const navigate    = useNavigate()
   const [pageTab, setPageTab] = useUrlParam('view', 'log') // 'log' | 'benefits' | 'awaiting'
 
@@ -386,7 +397,7 @@ export default function ContactLog() {
       const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta)
       ta.select(); document.execCommand('copy'); document.body.removeChild(ta)
     }
-    setCopyMsg(label || 'Copied ✓'); setTimeout(() => setCopyMsg(''), 1800)
+    setCopyMsg(label || L2('Copied ✓', '已复制 ✓')); setTimeout(() => setCopyMsg(''), 1800)
   }
   function fmtLogTime(ts) {
     if (!ts) return ''
@@ -398,11 +409,11 @@ export default function ContactLog() {
     const { data, error } = await supabase.from('contact_logs')
       .select('logged_at, host_name, channel, outcome, notes, bonus_offered, bonus_type')
       .eq('username', username).order('logged_at', { ascending: true }).range(0, 999)
-    if (error) { setCopyMsg('Copy failed'); return }
+    if (error) { setCopyMsg(L2('Copy failed', '复制失败')); return }
     const text = [`=== ${username} — contact history (${(data||[]).length} logs) ===`, '',
       ...(data||[]).map(l => `[${fmtLogTime(l.logged_at)}] ${l.host_name || ''} · ${l.channel || ''} · ${l.outcome || ''}${l.bonus_offered ? ` · Bonus ${l.bonus_offered}${l.bonus_type ? ' ' + l.bonus_type : ''}` : ''}\n${l.notes || '(no note)'}\n`)
     ].join('\n')
-    copyText(text, `Copied ${(data||[]).length} logs ✓`)
+    copyText(text, L2(`Copied ${(data||[]).length} logs ✓`, `已复制 ${(data||[]).length} 条记录 ✓`))
   }
 
   // ── Export all logs matching current filters (host / tier / date / search) ──
@@ -428,7 +439,7 @@ export default function ContactLog() {
         all.push(...(data || []))
         if (!data || data.length < 1000) break
       }
-      if (all.length === 0) { alert('No logs match the current filters.'); setExporting(false); return }
+      if (all.length === 0) { alert(L2('No logs match the current filters.', '没有符合当前筛选的记录。')); setExporting(false); return }
 
       // Sheet 1: one row per log
       const rows = all.map(l => ({
@@ -476,7 +487,7 @@ export default function ContactLog() {
       XLSX.writeFile(wb, `ContactLog_${hostPart}_${datePart}.xlsx`)
     } catch (e) {
       console.error('Contact log export error', e)
-      alert('Export failed: ' + (e.message || e))
+      alert(L2('Export failed: ', '导出失败：') + (e.message || e))
     }
     setExporting(false)
   }
@@ -596,7 +607,7 @@ export default function ContactLog() {
       log_week:        String(Math.ceil(new Date().getDate()/7)),
       wa_number_used:  logForm.wa_number_used || null,
     }).select('id').single()
-    if (insertError) { console.error(insertError); alert('Error: ' + insertError.message) }
+    if (insertError) { console.error(insertError); alert(L2('Error: ', '错误：') + insertError.message) }
     else if (inserted?.id && logForm.notes.trim()) {
       // Auto-classify into the same 10 issue tags Analytics already uses —
       // fire-and-forget: if this fails, the log itself is already saved fine,
@@ -624,7 +635,7 @@ export default function ContactLog() {
   }
 
   async function deleteLog(logId) {
-    if (!window.confirm('Delete this contact log?')) return
+    if (!window.confirm(L2('Delete this contact log?', '确定删除这条联系记录？'))) return
     await supabase.from('contact_logs').delete().eq('id', logId)
     loadLogs()
   }
@@ -653,19 +664,19 @@ export default function ContactLog() {
     <div style={s.page}>
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:20, flexWrap:'wrap', gap:12 }}>
         <div>
-          <div style={s.title}>Contact Log</div>
-          <div style={s.sub}>All host-VIP interactions in one place</div>
+          <div style={s.title}>{L2('Contact Log', '联系记录')}</div>
+          <div style={s.sub}>{L2('All host-VIP interactions in one place', '所有负责人与VIP的互动汇总')}</div>
         </div>
         <div style={{ display:'flex', gap:8, alignItems:'center' }}>
           <div style={s.toggle}>
             {['mine','all'].map(mode => (
               <button key={mode} onClick={() => setViewMode(mode)}
                 style={{ background:viewMode===mode?'var(--accent)':'transparent', color:viewMode===mode?'#fff':'var(--muted)', border:'none', padding:'8px 18px', fontSize:13, fontWeight:600, cursor:'pointer', transition:'all .15s' }}>
-                {mode === 'mine' ? 'My Logs' : 'All Logs'}
+                {mode === 'mine' ? L2('My Logs', '我的记录') : L2('All Logs', '全部记录')}
               </button>
             ))}
           </div>
-          <button style={{ ...s.btn, background:'var(--surface2)', color:'var(--text)', border:'1px solid var(--border)' }} onClick={() => setPageTab('benefits')}>🎁 Bonus & Gifts</button>
+          <button style={{ ...s.btn, background:'var(--surface2)', color:'var(--text)', border:'1px solid var(--border)' }} onClick={() => setPageTab('benefits')}>{L2('🎁 Bonus & Gifts', '🎁 奖金与礼物')}</button>
           <button
             onClick={() => setPageTab(pageTab === 'awaiting' ? 'log' : 'awaiting')}
             style={{
@@ -674,17 +685,17 @@ export default function ContactLog() {
               color: pageTab === 'awaiting' ? '#fff' : 'var(--text)',
               border: `1px solid ${pageTab === 'awaiting' ? 'var(--amber, #f59e0b)' : 'var(--border)'}`,
             }}
-          >{pageTab === 'awaiting' ? '⏳ Awaiting Reply ✕' : '⏳ Awaiting Reply'}</button>
-          <button style={s.btn} onClick={() => setShowForm(true)}>+ Log Contact</button>
+          >{pageTab === 'awaiting' ? L2('⏳ Awaiting Reply ✕', '⏳ 等待回复 ✕') : L2('⏳ Awaiting Reply', '⏳ 等待回复')}</button>
+          <button style={s.btn} onClick={() => setShowForm(true)}>{L2('+ Log Contact', '+ 记录联系')}</button>
         </div>
       </div>
 
       <div style={{ display:'flex', gap:12, marginBottom:20, flexWrap:'wrap', alignItems:'center' }}>
-        <StatCard label={viewMode==='mine'?'My Total Logs':'Total Logs'} value={stats.total} color="var(--accent)" />
-        <StatCard label="Today" value={stats.today} color="#3fb950" />
-        <StatCard label="Positive Outcomes" value={stats.positive}
+        <StatCard label={viewMode==='mine'?L2('My Total Logs', '我的记录总数'):L2('Total Logs', '记录总数')} value={stats.total} color="var(--accent)" />
+        <StatCard label={L2('Today', '今天')} value={stats.today} color="#3fb950" />
+        <StatCard label={L2('Positive Outcomes', '正面结果')} value={stats.positive}
           sub={stats.total ? Math.round(stats.positive/stats.total*100)+'%' : '-'} color="#3fb950" />
-        <StatCard label={`Total Bonus Given (${CURRENCY_SYMBOL[bonusCurrency]})`} value={formatMoney(stats.bonusTotal, bonusCurrency)} color="#ffd700" />
+        <StatCard label={L2(`Total Bonus Given (${CURRENCY_SYMBOL[bonusCurrency]})`, `发放奖金总额 (${CURRENCY_SYMBOL[bonusCurrency]})`)} value={formatMoney(stats.bonusTotal, bonusCurrency)} color="#ffd700" />
         <div style={{ display:'flex', background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, overflow:'hidden', alignSelf:'center' }}>
           {CURRENCY_LIST.map(c => (
             <button key={c} onClick={() => setBonusCurrency(c)} style={{ background: bonusCurrency===c?'var(--accent)':'transparent', color: bonusCurrency===c?'#fff':'var(--muted)', border:'none', padding:'6px 12px', fontSize:11, fontWeight:600, cursor:'pointer' }}>
@@ -696,18 +707,18 @@ export default function ContactLog() {
 
       {showForm && (
         <div style={{ ...s.card, marginBottom:16, border:'1px solid var(--accent)' }}>
-          <div style={s.cardHdr}>Log New Contact</div>
+          <div style={s.cardHdr}>{L2('Log New Contact', '记录新联系')}</div>
           <div style={{ padding:'18px 20px' }}>
             <div style={{ marginBottom:14, position:'relative' }}>
-              <div style={s.flbl}>Search VIP *</div>
+              <div style={s.flbl}>{L2('Search VIP *', '搜索VIP *')}</div>
               {manualMode ? (
                 <div style={{ background:'rgba(245,158,11,.08)', border:'1px solid rgba(245,158,11,.3)', borderRadius:8, padding:'10px 14px', display:'flex', alignItems:'center', gap:10, flexWrap:'wrap' }}>
-                  <span style={{ fontSize:11, color:'#f59e0b', fontWeight:700 }}>✏️ MANUAL</span>
+                  <span style={{ fontSize:11, color:'#f59e0b', fontWeight:700 }}>{L2('✏️ MANUAL', '✏️ 手动')}</span>
                   <input style={{ ...s.finput, flex:1, minWidth:120 }} value={manualUsername}
-                    onChange={e => setManualUsername(e.target.value)} placeholder="Username..." autoFocus />
+                    onChange={e => setManualUsername(e.target.value)} placeholder={L2('Username...', '用户名…')} autoFocus />
                   <select style={{ ...s.fsel, width:130 }} value={manualTier} onChange={e => setManualTier(e.target.value)}>
                     {['BLACK','DIAMOND','PLATINUM','GOLD','SILVER','BRONZE'].map(t => (
-                      <option key={t} value={t}>{t}</option>
+                      <option key={t} value={t}>{L2(t, TIER_ZH[t])}</option>
                     ))}
                   </select>
                   <button onClick={() => { setManualMode(false); setManualUsername(''); setManualTier('GOLD') }}
@@ -715,7 +726,7 @@ export default function ContactLog() {
                 </div>
               ) : selectedVip ? (
                 <div style={{ display:'flex', alignItems:'center', gap:10, background:'var(--surface2)', border:'1px solid var(--accent)', borderRadius:8, padding:'8px 12px' }}>
-                  <span style={{ ...s.badge, background:TIER_BG[selectedVip.tier], color:TIER_COLOR[selectedVip.tier] }}>{selectedVip.tier}</span>
+                  <span style={{ ...s.badge, background:TIER_BG[selectedVip.tier], color:TIER_COLOR[selectedVip.tier] }}>{L2(selectedVip.tier, TIER_ZH[selectedVip.tier] || selectedVip.tier)}</span>
                   <span style={{ fontWeight:700, color:'var(--text)' }}>{selectedVip.username}</span>
                   <span style={{ color:'var(--muted)', fontSize:12 }}>{selectedVip.full_name}</span>
                   <button onClick={() => { setSelectedVip(null); setVipSearch('') }}
@@ -725,7 +736,7 @@ export default function ContactLog() {
                 <>
                   <input ref={vipSearchRef} style={{ ...s.finput, marginTop:4 }}
                     value={vipSearch} onChange={e => setVipSearch(e.target.value)}
-                    placeholder="Type username or name..." autoFocus />
+                    placeholder={L2('Type username or name...', '输入用户名或姓名…')} autoFocus />
                   {vipResults.length > 0 && (
                     <div style={{ position:'absolute', top:'100%', left:0, right:0, background:'var(--surface)', border:'1px solid var(--border)', borderRadius:8, zIndex:100, boxShadow:'0 8px 24px rgba(0,0,0,.4)', marginTop:2 }}>
                       {vipResults.map(v => (
@@ -733,7 +744,7 @@ export default function ContactLog() {
                           style={{ padding:'10px 14px', cursor:'pointer', display:'flex', alignItems:'center', gap:10, borderBottom:'1px solid var(--border)' }}
                           onMouseEnter={e => e.currentTarget.style.background='var(--surface2)'}
                           onMouseLeave={e => e.currentTarget.style.background='transparent'}>
-                          <span style={{ ...s.badge, background:TIER_BG[v.tier], color:TIER_COLOR[v.tier] }}>{v.tier}</span>
+                          <span style={{ ...s.badge, background:TIER_BG[v.tier], color:TIER_COLOR[v.tier] }}>{L2(v.tier, TIER_ZH[v.tier] || v.tier)}</span>
                           <span style={{ fontWeight:700 }}>{v.username}</span>
                           <span style={{ color:'var(--muted)', fontSize:12 }}>{v.full_name}</span>
                         </div>
@@ -742,16 +753,16 @@ export default function ContactLog() {
                         style={{ padding:'10px 14px', cursor:'pointer', display:'flex', alignItems:'center', gap:8, color:'#f59e0b', fontSize:12, fontWeight:600 }}
                         onMouseEnter={e => e.currentTarget.style.background='var(--surface2)'}
                         onMouseLeave={e => e.currentTarget.style.background='transparent'}>
-                        ✏️ Not in list? Log manually with "{vipSearch}"
+                        {L2(`✏️ Not in list? Log manually with "${vipSearch}"`, `✏️ 不在列表中？以「${vipSearch}」手动记录`)}
                       </div>
                     </div>
                   )}
                   {vipSearch.trim().length >= 2 && vipResults.length === 0 && (
                     <div style={{ marginTop:6, fontSize:12 }}>
-                      <span style={{ color:'var(--muted)' }}>No results found. </span>
+                      <span style={{ color:'var(--muted)' }}>{L2('No results found. ', '找不到结果。')}</span>
                       <span style={{ color:'#f59e0b', cursor:'pointer', fontWeight:600 }}
                         onClick={() => { setManualMode(true); setManualUsername(vipSearch); setVipSearch(''); setVipResults([]) }}>
-                        ✏️ Log manually with "{vipSearch}"
+                        {L2(`✏️ Log manually with "${vipSearch}"`, `✏️ 以「${vipSearch}」手动记录`)}
                       </span>
                     </div>
                   )}
@@ -760,56 +771,56 @@ export default function ContactLog() {
             </div>
             <div style={{ ...s.formGrid, marginBottom:12 }}>
               <div>
-                <div style={s.flbl}>Contact Type</div>
+                <div style={s.flbl}>{L2('Contact Type', '联系方式')}</div>
                 <select style={{ ...s.fsel, marginTop:4 }} value={logForm.contact_type}
                   onChange={e => setLogForm({...logForm, contact_type:e.target.value})}>
-                  {CONTACT_TYPES.map(t => <option key={t}>{t}</option>)}
+                  {CONTACT_TYPES.map(t => <option key={t} value={t}>{L2(t, CHANNEL_ZH[t])}</option>)}
                 </select>
               </div>
               <div>
-                <div style={s.flbl}>Outcome</div>
+                <div style={s.flbl}>{L2('Outcome', '结果')}</div>
                 <select style={{ ...s.fsel, marginTop:4 }} value={logForm.outcome}
                   onChange={e => setLogForm({...logForm, outcome:e.target.value})}>
-                  {CONTACT_OUTCOMES.map(o => <option key={o}>{o}</option>)}
+                  {CONTACT_OUTCOMES.map(o => <option key={o} value={o}>{L2(o, OUTCOME_ZH[o])}</option>)}
                 </select>
               </div>
               <div>
-                <div style={s.flbl}>Bonus Offered (RM)</div>
+                <div style={s.flbl}>{L2('Bonus Offered (RM)', '提供奖金 (RM)')}</div>
                 <input type="number" style={{ ...s.finput, marginTop:4 }} value={logForm.bonus_offered}
                   onChange={e => setLogForm({...logForm, bonus_offered:e.target.value})} placeholder="0" />
                 <div style={{fontSize:11,color:'var(--muted)',marginTop:4}}>
-                  💡 Bonus recorded here automatically appears in Budget Strategy → Bonus Log
+                  {L2('💡 Bonus recorded here automatically appears in Budget Strategy → Bonus Log', '💡 此处记录的奖金会自动出现在 预算策略 → 奖金记录')}
                 </div>
               </div>
               <div>
-                <div style={s.flbl}>Bonus Type</div>
+                <div style={s.flbl}>{L2('Bonus Type', '奖金类型')}</div>
                 <input style={{ ...s.finput, marginTop:4 }} value={logForm.bonus_type}
                   onChange={e => setLogForm({...logForm, bonus_type:e.target.value})}
-                  placeholder="e.g. Reload, Birthday, Cashback" />
+                  placeholder={L2('e.g. Reload, Birthday, Cashback', '例如：充值、生日、返水')} />
               </div>
             </div>
             {logForm.contact_type === 'WhatsApp' && waNumbers.length > 0 && (
               <div style={{ marginBottom:12 }}>
-                <div style={s.flbl}>📱 Send as (WA number)</div>
+                <div style={s.flbl}>{L2('📱 Send as (WA number)', '📱 发送号码 (WA)')}</div>
                 <select style={{ ...s.fsel, marginTop:4 }} value={logForm.wa_number_used}
                   onChange={e => setLogForm({...logForm, wa_number_used:e.target.value})}>
-                  <option value="">— Not specified —</option>
+                  <option value="">{L2('— Not specified —', '— 未指定 —')}</option>
                   {waNumbers.map(n => <option key={n.id} value={n.codename}>{n.codename} — {n.number}{n.telco?' ('+n.telco+')':''}</option>)}
                 </select>
               </div>
             )}
             <div style={{ marginBottom:14 }}>
-              <div style={s.flbl}>Notes *</div>
+              <div style={s.flbl}>{L2('Notes *', '备注 *')}</div>
               <textarea style={{ ...s.fta, marginTop:4 }} rows={3}
                 value={logForm.notes} onChange={e => setLogForm({...logForm, notes:e.target.value})}
-                placeholder="What happened? VIP response, mood, promises made..." />
+                placeholder={L2('What happened? VIP response, mood, promises made...', '发生了什么？VIP回应、情绪、做出的承诺…')} />
             </div>
             <div style={{ display:'flex', gap:8 }}>
               <button style={{ ...s.btn, opacity:((!selectedVip&&!manualUsername.trim())||!logForm.notes.trim())?0.5:1 }}
                 onClick={submitLog} disabled={submitting||(!selectedVip&&!manualUsername.trim())||!logForm.notes.trim()}>
-                {submitting ? 'Saving...' : 'Save Log'}
+                {submitting ? L2('Saving...', '保存中…') : L2('Save Log', '保存记录')}
               </button>
-              <button style={s.btnSm} onClick={() => { setShowForm(false); setSelectedVip(null); setVipSearch('') }}>Cancel</button>
+              <button style={s.btnSm} onClick={() => { setShowForm(false); setSelectedVip(null); setVipSearch('') }}>{L2('Cancel', '取消')}</button>
             </div>
           </div>
         </div>
@@ -817,33 +828,33 @@ export default function ContactLog() {
 
       <div style={{ ...s.card, padding:'14px 18px', marginBottom:14 }}>
         <div style={{ display:'flex', gap:10, flexWrap:'wrap', alignItems:'center' }}>
-          <input style={{ ...s.input, width:200 }} placeholder="Search VIP username..."
+          <input style={{ ...s.input, width:200 }} placeholder={L2('Search VIP username...', '搜索VIP用户名…')}
             value={search} onChange={e => setSearch(e.target.value)} />
           <select style={s.sel} value={tierF} onChange={e => setTierF(e.target.value)}>
-            {TIERS.map(t => <option key={t}>{t}</option>)}
+            {TIERS.map(t => <option key={t} value={t}>{L2(t, TIER_ZH[t])}</option>)}
           </select>
           {viewMode === 'all' && (
             <select style={{ ...s.sel, minWidth:140 }} value={hostF} onChange={e => setHostF(e.target.value)}>
-              <option value="ALL">All Hosts</option>
-              {hosts.map(h => { const name = h.full_name || 'Unknown'; return <option key={h.id || name} value={name}>{name}</option> })}
+              <option value="ALL">{L2('All Hosts', '全部负责人')}</option>
+              {hosts.map(h => { const name = h.full_name || 'Unknown'; return <option key={h.id || name} value={name}>{h.full_name || L2('Unknown', '未知')}</option> })}
             </select>
           )}
           <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-            <span style={{ fontSize:12, color:'var(--muted)' }}>From</span>
+            <span style={{ fontSize:12, color:'var(--muted)' }}>{L2('From', '从')}</span>
             <input type="date" style={s.input} value={dateFrom} onChange={e => setDateFrom(e.target.value)} />
-            <span style={{ fontSize:12, color:'var(--muted)' }}>To</span>
+            <span style={{ fontSize:12, color:'var(--muted)' }}>{L2('To', '至')}</span>
             <input type="date" style={s.input} value={dateTo} onChange={e => setDateTo(e.target.value)} />
           </div>
           {(search||hostF!=='ALL'||tierF!=='ALL'||dateFrom||dateTo) && (
-            <button style={s.btnSm} onClick={resetFilters}>Clear</button>
+            <button style={s.btnSm} onClick={resetFilters}>{L2('Clear', '清除')}</button>
           )}
           <div style={{ marginLeft:'auto', fontSize:12, color:'var(--muted)' }}>
-            {loading ? 'Loading...' : `${total} logs · page ${page+1}/${Math.max(1,totalPages)}`}
+            {loading ? L2('Loading...', '载入中…') : L2(`${total} logs · page ${page+1}/${Math.max(1,totalPages)}`, `${total} 条记录 · 第 ${page+1}/${Math.max(1,totalPages)} 页`)}
           </div>
           <button onClick={exportLogs} disabled={exporting || total === 0}
-            title="Export every log matching the current Host / Tier / Date / Search filters"
+            title={L2('Export every log matching the current Host / Tier / Date / Search filters', '导出符合当前负责人/等级/日期/搜索筛选的所有记录')}
             style={{ background:'var(--brand, #FF6B00)', color:'#fff', border:'none', borderRadius:6, padding:'7px 14px', fontSize:12, fontWeight:700, cursor: exporting ? 'wait' : 'pointer', opacity: (exporting || total === 0) ? 0.6 : 1 }}>
-            {exporting ? 'Exporting…' : `⬇ Export ${total} logs`}
+            {exporting ? L2('Exporting…', '导出中…') : L2(`⬇ Export ${total} logs`, `⬇ 导出 ${total} 条记录`)}
           </button>
         </div>
       </div>
@@ -855,24 +866,24 @@ export default function ContactLog() {
               <tr>
                 <th style={s.th}>#</th>
                 <th style={s.th}>VIP</th>
-                <th style={s.th}>Tier</th>
-                <th style={s.th}>Type</th>
-                <th style={s.th}>Outcome</th>
-                <th style={s.th}>WA #</th>
-                <th style={s.th}>Bonus</th>
-                <th style={s.th}>Notes</th>
-                <th style={s.th}>Host</th>
-                <th style={s.th}>When</th>
+                <th style={s.th}>{L2('Tier', '等级')}</th>
+                <th style={s.th}>{L2('Type', '方式')}</th>
+                <th style={s.th}>{L2('Outcome', '结果')}</th>
+                <th style={s.th}>{L2('WA #', 'WA号码')}</th>
+                <th style={s.th}>{L2('Bonus', '奖金')}</th>
+                <th style={s.th}>{L2('Notes', '备注')}</th>
+                <th style={s.th}>{L2('Host', '负责人')}</th>
+                <th style={s.th}>{L2('When', '时间')}</th>
                 <th style={s.th}></th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={10} style={{ ...s.td, textAlign:'center', padding:'40px', color:'var(--muted)' }}>Loading...</td></tr>
+                <tr><td colSpan={10} style={{ ...s.td, textAlign:'center', padding:'40px', color:'var(--muted)' }}>{L2('Loading...', '载入中…')}</td></tr>
               ) : logs.length === 0 ? (
                 <tr><td colSpan={10} style={{ ...s.td, textAlign:'center', padding:'40px', color:'var(--muted)' }}>
-                  No contact logs found.{' '}
-                  {!showForm && <span style={{ color:'var(--accent)', cursor:'pointer' }} onClick={() => setShowForm(true)}>Log one now</span>}
+                  {L2('No contact logs found.', '找不到联系记录。')}{' '}
+                  {!showForm && <span style={{ color:'var(--accent)', cursor:'pointer' }} onClick={() => setShowForm(true)}>{L2('Log one now', '立即记录一条')}</span>}
                 </td></tr>
               ) : logs.map((log, i) => {
                 const tier = log.vip_members?.tier || log.tier
@@ -887,7 +898,7 @@ export default function ContactLog() {
                       <span style={{ display:'inline-flex', alignItems:'center', gap:5 }}>
                         <span style={{ cursor:'pointer' }} onClick={() => navigate(`/vips/${log.vip_id}`)}>{log.username}</span>
                         <button
-                          title="Copy username"
+                          title={L2('Copy username', '复制用户名')}
                           onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(log.username) }}
                           style={{ background:'none', border:'none', color:'var(--muted)', cursor:'pointer', fontSize:12, padding:'0 2px', lineHeight:1, opacity:.6 }}
                           onMouseEnter={e => e.currentTarget.style.opacity=1}
@@ -896,17 +907,17 @@ export default function ContactLog() {
                       </span>
                     </td>
                     <td style={s.td}>
-                      {tier ? <span style={{ ...s.badge, background:TIER_BG[tier]||'transparent', color:TIER_COLOR[tier]||'var(--text)' }}>{tier}</span>
+                      {tier ? <span style={{ ...s.badge, background:TIER_BG[tier]||'transparent', color:TIER_COLOR[tier]||'var(--text)' }}>{L2(tier, TIER_ZH[tier] || tier)}</span>
                              : <span style={{ color:'var(--muted)' }}>-</span>}
                     </td>
                     <td style={s.td}>
                       <span style={{ ...s.tag, background:`${TYPE_COLOR[log.channel]||'#8b949e'}22`, color:TYPE_COLOR[log.channel]||'#8b949e' }}>
-                        {log.channel || '-'}
+                        {L2(log.channel || '-', CHANNEL_ZH[log.channel] || log.channel || '-')}
                       </span>
                     </td>
                     <td style={s.td}>
                       <span style={{ ...s.tag, background:`${OUTCOME_COLOR[log.outcome]||'#8b949e'}22`, color:OUTCOME_COLOR[log.outcome]||'#8b949e' }}>
-                        {log.outcome || '-'}
+                        {L2(log.outcome || '-', OUTCOME_ZH[log.outcome] || log.outcome || '-')}
                       </span>
                     </td>
                     <td style={{ ...s.td, fontSize:11, color: log.wa_number_used ? '#25d366' : 'var(--muted)', fontWeight: log.wa_number_used ? 600 : 400 }}>
@@ -921,41 +932,41 @@ export default function ContactLog() {
                           <div style={{ display:'flex', gap:5, alignItems:'center', flexWrap:'wrap' }}>
                             <select value={editingOutcome} onChange={e => setEditingOutcome(e.target.value)}
                               style={{ background:'var(--surface2)', border:'1px solid var(--border)', color: OUTCOME_COLOR[editingOutcome]||'var(--text)', padding:'4px 8px', borderRadius:6, fontSize:12, outline:'none', fontWeight:700, minWidth:110 }}>
-                              {CONTACT_OUTCOMES.map(o => <option key={o} value={o}>{o}</option>)}
+                              {CONTACT_OUTCOMES.map(o => <option key={o} value={o}>{L2(o, OUTCOME_ZH[o])}</option>)}
                             </select>
                             <select value={editingWaNumber} onChange={e => setEditingWaNumber(e.target.value)}
                               style={{ background:'var(--surface2)', border:'1px solid rgba(37,211,102,.4)', color: editingWaNumber ? '#25d366' : 'var(--muted)', padding:'4px 8px', borderRadius:6, fontSize:12, outline:'none', minWidth:140 }}>
-                              <option value="">📱 WA # (none)</option>
+                              <option value="">{L2('📱 WA # (none)', '📱 WA号码（无）')}</option>
                               {allWaNumbers.map(n => <option key={n.id} value={n.codename}>{n.codename} — {n.number}{n.telco?' ('+n.telco+')':''}</option>)}
                             </select>
                             <input autoFocus style={{ flex:1, background:'var(--surface2)', border:'1px solid var(--border)', color:'var(--text)', padding:'4px 8px', borderRadius:6, fontSize:12, outline:'none', minWidth:0 }}
                               value={editingNote} onChange={e => setEditingNote(e.target.value)}
                               onKeyDown={e => { if(e.key==='Enter') saveEdit(log.id); if(e.key==='Escape') setEditingLogId(null) }}
-                              placeholder="Notes..." />
+                              placeholder={L2('Notes...', '备注…')} />
                           </div>
                           <div style={{ display:'flex', gap:5 }}>
-                            <button onClick={() => saveEdit(log.id)} style={{ background:'var(--accent)', color:'#fff', border:'none', padding:'3px 12px', borderRadius:5, fontSize:11, cursor:'pointer', fontWeight:700 }}>Save</button>
-                            <button onClick={() => setEditingLogId(null)} style={{ background:'none', border:'1px solid var(--border)', color:'var(--muted)', padding:'3px 8px', borderRadius:5, fontSize:11, cursor:'pointer' }}>✕ Cancel</button>
+                            <button onClick={() => saveEdit(log.id)} style={{ background:'var(--accent)', color:'#fff', border:'none', padding:'3px 12px', borderRadius:5, fontSize:11, cursor:'pointer', fontWeight:700 }}>{L2('Save', '保存')}</button>
+                            <button onClick={() => setEditingLogId(null)} style={{ background:'none', border:'1px solid var(--border)', color:'var(--muted)', padding:'3px 8px', borderRadius:5, fontSize:11, cursor:'pointer' }}>{L2('✕ Cancel', '✕ 取消')}</button>
                           </div>
                         </div>
                       ) : (
                         <div
                           style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', cursor: log.notes ? 'pointer' : 'default' }}
-                          title={log.notes ? 'Click to expand' : undefined}
+                          title={log.notes ? L2('Click to expand', '点击展开') : undefined}
                           onClick={log.notes ? () => setNotePopup({ username: log.username, notes: log.notes }) : undefined}
                         >{log.notes || '-'}</div>
                       )}
                     </td>
                     <td style={{ ...s.td, fontSize:12, color:log.host_name===myName?'var(--accent)':'var(--muted)', fontWeight:log.host_name===myName?600:400 }}>
-                      {log.host_name===myName ? 'Me' : log.host_name}
+                      {log.host_name===myName ? L2('Me', '我') : log.host_name}
                     </td>
-                    <td style={{ ...s.td, fontSize:11, color:'var(--muted)', whiteSpace:'nowrap' }}>{timeAgo(log.logged_at)}</td>
+                    <td style={{ ...s.td, fontSize:11, color:'var(--muted)', whiteSpace:'nowrap' }}>{timeAgo(log.logged_at, lang)}</td>
                     <td style={{ ...s.td, fontSize:11 }} onClick={e => e.stopPropagation()}>
                       <div style={{ display:'flex', gap:4 }}>
                         <button onClick={() => { setEditingLogId(log.id); setEditingNote(log.notes||''); setEditingOutcome(log.outcome||'Contacted'); setEditingWaNumber(log.wa_number_used||'') }}
-                          style={{ background:'rgba(99,102,241,0.12)', border:'1px solid rgba(99,102,241,0.4)', color:'#a5b4fc', padding:'2px 8px', borderRadius:5, fontSize:11, cursor:'pointer', fontWeight:600 }}>✏ Edit</button>
+                          style={{ background:'rgba(99,102,241,0.12)', border:'1px solid rgba(99,102,241,0.4)', color:'#a5b4fc', padding:'2px 8px', borderRadius:5, fontSize:11, cursor:'pointer', fontWeight:600 }}>{L2('✏ Edit', '✏ 编辑')}</button>
                         <button onClick={() => deleteLog(log.id)}
-                          style={{ background:'none', border:'1px solid rgba(248,81,73,.3)', color:'#f85149', padding:'2px 8px', borderRadius:5, fontSize:11, cursor:'pointer' }}>Del</button>
+                          style={{ background:'none', border:'1px solid rgba(248,81,73,.3)', color:'#f85149', padding:'2px 8px', borderRadius:5, fontSize:11, cursor:'pointer' }}>{L2('Del', '删除')}</button>
                       </div>
                     </td>
                   </tr>
@@ -974,7 +985,7 @@ export default function ContactLog() {
             })}
             <button style={s.pgBtn} disabled={page>=totalPages-1} onClick={()=>setPage(p=>p+1)}>›</button>
             <button style={s.pgBtn} disabled={page>=totalPages-1} onClick={()=>setPage(totalPages-1)}>»</button>
-            <span style={{ fontSize:12, color:'var(--muted)', marginLeft:8 }}>{page*PAGE_SIZE+1}-{Math.min((page+1)*PAGE_SIZE,total)} of {total}</span>
+            <span style={{ fontSize:12, color:'var(--muted)', marginLeft:8 }}>{page*PAGE_SIZE+1}-{Math.min((page+1)*PAGE_SIZE,total)} {L2('of', '/')} {total}</span>
           </div>
         )}
       </div>
@@ -990,18 +1001,18 @@ export default function ContactLog() {
             onClick={e => e.stopPropagation()}
           >
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:14 }}>
-              <div style={{ fontSize:13, fontWeight:700, color:'var(--accent)' }}>{notePopup.username} — Note</div>
+              <div style={{ fontSize:13, fontWeight:700, color:'var(--accent)' }}>{notePopup.username} — {L2('Note', '备注')}</div>
               <button onClick={() => setNotePopup(null)} style={{ background:'none', border:'none', color:'var(--muted)', fontSize:18, cursor:'pointer', lineHeight:1 }}>✕</button>
             </div>
             <div style={{ fontSize:13, color:'var(--text)', lineHeight:1.6, whiteSpace:'pre-wrap', wordBreak:'break-word', maxHeight:'60vh', overflowY:'auto' }}>{notePopup.notes}</div>
             <div style={{ display:'flex', gap:8, alignItems:'center', marginTop:18, paddingTop:14, borderTop:'1px solid var(--border)', flexWrap:'wrap' }}>
-              <button onClick={() => copyText(notePopup.notes, 'Note copied ✓')}
+              <button onClick={() => copyText(notePopup.notes, L2('Note copied ✓', '备注已复制 ✓'))}
                 style={{ background:'var(--brand, #FF6B00)', color:'#fff', border:'none', borderRadius:6, padding:'7px 14px', fontSize:12, fontWeight:700, cursor:'pointer' }}>
-                📋 Copy this note
+                {L2('📋 Copy this note', '📋 复制此备注')}
               </button>
               <button onClick={() => copyVipHistory(notePopup.username)}
                 style={{ background:'var(--surface2)', color:'var(--text)', border:'1px solid var(--border)', borderRadius:6, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>
-                📋 Copy all notes for {notePopup.username}
+                {L2(`📋 Copy all notes for ${notePopup.username}`, `📋 复制 ${notePopup.username} 的全部备注`)}
               </button>
               {copyMsg && <span style={{ fontSize:12, color:'#34d399', fontWeight:600 }}>{copyMsg}</span>}
             </div>
