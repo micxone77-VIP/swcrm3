@@ -9,6 +9,8 @@ import { useLanguage } from '../contexts/LanguageContext'
 import { buildCampaignUpdate, buildLevelUpsert, normalizeCampaignForEdit, normalizeLevel, validateCampaignEditor } from '../lib/campaignEditor'
 import { buildMultiLevelPlayerMetrics, buildPayoutRows, buildCampaignSummary, calculateCampaignROI } from '../lib/campaignMetrics'
 import * as XLSX from 'xlsx'
+import ChallengeDetail from '../components/campaign/ChallengeDetail'
+import { CampaignInfoButton } from '../components/campaign/CampaignGuide'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const TIERS = ['BLACK','DIAMOND','PLATINUM','GOLD','SILVER','BRONZE']
@@ -17,43 +19,50 @@ const TIER_BG    = { DIAMOND:'rgba(185,242,255,.12)', PLATINUM:'rgba(192,192,192
 
 // Contact log types — used across Chase List, Payout, and Inactive tabs
 const CONTACT_TYPES = [
-  ['daily',       '📅', 'Daily Chase'],
-  ['wa_sent',     '📱', 'WA Sent'],
-  ['responded',   '✅', 'Responded'],
-  ['no_response', '🔕', 'No Reply'],
-  ['promised',    '🤝', 'Promised'],
-  ['deposited',   '💰', 'Deposited'],
-  ['reward',      '🎁', 'Reward'],
-  ['inactive',    '💤', 'Inactive'],
-  ['other',       '💬', 'Other'],
+  ['daily',       '📅', 'Daily Chase', '每日跟进'],
+  ['wa_sent',     '📱', 'WA Sent', '已发WA'],
+  ['responded',   '✅', 'Responded', '已回复'],
+  ['no_response', '🔕', 'No Reply', '未回复'],
+  ['promised',    '🤝', 'Promised', '已承诺'],
+  ['deposited',   '💰', 'Deposited', '已存款'],
+  ['reward',      '🎁', 'Reward', '奖励'],
+  ['inactive',    '💤', 'Inactive', '不活跃'],
+  ['other',       '💬', 'Other', '其他'],
 ]
 const CT_ICON  = Object.fromEntries(CONTACT_TYPES.map(([k,icon])=>[k,icon]))
 const CT_LABEL = Object.fromEntries(CONTACT_TYPES.map(([k,,lbl])=>[k,lbl]))
+const CT_LABEL_ZH = Object.fromEntries(CONTACT_TYPES.map(([k,,,zh])=>[k,zh]))
 
 const CAMPAIGN_TYPES = {
-  gold_bar:     { label:'🥇 Gold Bar',       color:'#ffd700', desc:'Deposit threshold → receive physical gold bar or gift' },
-  pct_reward:   { label:'💰 % Reward',        color:'#3fb950', desc:'Deposit amount × % = cashback (credit/cash)' },
-  fixed_reward:  { label:'🎁 Fixed Reward',    color:'#b9f2ff', desc:'Deposit reaches threshold → fixed reward amount' },
-  tiered_reward: { label:'📊 Tiered % Reward',  color:'#f0883e', desc:'Different % reward at each deposit tier — more deposit = higher %' },
-  dual_tier:     { label:'🎯 Deposit + Turnover Tiers', color:'#c9a961', desc:'Must reach BOTH deposit AND turnover at a tier → get that tier\'s Credit + WCash' },
-  leaderboard:   { label:'[TOP] Leaderboard',    color:'#a78bfa', desc:'Top N players by monthly valid bet - each rank gets different cash voucher' },
+  gold_bar:     { label:'🥇 Gold Bar',       color:'#ffd700', desc:'Deposit threshold → receive physical gold bar or gift', zh:'🥇 金条', descZh:'存款达标 → 获得实体金条或礼品' },
+  pct_reward:   { label:'💰 % Reward',        color:'#3fb950', desc:'Deposit amount × % = cashback (credit/cash)', zh:'💰 百分比奖励', descZh:'存款金额 × % = 返现（信用额/现金）' },
+  fixed_reward:  { label:'🎁 Fixed Reward',    color:'#b9f2ff', desc:'Deposit reaches threshold → fixed reward amount', zh:'🎁 固定奖励', descZh:'存款达标 → 固定奖励金额' },
+  tiered_reward: { label:'📊 Tiered % Reward',  color:'#f0883e', desc:'Different % reward at each deposit tier — more deposit = higher %', zh:'📊 分级百分比奖励', descZh:'每个存款等级不同奖励 % — 存越多 % 越高' },
+  dual_tier:     { label:'🎯 Deposit + Turnover Tiers', color:'#c9a961', desc:'Must reach BOTH deposit AND turnover at a tier → get that tier\'s Credit + WCash', zh:'🎯 存款 + 流水等级', descZh:'须同时达到某等级的存款和流水 → 获得该等级的 Credit + WCash' },
+  leaderboard:   { label:'[TOP] Leaderboard',    color:'#a78bfa', desc:'Top N players by monthly valid bet - each rank gets different cash voucher', zh:'[TOP] 排行榜', descZh:'按月有效投注排名前 N 位玩家 - 每个名次获得不同现金券' },
+  challenge:     { label:'💝 Challenge', color:'#f472b6', desc:'Trust Credit / Rebate Challenge — personal target + streak, tracked from daily data', zh:'💝 挑战', descZh:'信任金 / 返水挑战 — 个人目标 + 连续奖励，按每日数据追踪' },
 }
 
 function getCampaignTypeInfo(campaignOrForm) {
   const type = campaignOrForm?.campaign_type || 'gold_bar'
   const multi = Boolean(campaignOrForm?.is_multi_level)
   if (type === 'fixed_reward' && multi) {
-    return { label:'🎁 Tiered Deposit Reward', color:'#b9f2ff', desc:'Different fixed Credit reward at each deposit level' }
+    return { label:'🎁 Tiered Deposit Reward', color:'#b9f2ff', desc:'Different fixed Credit reward at each deposit level', zh:'🎁 分级存款奖励', descZh:'每个存款级别不同的固定 Credit 奖励' }
+  }
+  if (type === 'challenge') {
+    return campaignOrForm?.challenge_config?.mode === 'rebate'
+      ? { label:'💰 Rebate Challenge', color:'#22d3ee', desc:'Target → rebate % of turnover + streak', zh:'💰 返水挑战', descZh:'达标 → 按流水返水 % + 连续奖励' }
+      : { label:'💝 Trust Credit Challenge', color:'#f472b6', desc:'Credit first → personal turnover task → reviewed bonus + streak', zh:'💝 信任金挑战', descZh:'先给信用额 → 个人流水任务 → 审核奖金 + 连续奖励' }
   }
   return CAMPAIGN_TYPES[type] || CAMPAIGN_TYPES.gold_bar
 }
 
 const REWARD_DELIVERY = {
-  credit:   { label:'💳 Credit',      color:'#3fb950' },
-  cash:     { label:'💵 Cash',        color:'#f59e0b' },
-  gold_bar: { label:'🥇 Gold Bar',    color:'#ffd700' },
-  gift:     { label:'🎁 Physical Gift',color:'#b9f2ff' },
-  voucher:  { label:'🎫 Voucher',     color:'#8b5cf6' },
+  credit:   { label:'💳 Credit',      color:'#3fb950', zh:'💳 Credit' },
+  cash:     { label:'💵 Cash',        color:'#f59e0b', zh:'💵 现金' },
+  gold_bar: { label:'🥇 Gold Bar',    color:'#ffd700', zh:'🥇 金条' },
+  gift:     { label:'🎁 Physical Gift',color:'#b9f2ff', zh:'🎁 实体礼品' },
+  voucher:  { label:'🎫 Voucher',     color:'#8b5cf6', zh:'🎫 现金券' },
 }
 
 const STATUS_COLOR = { draft:'#8b949e', upcoming:'#58a6ff', active:'#3fb950', paused:'#d29922', ended:'#f85149' }
@@ -257,6 +266,14 @@ function calcReward(type, deposit, rewardPct, rewardFixed, goldBarValue, rewardC
 export default function Campaigns() {
   const { profile } = useAuth()
   const { lang, t } = useLanguage()
+  const L2 = (en, zh) => (lang === 'zh' ? zh : en)
+  const tLabel = (x) => (lang === 'zh' ? (x?.zh || x?.label) : x?.label)
+  const tDesc  = (x) => (lang === 'zh' ? (x?.descZh || x?.desc) : x?.desc)
+  const PR_ZH = { '✅ ACHIEVED':'✅ 已达标', '⚡ CLOSE':'⚡ 接近', '🔴 BEHIND':'🔴 落后' }
+  const prLabel = (l) => (lang === 'zh' ? (PR_ZH[l] || l) : l)
+  const ctLabel = (k) => (lang === 'zh' ? CT_LABEL_ZH[k] : CT_LABEL[k]) || k
+  const STATUS_LABEL = { draft:L2('Draft','草稿'), upcoming:L2('Upcoming','即将开始'), active:L2('Active','进行中'), paused:L2('Paused','暂停'), ended:L2('Ended','已结束') }
+  const [challengeCamp, setChallengeCamp] = useState(null) // Challenge campaigns open their own detail page
   const navigate    = useNavigate()
 
   const [campaigns,  setCampaigns]  = useState([])
@@ -502,7 +519,7 @@ export default function Campaigns() {
 
   // ── Create campaign ─────────────────────────────────────────────────────────
   async function createCampaign() {
-    if (!form.campaign_name.trim()) { setMsg({ text:'Campaign name required.', ok:false }); return }
+    if (!form.campaign_name.trim()) { setMsg({ text:L2('Campaign name required.','请填写活动名称。'), ok:false }); return }
     const code = form.campaign_code.trim() || form.campaign_name.trim().toUpperCase().replace(/\s+/g,'-').slice(0,20)
     setSaving(true)
     const { data, error } = await supabase.from('campaigns').insert({
@@ -537,7 +554,7 @@ export default function Campaigns() {
       created_at:     new Date().toISOString(),
     }).select().single()
     setSaving(false)
-    if (error) { setMsg({ text:'Error: '+error.message, ok:false }); return }
+    if (error) { setMsg({ text:L2('Error: ','错误：')+error.message, ok:false }); return }
     setMsg({ text:'', ok:true })
     setModal(null)
     await loadCampaigns()
@@ -563,7 +580,7 @@ export default function Campaigns() {
       payout_status: 'pending',
       added_at:      new Date().toISOString(),
     }).select('id').single()
-    if (error) { alert('Add failed: ' + error.message); console.error(error) }
+    if (error) { alert(L2('Add failed: ','添加失败：') + error.message); console.error(error) }
     else {
       // Create the player's campaign-level rows immediately so the Player Portal
       // has a single authoritative level state from the moment of enrollment.
@@ -581,7 +598,7 @@ export default function Campaigns() {
   // ── Update player ───────────────────────────────────────────────────────────
   async function updatePlayer(pid, updates) {
     const { error } = await supabase.from('campaign_players').update(updates).eq('id', pid)
-    if (error) { alert('Update failed: ' + error.message); console.error(error); return }
+    if (error) { alert(L2('Update failed: ','更新失败：') + error.message); console.error(error); return }
 
     // Manual CRM deposit entry is a campaign-period value for reward campaigns.
     // Keep Supabase campaign_period_deposit + player-level unlock state + reward
@@ -592,7 +609,7 @@ export default function Campaigns() {
         p_campaign_period_deposit: Number(updates.total_deposit) || 0,
       })
       if (syncError) {
-        alert('Deposit saved, but campaign progress sync failed: ' + syncError.message)
+        alert(L2('Deposit saved, but campaign progress sync failed: ','存款已保存，但活动进度同步失败：') + syncError.message)
         console.error('sync_manual_campaign_player_progress failed:', syncError)
       }
     }
@@ -610,7 +627,7 @@ export default function Campaigns() {
         .update(rewardPatch)
         .eq('campaign_player_id', pid)
       if (rewardSyncError) {
-        alert('CRM payout saved, but Player Portal reward sync failed: ' + rewardSyncError.message)
+        alert(L2('CRM payout saved, but Player Portal reward sync failed: ','CRM 派彩已保存，但玩家门户奖励同步失败：') + rewardSyncError.message)
         console.error('campaign_rewards payout sync failed:', rewardSyncError)
       }
     }
@@ -622,7 +639,7 @@ export default function Campaigns() {
     if (!rewardId) return
     const patch = makePaid ? { status:'paid', paid_at:new Date().toISOString() } : { status:'pending', paid_at:null }
     const { error } = await supabase.from('campaign_rewards').update(patch).eq('id', rewardId)
-    if (error) { alert('Reward update failed: ' + error.message); console.error(error); return }
+    if (error) { alert(L2('Reward update failed: ','奖励更新失败：') + error.message); console.error(error); return }
     // Sync total paid reward amount back to campaign_players so PPT and DB stay in sync
     if (playerId != null && newPlayerTotal != null) {
       const { error: cpErr } = await supabase.from('campaign_players').update({ reward_amount: newPlayerTotal }).eq('id', playerId)
@@ -633,7 +650,7 @@ export default function Campaigns() {
 
   // ── Remove player ───────────────────────────────────────────────────────────
   async function removePlayer(pid) {
-    if (!window.confirm('Remove this player from the campaign?')) return
+    if (!window.confirm(L2('Remove this player from the campaign?','确定将此玩家移出活动？'))) return
     await supabase.from('campaign_players').delete().eq('id', pid)
     await loadPlayers(selected.id)
   }
@@ -658,7 +675,7 @@ export default function Campaigns() {
     }))
     setBulkEnrollLoading(true)
     const { data: inserted, error } = await supabase.from('campaign_players').insert(rows).select('id')
-    if (error) { alert('Bulk add failed: ' + error.message); setBulkEnrollLoading(false); return }
+    if (error) { alert(L2('Bulk add failed: ','批量添加失败：') + error.message); setBulkEnrollLoading(false); return }
     if (selected?.is_multi_level && inserted?.length) {
       await Promise.all(inserted.map(r => supabase.rpc('sync_manual_campaign_player_progress', { p_campaign_player_id: r.id, p_campaign_period_deposit: 0 })))
     }
@@ -669,7 +686,7 @@ export default function Campaigns() {
   // ── Bulk remove ──────────────────────────────────────────────────────────────
   async function bulkRemovePlayers() {
     if (selectedForRemoval.size === 0) return
-    if (!window.confirm(`Remove ${selectedForRemoval.size} player${selectedForRemoval.size > 1 ? 's' : ''} from the campaign?`)) return
+    if (!window.confirm(L2(`Remove ${selectedForRemoval.size} player${selectedForRemoval.size > 1 ? 's' : ''} from the campaign?`, `确定将 ${selectedForRemoval.size} 位玩家移出活动？`))) return
     await supabase.from('campaign_players').delete().in('id', [...selectedForRemoval])
     await loadPlayers(selected.id)
     setSelectedForRemoval(new Set())
@@ -724,7 +741,7 @@ export default function Campaigns() {
       supabase.from('campaign_levels').select('*').eq('campaign_id', selected.id).order('level_order', { ascending:true }),
     ])
     if (campaignRes.error) {
-      alert('Could not load campaign: ' + campaignRes.error.message)
+      alert(L2('Could not load campaign: ','无法加载活动：') + campaignRes.error.message)
       setLevelsLoading(false)
       return
     }
@@ -758,7 +775,7 @@ export default function Campaigns() {
           const { count: rewardCount, error: rewardError } = await supabase.from('campaign_rewards').select('id', { count:'exact', head:true }).in('campaign_level_id', removingIds)
           if (rewardError) throw rewardError
           if ((playerLevelCount || 0) > 0 || (rewardCount || 0) > 0) {
-            throw new Error('One or more levels are already used by player progress/rewards. They cannot be deleted or disabled.')
+            throw new Error(L2('One or more levels are already used by player progress/rewards. They cannot be deleted or disabled.','一个或多个级别已被玩家进度/奖励使用，无法删除或停用。'))
           }
         }
       }
@@ -798,16 +815,16 @@ export default function Campaigns() {
       setEditingCamp(false)
       setCampaignLevelsEdit([])
       await loadCampaigns()
-      setMsg({ text:'Campaign saved successfully.', ok:true })
+      setMsg({ text:L2('Campaign saved successfully.','活动已成功保存。'), ok:true })
     } catch (error) {
-      alert('Save failed: ' + error.message)
+      alert(L2('Save failed: ','保存失败：') + error.message)
     } finally {
       setSaving(false)
     }
   }
 
   async function deleteCampaign() {
-    if (!window.confirm(`Delete "${selected.campaign_name}"? This will also remove all player records.`)) return
+    if (!window.confirm(L2(`Delete "${selected.campaign_name}"? This will also remove all player records.`, `确定删除“${selected.campaign_name}”？这也会删除所有玩家记录。`))) return
     // Delete child rows in dependency order before removing the campaign itself.
     // daily_turnover_entries references both campaign_id AND player_id (→ campaign_players),
     // so it must be removed first; then campaign_players; then campaign_levels; finally campaigns.
@@ -822,7 +839,7 @@ export default function Campaigns() {
     await supabase.from('campaign_players').delete().eq('campaign_id', selected.id)
     await supabase.from('campaign_levels').delete().eq('campaign_id', selected.id)
     const { error } = await supabase.from('campaigns').delete().eq('id', selected.id)
-    if (error) { alert('Delete failed: ' + error.message); return }
+    if (error) { alert(L2('Delete failed: ','删除失败：') + error.message); return }
     closeModal()
     await loadCampaigns()
   }
@@ -914,7 +931,7 @@ export default function Campaigns() {
     }
     const { error } = await supabase.from('daily_turnover_entries')
       .upsert(payload, { onConflict: 'campaign_id,player_id,entry_date' })
-    if (error) { alert('Save failed: ' + error.message); console.error(error); return }
+    if (error) { alert(L2('Save failed: ','保存失败：') + error.message); console.error(error); return }
     setDailyEntries(prev => ({ ...prev, [playerId]: payload }))
     if (selected?.streak_enabled) await checkAndAwardStreak(playerId, entryDate)
   }
@@ -1016,9 +1033,9 @@ export default function Campaigns() {
     const { data, error } = await supabase.from('daily_turnover_entries')
       .select('id, player_id, deposit_amount, entry_date')
       .eq('campaign_id', selected.id)
-    if (error) { alert('Load failed: ' + error.message); setDailyLoading(false); return }
+    if (error) { alert(L2('Load failed: ','加载失败：') + error.message); setDailyLoading(false); return }
     const rows = data || []
-    if (!rows.length) { alert('No entries to recalculate.'); setDailyLoading(false); return }
+    if (!rows.length) { alert(L2('No entries to recalculate.','没有可重新计算的记录。')); setDailyLoading(false); return }
     // Use individual .update() calls — never .upsert() here, which would try to INSERT
     // a new row when the id doesn't match, triggering the campaign_id not-null constraint.
     const now = new Date().toISOString()
@@ -1027,7 +1044,7 @@ export default function Campaigns() {
       const { error: upErr } = await supabase.from('daily_turnover_entries')
         .update({ tier_achieved: levelOrder, credit_reward: creditReward, wcash_reward: 0, updated_at: now })
         .eq('id', row.id)
-      if (upErr) { alert('Recalc failed: ' + upErr.message); setDailyLoading(false); return }
+      if (upErr) { alert(L2('Recalc failed: ','重新计算失败：') + upErr.message); setDailyLoading(false); return }
     }
     await loadDailyEntries(selected.id, entryDate)
     await loadCampaignSummary(selected.id)
@@ -1038,7 +1055,7 @@ export default function Campaigns() {
         await checkAndAwardStreak(p.id, today)
       }
     }
-    alert(`✅ Recalculated rewards for ${rows.length} entries.`)
+    alert(L2(`✅ Recalculated rewards for ${rows.length} entries.`, `✅ 已重新计算 ${rows.length} 条记录的奖励。`))
     setDailyLoading(false)
   }
 
@@ -1159,12 +1176,12 @@ export default function Campaigns() {
     if (!selected || !players.length) return
     const startDate = isDailyMode ? entryDate : selected.start_date
     const endDate   = isDailyMode ? entryDate : selected.end_date
-    if (!startDate || !endDate) { alert('Campaign dates are not set.'); return }
+    if (!startDate || !endDate) { alert(L2('Campaign dates are not set.','活动日期未设置。')); return }
 
     const confirmed = window.confirm(
       isDailyMode
-        ? `Import real deposit + turnover from VIP snapshot for ${entryDate}?\nThis will overwrite all values entered for that date.`
-        : `Import real deposit + turnover from VIP snapshots (${fmtDate(startDate)} → ${fmtDate(endDate)})?\nThis will overwrite existing values for players found in the snapshot data.`
+        ? L2(`Import real deposit + turnover from VIP snapshot for ${entryDate}?\nThis will overwrite all values entered for that date.`, `从 VIP 快照导入 ${entryDate} 的真实存款 + 流水？\n这将覆盖该日期已输入的所有数值。`)
+        : L2(`Import real deposit + turnover from VIP snapshots (${fmtDate(startDate)} → ${fmtDate(endDate)})?\nThis will overwrite existing values for players found in the snapshot data.`, `从 VIP 快照导入真实存款 + 流水（${fmtDate(startDate)} → ${fmtDate(endDate)}）？\n这将覆盖快照数据中找到的玩家的现有数值。`)
     )
     if (!confirmed) return
 
@@ -1177,7 +1194,7 @@ export default function Campaigns() {
         .select('username, snapshot_date, total_deposit, monthly_valid_bet')
         .gte('snapshot_date', startDate).lte('snapshot_date', endDate)
         .range(from, from + PAGE - 1)
-      if (error) { alert('Failed to load snapshot data: ' + error.message); setDailyLoading(false); return }
+      if (error) { alert(L2('Failed to load snapshot data: ','加载快照数据失败：') + error.message); setDailyLoading(false); return }
       all = all.concat((data || []).filter(r => usernameSet.has(r.username)))
       if (!data || data.length < PAGE) break
       from += PAGE
@@ -1197,7 +1214,7 @@ export default function Campaigns() {
     const matched = Object.keys(byUsername).filter(u => playersByUsername[u])
 
     if (!matched.length) {
-      alert('No matching players found in the snapshot data for this date range.')
+      alert(L2('No matching players found in the snapshot data for this date range.','此日期范围的快照数据中没有找到匹配的玩家。'))
       setDailyLoading(false)
       return
     }
@@ -1237,7 +1254,7 @@ export default function Campaigns() {
       for (let i = 0; i < upserts.length; i += BATCH) {
         const { error } = await supabase.from('daily_turnover_entries')
           .upsert(upserts.slice(i, i + BATCH), { onConflict: 'campaign_id,player_id,entry_date' })
-        if (error) { alert('Batch upsert failed: ' + error.message); setDailyLoading(false); return }
+        if (error) { alert(L2('Batch upsert failed: ','批量写入失败：') + error.message); setDailyLoading(false); return }
       }
       await loadDailyEntries(selected.id, entryDate)
     } else {
@@ -1264,7 +1281,7 @@ export default function Campaigns() {
     }
 
     setDailyLoading(false)
-    setMsg({ text: `✅ Imported data for ${matched.length} / ${players.length} players from VIP snapshots.`, ok: true })
+    setMsg({ text: L2(`✅ Imported data for ${matched.length} / ${players.length} players from VIP snapshots.`, `✅ 已从 VIP 快照导入 ${matched.length} / ${players.length} 位玩家的数据。`), ok: true })
     // Also refresh real financials
     loadRealFinancials(selected.start_date, selected.end_date, players)
   }
@@ -1314,7 +1331,7 @@ export default function Campaigns() {
       })
       setAiAnalysis(result.analysis)
     } catch (e) {
-      alert('Could not generate analysis: ' + e.message)
+      alert(L2('Could not generate analysis: ','无法生成分析：') + e.message)
     } finally {
       setAnalyzing(false)
     }
@@ -1729,27 +1746,26 @@ export default function Campaigns() {
         </div>
         <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
           <select style={{ ...s.smInput, padding:'7px 12px' }} value={filterType} onChange={e=>setFilterType(e.target.value)}>
-            <option value="ALL">All Types</option>
-            {Object.entries(CAMPAIGN_TYPES).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}
+            <option value="ALL">{L2('All Types','全部类型')}</option>
+            {Object.entries(CAMPAIGN_TYPES).map(([k,v])=><option key={k} value={k}>{tLabel(v)}</option>)}
           </select>
           <select style={{ ...s.smInput, padding:'7px 12px' }} value={filterStat} onChange={e=>setFilterStat(e.target.value)}>
-            <option value="ALL">All Status</option>
-            {['draft','active','paused','ended'].map(s=><option key={s}>{s}</option>)}
+            <option value="ALL">{L2('All Status','全部状态')}</option>
+            {['draft','active','paused','ended'].map(s=><option key={s} value={s}>{STATUS_LABEL[s]||s}</option>)}
           </select>
           <select style={{ ...s.smInput, padding:'7px 12px' }} value={filterMonth} onChange={e=>setFilterMonth(e.target.value)}>
-            <option value="ALL">All Months</option>
+            <option value="ALL">{L2('All Months','全部月份')}</option>
             {monthOptions.map(mo=><option key={mo} value={mo}>{mo}</option>)}
           </select>
-          <button style={s.btn} onClick={()=>{ setForm(blankForm); setMsg({text:'',ok:true}); setModal('create') }}>＋ {t('campaigns.newCampaign')}</button>
         </div>
       </div>
 
       {/* Campaign cards */}
       {loading ? (
-        <div style={{ textAlign:'center', padding:40, color:'var(--muted)' }}>Loading...</div>
+        <div style={{ textAlign:'center', padding:40, color:'var(--muted)' }}>{L2('Loading...','加载中...')}</div>
       ) : campaigns.length === 0 ? (
         <div style={{ ...s.card, padding:40, textAlign:'center', color:'var(--muted)' }}>
-          No campaigns yet. <span style={{ color:'var(--accent)', cursor:'pointer' }} onClick={()=>{ setForm(blankForm); setModal('create') }}>Create one →</span>
+          {L2('No campaigns yet.','暂无活动。')} <span style={{ color:'var(--accent)', cursor:'pointer' }} onClick={()=>{ setForm(blankForm); setModal('create') }}>{L2('Create one →','立即创建 →')}</span>
         </div>
       ) : (
         <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(320px,1fr))', gap:12 }}>
@@ -1759,6 +1775,7 @@ export default function Campaigns() {
             return (
               <div key={camp.id} style={{ ...s.card, cursor:'pointer', transition:'border-color .15s' }}
                 onClick={async () => {
+                  if (ct === 'challenge') { setChallengeCamp(camp); return }
                   setSelected(camp); setActiveTab('chase'); setModal('detail'); setChaseFilter(''); setHostFilter('all')
                   const today = new Date().toISOString().slice(0,10)
                   const inRange = camp.start_date && camp.end_date && today >= camp.start_date && today <= camp.end_date
@@ -1768,8 +1785,9 @@ export default function Campaigns() {
                 onMouseLeave={e=>e.currentTarget.style.borderColor='var(--border)'}>
                 <div style={{ padding:'14px 16px' }}>
                   <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8 }}>
-                    <span style={{ ...s.tag(ti.color), fontSize:11 }}>{ti.label}</span>
-                    <span style={{ ...s.tag(STATUS_COLOR[camp.status], STATUS_BG[camp.status]), fontSize:11 }}>{camp.status}</span>
+                    <span style={{ ...s.tag(ti.color), fontSize:11 }}>{tLabel(ti)}</span>
+                    <CampaignInfoButton campaign={camp} />
+                    <span style={{ ...s.tag(STATUS_COLOR[camp.status], STATUS_BG[camp.status]), fontSize:11 }}>{STATUS_LABEL[camp.status]||camp.status}</span>
                     {camp.platform && <span style={{ ...s.tag('#8b949e'), fontSize:11 }}>{camp.platform}</span>}
                   </div>
                   <div style={{ fontSize:15, fontWeight:700, marginBottom:4 }}>{camp.campaign_name}</div>
@@ -1777,14 +1795,16 @@ export default function Campaigns() {
                     {camp.campaign_code} · {fmtDate(camp.start_date)} → {fmtDate(camp.end_date)}
                   </div>
                   <div style={{ display:'flex', gap:16, fontSize:12 }}>
-                    {ct==='leaderboard'
-                      ? <span style={{ color:'var(--muted)' }}>Min Turnover: <strong style={{ color:'var(--text)' }}>{rmFmt(camp.min_valid_bet, campaignCurrency(camp.platform))}</strong></span>
-                      : <span style={{ color:'var(--muted)' }}>Min: <strong style={{ color:'var(--text)' }}>{rmFmt(camp.deposit_target, campaignCurrency(camp.platform))}</strong></span>}
-                    {ct==='pct_reward'   && <span style={{ color:'#3fb950' }}>Reward: <strong>{camp.reward_pct||6}%{camp.reward_cap?` (max ${rmFmt(camp.reward_cap, campaignCurrency(camp.platform))})`:''}</strong></span>}
-                    {ct==='fixed_reward' && camp.is_multi_level && <span style={{ color:'#b9f2ff' }}>Levels: <strong>{camp.max_levels || 0}</strong> · Credit</span>}
-                     {ct==='fixed_reward' && !camp.is_multi_level && <span style={{ color:'#b9f2ff' }}>Reward: <strong>{rmFmt(camp.reward_fixed, campaignCurrency(camp.platform))}</strong></span>}
-                    {ct==='tiered_reward' && <span style={{ color:'#f0883e' }}>Tiers: <strong>{camp.reward_tiers?.length||0} levels</strong></span>}
-                    {ct==='gold_bar'     && <span style={{ color:'#ffd700' }}>Gold Bar: <strong>{rmFmt(camp.gold_bar_value, campaignCurrency(camp.platform))}</strong></span>}
+                    {ct==='challenge'
+                      ? <span style={{ color:'var(--muted)' }}>{lang==='zh'?'目标':'Goal'}: <strong style={{ color:'var(--text)' }}>{camp.challenge_config?.goal_metric==='deposit'?(lang==='zh'?'存款':'Deposit'):camp.challenge_config?.goal_metric==='both'?(lang==='zh'?'存款 + 流水':'Deposit + Turnover'):(lang==='zh'?'个人流水':'Personal turnover')}</strong>{camp.challenge_config?.streak_enabled && <span style={{ color:'#22d3ee', marginLeft:12 }}>{lang==='zh'?'连续':'Streak'}: <strong>{camp.challenge_config.streak_min_days}{L2('d','天')} ≥ RM {Number(camp.challenge_config.streak_min_daily_deposit||0).toLocaleString()}</strong></span>}</span>
+                      : ct==='leaderboard'
+                      ? <span style={{ color:'var(--muted)' }}>{L2('Min Turnover','最低流水')}: <strong style={{ color:'var(--text)' }}>{rmFmt(camp.min_valid_bet, campaignCurrency(camp.platform))}</strong></span>
+                      : <span style={{ color:'var(--muted)' }}>{L2('Min','最低')}: <strong style={{ color:'var(--text)' }}>{rmFmt(camp.deposit_target, campaignCurrency(camp.platform))}</strong></span>}
+                    {ct==='pct_reward'   && <span style={{ color:'#3fb950' }}>{L2('Reward','奖励')}: <strong>{camp.reward_pct||6}%{camp.reward_cap?` (${L2('max','上限')} ${rmFmt(camp.reward_cap, campaignCurrency(camp.platform))})`:''}</strong></span>}
+                    {ct==='fixed_reward' && camp.is_multi_level && <span style={{ color:'#b9f2ff' }}>{L2('Levels','级别')}: <strong>{camp.max_levels || 0}</strong> · Credit</span>}
+                     {ct==='fixed_reward' && !camp.is_multi_level && <span style={{ color:'#b9f2ff' }}>{L2('Reward','奖励')}: <strong>{rmFmt(camp.reward_fixed, campaignCurrency(camp.platform))}</strong></span>}
+                    {ct==='tiered_reward' && <span style={{ color:'#f0883e' }}>{L2('Tiers','等级')}: <strong>{camp.reward_tiers?.length||0} {L2('levels','级')}</strong></span>}
+                    {ct==='gold_bar'     && <span style={{ color:'#ffd700' }}>{L2('Gold Bar','金条')}: <strong>{rmFmt(camp.gold_bar_value, campaignCurrency(camp.platform))}</strong></span>}
                   </div>
                 </div>
               </div>
@@ -1818,16 +1838,16 @@ export default function Campaigns() {
                         border:`2px solid ${form.campaign_type===k?v.color:'var(--border)'}`,
                         background: form.campaign_type===k?v.color+'11':'var(--surface2)',
                         transition:'all .15s' }}>
-                      <div style={{ fontSize:14, fontWeight:700, color:form.campaign_type===k?v.color:'var(--text)' }}>{v.label}</div>
-                      <div style={{ fontSize:11, color:'var(--muted)', marginTop:3 }}>{v.desc}</div>
+                      <div style={{ fontSize:14, fontWeight:700, color:form.campaign_type===k?v.color:'var(--text)' }}>{tLabel(v)}</div>
+                      <div style={{ fontSize:11, color:'var(--muted)', marginTop:3 }}>{tDesc(v)}</div>
                     </div>
                   ))}
                 </div>
               </div>
 
               <div style={s.g2}>
-                <div style={s.frow}><div style={s.flbl}>{t('campaigns.campaignName')} *</div><input style={s.finput} value={form.campaign_name} onChange={e=>setForm({...form,campaign_name:e.target.value})} placeholder="e.g. June Deposit Reward" /></div>
-                <div style={s.frow}><div style={s.flbl}>{t('campaigns.campaignCode')}</div><input style={s.finput} value={form.campaign_code} onChange={e=>setForm({...form,campaign_code:e.target.value.toUpperCase()})} placeholder="e.g. DEP-REWARD-JUN26" /></div>
+                <div style={s.frow}><div style={s.flbl}>{t('campaigns.campaignName')} *</div><input style={s.finput} value={form.campaign_name} onChange={e=>setForm({...form,campaign_name:e.target.value})} placeholder={L2('e.g. June Deposit Reward','例如：六月存款奖励')} /></div>
+                <div style={s.frow}><div style={s.flbl}>{t('campaigns.campaignCode')}</div><input style={s.finput} value={form.campaign_code} onChange={e=>setForm({...form,campaign_code:e.target.value.toUpperCase()})} placeholder={L2('e.g. DEP-REWARD-JUN26','例如：DEP-REWARD-JUN26')} /></div>
                 <div style={s.frow}><div style={s.flbl}>{t('campaigns.platform')}</div>
                   <select style={s.fsel} value={form.platform} onChange={e=>setForm({...form,platform:e.target.value})}>
                     {PLATFORMS.map(p=><option key={p}>{p}</option>)}
@@ -1835,7 +1855,7 @@ export default function Campaigns() {
                 </div>
                 <div style={s.frow}><div style={s.flbl}>{t('common.status')}</div>
                   <select style={s.fsel} value={form.status} onChange={e=>setForm({...form,status:e.target.value})}>
-                    {['draft','upcoming','active','paused','ended'].map(s=><option key={s}>{s}</option>)}
+                    {['draft','upcoming','active','paused','ended'].map(s=><option key={s} value={s}>{STATUS_LABEL[s]||s}</option>)}
                   </select>
                 </div>
                 <div style={s.frow}><div style={s.flbl}>{t('campaigns.startDate')}</div><input type="date" style={s.finput} value={form.start_date} onChange={e=>setForm({...form,start_date:e.target.value})} /></div>
@@ -1848,19 +1868,19 @@ export default function Campaigns() {
                 {/* Type-specific reward fields */}
                 {form.campaign_type === 'pct_reward' && (
                   <div style={s.frow}>
-                    <div style={s.flbl}>Reward % (e.g. 6 = 6%)</div>
+                    <div style={s.flbl}>{L2('Reward % (e.g. 6 = 6%)','奖励 %（例如 6 = 6%）')}</div>
                     <input type="number" style={s.finput} value={form.reward_pct} onChange={e=>setForm({...form,reward_pct:e.target.value})} placeholder="6" />
                     <div style={{ fontSize:11, color:'#3fb950', marginTop:4 }}>
-                      e.g. RM 50,000 × {form.reward_pct||6}% = {rmFmt((parseFloat(form.deposit_target)||50000)*(parseFloat(form.reward_pct)||6)/100)} reward
+                      {L2('e.g.','例如')} RM 50,000 × {form.reward_pct||6}% = {rmFmt((parseFloat(form.deposit_target)||50000)*(parseFloat(form.reward_pct)||6)/100)} {L2('reward','奖励')}
                     </div>
                     <div style={{ display:'flex', alignItems:'center', gap:10, marginTop:8 }}>
                       <label style={{ fontSize:12, color:'var(--muted)', display:'flex', alignItems:'center', gap:6, cursor:'pointer' }}>
                         <input type="checkbox" checked={form.has_cap} onChange={e=>setForm({...form,has_cap:e.target.checked,reward_cap:''})} />
-                        Max reward cap?
+                        {L2('Max reward cap?','设置奖励上限？')}
                       </label>
                       {form.has_cap && (
                         <div style={{ flex:1 }}>
-                          <input type="number" style={{ ...s.finput }} value={form.reward_cap} onChange={e=>setForm({...form,reward_cap:e.target.value})} placeholder="e.g. 5000 (max payout)" />
+                          <input type="number" style={{ ...s.finput }} value={form.reward_cap} onChange={e=>setForm({...form,reward_cap:e.target.value})} placeholder={L2('e.g. 5000 (max payout)','例如：5000（最高派彩）')} />
                         </div>
                       )}
                     </div>
@@ -1868,13 +1888,13 @@ export default function Campaigns() {
                 )}
                 {form.campaign_type === 'fixed_reward' && (
                   <div style={s.frow}>
-                    <div style={s.flbl}>Fixed Reward Amount (RM)</div>
+                    <div style={s.flbl}>{L2('Fixed Reward Amount (RM)','固定奖励金额 (RM)')}</div>
                     <input type="number" style={s.finput} value={form.reward_fixed} onChange={e=>setForm({...form,reward_fixed:e.target.value})} placeholder="3000" />
                   </div>
                 )}
                 {form.campaign_type === 'gold_bar' && (
                   <div style={s.frow}>
-                    <div style={s.flbl}>Gold Bar Value (RM)</div>
+                    <div style={s.flbl}>{L2('Gold Bar Value (RM)','金条价值 (RM)')}</div>
                     <input type="number" style={s.finput} value={form.gold_bar_value} onChange={e=>setForm({...form,gold_bar_value:e.target.value})} placeholder="3400" />
                   </div>
                 )}
@@ -1887,29 +1907,29 @@ export default function Campaigns() {
               {form.campaign_type === 'tiered_reward' && (
                 <div style={{ ...s.frow, gridColumn:'1/-1' }}>
                   <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
-                    <div style={s.flbl}>REWARD TIERS (deposit range → reward %)</div>
+                    <div style={s.flbl}>{L2('REWARD TIERS (deposit range → reward %)','奖励等级（存款范围 → 奖励 %）')}</div>
                     <button type="button" style={{ ...s.btnSm, fontSize:11 }}
                       onClick={()=>setForm(f=>({...f,reward_tiers:[...f.reward_tiers,{min:'',max:'',pct:''}]}))}>
-                      + Add Tier
+                      {L2('+ Add Tier','+ 添加等级')}
                     </button>
                   </div>
                   <div style={{ background:'var(--bg)', border:'1px solid var(--border)', borderRadius:8, overflow:'hidden' }}>
                     <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr auto', gap:0, padding:'6px 12px', background:'var(--surface2)', fontSize:11, color:'var(--muted)', fontWeight:700 }}>
-                      <span>MIN DEPOSIT (RM)</span><span>MAX DEPOSIT (RM)</span><span>REWARD %</span><span></span>
+                      <span>{L2('MIN DEPOSIT (RM)','最低存款 (RM)')}</span><span>{L2('MAX DEPOSIT (RM)','最高存款 (RM)')}</span><span>{L2('REWARD %','奖励 %')}</span><span></span>
                     </div>
                     {form.reward_tiers.map((tier, i) => (
                       <div key={i} style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr auto', gap:8, padding:'8px 12px', borderTop:'1px solid var(--border)', alignItems:'center' }}>
-                        <input type="number" style={s.smInput} value={tier.min} placeholder="e.g. 10000"
+                        <input type="number" style={s.smInput} value={tier.min} placeholder={L2('e.g. 10000','例如：10000')}
                           onChange={e=>{ const t=[...form.reward_tiers]; t[i]={...t[i],min:e.target.value}; setForm(f=>({...f,reward_tiers:t})) }} />
-                        <input type="number" style={s.smInput} value={tier.max} placeholder="blank = no limit"
+                        <input type="number" style={s.smInput} value={tier.max} placeholder={L2('blank = no limit','留空 = 无上限')}
                           onChange={e=>{ const t=[...form.reward_tiers]; t[i]={...t[i],max:e.target.value}; setForm(f=>({...f,reward_tiers:t})) }} />
                         <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-                          <input type="number" style={{ ...s.smInput, width:70 }} value={tier.pct} placeholder="e.g. 6"
+                          <input type="number" style={{ ...s.smInput, width:70 }} value={tier.pct} placeholder={L2('e.g. 6','例如：6')}
                             onChange={e=>{ const t=[...form.reward_tiers]; t[i]={...t[i],pct:e.target.value}; setForm(f=>({...f,reward_tiers:t})) }} />
                           <span style={{ fontSize:12, color:'var(--muted)' }}>%</span>
                           {tier.min && tier.pct && (
                             <span style={{ fontSize:11, color:'#3fb950' }}>
-                              e.g. {rmFmt(parseFloat(tier.min))} × {tier.pct}% = {rmFmt(parseFloat(tier.min)*parseFloat(tier.pct)/100)}
+                              {L2('e.g.','例如')} {rmFmt(parseFloat(tier.min))} × {tier.pct}% = {rmFmt(parseFloat(tier.min)*parseFloat(tier.pct)/100)}
                             </span>
                           )}
                         </div>
@@ -1918,7 +1938,7 @@ export default function Campaigns() {
                       </div>
                     ))}
                     {form.reward_tiers.length === 0 && (
-                      <div style={{ padding:'12px', fontSize:12, color:'var(--muted)', textAlign:'center' }}>No tiers yet — click "+ Add Tier"</div>
+                      <div style={{ padding:'12px', fontSize:12, color:'var(--muted)', textAlign:'center' }}>{L2('No tiers yet — click "+ Add Tier"','暂无等级 — 点击“+ 添加等级”')}</div>
                     )}
                   </div>
                 </div>
@@ -1928,9 +1948,9 @@ export default function Campaigns() {
               {form.campaign_type === 'dual_tier' && (
                 <div style={{ ...s.frow, gridColumn:'1/-1' }}>
                   <div style={{ marginBottom:14 }}>
-                    <div style={s.flbl}>Settlement Frequency</div>
+                    <div style={s.flbl}>{L2('Settlement Frequency','结算频率')}</div>
                     <div style={{ display:'flex', gap:16, marginTop:6 }}>
-                      {[['total','Total — accumulates across the whole campaign period'],['daily','Daily — each day settles independently, does not carry over']].map(([v,label]) => (
+                      {[['total',L2('Total — accumulates across the whole campaign period','累计 — 整个活动期间累计计算')],['daily',L2('Daily — each day settles independently, does not carry over','每日 — 每天独立结算，不累计到次日')]].map(([v,label]) => (
                         <label key={v} style={{ display:'flex', alignItems:'center', gap:6, fontSize:12, cursor:'pointer' }}>
                           <input type="radio" checked={(form.settlement_frequency||'total')===v} onChange={()=>setForm(f=>({...f,settlement_frequency:v}))} />
                           {label}
@@ -1939,41 +1959,41 @@ export default function Campaigns() {
                     </div>
                     {form.settlement_frequency==='daily' && (
                       <div style={{ fontSize:11, color:'var(--muted)', marginTop:4 }}>
-                        Daily settlement uses a separate day-by-day entry screen on the campaign detail page, once this campaign is created.
+                        {L2('Daily settlement uses a separate day-by-day entry screen on the campaign detail page, once this campaign is created.','每日结算在活动创建后，于活动详情页使用独立的逐日录入界面。')}
                       </div>
                     )}
                   </div>
                   <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
-                    <div style={s.flbl}>TIERS — must reach turnover to earn that tier's reward{form.settlement_frequency!=='daily' && ' (and deposit, if set)'}</div>
+                    <div style={s.flbl}>{L2("TIERS — must reach turnover to earn that tier's reward",'等级 — 须达到流水才能获得该等级奖励')}{form.settlement_frequency!=='daily' && L2(' (and deposit, if set)','（及存款，如有设置）')}</div>
                     <button type="button" style={{ ...s.btnSm, fontSize:11 }}
                       onClick={()=>setForm(f=>({...f,reward_tiers:[...f.reward_tiers,{depositThreshold:'',turnoverThreshold:'',creditAmount:'',wcashAmount:''}]}))}>
-                      + Add Tier
+                      {L2('+ Add Tier','+ 添加等级')}
                     </button>
                   </div>
                   <div style={{ background:'var(--bg)', border:'1px solid var(--border)', borderRadius:8, overflow:'hidden' }}>
                     <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr 1fr auto', gap:0, padding:'6px 12px', background:'var(--surface2)', fontSize:11, color:'var(--muted)', fontWeight:700 }}>
-                      <span>DEPOSIT ≥ (RM) — optional</span><span>TURNOVER ≥ (RM)</span><span>CREDIT (RM)</span><span>WCASH (RM)</span><span></span>
+                      <span>{L2('DEPOSIT ≥ (RM) — optional','存款 ≥ (RM) — 可选')}</span><span>{L2('TURNOVER ≥ (RM)','流水 ≥ (RM)')}</span><span>CREDIT (RM)</span><span>WCASH (RM)</span><span></span>
                     </div>
                     {form.reward_tiers.map((tier, i) => (
                       <div key={i} style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr 1fr auto', gap:8, padding:'8px 12px', borderTop:'1px solid var(--border)', alignItems:'center' }}>
-                        <input type="number" style={s.smInput} value={tier.depositThreshold||''} placeholder="leave blank to skip"
+                        <input type="number" style={s.smInput} value={tier.depositThreshold||''} placeholder={L2('leave blank to skip','留空则跳过')}
                           onChange={e=>{ const t=[...form.reward_tiers]; t[i]={...t[i],depositThreshold:e.target.value}; setForm(f=>({...f,reward_tiers:t})) }} />
-                        <input type="number" style={s.smInput} value={tier.turnoverThreshold||''} placeholder="e.g. 100000"
+                        <input type="number" style={s.smInput} value={tier.turnoverThreshold||''} placeholder={L2('e.g. 100000','例如：100000')}
                           onChange={e=>{ const t=[...form.reward_tiers]; t[i]={...t[i],turnoverThreshold:e.target.value}; setForm(f=>({...f,reward_tiers:t})) }} />
-                        <input type="number" style={s.smInput} value={tier.creditAmount||''} placeholder="e.g. 200"
+                        <input type="number" style={s.smInput} value={tier.creditAmount||''} placeholder={L2('e.g. 200','例如：200')}
                           onChange={e=>{ const t=[...form.reward_tiers]; t[i]={...t[i],creditAmount:e.target.value}; setForm(f=>({...f,reward_tiers:t})) }} />
-                        <input type="number" style={s.smInput} value={tier.wcashAmount||''} placeholder="e.g. 200"
+                        <input type="number" style={s.smInput} value={tier.wcashAmount||''} placeholder={L2('e.g. 200','例如：200')}
                           onChange={e=>{ const t=[...form.reward_tiers]; t[i]={...t[i],wcashAmount:e.target.value}; setForm(f=>({...f,reward_tiers:t})) }} />
                         <button type="button" onClick={()=>{ const t=form.reward_tiers.filter((_,j)=>j!==i); setForm(f=>({...f,reward_tiers:t})) }}
                           style={{ background:'none', border:'1px solid rgba(248,81,73,.3)', color:'#f85149', padding:'2px 8px', borderRadius:5, fontSize:12, cursor:'pointer' }}>✕</button>
                       </div>
                     ))}
                     {form.reward_tiers.length === 0 && (
-                      <div style={{ padding:'12px', fontSize:12, color:'var(--muted)', textAlign:'center' }}>No tiers yet — click "+ Add Tier"</div>
+                      <div style={{ padding:'12px', fontSize:12, color:'var(--muted)', textAlign:'center' }}>{L2('No tiers yet — click "+ Add Tier"','暂无等级 — 点击“+ 添加等级”')}</div>
                     )}
                   </div>
                   <div style={{ fontSize:11, color:'var(--muted)', marginTop:6 }}>
-                    A player only earns the HIGHEST tier where all set conditions are met simultaneously — not each tier added up. Leave Deposit blank on every tier for a turnover-only campaign.
+                    {L2('A player only earns the HIGHEST tier where all set conditions are met simultaneously — not each tier added up. Leave Deposit blank on every tier for a turnover-only campaign.','玩家只获得同时满足所有设定条件的最高等级奖励 — 不会逐级累加。若为纯流水活动，所有等级的存款请留空。')}
                   </div>
                 </div>
               )}
@@ -1982,19 +2002,19 @@ export default function Campaigns() {
                 <div style={{ marginBottom:14 }}>
                   <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, marginBottom:14 }}>
                     <div>
-                      <div style={s.flbl}>Min Valid Bet (RM) *</div>
+                      <div style={s.flbl}>{L2('Min Valid Bet (RM) *','最低有效投注 (RM) *')}</div>
                       <input type="number" style={s.finput} value={form.min_valid_bet}
-                        onChange={e => setForm(f => ({ ...f, min_valid_bet: e.target.value }))} placeholder="e.g. 3000000" />
-                      <div style={{ fontSize:11, color:'var(--muted)', marginTop:3 }}>Monthly valid bet required to qualify</div>
+                        onChange={e => setForm(f => ({ ...f, min_valid_bet: e.target.value }))} placeholder={L2('e.g. 3000000','例如：3000000')} />
+                      <div style={{ fontSize:11, color:'var(--muted)', marginTop:3 }}>{L2('Monthly valid bet required to qualify','达标所需的每月有效投注')}</div>
                     </div>
                     <div>
-                      <div style={s.flbl}>Min Deposit (RM) - optional</div>
+                      <div style={s.flbl}>{L2('Min Deposit (RM) - optional','最低存款 (RM) - 可选')}</div>
                       <input type="number" style={s.finput} value={form.min_deposit_lb||''}
-                        onChange={e => setForm(f => ({ ...f, min_deposit_lb: e.target.value }))} placeholder="e.g. 50000" />
-                      <div style={{ fontSize:11, color:'var(--muted)', marginTop:3 }}>Qualify if deposit OR valid bet met</div>
+                        onChange={e => setForm(f => ({ ...f, min_deposit_lb: e.target.value }))} placeholder={L2('e.g. 50000','例如：50000')} />
+                      <div style={{ fontSize:11, color:'var(--muted)', marginTop:3 }}>{L2('Qualify if deposit OR valid bet met','存款或有效投注任一达标即合格')}</div>
                     </div>
                     <div>
-                      <div style={s.flbl}>Top N (slots) *</div>
+                      <div style={s.flbl}>{L2('Top N (slots) *','前 N 名（名额）*')}</div>
                       <input type="number" style={s.finput} value={form.top_n} min={1} max={20}
                         onChange={e => {
                           const n = parseInt(e.target.value)||1
@@ -2003,32 +2023,32 @@ export default function Campaigns() {
                         }} />
                     </div>
                   </div>
-                  <div style={s.flbl}>Reward per Rank (RM)</div>
+                  <div style={s.flbl}>{L2('Reward per Rank (RM)','每个名次奖励 (RM)')}</div>
                   <div style={{ background:'var(--bg)', border:'1px solid var(--border)', borderRadius:8, overflow:'hidden' }}>
                     <div style={{ display:'grid', gridTemplateColumns:'80px 1fr 1fr', padding:'6px 12px', background:'var(--surface2)', fontSize:11, color:'var(--muted)', fontWeight:700 }}>
-                      <span>Rank</span><span>Amount (RM)</span><span>Description</span>
+                      <span>{L2('Rank','名次')}</span><span>{L2('Amount (RM)','金额 (RM)')}</span><span>{L2('Description','描述')}</span>
                     </div>
                     {form.rank_rewards.map((r, i) => (
                       <div key={i} style={{ display:'grid', gridTemplateColumns:'80px 1fr 1fr', gap:8, padding:'8px 12px', borderTop:'1px solid var(--border)', alignItems:'center' }}>
                         <span style={{ fontWeight:700, color:'#a78bfa', fontSize:13 }}>
-                          {i===0?'#1 Top 1':i===1?'#2 Top 2':i===2?'#3 Top 3':'#'+(i+1)+' Top '+(i+1)}
+                          {'#'+(i+1)+L2(' Top ',' 第 ')+(i+1)+L2('',' 名')}
                         </span>
-                        <input type="number" style={s.smInput} value={r.amount} placeholder="e.g. 12000"
+                        <input type="number" style={s.smInput} value={r.amount} placeholder={L2('e.g. 12000','例如：12000')}
                           onChange={e => { const rw=[...form.rank_rewards]; rw[i]={...rw[i],amount:parseFloat(e.target.value)||0}; setForm(f=>({...f,rank_rewards:rw})) }} />
-                        <input style={s.smInput} value={r.desc||''} placeholder="e.g. Cash Voucher 12K"
+                        <input style={s.smInput} value={r.desc||''} placeholder={L2('e.g. Cash Voucher 12K','例如：现金券 12K')}
                           onChange={e => { const rw=[...form.rank_rewards]; rw[i]={...rw[i],desc:e.target.value}; setForm(f=>({...f,rank_rewards:rw})) }} />
                       </div>
                     ))}
                   </div>
                   <div style={{ marginTop:8, fontSize:12, color:'#a78bfa', fontWeight:600 }}>
-                    Total reward cost: RM {(form.rank_rewards.reduce((s,r)=>s+(parseFloat(r.amount)||0),0)).toLocaleString('en-MY')}
+                    {L2('Total reward cost','总奖励成本')}: RM {(form.rank_rewards.reduce((s,r)=>s+(parseFloat(r.amount)||0),0)).toLocaleString('en-MY')}
                   </div>
                 </div>
               )}
 
               <div style={s.g2}>
               <div style={s.frow}>
-                <div style={s.flbl}>Reward Delivery Method</div>
+                <div style={s.flbl}>{L2('Reward Delivery Method','奖励发放方式')}</div>
                 <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginTop:6 }}>
                   {Object.entries(REWARD_DELIVERY).map(([k,v]) => (
                     <div key={k} onClick={()=>setForm(f=>({...f,reward_delivery:k}))}
@@ -2037,24 +2057,24 @@ export default function Campaigns() {
                         background: form.reward_delivery===k?v.color+'22':'var(--surface2)',
                         color: form.reward_delivery===k?v.color:'var(--muted)',
                         transition:'all .15s' }}>
-                      {v.label}
+                      {tLabel(v)}
                     </div>
                   ))}
                 </div>
               </div>
 
               <div style={s.frow}>
-                <div style={s.flbl}>Target Tiers</div>
+                <div style={s.flbl}>{L2('Target Tiers','目标等级')}</div>
                 <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginTop:6 }}>
                   {TIERS.map(tier => { const active=form.target_tier.includes(tier); return (
                     <div key={tier} onClick={()=>toggleTier(tier)} style={{ ...s.badge, cursor:'pointer', background:active?TIER_BG[tier]:'var(--surface2)', color:active?TIER_COLOR[tier]:'var(--muted)', border:`1px solid ${active?TIER_COLOR[tier]:'var(--border)'}`, padding:'5px 14px' }}>{tier}</div>
                   )})}
                 </div>
-                <div style={{ fontSize:11, color:'var(--muted)', marginTop:6 }}>💡 Leave blank — all tiers will be eligible</div>
+                <div style={{ fontSize:11, color:'var(--muted)', marginTop:6 }}>💡 {L2('Leave blank — all tiers will be eligible','留空 — 所有等级均可参加')}</div>
               </div>
-              <div style={s.frow}><div style={s.flbl}>Offer Description</div><textarea style={s.fta} rows={2} value={form.offer_desc} onChange={e=>setForm({...form,offer_desc:e.target.value})} placeholder="What's being offered?" /></div>
-              <div style={s.frow}><div style={s.flbl}>Turnover Multiplier <span style={{ fontWeight:400, color:'var(--muted)', fontSize:10 }}>(WA message — e.g. 3 means reward × 3 required before withdrawal)</span></div><input type="number" min="1" step="0.5" style={s.finput} value={form.turnover_multiplier??''} onChange={e=>setForm({...form,turnover_multiplier:e.target.value})} placeholder="e.g. 3 (leave blank = no requirement)" /></div>
-              <div style={s.frow}><div style={s.flbl}>Notes</div><textarea style={s.fta} rows={2} value={form.notes} onChange={e=>setForm({...form,notes:e.target.value})} /></div>
+              <div style={s.frow}><div style={s.flbl}>{L2('Offer Description','优惠描述')}</div><textarea style={s.fta} rows={2} value={form.offer_desc} onChange={e=>setForm({...form,offer_desc:e.target.value})} placeholder={L2("What's being offered?",'提供什么优惠？')} /></div>
+              <div style={s.frow}><div style={s.flbl}>{L2('Turnover Multiplier','流水倍数')} <span style={{ fontWeight:400, color:'var(--muted)', fontSize:10 }}>{L2('(WA message — e.g. 3 means reward × 3 required before withdrawal)','（WA 讯息 — 例如 3 表示提款前需完成奖励 × 3 的流水）')}</span></div><input type="number" min="1" step="0.5" style={s.finput} value={form.turnover_multiplier??''} onChange={e=>setForm({...form,turnover_multiplier:e.target.value})} placeholder={L2('e.g. 3 (leave blank = no requirement)','例如：3（留空 = 无要求）')} /></div>
+              <div style={s.frow}><div style={s.flbl}>{L2('Notes','备注')}</div><textarea style={s.fta} rows={2} value={form.notes} onChange={e=>setForm({...form,notes:e.target.value})} /></div>
               {msg.text && <div style={{ color:msg.ok?'#3fb950':'#f85149', fontSize:12, marginBottom:10 }}>{msg.text}</div>}
               <div style={{ display:'flex', gap:8 }}>
                 <button style={{ ...s.btn, opacity:saving?.5:1 }} onClick={createCampaign} disabled={saving}>{saving?t('campaigns.creating'):'✅ '+t('campaigns.createCampaign')}</button>
@@ -2073,35 +2093,35 @@ export default function Campaigns() {
               <div>
                 <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
                   <span style={{ fontSize:18, fontWeight:700 }}>{selected.campaign_name}</span>
-                  <span style={{ ...s.tag(typeInfo.color), fontSize:11 }}>{typeInfo.label}</span>
-                  <span style={{ ...s.tag(STATUS_COLOR[selected.status], STATUS_BG[selected.status]), fontSize:11 }}>{selected.status}</span>
+                  <span style={{ ...s.tag(typeInfo.color), fontSize:11 }}>{tLabel(typeInfo)}</span>
+                  <span style={{ ...s.tag(STATUS_COLOR[selected.status], STATUS_BG[selected.status]), fontSize:11 }}>{STATUS_LABEL[selected.status]||selected.status}</span>
                   {selected.platform && <span style={{ ...s.tag('#8b949e'), fontSize:11 }}>{selected.platform}</span>}
                 </div>
                 <div style={{ fontSize:12, color:'var(--muted)', marginTop:4 }}>
-                  {selected.campaign_code} · {campType==='leaderboard' ? `Min Valid Bet: ${rmFmt(selected.min_valid_bet, campCurrency)}` : campType==='dual_tier' ? `${(rewardTiers||[]).length} tier${(rewardTiers||[]).length===1?'':'s'}${selected.settlement_frequency==='daily' ? ' · Daily settlement' : ''}` : `Min Deposit: ${rmFmt(depTarget, campCurrency)}`} · {fmtDate(selected.start_date)} → {fmtDate(selected.end_date)}
-                  {campType==='pct_reward'   && ` · ${rewardPct}% ${deliveryInfo.label}${rewardCap?' (max '+rmFmt(rewardCap, campCurrency)+')':''}`}
-                  {campType==='fixed_reward' && ` · ${rmFmt(rewardFixed, campCurrency)} fixed ${deliveryInfo.label}`}
-                  {campType==='gold_bar'     && ` · Gold Bar ${rmFmt(goldVal, campCurrency)}`}
-                   {campType==='fixed_reward' && selected?.is_multi_level && ` · ${campaignLevels.length} Credit levels`}
-                  {campType==='tiered_reward' && ` · ${rewardTiers.length} reward tiers`}
+                  {selected.campaign_code} · {campType==='leaderboard' ? `${L2('Min Valid Bet','最低有效投注')}: ${rmFmt(selected.min_valid_bet, campCurrency)}` : campType==='dual_tier' ? `${(rewardTiers||[]).length} ${L2('tier'+((rewardTiers||[]).length===1?'':'s'),'个等级')}${selected.settlement_frequency==='daily' ? L2(' · Daily settlement',' · 每日结算') : ''}` : `${L2('Min Deposit','最低存款')}: ${rmFmt(depTarget, campCurrency)}`} · {fmtDate(selected.start_date)} → {fmtDate(selected.end_date)}
+                  {campType==='pct_reward'   && ` · ${rewardPct}% ${tLabel(deliveryInfo)}${rewardCap?' ('+L2('max ','上限 ')+rmFmt(rewardCap, campCurrency)+')':''}`}
+                  {campType==='fixed_reward' && ` · ${rmFmt(rewardFixed, campCurrency)} ${L2('fixed','固定')} ${tLabel(deliveryInfo)}`}
+                  {campType==='gold_bar'     && ` · ${L2('Gold Bar','金条')} ${rmFmt(goldVal, campCurrency)}`}
+                   {campType==='fixed_reward' && selected?.is_multi_level && ` · ${campaignLevels.length} ${L2('Credit levels','个 Credit 级别')}`}
+                  {campType==='tiered_reward' && ` · ${rewardTiers.length} ${L2('reward tiers','个奖励等级')}`}
                 </div>
               </div>
               <div style={{ display:'flex', gap:6, flexShrink:0 }}>
                 {selected.status==='draft' && (() => {
                   const today = new Date().toISOString().slice(0,10)
                   const isFuture = selected.start_date && selected.start_date > today
-                  return <button style={s.btnG} onClick={()=>setCampStatus(selected.id, isFuture ? 'upcoming' : 'active')}>▶ {isFuture ? 'Publish Upcoming' : t('campaigns.activate')}</button>
+                  return <button style={s.btnG} onClick={()=>setCampStatus(selected.id, isFuture ? 'upcoming' : 'active')}>▶ {isFuture ? L2('Publish Upcoming','发布为即将开始') : t('campaigns.activate')}</button>
                 })()}
-                {selected.status==='upcoming' && <><button style={{ ...s.btnG, background:'#3fb950', borderColor:'#3fb950' }} onClick={()=>setCampStatus(selected.id,'active')}>🚀 Launch Now</button><button style={s.btnSm} onClick={()=>setCampStatus(selected.id,'draft')}>↩ Back to Draft</button></>}
+                {selected.status==='upcoming' && <><button style={{ ...s.btnG, background:'#3fb950', borderColor:'#3fb950' }} onClick={()=>setCampStatus(selected.id,'active')}>🚀 {L2('Launch Now','立即启动')}</button><button style={s.btnSm} onClick={()=>setCampStatus(selected.id,'draft')}>↩ {L2('Back to Draft','退回草稿')}</button></>}
                 {selected.status==='active' && <><button style={s.btnSm} onClick={()=>setCampStatus(selected.id,'paused')}>⏸ {t('campaigns.pause')}</button><button style={s.btnR} onClick={()=>setCampStatus(selected.id,'ended')}>⏹ {t('campaigns.end')}</button></>}
                 {selected.status==='paused' && <button style={s.btnG} onClick={()=>setCampStatus(selected.id,'active')}>▶ {t('campaigns.resume')}</button>}
                 {players.length > 0 && (
                   <button style={{ ...s.btnSm, color:'#a78bfa', borderColor:'#a78bfa' }} disabled={analyzing} onClick={runCampaignAnalysis}>
-                    {analyzing ? '⏳ Analyzing…' : '🤖 Analyze'}
+                    {analyzing ? L2('⏳ Analyzing…','⏳ 分析中…') : L2('🤖 Analyze','🤖 分析')}
                   </button>
                 )}
-                <button style={{ ...s.btnSm, color:'var(--accent)', borderColor:'var(--accent)' }} onClick={openCampaignEditor} disabled={levelsLoading}>✏️ {levelsLoading ? 'Loading…' : 'Edit'}</button>
-                <button style={s.btnR} onClick={deleteCampaign}>🗑 Delete</button>
+                <button style={{ ...s.btnSm, color:'var(--accent)', borderColor:'var(--accent)' }} onClick={openCampaignEditor} disabled={levelsLoading}>✏️ {levelsLoading ? L2('Loading…','加载中…') : L2('Edit','编辑')}</button>
+                <button style={s.btnR} onClick={deleteCampaign}>🗑 {L2('Delete','删除')}</button>
                 <button onClick={closeModal} style={{ background:'none',border:'none',color:'var(--muted)',fontSize:22,cursor:'pointer' }}>×</button>
               </div>
             </div>
@@ -2109,7 +2129,7 @@ export default function Campaigns() {
             {aiAnalysis && (
               <div style={{ margin:'12px 24px', background:'rgba(167,139,250,.08)', border:'1px solid rgba(167,139,250,.3)', borderRadius:10, padding:'14px 18px' }}>
                 <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:8 }}>
-                  <span style={{ fontSize:11, fontWeight:700, color:'#a78bfa', textTransform:'uppercase', letterSpacing:'.5px' }}>🤖 AI Campaign Analysis</span>
+                  <span style={{ fontSize:11, fontWeight:700, color:'#a78bfa', textTransform:'uppercase', letterSpacing:'.5px' }}>{L2('🤖 AI Campaign Analysis','🤖 AI 活动分析')}</span>
                   <button onClick={()=>setAiAnalysis(null)} style={{ background:'none', border:'none', color:'var(--muted)', cursor:'pointer', fontSize:16 }}>×</button>
                 </div>
                 <div style={{ fontSize:13, lineHeight:1.7, color:'var(--text)', whiteSpace:'pre-wrap' }}>{aiAnalysis}</div>
@@ -2119,7 +2139,7 @@ export default function Campaigns() {
             {/* Tiered Reward Reference */}
             {campType === 'tiered_reward' && rewardTiers.length > 0 && !editingCamp && (
               <div style={{ padding:'8px 24px', borderBottom:'1px solid var(--border)', background:'rgba(240,136,62,.05)' }}>
-                <span style={{ fontSize:11, color:'#f0883e', fontWeight:700, marginRight:16 }}>📊 REWARD TIERS:</span>
+                <span style={{ fontSize:11, color:'#f0883e', fontWeight:700, marginRight:16 }}>{L2('📊 REWARD TIERS:','📊 奖励等级：')}</span>
                 {[...rewardTiers].sort((a,b)=>parseFloat(a.min)-parseFloat(b.min)).map((tier,i)=>(
                   <span key={i} style={{ fontSize:11, color:'var(--muted)', marginRight:16 }}>
                     {rmFmt(tier.min, campCurrency)}–{tier.max?rmFmt(tier.max, campCurrency):'∞'} → <strong style={{ color:'#f0883e' }}>{tier.pct}%</strong>
@@ -2133,87 +2153,87 @@ export default function Campaigns() {
               <div style={{ padding:'18px 24px', borderBottom:'1px solid var(--border)', background:'rgba(99,102,241,.06)' }}>
                 <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:12, marginBottom:14 }}>
                   <div>
-                    <div style={{ fontSize:13, fontWeight:800, color:'var(--accent)' }}>✏️ CAMPAIGN EDITOR</div>
-                    <div style={{ fontSize:11, color:'var(--muted)', marginTop:3 }}>Edit the campaign configuration stored in Supabase.</div>
+                    <div style={{ fontSize:13, fontWeight:800, color:'var(--accent)' }}>{L2('✏️ CAMPAIGN EDITOR','✏️ 活动编辑器')}</div>
+                    <div style={{ fontSize:11, color:'var(--muted)', marginTop:3 }}>{L2('Edit the campaign configuration stored in Supabase.','编辑储存在 Supabase 中的活动配置。')}</div>
                   </div>
-                  <span style={{ ...s.tag('#8b949e'), fontSize:10 }}>{editCampForm.campaign_code || 'NEW CODE'}</span>
+                  <span style={{ ...s.tag('#8b949e'), fontSize:10 }}>{editCampForm.campaign_code || L2('NEW CODE','新代码')}</span>
                 </div>
 
                 <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))', gap:'10px 14px', marginBottom:16 }}>
-                  <div><div style={s.flbl}>Campaign Name *</div><input style={s.finput} value={editCampForm.campaign_name||''} onChange={e=>setEditCampForm(f=>({...f,campaign_name:e.target.value}))} /></div>
-                  <div><div style={s.flbl}>Campaign Code *</div><input style={s.finput} value={editCampForm.campaign_code||''} onChange={e=>setEditCampForm(f=>({...f,campaign_code:e.target.value.toUpperCase()}))} /></div>
-                  <div><div style={s.flbl}>Campaign Type</div><select style={s.fsel} value={editCampForm.campaign_type||'gold_bar'} onChange={e=>setEditCampForm(f=>({...f,campaign_type:e.target.value}))}>{Object.entries(CAMPAIGN_TYPES).map(([k,v])=><option key={k} value={k}>{k==='fixed_reward' && editCampForm.is_multi_level ? 'Tiered Deposit Reward' : v.label.replace(/^[^ ]+ /,'')}</option>)}</select></div>
-                  <div><div style={s.flbl}>Campaign Category (Optional)</div><select style={s.fsel} value={editCampForm.campaign_category||'standard'} onChange={e=>setEditCampForm(f=>({...f,campaign_category:e.target.value}))}><option value="standard">Standard</option><option value="deposit_milestone">Deposit Milestone</option><option value="leaderboard">Leaderboard</option><option value="vip_exclusive">VIP Exclusive</option></select></div>
-                  <div><div style={s.flbl}>Platform</div><select style={s.fsel} value={editCampForm.platform||'MY'} onChange={e=>setEditCampForm(f=>({...f,platform:e.target.value}))}>{PLATFORMS.map(p=><option key={p} value={p}>{p}</option>)}</select></div>
-                  <div><div style={s.flbl}>Status</div><select style={s.fsel} value={editCampForm.status||'draft'} onChange={e=>setEditCampForm(f=>({...f,status:e.target.value}))}>{['draft','upcoming','active','paused','ended'].map(v=><option key={v} value={v}>{v.toUpperCase()}</option>)}</select></div>
-                  <div><div style={s.flbl}>Festival / Occasion</div><input style={s.finput} value={editCampForm.festival||''} onChange={e=>setEditCampForm(f=>({...f,festival:e.target.value}))} placeholder="e.g. Merdeka 2026" /></div>
-                  <div><div style={s.flbl}>Budget (RM)</div><input type="number" min="0" style={s.finput} value={editCampForm.budget_rm??''} onChange={e=>setEditCampForm(f=>({...f,budget_rm:e.target.value}))} /></div>
+                  <div><div style={s.flbl}>{L2('Campaign Name *','活动名称 *')}</div><input style={s.finput} value={editCampForm.campaign_name||''} onChange={e=>setEditCampForm(f=>({...f,campaign_name:e.target.value}))} /></div>
+                  <div><div style={s.flbl}>{L2('Campaign Code *','活动代码 *')}</div><input style={s.finput} value={editCampForm.campaign_code||''} onChange={e=>setEditCampForm(f=>({...f,campaign_code:e.target.value.toUpperCase()}))} /></div>
+                  <div><div style={s.flbl}>{L2('Campaign Type','活动类型')}</div><select style={s.fsel} value={editCampForm.campaign_type||'gold_bar'} onChange={e=>setEditCampForm(f=>({...f,campaign_type:e.target.value}))}>{Object.entries(CAMPAIGN_TYPES).map(([k,v])=><option key={k} value={k}>{k==='fixed_reward' && editCampForm.is_multi_level ? L2('Tiered Deposit Reward','分级存款奖励') : tLabel(v).replace(/^[^ ]+ /,'')}</option>)}</select></div>
+                  <div><div style={s.flbl}>{L2('Campaign Category (Optional)','活动类别（可选）')}</div><select style={s.fsel} value={editCampForm.campaign_category||'standard'} onChange={e=>setEditCampForm(f=>({...f,campaign_category:e.target.value}))}><option value="standard">{L2('Standard','标准')}</option><option value="deposit_milestone">{L2('Deposit Milestone','存款里程碑')}</option><option value="leaderboard">{L2('Leaderboard','排行榜')}</option><option value="vip_exclusive">{L2('VIP Exclusive','VIP 专属')}</option></select></div>
+                  <div><div style={s.flbl}>{L2('Platform','平台')}</div><select style={s.fsel} value={editCampForm.platform||'MY'} onChange={e=>setEditCampForm(f=>({...f,platform:e.target.value}))}>{PLATFORMS.map(p=><option key={p} value={p}>{p}</option>)}</select></div>
+                  <div><div style={s.flbl}>{L2('Status','状态')}</div><select style={s.fsel} value={editCampForm.status||'draft'} onChange={e=>setEditCampForm(f=>({...f,status:e.target.value}))}>{['draft','upcoming','active','paused','ended'].map(v=><option key={v} value={v}>{lang==='zh' ? STATUS_LABEL[v] : v.toUpperCase()}</option>)}</select></div>
+                  <div><div style={s.flbl}>{L2('Festival / Occasion','节日 / 场合')}</div><input style={s.finput} value={editCampForm.festival||''} onChange={e=>setEditCampForm(f=>({...f,festival:e.target.value}))} placeholder={L2('e.g. Merdeka 2026','例如：Merdeka 2026')} /></div>
+                  <div><div style={s.flbl}>{L2('Budget (RM)','预算 (RM)')}</div><input type="number" min="0" style={s.finput} value={editCampForm.budget_rm??''} onChange={e=>setEditCampForm(f=>({...f,budget_rm:e.target.value}))} /></div>
                 </div>
 
                 <div style={{ borderTop:'1px solid var(--border)', paddingTop:14, marginBottom:14 }}>
-                  <div style={{ fontSize:11, fontWeight:800, color:'var(--muted)', marginBottom:10, letterSpacing:'.5px' }}>CAMPAIGN PERIOD & QUALIFICATION</div>
+                  <div style={{ fontSize:11, fontWeight:800, color:'var(--muted)', marginBottom:10, letterSpacing:'.5px' }}>{L2('CAMPAIGN PERIOD & QUALIFICATION','活动期间与资格')}</div>
                   <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))', gap:'10px 14px' }}>
-                    <div><div style={s.flbl}>Start Date</div><input type="date" style={s.finput} value={editCampForm.start_date||''} onChange={e=>setEditCampForm(f=>({...f,start_date:e.target.value}))} /></div>
-                    <div><div style={s.flbl}>End Date</div><input type="date" style={s.finput} value={editCampForm.end_date||''} onChange={e=>setEditCampForm(f=>({...f,end_date:e.target.value}))} /></div>
-                    {editCampForm.campaign_type!=='leaderboard' && editCampForm.campaign_type!=='dual_tier' && <div><div style={s.flbl}>Deposit Target</div><input type="number" min="0" style={s.finput} value={editCampForm.deposit_target??''} onChange={e=>setEditCampForm(f=>({...f,deposit_target:e.target.value}))} /></div>}
-                    {editCampForm.campaign_type==='leaderboard' && <><div><div style={s.flbl}>Minimum Valid Bet</div><input type="number" min="0" style={s.finput} value={editCampForm.min_valid_bet??''} onChange={e=>setEditCampForm(f=>({...f,min_valid_bet:e.target.value}))} /></div><div><div style={s.flbl}>Minimum Deposit</div><input type="number" min="0" style={s.finput} value={editCampForm.min_deposit_lb??''} onChange={e=>setEditCampForm(f=>({...f,min_deposit_lb:e.target.value}))} /></div></>}
-                    <div><div style={s.flbl}>Settlement Frequency</div><select style={s.fsel} value={editCampForm.settlement_frequency||'total'} onChange={e=>setEditCampForm(f=>({...f,settlement_frequency:e.target.value}))}><option value="total">Total</option><option value="daily">Daily</option></select></div>
-                    <label style={{ display:'flex', alignItems:'center', gap:8, fontSize:12, color:'var(--text)', paddingTop:18, cursor:'pointer' }}><input type="checkbox" checked={editCampForm.requires_period_deposit!==false} onChange={e=>setEditCampForm(f=>({...f,requires_period_deposit:e.target.checked}))} /> Requires period deposit</label>
+                    <div><div style={s.flbl}>{L2('Start Date','开始日期')}</div><input type="date" style={s.finput} value={editCampForm.start_date||''} onChange={e=>setEditCampForm(f=>({...f,start_date:e.target.value}))} /></div>
+                    <div><div style={s.flbl}>{L2('End Date','结束日期')}</div><input type="date" style={s.finput} value={editCampForm.end_date||''} onChange={e=>setEditCampForm(f=>({...f,end_date:e.target.value}))} /></div>
+                    {editCampForm.campaign_type!=='leaderboard' && editCampForm.campaign_type!=='dual_tier' && <div><div style={s.flbl}>{L2('Deposit Target','存款目标')}</div><input type="number" min="0" style={s.finput} value={editCampForm.deposit_target??''} onChange={e=>setEditCampForm(f=>({...f,deposit_target:e.target.value}))} /></div>}
+                    {editCampForm.campaign_type==='leaderboard' && <><div><div style={s.flbl}>{L2('Minimum Valid Bet','最低有效投注')}</div><input type="number" min="0" style={s.finput} value={editCampForm.min_valid_bet??''} onChange={e=>setEditCampForm(f=>({...f,min_valid_bet:e.target.value}))} /></div><div><div style={s.flbl}>{L2('Minimum Deposit','最低存款')}</div><input type="number" min="0" style={s.finput} value={editCampForm.min_deposit_lb??''} onChange={e=>setEditCampForm(f=>({...f,min_deposit_lb:e.target.value}))} /></div></>}
+                    <div><div style={s.flbl}>{L2('Settlement Frequency','结算频率')}</div><select style={s.fsel} value={editCampForm.settlement_frequency||'total'} onChange={e=>setEditCampForm(f=>({...f,settlement_frequency:e.target.value}))}><option value="total">{L2('Total','累计')}</option><option value="daily">{L2('Daily','每日')}</option></select></div>
+                    <label style={{ display:'flex', alignItems:'center', gap:8, fontSize:12, color:'var(--text)', paddingTop:18, cursor:'pointer' }}><input type="checkbox" checked={editCampForm.requires_period_deposit!==false} onChange={e=>setEditCampForm(f=>({...f,requires_period_deposit:e.target.checked}))} /> {L2('Requires period deposit','需要活动期间存款')}</label>
                   </div>
                 </div>
 
                 <div style={{ borderTop:'1px solid var(--border)', paddingTop:14, marginBottom:14 }}>
-                  <div style={{ fontSize:11, fontWeight:800, color:'var(--muted)', marginBottom:10, letterSpacing:'.5px' }}>TARGET VIP TIERS</div>
+                  <div style={{ fontSize:11, fontWeight:800, color:'var(--muted)', marginBottom:10, letterSpacing:'.5px' }}>{L2('TARGET VIP TIERS','目标 VIP 等级')}</div>
                   <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
                     {TIERS.map(tier=>{ const active=(editCampForm.target_tier||[]).includes(tier); return <button type="button" key={tier} onClick={()=>setEditCampForm(f=>({...f,target_tier:active?(f.target_tier||[]).filter(x=>x!==tier):[...(f.target_tier||[]),tier]}))} style={{ ...s.badge, padding:'6px 14px', cursor:'pointer', background:active?TIER_BG[tier]:'var(--surface2)', color:active?TIER_COLOR[tier]:'var(--muted)', border:`1px solid ${active?TIER_COLOR[tier]:'var(--border)'}` }}>{tier}</button> })}
                   </div>
                 </div>
 
                 <div style={{ borderTop:'1px solid var(--border)', paddingTop:14, marginBottom:14 }}>
-                  <div style={{ fontSize:11, fontWeight:800, color:'var(--muted)', marginBottom:10, letterSpacing:'.5px' }}>REWARD CONFIGURATION</div>
+                  <div style={{ fontSize:11, fontWeight:800, color:'var(--muted)', marginBottom:10, letterSpacing:'.5px' }}>{L2('REWARD CONFIGURATION','奖励配置')}</div>
                   <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))', gap:'10px 14px' }}>
-                    <div><div style={s.flbl}>Reward Delivery</div><select style={s.fsel} value={editCampForm.reward_delivery||'credit'} onChange={e=>setEditCampForm(f=>({...f,reward_delivery:e.target.value}))}>{Object.entries(REWARD_DELIVERY).map(([k,v])=><option key={k} value={k}>{v.label.replace(/^[^ ]+ /,'')}</option>)}</select></div>
-                    {editCampForm.campaign_type==='pct_reward' && <><div><div style={s.flbl}>Reward %</div><input type="number" min="0" step="0.01" style={s.finput} value={editCampForm.reward_pct??''} onChange={e=>setEditCampForm(f=>({...f,reward_pct:e.target.value}))} /></div><div><div style={s.flbl}>Reward Cap</div><input type="number" min="0" style={s.finput} value={editCampForm.reward_cap??''} onChange={e=>setEditCampForm(f=>({...f,reward_cap:e.target.value}))} placeholder="No cap" /></div></>}
-                    {editCampForm.campaign_type==='fixed_reward' && !editCampForm.is_multi_level && <div><div style={s.flbl}>Fixed Reward</div><input type="number" min="0" style={s.finput} value={editCampForm.reward_fixed??''} onChange={e=>setEditCampForm(f=>({...f,reward_fixed:e.target.value}))} /></div>}
-                    {editCampForm.campaign_type==='gold_bar' && <div><div style={s.flbl}>Gold Bar Value</div><input type="number" min="0" style={s.finput} value={editCampForm.gold_bar_value??''} onChange={e=>setEditCampForm(f=>({...f,gold_bar_value:e.target.value}))} /></div>}
+                    <div><div style={s.flbl}>{L2('Reward Delivery','奖励发放')}</div><select style={s.fsel} value={editCampForm.reward_delivery||'credit'} onChange={e=>setEditCampForm(f=>({...f,reward_delivery:e.target.value}))}>{Object.entries(REWARD_DELIVERY).map(([k,v])=><option key={k} value={k}>{tLabel(v).replace(/^[^ ]+ /,'')}</option>)}</select></div>
+                    {editCampForm.campaign_type==='pct_reward' && <><div><div style={s.flbl}>{L2('Reward %','奖励 %')}</div><input type="number" min="0" step="0.01" style={s.finput} value={editCampForm.reward_pct??''} onChange={e=>setEditCampForm(f=>({...f,reward_pct:e.target.value}))} /></div><div><div style={s.flbl}>{L2('Reward Cap','奖励上限')}</div><input type="number" min="0" style={s.finput} value={editCampForm.reward_cap??''} onChange={e=>setEditCampForm(f=>({...f,reward_cap:e.target.value}))} placeholder={L2('No cap','无上限')} /></div></>}
+                    {editCampForm.campaign_type==='fixed_reward' && !editCampForm.is_multi_level && <div><div style={s.flbl}>{L2('Fixed Reward','固定奖励')}</div><input type="number" min="0" style={s.finput} value={editCampForm.reward_fixed??''} onChange={e=>setEditCampForm(f=>({...f,reward_fixed:e.target.value}))} /></div>}
+                    {editCampForm.campaign_type==='gold_bar' && <div><div style={s.flbl}>{L2('Gold Bar Value','金条价值')}</div><input type="number" min="0" style={s.finput} value={editCampForm.gold_bar_value??''} onChange={e=>setEditCampForm(f=>({...f,gold_bar_value:e.target.value}))} /></div>}
                   </div>
                 </div>
 
                 <div style={{ borderTop:'1px solid var(--border)', paddingTop:14, marginBottom:14 }}>
                   <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10 }}>
-                    <div><div style={{ fontSize:11, fontWeight:800, color:'var(--muted)', letterSpacing:'.5px' }}>MULTI-LEVEL CAMPAIGN</div><div style={{ fontSize:10, color:'var(--muted)', marginTop:3 }}>Uses <code>campaign_levels</code> — the same source used by the Player Portal.</div></div>
-                    <label style={{ display:'flex', alignItems:'center', gap:8, fontSize:12, cursor:'pointer' }}><input type="checkbox" checked={Boolean(editCampForm.is_multi_level)} onChange={e=>setEditCampForm(f=>({...f,is_multi_level:e.target.checked,max_levels:e.target.checked?Math.max(1,campaignLevelsEdit.length):1}))} /> Enable levels</label>
+                    <div><div style={{ fontSize:11, fontWeight:800, color:'var(--muted)', letterSpacing:'.5px' }}>{L2('MULTI-LEVEL CAMPAIGN','多级别活动')}</div><div style={{ fontSize:10, color:'var(--muted)', marginTop:3 }}>{L2('Uses','使用')} <code>campaign_levels</code> {L2('— the same source used by the Player Portal.','— 与玩家门户使用相同的数据来源。')}</div></div>
+                    <label style={{ display:'flex', alignItems:'center', gap:8, fontSize:12, cursor:'pointer' }}><input type="checkbox" checked={Boolean(editCampForm.is_multi_level)} onChange={e=>setEditCampForm(f=>({...f,is_multi_level:e.target.checked,max_levels:e.target.checked?Math.max(1,campaignLevelsEdit.length):1}))} /> {L2('Enable levels','启用级别')}</label>
                   </div>
                   {editCampForm.is_multi_level && <>
                     <div style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'10px 12px', marginBottom:10 }}>
-                      <div style={{ fontSize:10, color:'var(--muted)', fontWeight:800, marginBottom:8 }}>PAYOUT MODE</div>
+                      <div style={{ fontSize:10, color:'var(--muted)', fontWeight:800, marginBottom:8 }}>{L2('PAYOUT MODE','派彩模式')}</div>
                       <div style={{ display:'flex', gap:20, flexWrap:'wrap' }}>
                         <label style={{ display:'flex', alignItems:'center', gap:7, fontSize:12, cursor:'pointer' }}>
                           <input type="radio" name="edit_payout_mode" value="all" checked={(editCampForm.payout_mode||'all')==='all'} onChange={()=>setEditCampForm(f=>({...f,payout_mode:'all'}))} />
-                          <span><strong>Pay all unlocked levels</strong> — each level earns its own reward</span>
+                          <span><strong>{L2('Pay all unlocked levels','派发所有已解锁级别')}</strong> {L2('— each level earns its own reward','— 每个级别各自获得奖励')}</span>
                         </label>
                         <label style={{ display:'flex', alignItems:'center', gap:7, fontSize:12, cursor:'pointer' }}>
                           <input type="radio" name="edit_payout_mode" value="highest_only" checked={editCampForm.payout_mode==='highest_only'} onChange={()=>setEditCampForm(f=>({...f,payout_mode:'highest_only'}))} />
-                          <span><strong>Pay highest level only</strong> — one reward per player (the biggest)</span>
+                          <span><strong>{L2('Pay highest level only','只派发最高级别')}</strong> {L2('— one reward per player (the biggest)','— 每位玩家一份奖励（最高的）')}</span>
                         </label>
                       </div>
                     </div>
-                    <div style={{ display:'flex', justifyContent:'flex-end', marginBottom:8 }}><button type="button" style={{ ...s.btnSm, fontSize:11 }} onClick={()=>setCampaignLevelsEdit(prev=>[...prev,{...normalizeLevel({},prev.length),level_order:prev.length+1}])}>+ Add Level</button></div>
+                    <div style={{ display:'flex', justifyContent:'flex-end', marginBottom:8 }}><button type="button" style={{ ...s.btnSm, fontSize:11 }} onClick={()=>setCampaignLevelsEdit(prev=>[...prev,{...normalizeLevel({},prev.length),level_order:prev.length+1}])}>{L2('+ Add Level','+ 添加级别')}</button></div>
                     <div style={{ background:'var(--bg)', border:'1px solid var(--border)', borderRadius:9, overflow:'hidden' }}>
-                      <div style={{ display:'grid', gridTemplateColumns:'46px 100px 1.2fr 110px 110px 110px 1.2fr 32px', gap:6, padding:'7px 10px', background:'var(--surface2)', fontSize:10, color:'var(--muted)', fontWeight:800 }}><span>#</span><span>CODE</span><span>LEVEL NAME</span><span>DEPOSIT</span><span>REWARD</span><span>MAX %</span><span>DESCRIPTION</span><span></span></div>
+                      <div style={{ display:'grid', gridTemplateColumns:'46px 100px 1.2fr 110px 110px 110px 1.2fr 32px', gap:6, padding:'7px 10px', background:'var(--surface2)', fontSize:10, color:'var(--muted)', fontWeight:800 }}><span>#</span><span>{L2('CODE','代码')}</span><span>{L2('LEVEL NAME','级别名称')}</span><span>{L2('DEPOSIT','存款')}</span><span>{L2('REWARD','奖励')}</span><span>{L2('MAX %','上限 %')}</span><span>{L2('DESCRIPTION','描述')}</span><span></span></div>
                       {campaignLevelsEdit.map((level,i)=><div key={level.id||`new-${i}`} style={{ display:'grid', gridTemplateColumns:'46px 100px 1.2fr 110px 110px 110px 1.2fr 32px', gap:6, padding:'8px 10px', borderTop:'1px solid var(--border)', alignItems:'center' }}>
                         <input type="number" min="1" style={s.finput} value={level.level_order} onChange={e=>{const a=[...campaignLevelsEdit];a[i]={...a[i],level_order:e.target.value};setCampaignLevelsEdit(a)}} />
                         <input style={s.finput} value={level.level_code||''} onChange={e=>{const a=[...campaignLevelsEdit];a[i]={...a[i],level_code:e.target.value.toUpperCase()};setCampaignLevelsEdit(a)}} placeholder="CODE31" />
-                        <input style={s.finput} value={level.level_name||''} onChange={e=>{const a=[...campaignLevelsEdit];a[i]={...a[i],level_name:e.target.value};setCampaignLevelsEdit(a)}} placeholder="Level 1" />
+                        <input style={s.finput} value={level.level_name||''} onChange={e=>{const a=[...campaignLevelsEdit];a[i]={...a[i],level_name:e.target.value};setCampaignLevelsEdit(a)}} placeholder={L2('Level 1','级别 1')} />
                         <input type="number" min="0" style={s.finput} value={level.deposit_threshold??''} onChange={e=>{const a=[...campaignLevelsEdit];a[i]={...a[i],deposit_threshold:e.target.value};setCampaignLevelsEdit(a)}} />
                         <input type="number" min="0" style={s.finput} value={level.reward_amount??''} onChange={e=>{const a=[...campaignLevelsEdit];a[i]={...a[i],reward_amount:e.target.value};setCampaignLevelsEdit(a)}} />
                         <input type="number" min="0.01" max="100" step="0.01" style={s.finput} value={Number(level.max_reward_pct??0.05)*100} onChange={e=>{const a=[...campaignLevelsEdit];a[i]={...a[i],max_reward_pct:(Number(e.target.value)||0)/100};setCampaignLevelsEdit(a)}} />
-                        <input style={s.finput} value={level.description||''} onChange={e=>{const a=[...campaignLevelsEdit];a[i]={...a[i],description:e.target.value};setCampaignLevelsEdit(a)}} placeholder="Deposit RM31,000 within campaign period" />
+                        <input style={s.finput} value={level.description||''} onChange={e=>{const a=[...campaignLevelsEdit];a[i]={...a[i],description:e.target.value};setCampaignLevelsEdit(a)}} placeholder={L2('Deposit RM31,000 within campaign period','活动期间存款 RM31,000')} />
                         <button type="button" onClick={()=>setCampaignLevelsEdit(prev=>prev.filter((_,j)=>j!==i))} style={{ background:'none', border:'1px solid rgba(248,81,73,.3)', color:'#f85149', padding:'5px 7px', borderRadius:5, cursor:'pointer' }}>×</button>
                       </div>)}
-                      {!campaignLevelsEdit.length && <div style={{ padding:14, textAlign:'center', fontSize:12, color:'var(--muted)' }}>No levels yet.</div>}
+                      {!campaignLevelsEdit.length && <div style={{ padding:14, textAlign:'center', fontSize:12, color:'var(--muted)' }}>{L2('No levels yet.','暂无级别。')}</div>}
                     </div>
-                    {campaignLevelsEdit.some(l=>Number(l.deposit_threshold)>0 && Number(l.reward_amount)>Number(l.deposit_threshold)*Number(l.max_reward_pct||0)) && <div style={{ marginTop:8, padding:'8px 10px', borderRadius:7, background:'rgba(248,81,73,.1)', color:'#f85149', fontSize:11 }}>⚠️ One or more levels exceed their configured reward cap.</div>}
+                    {campaignLevelsEdit.some(l=>Number(l.deposit_threshold)>0 && Number(l.reward_amount)>Number(l.deposit_threshold)*Number(l.max_reward_pct||0)) && <div style={{ marginTop:8, padding:'8px 10px', borderRadius:7, background:'rgba(248,81,73,.1)', color:'#f85149', fontSize:11 }}>{L2('⚠️ One or more levels exceed their configured reward cap.','⚠️ 一个或多个级别超出所设定的奖励上限。')}</div>}
                   </>}
                 </div>
 
@@ -2222,49 +2242,49 @@ export default function Campaigns() {
                   <div style={{ borderTop:'1px solid var(--border)', paddingTop:14, marginBottom:14 }}>
                     <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10 }}>
                       <div>
-                        <div style={{ fontSize:11, fontWeight:800, color:'var(--muted)', letterSpacing:'.5px' }}>🔥 STREAK BONUS</div>
-                        <div style={{ fontSize:10, color:'var(--muted)', marginTop:3 }}>Extra reward when players complete consecutive qualifying days.</div>
+                        <div style={{ fontSize:11, fontWeight:800, color:'var(--muted)', letterSpacing:'.5px' }}>{L2('🔥 STREAK BONUS','🔥 连续奖励')}</div>
+                        <div style={{ fontSize:10, color:'var(--muted)', marginTop:3 }}>{L2('Extra reward when players complete consecutive qualifying days.','玩家连续多天达标时给予额外奖励。')}</div>
                       </div>
                       <label style={{ display:'flex', alignItems:'center', gap:8, fontSize:12, cursor:'pointer' }}>
                         <input type="checkbox" checked={Boolean(editCampForm.streak_enabled)} onChange={e=>setEditCampForm(f=>({...f,streak_enabled:e.target.checked}))} />
-                        Enable streak
+                        {L2('Enable streak','启用连续奖励')}
                       </label>
                     </div>
                     {editCampForm.streak_enabled && (
                       <div style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'12px 14px' }}>
                         <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(150px,1fr))', gap:'10px 14px', marginBottom:10 }}>
                           <div>
-                            <div style={s.flbl}>Streak Length (days)</div>
+                            <div style={s.flbl}>{L2('Streak Length (days)','连续天数')}</div>
                             <input type="number" min="2" max="30" style={s.finput} value={editCampForm.streak_days||3} onChange={e=>setEditCampForm(f=>({...f,streak_days:e.target.value}))} />
-                            <div style={{ fontSize:10, color:'var(--muted)', marginTop:3 }}>Consecutive qualifying days per bonus</div>
+                            <div style={{ fontSize:10, color:'var(--muted)', marginTop:3 }}>{L2('Consecutive qualifying days per bonus','每次奖励所需的连续达标天数')}</div>
                           </div>
                           <div>
-                            <div style={s.flbl}>Bonus Mode</div>
+                            <div style={s.flbl}>{L2('Bonus Mode','奖金模式')}</div>
                             <select style={s.fsel} value={editCampForm.streak_bonus_type||'pct'} onChange={e=>setEditCampForm(f=>({...f,streak_bonus_type:e.target.value}))}>
-                              <option value="pct">% of Period Deposit</option>
-                              <option value="fixed">Fixed Amount</option>
+                              <option value="pct">{L2('% of Period Deposit','期间存款 %')}</option>
+                              <option value="fixed">{L2('Fixed Amount','固定金额')}</option>
                             </select>
                           </div>
                           {(editCampForm.streak_bonus_type||'pct')==='pct' ? (
                             <div>
-                              <div style={s.flbl}>Bonus %</div>
-                              <input type="number" min="0" step="0.01" style={s.finput} value={editCampForm.streak_bonus_pct??1} onChange={e=>setEditCampForm(f=>({...f,streak_bonus_pct:e.target.value}))} placeholder="e.g. 1" />
-                              <div style={{ fontSize:10, color:'var(--muted)', marginTop:3 }}>% of total deposit in those {editCampForm.streak_days||3} days</div>
+                              <div style={s.flbl}>{L2('Bonus %','奖金 %')}</div>
+                              <input type="number" min="0" step="0.01" style={s.finput} value={editCampForm.streak_bonus_pct??1} onChange={e=>setEditCampForm(f=>({...f,streak_bonus_pct:e.target.value}))} placeholder={L2('e.g. 1','例如：1')} />
+                              <div style={{ fontSize:10, color:'var(--muted)', marginTop:3 }}>{L2(`% of total deposit in those ${editCampForm.streak_days||3} days`, `这 ${editCampForm.streak_days||3} 天总存款的 %`)}</div>
                             </div>
                           ) : (
                             <div>
-                              <div style={s.flbl}>Fixed Bonus (RM)</div>
-                              <input type="number" min="0" style={s.finput} value={editCampForm.streak_bonus_fixed??0} onChange={e=>setEditCampForm(f=>({...f,streak_bonus_fixed:e.target.value}))} placeholder="e.g. 100" />
+                              <div style={s.flbl}>{L2('Fixed Bonus (RM)','固定奖金 (RM)')}</div>
+                              <input type="number" min="0" style={s.finput} value={editCampForm.streak_bonus_fixed??0} onChange={e=>setEditCampForm(f=>({...f,streak_bonus_fixed:e.target.value}))} placeholder={L2('e.g. 100','例如：100')} />
                             </div>
                           )}
                           <div>
-                            <div style={s.flbl}>Max Cap (RM)</div>
-                            <input type="number" min="0" style={s.finput} value={editCampForm.streak_bonus_cap??0} onChange={e=>setEditCampForm(f=>({...f,streak_bonus_cap:e.target.value}))} placeholder="0 = no cap" />
-                            <div style={{ fontSize:10, color:'var(--muted)', marginTop:3 }}>0 = no cap</div>
+                            <div style={s.flbl}>{L2('Max Cap (RM)','上限 (RM)')}</div>
+                            <input type="number" min="0" style={s.finput} value={editCampForm.streak_bonus_cap??0} onChange={e=>setEditCampForm(f=>({...f,streak_bonus_cap:e.target.value}))} placeholder={L2('0 = no cap','0 = 无上限')} />
+                            <div style={{ fontSize:10, color:'var(--muted)', marginTop:3 }}>{L2('0 = no cap','0 = 无上限')}</div>
                           </div>
                         </div>
                         <div style={{ fontSize:11, color:'var(--muted)', padding:'8px 10px', background:'rgba(88,166,255,.06)', borderRadius:6 }}>
-                          <strong>How it works:</strong> Player qualifies for streak when they deposit ≥ Level 1 threshold on a given day. Every {editCampForm.streak_days||3} consecutive qualifying days earns one bonus, paid the next day. Streak resets if any day is missed.
+                          <strong>{L2('How it works:','运作方式：')}</strong> {L2(`Player qualifies for streak when they deposit ≥ Level 1 threshold on a given day. Every ${editCampForm.streak_days||3} consecutive qualifying days earns one bonus, paid the next day. Streak resets if any day is missed.`, `玩家当天存款 ≥ 级别 1 门槛即算达标。每连续达标 ${editCampForm.streak_days||3} 天获得一次奖金，于次日派发。若中断任何一天，连续记录将重置。`)}
                         </div>
                       </div>
                     )}
@@ -2273,44 +2293,44 @@ export default function Campaigns() {
 
                 {editCampForm.campaign_type==='leaderboard' && <div style={{ borderTop:'1px solid var(--border)', paddingTop:14, marginBottom:14 }}><div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:10 }}>
   <div>
-    <div style={s.flbl}>Leaderboard Metric</div>
+    <div style={s.flbl}>{L2('Leaderboard Metric','排行榜指标')}</div>
     <select style={s.fsel} value={editCampForm.leaderboard_metric||'turnover'} onChange={e=>setEditCampForm(f=>({...f,leaderboard_metric:e.target.value}))}>
-      <option value="turnover">Turnover Race</option>
-      <option value="deposit">Deposit Race</option>
-      <option value="turnover_deposit">Turnover + Deposit Race</option>
+      <option value="turnover">{L2('Turnover Race','流水竞赛')}</option>
+      <option value="deposit">{L2('Deposit Race','存款竞赛')}</option>
+      <option value="turnover_deposit">{L2('Turnover + Deposit Race','流水 + 存款竞赛')}</option>
     </select>
   </div>
 </div>
 
-                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 }}><div style={s.flbl}>LEADERBOARD REWARDS</div><div><span style={{ fontSize:11, color:'var(--muted)', marginRight:8 }}>Top N</span><input type="number" min="1" max="50" style={{ ...s.smInput, width:65 }} value={editCampForm.top_n||3} onChange={e=>{const n=Math.max(1,Math.min(50,parseInt(e.target.value)||1));const rw=Array.from({length:n},(_,i)=>(editCampForm.rank_rewards||[])[i]||{rank:i+1,amount:0,desc:''});setEditCampForm(f=>({...f,top_n:n,rank_rewards:rw}))}} /></div></div>
-                  {(editCampForm.rank_rewards||[]).map((r,i)=><div key={i} style={{ display:'grid', gridTemplateColumns:'70px 160px 1fr', gap:8, marginBottom:6 }}><div style={{ padding:'8px 10px', color:'#a78bfa', fontWeight:700, fontSize:12 }}>#{i+1}</div><input type="number" min="0" style={s.finput} value={r.amount??''} placeholder="Amount" onChange={e=>{const rw=[...(editCampForm.rank_rewards||[])];rw[i]={...rw[i],amount:e.target.value};setEditCampForm(f=>({...f,rank_rewards:rw}))}} /><input style={s.finput} value={r.desc||''} placeholder="Reward description" onChange={e=>{const rw=[...(editCampForm.rank_rewards||[])];rw[i]={...rw[i],desc:e.target.value};setEditCampForm(f=>({...f,rank_rewards:rw}))}} /></div>)}
+                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 }}><div style={s.flbl}>{L2('LEADERBOARD REWARDS','排行榜奖励')}</div><div><span style={{ fontSize:11, color:'var(--muted)', marginRight:8 }}>{L2('Top N','前 N 名')}</span><input type="number" min="1" max="50" style={{ ...s.smInput, width:65 }} value={editCampForm.top_n||3} onChange={e=>{const n=Math.max(1,Math.min(50,parseInt(e.target.value)||1));const rw=Array.from({length:n},(_,i)=>(editCampForm.rank_rewards||[])[i]||{rank:i+1,amount:0,desc:''});setEditCampForm(f=>({...f,top_n:n,rank_rewards:rw}))}} /></div></div>
+                  {(editCampForm.rank_rewards||[]).map((r,i)=><div key={i} style={{ display:'grid', gridTemplateColumns:'70px 160px 1fr', gap:8, marginBottom:6 }}><div style={{ padding:'8px 10px', color:'#a78bfa', fontWeight:700, fontSize:12 }}>#{i+1}</div><input type="number" min="0" style={s.finput} value={r.amount??''} placeholder={L2('Amount','金额')} onChange={e=>{const rw=[...(editCampForm.rank_rewards||[])];rw[i]={...rw[i],amount:e.target.value};setEditCampForm(f=>({...f,rank_rewards:rw}))}} /><input style={s.finput} value={r.desc||''} placeholder={L2('Reward description','奖励描述')} onChange={e=>{const rw=[...(editCampForm.rank_rewards||[])];rw[i]={...rw[i],desc:e.target.value};setEditCampForm(f=>({...f,rank_rewards:rw}))}} /></div>)}
                 </div>}
 
                 {(editCampForm.campaign_type==='tiered_reward' || editCampForm.campaign_type==='dual_tier') && <div style={{ borderTop:'1px solid var(--border)', paddingTop:14, marginBottom:14 }}>
-                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 }}><div><div style={s.flbl}>JSON REWARD TIERS</div><div style={{ fontSize:10, color:'var(--muted)' }}>Used by the existing tiered/dual-tier engine. Separate from campaign_levels.</div></div><button type="button" style={{ ...s.btnSm, fontSize:11 }} onClick={()=>setEditCampForm(f=>({...f,reward_tiers:[...(f.reward_tiers||[]), editCampForm.campaign_type==='dual_tier'?{depositThreshold:'',turnoverThreshold:'',creditAmount:'',wcashAmount:''}:{min:'',max:'',pct:''}]}))}>+ Add Tier</button></div>
-                  {editCampForm.campaign_type==='dual_tier' && <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr 1fr 32px', gap:6, marginBottom:4 }}><div style={{ fontSize:10, color:'var(--muted)', fontWeight:700 }}>MIN DEPOSIT (RM)</div><div style={{ fontSize:10, color:'var(--muted)', fontWeight:700 }}>MIN TURNOVER (RM)</div><div style={{ fontSize:10, color:'var(--muted)', fontWeight:700 }}>CREDIT (RM)</div><div style={{ fontSize:10, color:'var(--muted)', fontWeight:700 }}>WCASH (RM)</div><div/></div>}
-                  {(editCampForm.reward_tiers||[]).map((tier,i)=> editCampForm.campaign_type==='dual_tier' ? <div key={i} style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr 1fr 32px', gap:6, marginBottom:6 }}><input type="number" style={s.finput} value={tier.depositThreshold||''} placeholder="e.g. 9000" onChange={e=>{const a=[...(editCampForm.reward_tiers||[])];a[i]={...a[i],depositThreshold:e.target.value};setEditCampForm(f=>({...f,reward_tiers:a}))}} /><input type="number" style={s.finput} value={tier.turnoverThreshold||''} placeholder="e.g. 99000" onChange={e=>{const a=[...(editCampForm.reward_tiers||[])];a[i]={...a[i],turnoverThreshold:e.target.value};setEditCampForm(f=>({...f,reward_tiers:a}))}} /><input type="number" style={s.finput} value={tier.creditAmount||''} placeholder="e.g. 900" onChange={e=>{const a=[...(editCampForm.reward_tiers||[])];a[i]={...a[i],creditAmount:e.target.value};setEditCampForm(f=>({...f,reward_tiers:a}))}} /><input type="number" style={s.finput} value={tier.wcashAmount||''} placeholder="e.g. 0" onChange={e=>{const a=[...(editCampForm.reward_tiers||[])];a[i]={...a[i],wcashAmount:e.target.value};setEditCampForm(f=>({...f,reward_tiers:a}))}} /><button type="button" onClick={()=>setEditCampForm(f=>({...f,reward_tiers:(f.reward_tiers||[]).filter((_,j)=>j!==i)}))} style={{ ...s.btnR, padding:'4px 7px' }}>×</button></div> : <div key={i} style={{ display:'grid', gridTemplateColumns:'1fr 1fr 90px 32px', gap:6, marginBottom:6 }}><input type="number" style={s.finput} value={tier.min||''} placeholder="Min deposit" onChange={e=>{const a=[...(editCampForm.reward_tiers||[])];a[i]={...a[i],min:e.target.value};setEditCampForm(f=>({...f,reward_tiers:a}))}} /><input type="number" style={s.finput} value={tier.max||''} placeholder="Max" onChange={e=>{const a=[...(editCampForm.reward_tiers||[])];a[i]={...a[i],max:e.target.value};setEditCampForm(f=>({...f,reward_tiers:a}))}} /><input type="number" style={s.finput} value={tier.pct||''} placeholder="%" onChange={e=>{const a=[...(editCampForm.reward_tiers||[])];a[i]={...a[i],pct:e.target.value};setEditCampForm(f=>({...f,reward_tiers:a}))}} /><button type="button" onClick={()=>setEditCampForm(f=>({...f,reward_tiers:(f.reward_tiers||[]).filter((_,j)=>j!==i)}))} style={{ ...s.btnR, padding:'4px 7px' }}>×</button></div>)}
+                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 }}><div><div style={s.flbl}>{L2('JSON REWARD TIERS','JSON 奖励等级')}</div><div style={{ fontSize:10, color:'var(--muted)' }}>{L2('Used by the existing tiered/dual-tier engine. Separate from campaign_levels.','由现有的分级/双等级引擎使用，与 campaign_levels 分开。')}</div></div><button type="button" style={{ ...s.btnSm, fontSize:11 }} onClick={()=>setEditCampForm(f=>({...f,reward_tiers:[...(f.reward_tiers||[]), editCampForm.campaign_type==='dual_tier'?{depositThreshold:'',turnoverThreshold:'',creditAmount:'',wcashAmount:''}:{min:'',max:'',pct:''}]}))}>{L2('+ Add Tier','+ 添加等级')}</button></div>
+                  {editCampForm.campaign_type==='dual_tier' && <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr 1fr 32px', gap:6, marginBottom:4 }}><div style={{ fontSize:10, color:'var(--muted)', fontWeight:700 }}>{L2('MIN DEPOSIT (RM)','最低存款 (RM)')}</div><div style={{ fontSize:10, color:'var(--muted)', fontWeight:700 }}>{L2('MIN TURNOVER (RM)','最低流水 (RM)')}</div><div style={{ fontSize:10, color:'var(--muted)', fontWeight:700 }}>CREDIT (RM)</div><div style={{ fontSize:10, color:'var(--muted)', fontWeight:700 }}>WCASH (RM)</div><div/></div>}
+                  {(editCampForm.reward_tiers||[]).map((tier,i)=> editCampForm.campaign_type==='dual_tier' ? <div key={i} style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr 1fr 32px', gap:6, marginBottom:6 }}><input type="number" style={s.finput} value={tier.depositThreshold||''} placeholder={L2('e.g. 9000','例如：9000')} onChange={e=>{const a=[...(editCampForm.reward_tiers||[])];a[i]={...a[i],depositThreshold:e.target.value};setEditCampForm(f=>({...f,reward_tiers:a}))}} /><input type="number" style={s.finput} value={tier.turnoverThreshold||''} placeholder={L2('e.g. 99000','例如：99000')} onChange={e=>{const a=[...(editCampForm.reward_tiers||[])];a[i]={...a[i],turnoverThreshold:e.target.value};setEditCampForm(f=>({...f,reward_tiers:a}))}} /><input type="number" style={s.finput} value={tier.creditAmount||''} placeholder={L2('e.g. 900','例如：900')} onChange={e=>{const a=[...(editCampForm.reward_tiers||[])];a[i]={...a[i],creditAmount:e.target.value};setEditCampForm(f=>({...f,reward_tiers:a}))}} /><input type="number" style={s.finput} value={tier.wcashAmount||''} placeholder={L2('e.g. 0','例如：0')} onChange={e=>{const a=[...(editCampForm.reward_tiers||[])];a[i]={...a[i],wcashAmount:e.target.value};setEditCampForm(f=>({...f,reward_tiers:a}))}} /><button type="button" onClick={()=>setEditCampForm(f=>({...f,reward_tiers:(f.reward_tiers||[]).filter((_,j)=>j!==i)}))} style={{ ...s.btnR, padding:'4px 7px' }}>×</button></div> : <div key={i} style={{ display:'grid', gridTemplateColumns:'1fr 1fr 90px 32px', gap:6, marginBottom:6 }}><input type="number" style={s.finput} value={tier.min||''} placeholder={L2('Min deposit','最低存款')} onChange={e=>{const a=[...(editCampForm.reward_tiers||[])];a[i]={...a[i],min:e.target.value};setEditCampForm(f=>({...f,reward_tiers:a}))}} /><input type="number" style={s.finput} value={tier.max||''} placeholder={L2('Max','最高')} onChange={e=>{const a=[...(editCampForm.reward_tiers||[])];a[i]={...a[i],max:e.target.value};setEditCampForm(f=>({...f,reward_tiers:a}))}} /><input type="number" style={s.finput} value={tier.pct||''} placeholder="%" onChange={e=>{const a=[...(editCampForm.reward_tiers||[])];a[i]={...a[i],pct:e.target.value};setEditCampForm(f=>({...f,reward_tiers:a}))}} /><button type="button" onClick={()=>setEditCampForm(f=>({...f,reward_tiers:(f.reward_tiers||[]).filter((_,j)=>j!==i)}))} style={{ ...s.btnR, padding:'4px 7px' }}>×</button></div>)}
                 </div>}
 
                 <div style={{ borderTop:'1px solid var(--border)', paddingTop:14, marginBottom:14 }}>
-                  <div style={s.flbl}>PLAYER CONTENT</div>
+                  <div style={s.flbl}>{L2('PLAYER CONTENT','玩家内容')}</div>
                   <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginTop:8 }}>
-                    <textarea style={s.fta} rows={3} value={editCampForm.offer_desc||''} onChange={e=>setEditCampForm(f=>({...f,offer_desc:e.target.value}))} placeholder="Write player-facing How to Join, Rules & Regulations, eligibility, deposit rules, reward conditions, and payout terms. Use line breaks for sections." />
-                    <textarea style={s.fta} rows={3} value={editCampForm.notes||''} onChange={e=>setEditCampForm(f=>({...f,notes:e.target.value}))} placeholder="Internal notes" />
+                    <textarea style={s.fta} rows={3} value={editCampForm.offer_desc||''} onChange={e=>setEditCampForm(f=>({...f,offer_desc:e.target.value}))} placeholder={L2('Write player-facing How to Join, Rules & Regulations, eligibility, deposit rules, reward conditions, and payout terms. Use line breaks for sections.','填写面向玩家的参加方式、规则与条款、资格、存款规则、奖励条件及派彩条款。用换行分隔各部分。')} />
+                    <textarea style={s.fta} rows={3} value={editCampForm.notes||''} onChange={e=>setEditCampForm(f=>({...f,notes:e.target.value}))} placeholder={L2('Internal notes','内部备注')} />
                   </div>
                 </div>
 
                 <div style={{ borderTop:'1px solid var(--border)', paddingTop:14, marginBottom:14 }}>
-                  <div style={s.flbl}>Turnover Multiplier <span style={{ fontWeight:400, color:'var(--muted)', fontSize:10 }}>(WA payout message — e.g. 3 means reward × 3 required before withdrawal)</span></div>
-                  <input type="number" min="1" step="0.5" style={{ ...s.finput, width:180, marginTop:4 }} value={editCampForm.turnover_multiplier??''} onChange={e=>setEditCampForm(f=>({...f,turnover_multiplier:e.target.value}))} placeholder="e.g. 3 (leave blank = no requirement)" />
+                  <div style={s.flbl}>{L2('Turnover Multiplier','流水倍数')} <span style={{ fontWeight:400, color:'var(--muted)', fontSize:10 }}>{L2('(WA payout message — e.g. 3 means reward × 3 required before withdrawal)','（WA 派彩讯息 — 例如 3 表示提款前需完成奖励 × 3 的流水）')}</span></div>
+                  <input type="number" min="1" step="0.5" style={{ ...s.finput, width:180, marginTop:4 }} value={editCampForm.turnover_multiplier??''} onChange={e=>setEditCampForm(f=>({...f,turnover_multiplier:e.target.value}))} placeholder={L2('e.g. 3 (leave blank = no requirement)','例如：3（留空 = 无要求）')} />
                 </div>
 
                 <div style={{ borderTop:'1px solid var(--border)', paddingTop:14, marginBottom:14 }}>
-                  <div style={{ fontSize:11, fontWeight:800, color:'var(--muted)', marginBottom:6, letterSpacing:'.5px' }}>💬 WHATSAPP MESSAGE TEMPLATE</div>
-                  <div style={{ fontSize:11, color:'var(--muted)', marginBottom:8 }}>Optional — overrides the auto-generated message. Variables: <code>{'{username}'}</code> <code>{'{campaign}'}</code> <code>{'{agent}'}</code> <code>{'{gap}'}</code></div>
+                  <div style={{ fontSize:11, fontWeight:800, color:'var(--muted)', marginBottom:6, letterSpacing:'.5px' }}>{L2('💬 WHATSAPP MESSAGE TEMPLATE','💬 WHATSAPP 讯息模板')}</div>
+                  <div style={{ fontSize:11, color:'var(--muted)', marginBottom:8 }}>{L2('Optional — overrides the auto-generated message. Variables:','可选 — 覆盖自动生成的讯息。变量：')} <code>{'{username}'}</code> <code>{'{campaign}'}</code> <code>{'{agent}'}</code> <code>{'{gap}'}</code></div>
                   <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
                     <div>
-                      <div style={{ fontSize:11, color:'var(--muted)', marginBottom:4, fontWeight:600 }}>🇬🇧 English</div>
+                      <div style={{ fontSize:11, color:'var(--muted)', marginBottom:4, fontWeight:600 }}>🇬🇧 {L2('English','英文')}</div>
                       <textarea style={{ ...s.fta, width:'100%' }} rows={6} value={editCampForm.whatsapp_template||''} onChange={e=>setEditCampForm(f=>({...f,whatsapp_template:e.target.value}))} placeholder={"e.g. Hi {username}, checking in on {campaign}! You need {gap} more to qualify. - {agent}"} />
                     </div>
                     <div>
@@ -2322,9 +2342,9 @@ export default function Campaigns() {
 
                 {/* ── PAYOUT WA MESSAGE TEMPLATES ── */}
                 <div style={{ borderTop:'1px solid var(--border)', paddingTop:14, marginBottom:14 }}>
-                  <div style={{ fontSize:11, fontWeight:800, color:'#25d366', marginBottom:4, letterSpacing:'.5px' }}>📲 PAYOUT NOTIFICATION MESSAGE</div>
+                  <div style={{ fontSize:11, fontWeight:800, color:'#25d366', marginBottom:4, letterSpacing:'.5px' }}>📲 {L2('PAYOUT NOTIFICATION MESSAGE','派彩通知讯息')}</div>
                   <div style={{ fontSize:11, color:'var(--muted)', marginBottom:10 }}>
-                    Edit the message sent when a player qualifies for payout. Leave blank to use the default. Variables: <code style={{ background:'var(--surface2)', padding:'1px 4px', borderRadius:3 }}>{'{username}'}</code> <code style={{ background:'var(--surface2)', padding:'1px 4px', borderRadius:3 }}>{'{campaign}'}</code> <code style={{ background:'var(--surface2)', padding:'1px 4px', borderRadius:3 }}>{'{agent}'}</code> <code style={{ background:'var(--surface2)', padding:'1px 4px', borderRadius:3 }}>{'{reward}'}</code> <code style={{ background:'var(--surface2)', padding:'1px 4px', borderRadius:3 }}>{'{turnover}'}</code>
+                    {L2('Edit the message sent when a player qualifies for payout. Leave blank to use the default. Variables:','编辑玩家符合派彩条件时发送的讯息。留空则使用默认讯息。变量：')} <code style={{ background:'var(--surface2)', padding:'1px 4px', borderRadius:3 }}>{'{username}'}</code> <code style={{ background:'var(--surface2)', padding:'1px 4px', borderRadius:3 }}>{'{campaign}'}</code> <code style={{ background:'var(--surface2)', padding:'1px 4px', borderRadius:3 }}>{'{agent}'}</code> <code style={{ background:'var(--surface2)', padding:'1px 4px', borderRadius:3 }}>{'{reward}'}</code> <code style={{ background:'var(--surface2)', padding:'1px 4px', borderRadius:3 }}>{'{turnover}'}</code>
                   </div>
                   {[
                     ['en', '🇬🇧 English', 'payout_template_en', `Hi {username}! 🎉 I'm {agent} from SureWin VIP Team.\nYour "{campaign}" reward of {reward} Credit has been credited to your account. Please check your balance!\n\n⚠️ A {turnover} turnover is required before withdrawal.`],
@@ -2351,7 +2371,7 @@ export default function Campaigns() {
                             onChange={e=>setEditCampForm(f=>({...f,[field]:e.target.value}))}
                           />
                           <div style={{ background:'rgba(37,211,102,.06)', border:'1px solid rgba(37,211,102,.2)', borderRadius:8, padding:'10px 12px', fontSize:12, color:'var(--text)', whiteSpace:'pre-wrap', lineHeight:1.6 }}>
-                            <div style={{ fontSize:10, color:'#25d366', fontWeight:700, marginBottom:6 }}>👁 Preview</div>
+                            <div style={{ fontSize:10, color:'#25d366', fontWeight:700, marginBottom:6 }}>👁 {L2('Preview','预览')}</div>
                             {preview}
                           </div>
                         </div>
@@ -2361,9 +2381,9 @@ export default function Campaigns() {
                 </div>
 
                 <div style={{ display:'flex', gap:8, alignItems:'center' }}>
-                  <button style={s.btnG} onClick={editCampaign} disabled={saving}>{saving?'Saving…':'💾 Save Campaign'}</button>
-                  <button style={s.btnSm} onClick={()=>{setEditingCamp(false);setCampaignLevelsEdit([])}} disabled={saving}>Cancel</button>
-                  <span style={{ fontSize:10, color:'var(--muted)', marginLeft:4 }}>Changes are saved to the existing campaign; player records are not recreated.</span>
+                  <button style={s.btnG} onClick={editCampaign} disabled={saving}>{saving?L2('Saving…','保存中…'):L2('💾 Save Campaign','💾 保存活动')}</button>
+                  <button style={s.btnSm} onClick={()=>{setEditingCamp(false);setCampaignLevelsEdit([])}} disabled={saving}>{L2('Cancel','取消')}</button>
+                  <span style={{ fontSize:10, color:'var(--muted)', marginLeft:4 }}>{L2('Changes are saved to the existing campaign; player records are not recreated.','更改将保存到现有活动；玩家记录不会重新创建。')}</span>
                 </div>
               </div>
             )}
@@ -2375,7 +2395,7 @@ export default function Campaigns() {
                 [t('campaigns.achieved'),    achieved.length,       '#3fb950'],
                 [t('campaigns.nearTarget'), nearTarget.length,     '#f0883e'],
                 [t('campaigns.totalDep'),   rmFmt(totalDep, campCurrency),       '#3fb950'],
-                [t('campaigns.totalReward'),`${rewardFmt(totalReward, campCurrency)} ${deliveryInfo.label}`, typeInfo.color],
+                [t('campaigns.totalReward'),`${rewardFmt(totalReward, campCurrency)} ${tLabel(deliveryInfo)}`, typeInfo.color],
                 [t('campaigns.paidOut'),    rewardFmt(paidOut, campCurrency),    '#3fb950'],
                 [t('campaigns.pendingPay'), rewardFmt(pendingPay, campCurrency), '#f85149'],
                 [t('campaigns.successRate'),players.length?(isDailyMode||!selected?.is_multi_level?Math.round(achieved.length/players.length*100):multiSummary.successRate)+'%':'0%', '#3fb950'],
@@ -2384,10 +2404,10 @@ export default function Campaigns() {
 
             {/* Add VIP */}
             <div style={{ padding:'10px 24px', borderBottom:'1px solid var(--border)' }}>
-              <div style={{ fontSize:11, color:'var(--muted)', marginBottom:6 }}>➕ ADD PLAYER TO CAMPAIGN</div>
+              <div style={{ fontSize:11, color:'var(--muted)', marginBottom:6 }}>➕ {L2('ADD PLAYER TO CAMPAIGN','添加玩家到活动')}</div>
               <div style={{ display:'flex', gap:8, alignItems:'flex-start' }}>
                 <div style={{ position:'relative', flex:1 }}>
-                  <input style={s.finput} value={vipSearch} onChange={e=>setVipSearch(e.target.value)} placeholder="Search username or name…" />
+                  <input style={s.finput} value={vipSearch} onChange={e=>setVipSearch(e.target.value)} placeholder={L2('Search username or name…','搜索用户名或姓名…')} />
                   {vipResults.length > 0 && (
                     <div style={{ position:'absolute', top:'100%', left:0, right:0, background:'var(--surface)', border:'1px solid var(--border)', borderRadius:8, zIndex:100, boxShadow:'0 8px 24px rgba(0,0,0,.5)', marginTop:2 }}>
                       {vipResults.map((v,idx)=>(
@@ -2396,10 +2416,10 @@ export default function Campaigns() {
                           onMouseEnter={e=>e.currentTarget.style.background='var(--surface2)'}
                           onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
                           <span style={{ ...s.badge, background:TIER_BG[v.tier]||'transparent', color:TIER_COLOR[v.tier]||'var(--muted)' }}>{v.tier}</span>
-                          {v.source==='potential' && <span style={{ ...s.badge, background:'rgba(99,102,241,.15)', color:'#818cf8', fontSize:9, padding:'1px 6px' }}>POTENTIAL</span>}
+                          {v.source==='potential' && <span style={{ ...s.badge, background:'rgba(99,102,241,.15)', color:'#818cf8', fontSize:9, padding:'1px 6px' }}>{L2('POTENTIAL','潜在')}</span>}
                           <span style={{ fontWeight:700 }}>{v.username}</span>
                           <span style={{ color:'var(--muted)', fontSize:12 }}>{v.full_name||''}</span>
-                          <span style={{ marginLeft:'auto', color:'#3fb950', fontSize:12 }}>+ Add</span>
+                          <span style={{ marginLeft:'auto', color:'#3fb950', fontSize:12 }}>{L2('+ Add','+ 添加')}</span>
                         </div>
                       ))}
                     </div>
@@ -2407,7 +2427,7 @@ export default function Campaigns() {
                 </div>
                 <button onClick={openBulkEnroll}
                   style={{ background:'rgba(88,166,255,.1)', border:'1px solid rgba(88,166,255,.3)', color:'#58a6ff', padding:'9px 14px', borderRadius:8, fontSize:12, fontWeight:700, cursor:'pointer', whiteSpace:'nowrap', flexShrink:0 }}>
-                  📋 Browse All VIPs
+                  📋 {L2('Browse All VIPs','浏览所有 VIP')}
                 </button>
               </div>
 
@@ -2416,16 +2436,16 @@ export default function Campaigns() {
                 <div style={{ marginTop:10, background:'var(--bg)', border:'1px solid var(--border)', borderRadius:10, overflow:'hidden' }}>
                   {/* Panel header */}
                   <div style={{ padding:'10px 14px', background:'var(--surface)', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
-                    <span style={{ fontSize:12, fontWeight:700, color:'var(--text)' }}>Select VIPs to Enroll</span>
-                    <input value={bulkEnrollSearch} onChange={e=>setBulkEnrollSearch(e.target.value)} placeholder="Filter by username…"
+                    <span style={{ fontSize:12, fontWeight:700, color:'var(--text)' }}>{L2('Select VIPs to Enroll','选择要加入的 VIP')}</span>
+                    <input value={bulkEnrollSearch} onChange={e=>setBulkEnrollSearch(e.target.value)} placeholder={L2('Filter by username…','按用户名筛选…')}
                       style={{ ...s.smInput, width:160, fontSize:12 }} />
                     <select value={bulkEnrollTier} onChange={e=>setBulkEnrollTier(e.target.value)}
                       style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:6, padding:'5px 8px', fontSize:12, color:'var(--text)', cursor:'pointer' }}>
-                      <option value="all">All Tiers</option>
+                      <option value="all">{L2('All Tiers','全部等级')}</option>
                       {TIERS.map(t=><option key={t} value={t}>{t}</option>)}
                     </select>
                     <span style={{ fontSize:11, color:'var(--muted)', marginLeft:'auto' }}>
-                      {bulkEnrollLoading ? 'Loading…' : `${bulkEnrollList.filter(v=>(bulkEnrollTier==='all'||v.tier===bulkEnrollTier)&&(!bulkEnrollSearch||v.username.toLowerCase().includes(bulkEnrollSearch.toLowerCase())||((v.full_name||'').toLowerCase().includes(bulkEnrollSearch.toLowerCase())))).length} VIPs · ${bulkEnrollSelected.size} selected`}
+                      {bulkEnrollLoading ? L2('Loading…','加载中…') : `${bulkEnrollList.filter(v=>(bulkEnrollTier==='all'||v.tier===bulkEnrollTier)&&(!bulkEnrollSearch||v.username.toLowerCase().includes(bulkEnrollSearch.toLowerCase())||((v.full_name||'').toLowerCase().includes(bulkEnrollSearch.toLowerCase())))).length} VIPs · ${bulkEnrollSelected.size} ${L2('selected','已选')}`}
                     </span>
                     <button onClick={()=>setBulkEnrollOpen(false)} style={{ background:'none', border:'none', color:'var(--muted)', fontSize:14, cursor:'pointer', padding:'2px 6px' }}>✕</button>
                   </div>
@@ -2433,13 +2453,13 @@ export default function Campaigns() {
                   {/* VIP list */}
                   <div style={{ maxHeight:260, overflowY:'auto' }}>
                     {bulkEnrollLoading
-                      ? <div style={{ padding:20, textAlign:'center', fontSize:12, color:'var(--muted)' }}>Loading VIPs…</div>
+                      ? <div style={{ padding:20, textAlign:'center', fontSize:12, color:'var(--muted)' }}>{L2('Loading VIPs…','正在加载 VIP…')}</div>
                       : (() => {
                           const filtered = bulkEnrollList.filter(v =>
                             (bulkEnrollTier==='all'||v.tier===bulkEnrollTier) &&
                             (!bulkEnrollSearch || v.username.toLowerCase().includes(bulkEnrollSearch.toLowerCase()) || ((v.full_name||'').toLowerCase().includes(bulkEnrollSearch.toLowerCase())))
                           )
-                          if (!filtered.length) return <div style={{ padding:20, textAlign:'center', fontSize:12, color:'var(--muted)' }}>No VIPs match.</div>
+                          if (!filtered.length) return <div style={{ padding:20, textAlign:'center', fontSize:12, color:'var(--muted)' }}>{L2('No VIPs match.','没有匹配的 VIP。')}</div>
                           return filtered.map(v => {
                             const checked = bulkEnrollSelected.has(v.id)
                             return (
@@ -2466,14 +2486,14 @@ export default function Campaigns() {
                       const filtered = bulkEnrollList.filter(v=>(bulkEnrollTier==='all'||v.tier===bulkEnrollTier)&&(!bulkEnrollSearch||v.username.toLowerCase().includes(bulkEnrollSearch.toLowerCase())||((v.full_name||'').toLowerCase().includes(bulkEnrollSearch.toLowerCase()))))
                       setBulkEnrollSelected(new Set(filtered.map(v=>v.id)))
                     }} style={{ background:'none', border:'1px solid var(--border)', borderRadius:6, padding:'5px 12px', fontSize:12, color:'var(--muted)', cursor:'pointer' }}>
-                      Select All
+                      {L2('Select All','全选')}
                     </button>
                     <button onClick={()=>setBulkEnrollSelected(new Set())} style={{ background:'none', border:'1px solid var(--border)', borderRadius:6, padding:'5px 12px', fontSize:12, color:'var(--muted)', cursor:'pointer' }}>
-                      Clear
+                      {L2('Clear','清除')}
                     </button>
                     <button onClick={doBulkEnroll} disabled={bulkEnrollSelected.size===0||bulkEnrollLoading}
                       style={{ marginLeft:'auto', background: bulkEnrollSelected.size===0 ? 'var(--surface2)' : 'var(--accent)', border:'none', borderRadius:8, padding:'7px 18px', fontSize:13, fontWeight:700, color: bulkEnrollSelected.size===0 ? 'var(--muted)' : '#fff', cursor: bulkEnrollSelected.size===0 ? 'default' : 'pointer', opacity: bulkEnrollLoading ? 0.6 : 1 }}>
-                      {bulkEnrollLoading ? 'Enrolling…' : `✅ Enroll Selected (${bulkEnrollSelected.size})`}
+                      {bulkEnrollLoading ? L2('Enrolling…','加入中…') : L2(`✅ Enroll Selected (${bulkEnrollSelected.size})`, `✅ 加入所选 (${bulkEnrollSelected.size})`)}
                     </button>
                   </div>
                 </div>
@@ -2483,13 +2503,13 @@ export default function Campaigns() {
             {/* Tabs */}
             <div style={{ display:'flex', borderBottom:'1px solid var(--border)', padding:'0 24px' }}>
               {[
-                ['chase',    `🏃 Chase List (${players.length})`],
-                ['payout',   `💰 Payout (${isDailyMode ? dailyAchieved.length : selected?.is_multi_level ? multiPayoutRows.length : achieved.length} rewards)`],
-                ...(isDailyMode ? [['streak', `🔥 Streak${selected?.streak_enabled ? '' : ' (off)'}`]] : []),
-                ...(isDailyMode ? [['inactive', `😴 Inactive`]] : []),
-                ['register', '📋 All Players'],
-                ...(campType==='leaderboard' ? [['leaderboard','[TOP] Leaderboard']] : []),
-                ['summary', '📊 Summary'],
+                ['chase',    L2(`🏃 Chase List (${players.length})`, `🏃 跟进名单 (${players.length})`)],
+                ['payout',   `💰 ${L2('Payout','派彩')} (${isDailyMode ? dailyAchieved.length : selected?.is_multi_level ? multiPayoutRows.length : achieved.length} ${L2('rewards','份奖励')})`],
+                ...(isDailyMode ? [['streak', `🔥 ${L2('Streak','连续奖励')}${selected?.streak_enabled ? '' : L2(' (off)',' (关闭)')}`]] : []),
+                ...(isDailyMode ? [['inactive', `😴 ${L2('Inactive','不活跃')}`]] : []),
+                ['register', L2('📋 All Players','📋 所有玩家')],
+                ...(campType==='leaderboard' ? [['leaderboard',L2('[TOP] Leaderboard','[TOP] 排行榜')]] : []),
+                ['summary', L2('📊 Summary','📊 汇总')],
               ].map(([id,label])=>(
                 <button key={id} onClick={()=>setActiveTab(id)} style={{ background:'none', border:'none', cursor:'pointer', padding:'10px 16px', fontSize:13, fontWeight:600, color:activeTab===id?'var(--accent)':'var(--muted)', borderBottom:activeTab===id?'2px solid var(--accent)':'2px solid transparent', transition:'color .15s' }}>{label}</button>
               ))}
@@ -2499,18 +2519,18 @@ export default function Campaigns() {
             {activeTab === 'chase' && (
               <div style={{ overflowX:'auto' }}>
                 <div style={{ padding:'8px 24px', fontSize:11, color:'var(--muted)', background:'rgba(88,166,255,.04)', borderBottom:'1px solid var(--border)' }}>
-                  Click deposit field to update · reward auto-calculated based on campaign type
+                  {L2('Click deposit field to update · reward auto-calculated based on campaign type','点击存款栏位进行更新 · 奖励根据活动类型自动计算')}
                 </div>
                 {/* Chase list host filter */}
                 {chaseHosts.length > 1 && (
                   <div style={{ padding:'6px 24px', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', gap:6, flexWrap:'wrap' }}>
-                    <span style={{ fontSize:11, color:'var(--muted)', marginRight:2 }}>Host:</span>
+                    <span style={{ fontSize:11, color:'var(--muted)', marginRight:2 }}>{L2('Host:','负责人：')}</span>
                     {chaseHosts.map(h => (
                       <button key={h} onClick={() => setHostFilter(h)} style={{
                         padding:'3px 12px', borderRadius:16, fontSize:12, fontWeight:600, border:'1px solid var(--border)', cursor:'pointer',
                         background: hostFilter === h ? 'var(--accent)' : 'var(--surface2)',
                         color: hostFilter === h ? '#fff' : 'var(--muted)',
-                      }}>{h === 'all' ? `All (${chaseList.length})` : `${h} (${chaseList.filter(p=>p.host_assigned===h).length})`}</button>
+                      }}>{h === 'all' ? `${L2('All','全部')} (${chaseList.length})` : `${h} (${chaseList.filter(p=>p.host_assigned===h).length})`}</button>
                     ))}
                   </div>
                 )}
@@ -2519,15 +2539,15 @@ export default function Campaigns() {
                   <input
                     value={chaseFilter}
                     onChange={e => setChaseFilter(e.target.value)}
-                    placeholder={`🔍 Filter ${filteredChaseList.length} players by username…`}
+                    placeholder={L2(`🔍 Filter ${filteredChaseList.length} players by username…`, `🔍 按用户名筛选 ${filteredChaseList.length} 位玩家…`)}
                     style={{ ...s.smInput, width:240, fontSize:12 }}
                   />
                   {chaseFilter && (
-                    <button onClick={() => setChaseFilter('')} style={{ fontSize:11, color:'var(--muted)', background:'none', border:'none', cursor:'pointer', padding:'2px 6px' }}>✕ Clear</button>
+                    <button onClick={() => setChaseFilter('')} style={{ fontSize:11, color:'var(--muted)', background:'none', border:'none', cursor:'pointer', padding:'2px 6px' }}>✕ {L2('Clear','清除')}</button>
                   )}
-                  {chaseFilter && <span style={{ fontSize:11, color:'var(--muted)' }}>{filteredChaseList.length} match{filteredChaseList.length !== 1 ? 'es' : ''}</span>}
-                  <span style={{ fontSize:11, color:'var(--muted)', marginLeft:4 }}>Sort:</span>
-                  {[['deposit','Deposit'],['turnover','Turnover'],['reward','Reward'],['progress','Progress'],['name','Name']].map(([key,lbl])=>(
+                  {chaseFilter && <span style={{ fontSize:11, color:'var(--muted)' }}>{filteredChaseList.length} {L2('match'+(filteredChaseList.length !== 1 ? 'es' : ''),'个匹配')}</span>}
+                  <span style={{ fontSize:11, color:'var(--muted)', marginLeft:4 }}>{L2('Sort:','排序：')}</span>
+                  {[['deposit',L2('Deposit','存款')],['turnover',L2('Turnover','流水')],['reward',L2('Reward','奖励')],['progress',L2('Progress','进度')],['name',L2('Name','名称')]].map(([key,lbl])=>(
                     <button key={key} onClick={()=>{ if(chaseSort===key){setChaseSortDir(d=>d==='asc'?'desc':'asc')}else{setChaseSort(key);setChaseSortDir('desc')} }}
                       style={{ padding:'3px 10px', borderRadius:14, fontSize:11, fontWeight:600, border:'1px solid var(--border)', cursor:'pointer',
                         background: chaseSort===key ? 'var(--accent)' : 'var(--surface2)', color: chaseSort===key ? '#fff' : 'var(--muted)' }}>
@@ -2546,34 +2566,34 @@ export default function Campaigns() {
                     {selectedForRemoval.size > 0 && campType !== 'leaderboard' && (
                       <button onClick={bulkRemovePlayers}
                         style={{ background:'rgba(248,81,73,.1)', border:'1px solid rgba(248,81,73,.4)', color:'#f85149', padding:'5px 12px', borderRadius:6, fontSize:11, fontWeight:700, cursor:'pointer', whiteSpace:'nowrap' }}>
-                        🗑 Remove Selected ({selectedForRemoval.size})
+                        🗑 {L2('Remove Selected','移除所选')} ({selectedForRemoval.size})
                       </button>
                     )}
                     {campType !== 'leaderboard' && (
                       <button
                         onClick={importFromVipData}
                         disabled={dailyLoading || realFinancialsLoading}
-                        title="Auto-fill deposit and turnover from VIP daily snapshot data for the campaign date range"
+                        title={L2('Auto-fill deposit and turnover from VIP daily snapshot data for the campaign date range','根据活动日期范围，从 VIP 每日快照数据自动填入存款和流水')}
                         style={{ background:'rgba(88,166,255,.12)', border:'1px solid rgba(88,166,255,.3)', color:'#58a6ff', padding:'5px 12px', borderRadius:6, fontSize:11, fontWeight:700, cursor:'pointer', whiteSpace:'nowrap', opacity: (dailyLoading||realFinancialsLoading) ? 0.5 : 1 }}
                       >
-                        {dailyLoading ? '⏳ Importing…' : '⬇ Import from VIP Data'}
+                        {dailyLoading ? L2('⏳ Importing…','⏳ 导入中…') : L2('⬇ Import from VIP Data','⬇ 从 VIP 数据导入')}
                       </button>
                     )}
                   </div>
                 </div>
                 {isDailyMode && (
                   <div style={{ padding:'12px 24px', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', gap:12, flexWrap:'wrap' }}>
-                    <span style={{ fontSize:12, fontWeight:700, color:'#c9a961' }}>📅 Entry Date:</span>
+                    <span style={{ fontSize:12, fontWeight:700, color:'#c9a961' }}>{L2('📅 Entry Date:','📅 录入日期：')}</span>
                     <input type="date" value={entryDate} min={selected.start_date||undefined} max={selected.end_date||undefined}
                       onChange={e=>setEntryDate(e.target.value)}
                       style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:6, padding:'6px 10px', fontSize:12, color:'var(--text)' }} />
-                    <span style={{ fontSize:11, color:'var(--muted)' }}>Each day settles independently — entering turnover for this date does not affect any other date's record.</span>
-                    {dailyLoading && <span style={{ fontSize:11, color:'var(--muted)' }}>Loading…</span>}
+                    <span style={{ fontSize:11, color:'var(--muted)' }}>{L2("Each day settles independently — entering turnover for this date does not affect any other date's record.",'每天独立结算 — 录入此日期的流水不会影响其他日期的记录。')}</span>
+                    {dailyLoading && <span style={{ fontSize:11, color:'var(--muted)' }}>{L2('Loading…','加载中…')}</span>}
                     {selected?.is_multi_level && campaignLevels?.length > 0 && (
                       <button onClick={recalcDailyRewards} disabled={dailyLoading}
                         style={{ marginLeft:'auto', background:'rgba(201,169,97,.12)', border:'1px solid rgba(201,169,97,.3)', color:'#c9a961', padding:'5px 12px', borderRadius:6, fontSize:11, fontWeight:700, cursor:'pointer' }}
-                        title="Recalculate tier_achieved and credit_reward for ALL entries of this campaign using campaign level thresholds">
-                        🔄 Recalculate All Rewards
+                        title={L2('Recalculate tier_achieved and credit_reward for ALL entries of this campaign using campaign level thresholds','使用活动级别门槛，重新计算此活动所有记录的 tier_achieved 和 credit_reward')}>
+                        🔄 {L2('Recalculate All Rewards','重新计算所有奖励')}
                       </button>
                     )}
                   </div>
@@ -2583,21 +2603,21 @@ export default function Campaigns() {
                     <>
                     <thead><tr>
                       <th style={s.th}>#</th>
-                      <th style={s.th}>Player</th>
-                      <th style={s.th}>Host</th>
+                      <th style={s.th}>{L2('Player','玩家')}</th>
+                      <th style={s.th}>{L2('Host','负责人')}</th>
                       <th style={s.th}>WhatsApp</th>
-                      <th style={s.th}>Valid Bet (RM)</th>
-                      <th style={s.th}>Deposit (RM)</th>
-                      <th style={s.th}>Progress (Min Bet)</th>
-                      <th style={s.th}>Gap to Rank #{topN}</th>
-                      <th style={s.th}>Reward</th>
-                      <th style={s.th}>Contact</th>
-                      <th style={s.th}>Priority</th>
+                      <th style={s.th}>{L2('Valid Bet (RM)','有效投注 (RM)')}</th>
+                      <th style={s.th}>{L2('Deposit (RM)','存款 (RM)')}</th>
+                      <th style={s.th}>{L2('Progress (Min Bet)','进度（最低投注）')}</th>
+                      <th style={s.th}>{L2('Gap to Rank #','距离第 ')}{topN}{L2('',' 名差距')}</th>
+                      <th style={s.th}>{L2('Reward','奖励')}</th>
+                      <th style={s.th}>{L2('Contact','联系')}</th>
+                      <th style={s.th}>{L2('Priority','优先级')}</th>
                       <th style={s.th}>✕</th>
                     </tr></thead>
                     <tbody>
                       {filteredChaseList.length === 0
-                        ? <tr><td colSpan={12} style={{ ...s.td, textAlign:'center', padding:24, color:'var(--muted)' }}>{chaseList.length === 0 ? 'Add players above to start tracking.' : 'No players match the search.'}</td></tr>
+                        ? <tr><td colSpan={12} style={{ ...s.td, textAlign:'center', padding:24, color:'var(--muted)' }}>{chaseList.length === 0 ? L2('Add players above to start tracking.','请在上方添加玩家以开始追踪。') : L2('No players match the search.','没有符合搜索的玩家。')}</td></tr>
                         : filteredChaseList.map((p,i) => {
                             const rankingTarget = leaderboardMetric === 'deposit' ? minDepLb : minBetTarget
                             const pr = getProgress(p._rankingValue||0, rankingTarget)
@@ -2610,7 +2630,7 @@ export default function Campaigns() {
                                   <div style={{ display:'flex', alignItems:'center', gap:4 }}>
                                     <span style={{ cursor:'pointer' }} onClick={()=>{if(p.vip_id){closeModal();navigate(`/vips/${p.vip_id}`)}}}>{p.username}</span>
                                     {p.tier && <span style={{ ...s.badge, background:TIER_BG[p.tier]||'transparent', color:TIER_COLOR[p.tier]||'var(--muted)', fontSize:10 }}>{p.tier}</span>}
-                                    <button title="Copy username" onClick={()=>copyUsername(p.id, p.username)} style={{ marginLeft:2, background:'none', border:'none', cursor:'pointer', fontSize:11, color: copiedId===p.id ? '#3fb950' : 'var(--muted)', padding:'1px 4px', borderRadius:4 }}>{copiedId===p.id ? '✓' : '⎘'}</button>
+                                    <button title={L2('Copy username','复制用户名')} onClick={()=>copyUsername(p.id, p.username)} style={{ marginLeft:2, background:'none', border:'none', cursor:'pointer', fontSize:11, color: copiedId===p.id ? '#3fb950' : 'var(--muted)', padding:'1px 4px', borderRadius:4 }}>{copiedId===p.id ? '✓' : '⎘'}</button>
                                   </div>
                                 </td>
                                 <td style={{ ...s.td, fontSize:12, color: p.host_assigned ? 'var(--text)' : 'var(--muted)' }}>{p.host_assigned || '—'}</td>
@@ -2637,16 +2657,16 @@ export default function Campaigns() {
                                 </td>
                                 <td style={{ ...s.td, fontSize:12 }}>
                                   {inTopByPosition
-                                    ? <span style={{ color:'#3fb950', fontWeight:700 }}>🏆 In Top {topN}</span>
+                                    ? <span style={{ color:'#3fb950', fontWeight:700 }}>🏆 {L2('In Top','位于前')} {topN}{L2('',' 名')}</span>
                                     : gap!=null
-                                      ? <span style={{ color:'#f85149' }}>short {rmFmt(gap, campCurrency)}<br/><span style={{ color:'var(--muted)', fontSize:10 }}>vs {chaseList[topN-1]?.username}</span></span>
+                                      ? <span style={{ color:'#f85149' }}>{L2('short','差')} {rmFmt(gap, campCurrency)}<br/><span style={{ color:'var(--muted)', fontSize:10 }}>{L2('vs','对比')} {chaseList[topN-1]?.username}</span></span>
                                       : <span style={{ color:'var(--muted)' }}>—</span>}
                                 </td>
                                 <td style={{ ...s.td, color: p._inTop ? '#a78bfa' : 'var(--muted)', fontWeight: p._inTop ? 700 : 400, fontSize:12 }}>
                                   {p._inTop ? rewardFmt(p._reward, campCurrency) : '—'}
                                 </td>
                                 <td style={s.td}><CampaignWaButton p={p} extra={{ vb: p._vb, inTop: p._inTop, reward: p._reward, gap }} /></td>
-                                <td style={s.td}><span style={{ ...s.tag(pr.color, pr.bg), fontSize:10 }}>{pr.label}</span></td>
+                                <td style={s.td}><span style={{ ...s.tag(pr.color, pr.bg), fontSize:10 }}>{prLabel(pr.label)}</span></td>
                                 <td style={s.td} onClick={e=>e.stopPropagation()}>
                                   <button onClick={()=>removePlayer(p.id)} style={{ background:'none', border:'1px solid rgba(248,81,73,.3)', color:'#f85149', padding:'2px 8px', borderRadius:5, fontSize:11, cursor:'pointer' }}>✕</button>
                                 </td>
@@ -2660,7 +2680,7 @@ export default function Campaigns() {
                     <>
                     <thead><tr>
                       <th style={{ ...s.th, width:32 }}>
-                        <input type="checkbox" title="Select all"
+                        <input type="checkbox" title={L2('Select all','全选')}
                           checked={filteredChaseList.length > 0 && filteredChaseList.every(p => selectedForRemoval.has(p.id))}
                           onChange={e => {
                             setSelectedForRemoval(prev => {
@@ -2673,21 +2693,21 @@ export default function Campaigns() {
                           style={{ accentColor:'var(--accent)', cursor:'pointer' }} />
                       </th>
                       <th style={s.th}>#</th>
-                      <th style={s.th}>Player</th>
-                      <th style={s.th}>Host</th>
+                      <th style={s.th}>{L2('Player','玩家')}</th>
+                      <th style={s.th}>{L2('Host','负责人')}</th>
                       <th style={s.th}>WhatsApp</th>
-                      <th style={s.th}>{campType==='dual_tier' ? 'Deposit / Turnover (RM)' : 'Campaign Deposit (RM)'}</th>
-                      <th style={s.th}>Progress</th>
-                      <th style={s.th}>Reward</th>
-                      <th style={s.th}>Last Contact</th>
-                      <th style={s.th}>Priority</th>
+                      <th style={s.th}>{campType==='dual_tier' ? L2('Deposit / Turnover (RM)','存款 / 流水 (RM)') : L2('Campaign Deposit (RM)','活动存款 (RM)')}</th>
+                      <th style={s.th}>{L2('Progress','进度')}</th>
+                      <th style={s.th}>{L2('Reward','奖励')}</th>
+                      <th style={s.th}>{L2('Last Contact','最后联系')}</th>
+                      <th style={s.th}>{L2('Priority','优先级')}</th>
                       <th style={s.th}>✕</th>
                     </tr></thead>
                     <tbody>
                       {chaseList.length === 0
-                        ? <tr><td colSpan={11} style={{ ...s.td, textAlign:'center', padding:24, color:'var(--muted)' }}>Add players above to start tracking.</td></tr>
+                        ? <tr><td colSpan={11} style={{ ...s.td, textAlign:'center', padding:24, color:'var(--muted)' }}>{L2('Add players above to start tracking.','请在上方添加玩家以开始追踪。')}</td></tr>
                         : filteredChaseList.length === 0
-                        ? <tr><td colSpan={11} style={{ ...s.td, textAlign:'center', padding:24, color:'var(--muted)' }}>No players match the search.</td></tr>
+                        ? <tr><td colSpan={11} style={{ ...s.td, textAlign:'center', padding:24, color:'var(--muted)' }}>{L2('No players match the search.','没有符合搜索的玩家。')}</td></tr>
                         : filteredChaseList.map((p,i) => {
                             const multi = selected?.is_multi_level && campaignLevels.length > 0
                             const multiMetric = multi ? multiMetricsByPlayer[p.id] : null
@@ -2702,9 +2722,9 @@ export default function Campaigns() {
                               const sortedLvls = [...campaignLevels].sort((a,b) => (parseFloat(a.deposit_threshold)||0) - (parseFloat(b.deposit_threshold)||0))
                               const nextLvl = sortedLvls.find(l => dep < (parseFloat(l.deposit_threshold)||0))
                               const allDone = sortedLvls.length > 0 && dep >= (parseFloat(sortedLvls[sortedLvls.length-1]?.deposit_threshold)||0)
-                              if (allDone) pr = { pct:100, color:'#3fb950', bg:'rgba(63,185,80,.15)', label:'✅ ALL LEVELS' }
+                              if (allDone) pr = { pct:100, color:'#3fb950', bg:'rgba(63,185,80,.15)', label:L2('✅ ALL LEVELS','✅ 全部级别') }
                               else if (nextLvl) pr = getProgress(dep, parseFloat(nextLvl.deposit_threshold)||0)
-                              else pr = { pct:0, color:'#8b949e', bg:'rgba(139,148,158,.15)', label:'IN PROGRESS' }
+                              else pr = { pct:0, color:'#8b949e', bg:'rgba(139,148,158,.15)', label:L2('IN PROGRESS','进行中') }
                             } else if (isDailyMode && campType==='dual_tier') {
                               const currentDeposit = dailyEntry?.deposit_amount || 0
                               const currentTurnover = dailyEntry?.turnover_amount || 0
@@ -2718,9 +2738,9 @@ export default function Campaigns() {
                                   const depPct = nextDepThreshold > 0 ? Math.min(100, Math.round(currentDeposit / nextDepThreshold * 100)) : 100
                                   const toPct  = nextTOThreshold  > 0 ? Math.min(100, Math.round(currentTurnover / nextTOThreshold * 100)) : 100
                                   const pct = Math.min(depPct, toPct)
-                                  pr = { pct, color:'#3fb950', bg:'rgba(63,185,80,.15)', label:`✅ Tier ${dualReward.tierIndex+1} Achieved` }
+                                  pr = { pct, color:'#3fb950', bg:'rgba(63,185,80,.15)', label:L2(`✅ Tier ${dualReward.tierIndex+1} Achieved`, `✅ 等级 ${dualReward.tierIndex+1} 已达标`) }
                                 } else {
-                                  pr = { pct:100, color:'#3fb950', bg:'rgba(63,185,80,.15)', label:`✅ Tier ${dualReward.tierIndex+1} (Highest)` }
+                                  pr = { pct:100, color:'#3fb950', bg:'rgba(63,185,80,.15)', label:L2(`✅ Tier ${dualReward.tierIndex+1} (Highest)`, `✅ 等级 ${dualReward.tierIndex+1}（最高）`) }
                                 }
                               } else {
                                 // Not yet qualified — progress = worst of deposit% vs turnover% toward first tier
@@ -2758,16 +2778,16 @@ export default function Campaigns() {
                                       {p.username}
                                     </span>
                                     {p.tier && <span style={{ ...s.badge, background:TIER_BG[p.tier]||'transparent', color:TIER_COLOR[p.tier]||'var(--muted)', fontSize:10 }}>{p.tier}</span>}
-                                    <button title="Copy username" onClick={()=>copyUsername(p.id, p.username)} style={{ marginLeft:2, background:'none', border:'none', cursor:'pointer', fontSize:11, color: copiedId===p.id ? '#3fb950' : 'var(--muted)', padding:'1px 4px', borderRadius:4 }}>
+                                    <button title={L2('Copy username','复制用户名')} onClick={()=>copyUsername(p.id, p.username)} style={{ marginLeft:2, background:'none', border:'none', cursor:'pointer', fontSize:11, color: copiedId===p.id ? '#3fb950' : 'var(--muted)', padding:'1px 4px', borderRadius:4 }}>
                                       {copiedId===p.id ? '✓' : '⎘'}
                                     </button>
                                   </div>
                                   {selected?.streak_enabled && (
                                     <div style={{ marginTop:4, display:'flex', gap:4, flexWrap:'wrap' }}>
                                       {playerStreaks.length === 0
-                                        ? <span style={{ fontSize:10, background:'rgba(255,165,0,.1)', color:'#f59e0b', borderRadius:4, padding:'1px 5px', fontWeight:600 }}>🔥 Streak ON</span>
+                                        ? <span style={{ fontSize:10, background:'rgba(255,165,0,.1)', color:'#f59e0b', borderRadius:4, padding:'1px 5px', fontWeight:600 }}>🔥 {L2('Streak ON','连续奖励开启')}</span>
                                         : <>
-                                            {paidStreaks.length > 0 && <span style={{ fontSize:10, background:'rgba(63,185,80,.15)', color:'#3fb950', borderRadius:4, padding:'1px 5px', fontWeight:600 }}>🔥×{paidStreaks.length} paid</span>}
+                                            {paidStreaks.length > 0 && <span style={{ fontSize:10, background:'rgba(63,185,80,.15)', color:'#3fb950', borderRadius:4, padding:'1px 5px', fontWeight:600 }}>🔥×{paidStreaks.length} {L2('paid','已派')}</span>}
                                             {pendingStreaks.map(sb => <span key={sb.streak_number} style={{ fontSize:10, background:'rgba(245,158,11,.15)', color:'#f59e0b', borderRadius:4, padding:'1px 5px', fontWeight:600 }}>🔥#{sb.streak_number} {bonusFmt(sb.bonus_amount, campCurrency)}</span>)}
                                           </>
                                       }
@@ -2783,19 +2803,19 @@ export default function Campaigns() {
                                     <>
                                       <input type="number" key={`${p.id}-${entryDate}-dep`} defaultValue={dailyEntry?.deposit_amount || ''}
                                         onBlur={e=>{ const v=parseFloat(e.target.value)||0; if(v!==(dailyEntry?.deposit_amount||0)) saveDailyEntry(p.id, v, dailyEntry?.turnover_amount||0) }}
-                                        style={{ ...s.smInput, width:110, display:'block', marginBottom:4 }} placeholder="Deposit" disabled={dailyLoading} />
+                                        style={{ ...s.smInput, width:110, display:'block', marginBottom:4 }} placeholder={L2('Deposit','存款')} disabled={dailyLoading} />
                                       <input type="number" key={`${p.id}-${entryDate}-to`} defaultValue={dailyEntry?.turnover_amount || ''}
                                         onBlur={e=>{ const v=parseFloat(e.target.value)||0; if(v!==(dailyEntry?.turnover_amount||0)) saveDailyEntry(p.id, dailyEntry?.deposit_amount||0, v) }}
-                                        style={{ ...s.smInput, width:110 }} placeholder="Turnover" disabled={dailyLoading} />
+                                        style={{ ...s.smInput, width:110 }} placeholder={L2('Turnover','流水')} disabled={dailyLoading} />
                                     </>
                                   ) : <>
                                     <input type="number" defaultValue={playerDeposit(p)||''}
                                       onBlur={e=>{ const v=parseFloat(e.target.value)||0; if(v!==playerDeposit(p)) updatePlayer(p.id,{total_deposit:v, converted: campType==='dual_tier' ? calcDualTierReward(v,p.valid_bet,rewardTiers).tierIndex>=0 : v>=depTarget}) }}
-                                      style={{ ...s.smInput, width:110 }} placeholder={campType==='dual_tier' ? 'Deposit' : undefined} />
+                                      style={{ ...s.smInput, width:110 }} placeholder={campType==='dual_tier' ? L2('Deposit','存款') : undefined} />
                                     {campType==='dual_tier' && (
                                       <input type="number" defaultValue={p.valid_bet||''}
                                         onBlur={e=>{ const v=parseFloat(e.target.value)||0; if(v!==(p.valid_bet||0)) updatePlayer(p.id,{valid_bet:v, converted: calcDualTierReward(playerDeposit(p),v,rewardTiers).tierIndex>=0}) }}
-                                        style={{ ...s.smInput, width:110, marginTop:4 }} placeholder="Turnover" />
+                                        style={{ ...s.smInput, width:110, marginTop:4 }} placeholder={L2('Turnover','流水')} />
                                     )}
                                   </>}
                                 </td>
@@ -2812,9 +2832,9 @@ export default function Campaigns() {
                                           const dep = dailyEntry?.deposit_amount || 0
                                           const sortedLvls = [...campaignLevels].sort((a,b)=>(parseFloat(a.deposit_threshold)||0)-(parseFloat(b.deposit_threshold)||0))
                                           const nextLvl = sortedLvls.find(l => dep < (parseFloat(l.deposit_threshold)||0))
-                                          return nextLvl ? `Next: ${nextLvl.level_name || ('Level '+nextLvl.level_order)} · ${rmFmt(Math.max(0, Number(nextLvl.deposit_threshold)-dep), campCurrency)} more` : dep > 0 ? 'All levels unlocked today' : '—'
+                                          return nextLvl ? `${L2('Next','下一级')}: ${nextLvl.level_name || (L2('Level ','级别 ')+nextLvl.level_order)} · ${L2('','还差 ')}${rmFmt(Math.max(0, Number(nextLvl.deposit_threshold)-dep), campCurrency)}${L2(' more','')}` : dep > 0 ? L2('All levels unlocked today','今日已解锁所有级别') : '—'
                                         })()
-                                      : (multiMetric?.allCompleted ? 'All campaign levels unlocked' : multiMetric?.nextLevel ? `Next: ${multiMetric.nextLevel.level_name} · ${rmFmt(Math.max(0, Number(multiMetric.nextLevel.deposit_threshold)-playerDeposit(p)), campCurrency)} more` : '—')
+                                      : (multiMetric?.allCompleted ? L2('All campaign levels unlocked','已解锁所有活动级别') : multiMetric?.nextLevel ? `${L2('Next','下一级')}: ${multiMetric.nextLevel.level_name} · ${L2('','还差 ')}${rmFmt(Math.max(0, Number(multiMetric.nextLevel.deposit_threshold)-playerDeposit(p)), campCurrency)}${L2(' more','')}` : '—')
                                     }
                                   </div>}
                                 </td>
@@ -2826,14 +2846,14 @@ export default function Campaigns() {
                                         <br />
                                         <span style={{ fontSize:10, color:'var(--muted)' }}>
                                           {(() => {
-                                            if (dailyEntry?.tier_achieved == null) return 'No level yet'
+                                            if (dailyEntry?.tier_achieved == null) return L2('No level yet','尚未达到级别')
                                             const lvl = campaignLevels.find(l => l.level_order === dailyEntry.tier_achieved)
-                                            return lvl ? `${lvl.level_name || ('Level '+lvl.level_order)} achieved` : `Level ${dailyEntry.tier_achieved} achieved`
+                                            return lvl ? `${lvl.level_name || (L2('Level ','级别 ')+lvl.level_order)} ${L2('achieved','已达标')}` : `${L2('Level','级别')} ${dailyEntry.tier_achieved} ${L2('achieved','已达标')}`
                                           })()}
                                         </span>
                                       </span>
                                     ) : (
-                                      <span>{rmFmt(reward, campCurrency)} total<br /><span style={{ fontSize:10, color:'var(--muted)' }}>{multiMetric?.completedCount || 0}/{campaignLevels.length} levels unlocked</span></span>
+                                      <span>{rmFmt(reward, campCurrency)} {L2('total','合计')}<br /><span style={{ fontSize:10, color:'var(--muted)' }}>{multiMetric?.completedCount || 0}/{campaignLevels.length} {L2('levels unlocked','级已解锁')}</span></span>
                                     )
                                   ) : !qualified ? '—' : campType==='dual_tier'
                                       ? <span>{rmFmt(dualReward.creditAmount, campCurrency)} Credit<br/><span style={{fontSize:10,color:'var(--muted)'}}>+ {rmFmt(dualReward.wcashAmount, campCurrency)} WCash</span></span>
@@ -2848,30 +2868,30 @@ export default function Campaigns() {
                                       const days = Math.floor((Date.now() - new Date(last.contacted_at).getTime()) / 86400000)
                                       const col = days === 0 ? '#3fb950' : days <= 2 ? '#f59e0b' : '#f85149'
                                       badge = <div style={{ fontSize:10, color:col, fontWeight:700, marginBottom:3, cursor:'pointer' }}
-                                        onClick={()=>{setContactLog(null);setContactNote('');setContactHistory(contactHistory===p.id?null:p.id)}} title="View contact history">
-                                        {CT_ICON[last.contact_type]||'📞'} {days === 0 ? 'Today' : `${days}d ago`}
-                                        <span style={{ color:'var(--muted)', fontWeight:400, marginLeft:3 }}>{CT_LABEL[last.contact_type]||last.contact_type}</span>
+                                        onClick={()=>{setContactLog(null);setContactNote('');setContactHistory(contactHistory===p.id?null:p.id)}} title={L2('View contact history','查看联系记录')}>
+                                        {CT_ICON[last.contact_type]||'📞'} {days === 0 ? L2('Today','今天') : L2(`${days}d ago`, `${days} 天前`)}
+                                        <span style={{ color:'var(--muted)', fontWeight:400, marginLeft:3 }}>{ctLabel(last.contact_type)}</span>
                                         {last.notes && <div style={{ color:'var(--muted)', fontWeight:400, fontSize:9, fontStyle:'italic', maxWidth:140, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>"{last.notes}"</div>}
                                       </div>
                                     } else {
-                                      badge = <div style={{ fontSize:10, color:'#f85149', fontWeight:700, marginBottom:3 }}>📞 Never</div>
+                                      badge = <div style={{ fontSize:10, color:'#f85149', fontWeight:700, marginBottom:3 }}>📞 {L2('Never','从未')}</div>
                                     }
                                     return <>
                                       {badge}
                                       {contactLog === p.id ? (
                                         <div style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:8, minWidth:210 }}>
-                                          <div style={{ fontSize:11, color:'var(--muted)', marginBottom:5, fontWeight:600 }}>Log contact</div>
-                                          <textarea value={contactNote} onChange={e=>setContactNote(e.target.value)} placeholder="Notes (optional)..." rows={2}
+                                          <div style={{ fontSize:11, color:'var(--muted)', marginBottom:5, fontWeight:600 }}>{L2('Log contact','记录联系')}</div>
+                                          <textarea value={contactNote} onChange={e=>setContactNote(e.target.value)} placeholder={L2('Notes (optional)...','备注（可选）...')} rows={2}
                                             style={{ width:'100%', background:'var(--surface)', border:'1px solid var(--border)', borderRadius:5, color:'var(--text)', fontSize:11, padding:'4px 6px', resize:'none', marginBottom:5, boxSizing:'border-box' }} />
                                           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:3, marginBottom:5 }}>
                                             {CONTACT_TYPES.map(([type,icon,lbl])=>(
                                               <button key={type} onClick={()=>logContact(p.id, type)}
                                                 style={{ textAlign:'left', background:'none', border:'1px solid var(--border)', color:'var(--text)', borderRadius:5, padding:'3px 6px', fontSize:10, cursor:'pointer' }}>
-                                                {icon} {lbl}
+                                                {icon} {ctLabel(type)}
                                               </button>
                                             ))}
                                           </div>
-                                          <button onClick={()=>{setContactLog(null);setContactNote('')}} style={{ background:'none', border:'none', color:'var(--muted)', fontSize:10, cursor:'pointer' }}>✕ Cancel</button>
+                                          <button onClick={()=>{setContactLog(null);setContactNote('')}} style={{ background:'none', border:'none', color:'var(--muted)', fontSize:10, cursor:'pointer' }}>✕ {L2('Cancel','取消')}</button>
                                         </div>
                                       ) : contactHistory === p.id ? (
                                         <div style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:8, minWidth:210, maxHeight:220, overflowY:'auto' }}>
@@ -2883,14 +2903,14 @@ export default function Campaigns() {
                                             const d=Math.floor((Date.now()-new Date(c.contacted_at).getTime())/86400000)
                                             return <div key={ci} style={{ borderBottom:'1px solid var(--border)', paddingBottom:4, marginBottom:4 }}>
                                               <div style={{ fontSize:10, fontWeight:600, color:d===0?'#3fb950':d<=2?'#f59e0b':'var(--muted)' }}>
-                                                {CT_ICON[c.contact_type]||'📞'} {CT_LABEL[c.contact_type]||c.contact_type} · {d===0?'Today':`${d}d ago`}
+                                                {CT_ICON[c.contact_type]||'📞'} {ctLabel(c.contact_type)} · {d===0?L2('Today','今天'):L2(`${d}d ago`, `${d} 天前`)}
                                                 {c.host&&<span style={{ fontWeight:400, color:'var(--muted)', marginLeft:4 }}>{c.host.split('@')[0]}</span>}
                                               </div>
                                               {c.notes&&<div style={{ fontSize:9, color:'var(--muted)', marginTop:1, fontStyle:'italic' }}>"{c.notes}"</div>}
                                             </div>
                                           })}
-                                          {!(contacts[p.id]||[]).length&&<div style={{ fontSize:10, color:'var(--muted)' }}>No contacts yet.</div>}
-                                          <button onClick={()=>{setContactHistory(null);const waResult=buildCampaignWaMessage(p,null);setContactNote(waResult?.body||'');setContactLog(p.id)}} style={{ background:'rgba(88,166,255,.1)', color:'#58a6ff', border:'1px solid rgba(88,166,255,.25)', borderRadius:5, padding:'2px 7px', fontSize:10, cursor:'pointer', fontWeight:600, marginTop:2 }}>+ Log New</button>
+                                          {!(contacts[p.id]||[]).length&&<div style={{ fontSize:10, color:'var(--muted)' }}>{L2('No contacts yet.','暂无联系记录。')}</div>}
+                                          <button onClick={()=>{setContactHistory(null);const waResult=buildCampaignWaMessage(p,null);setContactNote(waResult?.body||'');setContactLog(p.id)}} style={{ background:'rgba(88,166,255,.1)', color:'#58a6ff', border:'1px solid rgba(88,166,255,.25)', borderRadius:5, padding:'2px 7px', fontSize:10, cursor:'pointer', fontWeight:600, marginTop:2 }}>{L2('+ Log New','+ 新记录')}</button>
                                         </div>
                                       ) : (
                                         <div style={{ display:'flex', gap:4, alignItems:'center', flexWrap:'wrap' }}>
@@ -2913,10 +2933,10 @@ export default function Campaigns() {
                                                 style={{ background:'rgba(37,211,102,.1)', color:'#25d366', border:'1px solid rgba(37,211,102,.25)', borderRadius:5, padding:'2px 7px', fontSize:10, cursor:'pointer', fontWeight:600, textDecoration:'none' }}>
                                                 📱 WA
                                               </a>
-                                              <button onClick={()=>{navigator.clipboard.writeText(chaseTemplateTxt || p.whatsapp||''); const btn=document.getElementById('copy-wa-'+p.id); if(btn){btn.textContent='✓';setTimeout(()=>{btn.textContent='Copy'},1200)}}}
+                                              <button onClick={()=>{navigator.clipboard.writeText(chaseTemplateTxt || p.whatsapp||''); const btn=document.getElementById('copy-wa-'+p.id); if(btn){btn.textContent='✓';setTimeout(()=>{btn.textContent=L2('Copy','复制')},1200)}}}
                                                 id={'copy-wa-'+p.id}
                                                 style={{ background:'rgba(88,166,255,.1)', color:'#58a6ff', border:'1px solid rgba(88,166,255,.25)', borderRadius:5, padding:'2px 7px', fontSize:10, cursor:'pointer', fontWeight:600 }}>
-                                                Copy
+                                                {L2('Copy','复制')}
                                               </button>
                                             </>
                                           })()}
@@ -2925,7 +2945,7 @@ export default function Campaigns() {
                                     </>
                                   })()}
                                 </td>
-                                <td style={s.td}><span style={{ ...s.tag(pr.color, pr.bg), fontSize:10 }}>{pr.label}</span></td>
+                                <td style={s.td}><span style={{ ...s.tag(pr.color, pr.bg), fontSize:10 }}>{prLabel(pr.label)}</span></td>
                                 <td style={s.td} onClick={e=>e.stopPropagation()}>
                                   <button onClick={()=>removePlayer(p.id)} style={{ background:'none', border:'1px solid rgba(248,81,73,.3)', color:'#f85149', padding:'2px 8px', borderRadius:5, fontSize:11, cursor:'pointer' }}>✕</button>
                                 </td>
@@ -2944,16 +2964,16 @@ export default function Campaigns() {
             {activeTab === 'payout' && (
               <div style={{ overflowX:'auto' }}>
                 <div style={{ padding:'8px 24px', fontSize:11, color:'var(--muted)', background:'rgba(63,185,80,.04)', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', gap:12, flexWrap:'wrap' }}>
-                  {selected?.is_multi_level ? (selected?.payout_mode === 'highest_only' ? 'Payout mode: Highest level only — one reward per player. Mark paid only after it is actually issued.' : 'Payout mode: All levels — each unlocked level earns its own reward. Mark the individual reward paid only after it is actually issued.') : isDailyMode ? <><span>Showing players who qualified on</span><input type="date" value={entryDate} min={selected?.start_date||undefined} max={selected?.end_date||undefined} onChange={e=>setEntryDate(e.target.value)} style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:6, padding:'3px 8px', fontSize:11, color:'#c9a961', fontWeight:700, cursor:'pointer' }} /></> : 'Only showing players who reached the campaign target.'}
+                  {selected?.is_multi_level ? (selected?.payout_mode === 'highest_only' ? L2('Payout mode: Highest level only — one reward per player. Mark paid only after it is actually issued.','派彩模式：只派最高级别 — 每位玩家一份奖励。确实发放后才标记为已派。') : L2('Payout mode: All levels — each unlocked level earns its own reward. Mark the individual reward paid only after it is actually issued.','派彩模式：所有级别 — 每个已解锁级别各自获得奖励。确实发放后才将该奖励标记为已派。')) : isDailyMode ? <><span>{L2('Showing players who qualified on','显示以下日期达标的玩家')}</span><input type="date" value={entryDate} min={selected?.start_date||undefined} max={selected?.end_date||undefined} onChange={e=>setEntryDate(e.target.value)} style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:6, padding:'3px 8px', fontSize:11, color:'#c9a961', fontWeight:700, cursor:'pointer' }} /></> : L2('Only showing players who reached the campaign target.','只显示已达到活动目标的玩家。')}
                 </div>
                 {selected?.is_multi_level && !isDailyMode ? (
-                  multiPayoutRows.length === 0 ? <div style={{ padding:32, textAlign:'center', color:'var(--muted)' }}>No unlocked rewards are ready for payout yet.</div> : (
+                  multiPayoutRows.length === 0 ? <div style={{ padding:32, textAlign:'center', color:'var(--muted)' }}>{L2('No unlocked rewards are ready for payout yet.','暂无可派彩的已解锁奖励。')}</div> : (
                     <table style={s.tbl}>
-                      <thead><tr><th style={s.th}>#</th><th style={s.th}>Player</th><th style={s.th}>Tier</th><th style={s.th}>Level</th><th style={s.th}>Campaign Deposit</th><th style={s.th}>Reward</th><th style={s.th}>Payout Status</th><th style={s.th}>Paid At</th><th style={s.th}>Phone / WA</th><th style={s.th}>Notes</th></tr></thead>
+                      <thead><tr><th style={s.th}>#</th><th style={s.th}>{L2('Player','玩家')}</th><th style={s.th}>{L2('Tier','等级')}</th><th style={s.th}>{L2('Level','级别')}</th><th style={s.th}>{L2('Campaign Deposit','活动存款')}</th><th style={s.th}>{L2('Reward','奖励')}</th><th style={s.th}>{L2('Payout Status','派彩状态')}</th><th style={s.th}>{L2('Paid At','派发时间')}</th><th style={s.th}>{L2('Phone / WA','电话 / WA')}</th><th style={s.th}>{L2('Notes','备注')}</th></tr></thead>
                       <tbody>
                         {multiPayoutRows.map((row,i)=>{
                           const paid = row.status === 'paid'
-                          const payoutLabel = paid ? '✅ Paid' : row.status === 'approved' ? '🟦 Approved' : '⏳ Pending'
+                          const payoutLabel = paid ? L2('✅ Paid','✅ 已派') : row.status === 'approved' ? L2('🟦 Approved','🟦 已批准') : L2('⏳ Pending','⏳ 待处理')
                           const player = players.find(p=>p.id===row.playerId)
                           const note = campaignRewards.find(r=>r.id===row.rewardId)?.notes || ''
                           const waMultiAgent = player?.host_assigned || null
@@ -2974,31 +2994,31 @@ export default function Campaigns() {
                               <div style={{fontSize:12,color:'var(--muted)',marginBottom:4}}>{player?.whatsapp||'—'}</div>
                               <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
                                 {waUrl && <a href={waUrl} target="_blank" rel="noreferrer" style={{ display:'inline-flex', alignItems:'center', gap:4, background:'rgba(37,211,102,.15)', color:'#25d366', border:'1px solid rgba(37,211,102,.3)', borderRadius:6, padding:'3px 8px', fontSize:11, fontWeight:700, textDecoration:'none' }}>📲 WA</a>}
-                                <button onClick={()=>navigator.clipboard.writeText(waMultiText).catch(()=>{})} style={{ background:'rgba(88,166,255,.12)', color:'#58a6ff', border:'1px solid rgba(88,166,255,.3)', borderRadius:6, padding:'3px 8px', fontSize:11, fontWeight:700, cursor:'pointer' }}>📋 Copy</button>
-                                {!waUrl && <span style={{fontSize:10,color:'var(--muted)'}}>No number</span>}
+                                <button onClick={()=>navigator.clipboard.writeText(waMultiText).catch(()=>{})} style={{ background:'rgba(88,166,255,.12)', color:'#58a6ff', border:'1px solid rgba(88,166,255,.3)', borderRadius:6, padding:'3px 8px', fontSize:11, fontWeight:700, cursor:'pointer' }}>📋 {L2('Copy','复制')}</button>
+                                {!waUrl && <span style={{fontSize:10,color:'var(--muted)'}}>{L2('No number','无号码')}</span>}
                               </div>
                             </td>
-                            <td style={s.td}><input defaultValue={note} onBlur={async e=>{const v=e.target.value;if(v!==note){const {error}=await supabase.from('campaign_rewards').update({notes:v}).eq('id',row.rewardId);if(error)console.error(error)}}} style={{ ...s.editInput,width:140 }} placeholder="Add note..." /></td>
+                            <td style={s.td}><input defaultValue={note} onBlur={async e=>{const v=e.target.value;if(v!==note){const {error}=await supabase.from('campaign_rewards').update({notes:v}).eq('id',row.rewardId);if(error)console.error(error)}}} style={{ ...s.editInput,width:140 }} placeholder={L2('Add note...','添加备注...')} /></td>
                           </tr>
                         })}
-                        <tr style={{ background:'var(--surface2)',fontWeight:700 }}><td colSpan={5} style={s.td}>Total unlocked rewards</td><td style={{ ...s.td,color:typeInfo.color,fontWeight:800 }}>{rewardFmt(totalReward,campCurrency)} Credit</td><td style={s.td}><span style={{color:'#3fb950'}}>{rewardFmt(paidOut,campCurrency)} paid</span><span style={{color:'#f85149',marginLeft:8}}>{rewardFmt(pendingPay,campCurrency)} pending</span></td><td colSpan={3} style={s.td}/></tr>
+                        <tr style={{ background:'var(--surface2)',fontWeight:700 }}><td colSpan={5} style={s.td}>{L2('Total unlocked rewards','已解锁奖励合计')}</td><td style={{ ...s.td,color:typeInfo.color,fontWeight:800 }}>{rewardFmt(totalReward,campCurrency)} Credit</td><td style={s.td}><span style={{color:'#3fb950'}}>{rewardFmt(paidOut,campCurrency)} {L2('paid','已派')}</span><span style={{color:'#f85149',marginLeft:8}}>{rewardFmt(pendingPay,campCurrency)} {L2('pending','待处理')}</span></td><td colSpan={3} style={s.td}/></tr>
                       </tbody>
                     </table>
                   )
                 ) : (isDailyMode ? dailyAchieved : achieved).length === 0 ? (
-                  <div style={{ padding:32,textAlign:'center',color:'var(--muted)' }}>{isDailyMode?'No players qualified on this date yet.':'No players have reached the target yet.'}</div>
+                  <div style={{ padding:32,textAlign:'center',color:'var(--muted)' }}>{isDailyMode?L2('No players qualified on this date yet.','此日期尚无玩家达标。'):L2('No players have reached the target yet.','尚无玩家达到目标。')}</div>
                 ) : (
                   <>
                   {/* Payout host filter */}
                   {chaseHosts.length > 1 && (
                     <div style={{ padding:'6px 24px', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', gap:6, flexWrap:'wrap' }}>
-                      <span style={{ fontSize:11, color:'var(--muted)', fontWeight:600 }}>Host:</span>
+                      <span style={{ fontSize:11, color:'var(--muted)', fontWeight:600 }}>{L2('Host:','负责人：')}</span>
                       {chaseHosts.map(h => (
                         <button key={h} onClick={()=>setPayoutHostFilter(h)}
                           style={{ padding:'3px 10px', borderRadius:14, fontSize:11, fontWeight:600, border:'1px solid var(--border)', cursor:'pointer',
                             background: payoutHostFilter===h ? 'var(--accent)' : 'var(--surface2)',
                             color: payoutHostFilter===h ? '#fff' : 'var(--muted)' }}>
-                          {h === 'all' ? '🌐 All' : h}
+                          {h === 'all' ? L2('🌐 All','🌐 全部') : h}
                         </button>
                       ))}
                     </div>
@@ -3006,18 +3026,18 @@ export default function Campaigns() {
                   {/* Payout search + sort controls */}
                   <div style={{ padding:'8px 24px', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
                     <input value={payoutSearch} onChange={e=>setPayoutSearch(e.target.value)}
-                      placeholder={`🔍 Search ${filteredPayoutList.length} players…`}
+                      placeholder={L2(`🔍 Search ${filteredPayoutList.length} players…`, `🔍 搜索 ${filteredPayoutList.length} 位玩家…`)}
                       style={{ ...s.smInput, width:220, fontSize:12 }} />
                     {payoutSearch && <button onClick={()=>setPayoutSearch('')} style={{ fontSize:11, color:'var(--muted)', background:'none', border:'none', cursor:'pointer', padding:'2px 6px' }}>✕</button>}
-                    <span style={{ fontSize:11, color:'var(--muted)', marginLeft:4 }}>Sort:</span>
-                    {[['deposit','Deposit'],['reward','Reward'],['name','Name']].map(([key,lbl])=>(
+                    <span style={{ fontSize:11, color:'var(--muted)', marginLeft:4 }}>{L2('Sort:','排序：')}</span>
+                    {[['deposit',L2('Deposit','存款')],['reward',L2('Reward','奖励')],['name',L2('Name','名称')]].map(([key,lbl])=>(
                       <button key={key} onClick={()=>{ if(payoutSort===key){setPayoutSortDir(d=>d==='asc'?'desc':'asc')}else{setPayoutSort(key);setPayoutSortDir('desc')} }}
                         style={{ padding:'3px 10px', borderRadius:14, fontSize:11, fontWeight:600, border:'1px solid var(--border)', cursor:'pointer',
                           background: payoutSort===key ? 'var(--accent)' : 'var(--surface2)', color: payoutSort===key ? '#fff' : 'var(--muted)' }}>
                         {lbl} {payoutSort===key ? (payoutSortDir==='asc' ? '↑' : '↓') : ''}
                       </button>
                     ))}
-                    <span style={{ fontSize:11, color:'var(--muted)', marginLeft:8 }}>WA Lang:</span>
+                    <span style={{ fontSize:11, color:'var(--muted)', marginLeft:8 }}>{L2('WA Lang:','WA 语言：')}</span>
                     {[['en','EN'],['my','MY'],['cn','中文']].map(([key,lbl])=>(
                       <button key={key} onClick={()=>setWaLang(key)}
                         style={{ padding:'3px 10px', borderRadius:14, fontSize:11, fontWeight:700, border:'1px solid var(--border)', cursor:'pointer',
@@ -3025,7 +3045,7 @@ export default function Campaigns() {
                         {lbl}
                       </button>
                     ))}
-                    <span style={{ marginLeft:'auto', fontSize:11, color:'var(--muted)' }}>{filteredPayoutList.length} of {(isDailyMode?dailyAchieved:achieved).length} players</span>
+                    <span style={{ marginLeft:'auto', fontSize:11, color:'var(--muted)' }}>{L2(`${filteredPayoutList.length} of ${(isDailyMode?dailyAchieved:achieved).length} players`, `${filteredPayoutList.length} / ${(isDailyMode?dailyAchieved:achieved).length} 位玩家`)}</span>
                     <button onClick={() => {
                       try {
                         const campName = selected?.campaign_name || 'Campaign'
@@ -3087,24 +3107,24 @@ export default function Campaigns() {
                         el.click()
                       } catch(err) {
                         console.error('Export error:', err)
-                        alert('Export failed: ' + err.message)
+                        alert(L2('Export failed: ','导出失败：') + err.message)
                       }
                     }} style={{ background:'var(--surface2)', border:'1px solid var(--border)', color:'var(--text)', padding:'4px 12px', borderRadius:6, fontSize:11, cursor:'pointer', whiteSpace:'nowrap' }}>
-                      ⬇ Export
+                      ⬇ {L2('Export','导出')}
                     </button>
                   </div>
                   <table style={s.tbl}>
                     <thead><tr>
                       <th style={s.th}>#</th>
-                      <th style={s.th}>Player</th>
-                      <th style={s.th}>{isDailyMode&&selected?.is_multi_level ? 'Level' : 'Tier'}</th>
-                      <th style={s.th}>{isDailyMode&&campType==='dual_tier'&&!selected?.is_multi_level?'Deposit / Turnover (this date)':isDailyMode?'Deposit (this date)':'Deposit'}</th>
-                      <th style={s.th}>Reward</th>
-                      <th style={s.th}>Payout Status</th>
-                      <th style={s.th}>Last Contact</th>
-                      <th style={s.th}>Host</th>
-                      <th style={s.th}>Phone / WA</th>
-                      <th style={s.th}>Notes</th>
+                      <th style={s.th}>{L2('Player','玩家')}</th>
+                      <th style={s.th}>{isDailyMode&&selected?.is_multi_level ? L2('Level','级别') : L2('Tier','等级')}</th>
+                      <th style={s.th}>{isDailyMode&&campType==='dual_tier'&&!selected?.is_multi_level?L2('Deposit / Turnover (this date)','存款 / 流水（当日）'):isDailyMode?L2('Deposit (this date)','存款（当日）'):L2('Deposit','存款')}</th>
+                      <th style={s.th}>{L2('Reward','奖励')}</th>
+                      <th style={s.th}>{L2('Payout Status','派彩状态')}</th>
+                      <th style={s.th}>{L2('Last Contact','最后联系')}</th>
+                      <th style={s.th}>{L2('Host','负责人')}</th>
+                      <th style={s.th}>{L2('Phone / WA','电话 / WA')}</th>
+                      <th style={s.th}>{L2('Notes','备注')}</th>
                     </tr></thead>
                     <tbody>{filteredPayoutList.map((p,i)=>{
                       const isDailyMulti = isDailyMode && selected?.is_multi_level
@@ -3136,7 +3156,7 @@ export default function Campaigns() {
                         }</td>
                         <td style={{...s.td,color:'#3fb950',fontWeight:600}}>{isDailyMode
                           ? (campType==='dual_tier'&&!isDailyMulti
-                            ? <span>{rmFmt(entry?.deposit_amount||0,campCurrency)}<br/><span style={{fontSize:10,color:'var(--muted)'}}>{rmFmt(entry?.turnover_amount||0,campCurrency)} TO</span></span>
+                            ? <span>{rmFmt(entry?.deposit_amount||0,campCurrency)}<br/><span style={{fontSize:10,color:'var(--muted)'}}>{rmFmt(entry?.turnover_amount||0,campCurrency)} {L2('TO','流水')}</span></span>
                             : rmFmt(entry?.deposit_amount||0,campCurrency))
                           : rmFmt(playerDeposit(p),campCurrency)
                         }</td>
@@ -3147,9 +3167,9 @@ export default function Campaigns() {
                             : rmFmt(creditReward,campCurrency)
                         }</td>
                         <td style={s.td}>
-                          <button onClick={()=> isDailyMode ? updateDailyPayout(p.id, paid?'pending':'paid') : updatePlayer(p.id,{payout_status:paid?'pending':'paid',payout_date:paid?null:new Date().toISOString(),reward_amount:paid?0:creditReward+wcashReward})} style={{...s.tag(paid?'#3fb950':'#f59e0b',paid?'rgba(63,185,80,.15)':'rgba(245,158,11,.15)'),cursor:'pointer'}}>{paid?'✅ Paid':'⏳ Pending'}</button>
+                          <button onClick={()=> isDailyMode ? updateDailyPayout(p.id, paid?'pending':'paid') : updatePlayer(p.id,{payout_status:paid?'pending':'paid',payout_date:paid?null:new Date().toISOString(),reward_amount:paid?0:creditReward+wcashReward})} style={{...s.tag(paid?'#3fb950':'#f59e0b',paid?'rgba(63,185,80,.15)':'rgba(245,158,11,.15)'),cursor:'pointer'}}>{paid?L2('✅ Paid','✅ 已派'):L2('⏳ Pending','⏳ 待处理')}</button>
                           {selected?.streak_enabled && pendingStreakBonus > 0 && (
-                            <div style={{ marginTop:3, fontSize:10, color:'#f59e0b', fontWeight:700, whiteSpace:'nowrap' }}>🔥 +{rmFmt(pendingStreakBonus, campCurrency)} streak</div>
+                            <div style={{ marginTop:3, fontSize:10, color:'#f59e0b', fontWeight:700, whiteSpace:'nowrap' }}>🔥 +{rmFmt(pendingStreakBonus, campCurrency)} {L2('streak','连续奖励')}</div>
                           )}
                         </td>
                         <td style={{ ...s.td, minWidth:110 }} onClick={e=>e.stopPropagation()}>
@@ -3161,30 +3181,30 @@ export default function Campaigns() {
                               const days = Math.floor((Date.now() - new Date(last.contacted_at).getTime()) / 86400000)
                               const col = days === 0 ? '#3fb950' : days <= 2 ? '#f59e0b' : '#f85149'
                               badge = <div style={{ fontSize:10, color:col, fontWeight:700, marginBottom:3, cursor:'pointer' }}
-                                onClick={()=>{setContactLog(null);setContactNote('');setContactHistory(contactHistory===p.id?null:p.id)}} title="View contact history">
-                                {CT_ICON[last.contact_type]||'📞'} {days === 0 ? 'Today' : `${days}d ago`}
-                                <span style={{ color:'var(--muted)', fontWeight:400, marginLeft:3 }}>{CT_LABEL[last.contact_type]||last.contact_type}</span>
+                                onClick={()=>{setContactLog(null);setContactNote('');setContactHistory(contactHistory===p.id?null:p.id)}} title={L2('View contact history','查看联系记录')}>
+                                {CT_ICON[last.contact_type]||'📞'} {days === 0 ? L2('Today','今天') : L2(`${days}d ago`, `${days} 天前`)}
+                                <span style={{ color:'var(--muted)', fontWeight:400, marginLeft:3 }}>{ctLabel(last.contact_type)}</span>
                                 {last.notes && <div style={{ color:'var(--muted)', fontWeight:400, fontSize:9, fontStyle:'italic', maxWidth:140, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>"{last.notes}"</div>}
                               </div>
                             } else {
-                              badge = <div style={{ fontSize:10, color:'#f85149', fontWeight:700, marginBottom:3 }}>📞 Never</div>
+                              badge = <div style={{ fontSize:10, color:'#f85149', fontWeight:700, marginBottom:3 }}>📞 {L2('Never','从未')}</div>
                             }
                             return <>
                               {badge}
                               {contactLog === p.id ? (
                                 <div style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:8, minWidth:210 }}>
-                                  <div style={{ fontSize:11, color:'var(--muted)', marginBottom:5, fontWeight:600 }}>Log contact</div>
-                                  <textarea value={contactNote} onChange={e=>setContactNote(e.target.value)} placeholder="Notes (optional)..." rows={2}
+                                  <div style={{ fontSize:11, color:'var(--muted)', marginBottom:5, fontWeight:600 }}>{L2('Log contact','记录联系')}</div>
+                                  <textarea value={contactNote} onChange={e=>setContactNote(e.target.value)} placeholder={L2('Notes (optional)...','备注（可选）...')} rows={2}
                                     style={{ width:'100%', background:'var(--surface)', border:'1px solid var(--border)', borderRadius:5, color:'var(--text)', fontSize:11, padding:'4px 6px', resize:'none', marginBottom:5, boxSizing:'border-box' }} />
                                   <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:3, marginBottom:5 }}>
                                     {CONTACT_TYPES.map(([type,icon,lbl])=>(
                                       <button key={type} onClick={()=>logContact(p.id, type)}
                                         style={{ textAlign:'left', background:'none', border:'1px solid var(--border)', color:'var(--text)', borderRadius:5, padding:'3px 6px', fontSize:10, cursor:'pointer' }}>
-                                        {icon} {lbl}
+                                        {icon} {ctLabel(type)}
                                       </button>
                                     ))}
                                   </div>
-                                  <button onClick={()=>{setContactLog(null);setContactNote('')}} style={{ background:'none', border:'none', color:'var(--muted)', fontSize:10, cursor:'pointer' }}>✕ Cancel</button>
+                                  <button onClick={()=>{setContactLog(null);setContactNote('')}} style={{ background:'none', border:'none', color:'var(--muted)', fontSize:10, cursor:'pointer' }}>✕ {L2('Cancel','取消')}</button>
                                 </div>
                               ) : contactHistory === p.id ? (
                                 <div style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:8, minWidth:210, maxHeight:220, overflowY:'auto' }}>
@@ -3196,14 +3216,14 @@ export default function Campaigns() {
                                     const d=Math.floor((Date.now()-new Date(c.contacted_at).getTime())/86400000)
                                     return <div key={ci} style={{ borderBottom:'1px solid var(--border)', paddingBottom:4, marginBottom:4 }}>
                                       <div style={{ fontSize:10, fontWeight:600, color:d===0?'#3fb950':d<=2?'#f59e0b':'var(--muted)' }}>
-                                        {CT_ICON[c.contact_type]||'📞'} {CT_LABEL[c.contact_type]||c.contact_type} · {d===0?'Today':`${d}d ago`}
+                                        {CT_ICON[c.contact_type]||'📞'} {ctLabel(c.contact_type)} · {d===0?L2('Today','今天'):L2(`${d}d ago`, `${d} 天前`)}
                                         {c.host&&<span style={{ fontWeight:400, color:'var(--muted)', marginLeft:4 }}>{c.host.split('@')[0]}</span>}
                                       </div>
                                       {c.notes&&<div style={{ fontSize:9, color:'var(--muted)', marginTop:1, fontStyle:'italic' }}>"{c.notes}"</div>}
                                     </div>
                                   })}
-                                  {!(contacts[p.id]||[]).length&&<div style={{ fontSize:10, color:'var(--muted)' }}>No contacts yet.</div>}
-                                  <button onClick={()=>{setContactHistory(null);setContactLog(p.id)}} style={{ background:'rgba(88,166,255,.1)', color:'#58a6ff', border:'1px solid rgba(88,166,255,.25)', borderRadius:5, padding:'2px 7px', fontSize:10, cursor:'pointer', fontWeight:600, marginTop:2 }}>+ Log New</button>
+                                  {!(contacts[p.id]||[]).length&&<div style={{ fontSize:10, color:'var(--muted)' }}>{L2('No contacts yet.','暂无联系记录。')}</div>}
+                                  <button onClick={()=>{setContactHistory(null);setContactLog(p.id)}} style={{ background:'rgba(88,166,255,.1)', color:'#58a6ff', border:'1px solid rgba(88,166,255,.25)', borderRadius:5, padding:'2px 7px', fontSize:10, cursor:'pointer', fontWeight:600, marginTop:2 }}>{L2('+ Log New','+ 新记录')}</button>
                                 </div>
                               ) : (
                                 <button onClick={()=>{setContactHistory(null);setContactNote('');setContactLog(p.id)}}
@@ -3219,11 +3239,11 @@ export default function Campaigns() {
                           <div style={{fontSize:12,color:'var(--muted)',marginBottom:4}}>{p.whatsapp||<span style={{color:'var(--surface2)'}}>—</span>}</div>
                           <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
                             {waUrl && <a href={waUrl} target="_blank" rel="noreferrer" style={{ display:'inline-flex', alignItems:'center', gap:4, background:'rgba(37,211,102,.15)', color:'#25d366', border:'1px solid rgba(37,211,102,.3)', borderRadius:6, padding:'3px 8px', fontSize:11, fontWeight:700, textDecoration:'none' }}>📲 WA</a>}
-                            <button onClick={()=>navigator.clipboard.writeText(waMsgText).catch(()=>{})} style={{ background:'rgba(88,166,255,.12)', color:'#58a6ff', border:'1px solid rgba(88,166,255,.3)', borderRadius:6, padding:'3px 8px', fontSize:11, fontWeight:700, cursor:'pointer' }}>📋 Copy</button>
-                            {!waUrl && <span style={{fontSize:10,color:'var(--muted)'}}>No number</span>}
+                            <button onClick={()=>navigator.clipboard.writeText(waMsgText).catch(()=>{})} style={{ background:'rgba(88,166,255,.12)', color:'#58a6ff', border:'1px solid rgba(88,166,255,.3)', borderRadius:6, padding:'3px 8px', fontSize:11, fontWeight:700, cursor:'pointer' }}>📋 {L2('Copy','复制')}</button>
+                            {!waUrl && <span style={{fontSize:10,color:'var(--muted)'}}>{L2('No number','无号码')}</span>}
                           </div>
                         </td>
-                        <td style={s.td}><input defaultValue={p.notes||''} onBlur={e=>{if(e.target.value!==(p.notes||''))updatePlayer(p.id,{notes:e.target.value})}} style={{...s.editInput,width:140}} placeholder="Add note..."/></td>
+                        <td style={s.td}><input defaultValue={p.notes||''} onBlur={e=>{if(e.target.value!==(p.notes||''))updatePlayer(p.id,{notes:e.target.value})}} style={{...s.editInput,width:140}} placeholder={L2('Add note...','添加备注...')}/></td>
                       </tr>
                     })}
                     {(() => {
@@ -3239,7 +3259,7 @@ export default function Campaigns() {
                       const paidCount = filteredPayoutList.filter(p=> isDailyMode ? dailyEntries[p.id]?.payout_status==='paid' : p.payout_status==='paid').length
                       return (
                         <tr style={{ background:'var(--surface2)', fontWeight:700, borderTop:'2px solid var(--border)' }}>
-                          <td colSpan={2} style={{ ...s.td, color:'var(--muted)', fontSize:12 }}>Total ({filteredPayoutList.length} players · {paidCount} paid)</td>
+                          <td colSpan={2} style={{ ...s.td, color:'var(--muted)', fontSize:12 }}>{L2(`Total (${filteredPayoutList.length} players · ${paidCount} paid)`, `合计（${filteredPayoutList.length} 位玩家 · ${paidCount} 已派）`)}</td>
                           <td style={s.td}/>
                           <td style={{ ...s.td, color:'#3fb950', fontWeight:800 }}>{rmFmt(sumDep, campCurrency)}</td>
                           <td style={{ ...s.td, color:typeInfo.color, fontWeight:800 }}>{rmFmt(sumReward, campCurrency)}</td>
@@ -3261,32 +3281,32 @@ export default function Campaigns() {
                   if (!allStreakRows.length && !streakBonusesLoading) return (
                     <div style={{ borderTop:'2px solid var(--border)', marginTop:8, padding:'12px 24px', background:'rgba(245,158,11,.04)' }}>
                       <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:4 }}>
-                        <span style={{ fontSize:13, fontWeight:800 }}>🔥 Streak Bonuses</span>
-                        <span style={{ fontSize:11, background:'rgba(245,158,11,.15)', color:'#f59e0b', borderRadius:4, padding:'1px 8px', fontWeight:600 }}>Enabled</span>
+                        <span style={{ fontSize:13, fontWeight:800 }}>{L2('🔥 Streak Bonuses','🔥 连续奖励')}</span>
+                        <span style={{ fontSize:11, background:'rgba(245,158,11,.15)', color:'#f59e0b', borderRadius:4, padding:'1px 8px', fontWeight:600 }}>{L2('Enabled','已启用')}</span>
                       </div>
-                      <div style={{ fontSize:12, color:'var(--muted)' }}>No streak bonuses awarded yet. Bonuses are triggered automatically after {selected.streak_days} consecutive qualifying days.</div>
+                      <div style={{ fontSize:12, color:'var(--muted)' }}>{L2(`No streak bonuses awarded yet. Bonuses are triggered automatically after ${selected.streak_days} consecutive qualifying days.`, `尚未发放连续奖励。连续达标 ${selected.streak_days} 天后将自动触发奖金。`)}</div>
                     </div>
                   )
                   return (
                     <div style={{ borderTop:'2px solid var(--border)', marginTop:8 }}>
                       <div style={{ padding:'10px 24px', display:'flex', alignItems:'center', gap:10, background:'rgba(245,158,11,.04)' }}>
-                        <span style={{ fontSize:13, fontWeight:800 }}>🔥 Streak Bonuses</span>
-                        {streakBonusesLoading && <span style={{ fontSize:11, color:'var(--muted)' }}>Loading…</span>}
-                        {!streakBonusesLoading && <span style={{ fontSize:11, color:'var(--muted)' }}>{allStreakRows.length} bonus{allStreakRows.length !== 1 ? 'es' : ''} · {allStreakRows.filter(r=>r.payout_status==='paid').length} paid · {bonusFmt(allStreakRows.filter(r=>r.payout_status!=="paid").reduce((s,r)=>s+(parseFloat(r.bonus_amount)||0),0), campCurrency)} pending</span>}
-                        <button onClick={()=>loadStreakBonuses(selected.id)} style={{ marginLeft:'auto', background:'var(--surface2)', border:'1px solid var(--border)', color:'var(--muted)', padding:'3px 10px', borderRadius:5, fontSize:11, cursor:'pointer' }}>↺ Refresh</button>
+                        <span style={{ fontSize:13, fontWeight:800 }}>{L2('🔥 Streak Bonuses','🔥 连续奖励')}</span>
+                        {streakBonusesLoading && <span style={{ fontSize:11, color:'var(--muted)' }}>{L2('Loading…','加载中…')}</span>}
+                        {!streakBonusesLoading && <span style={{ fontSize:11, color:'var(--muted)' }}>{allStreakRows.length} {L2('bonus'+(allStreakRows.length !== 1 ? 'es' : ''),'笔奖金')} · {allStreakRows.filter(r=>r.payout_status==='paid').length} {L2('paid','已派')} · {bonusFmt(allStreakRows.filter(r=>r.payout_status!=="paid").reduce((s,r)=>s+(parseFloat(r.bonus_amount)||0),0), campCurrency)} {L2('pending','待处理')}</span>}
+                        <button onClick={()=>loadStreakBonuses(selected.id)} style={{ marginLeft:'auto', background:'var(--surface2)', border:'1px solid var(--border)', color:'var(--muted)', padding:'3px 10px', borderRadius:5, fontSize:11, cursor:'pointer' }}>{L2('↺ Refresh','↺ 刷新')}</button>
                       </div>
                       {allStreakRows.length > 0 && (
                         <table style={s.tbl}>
                           <thead><tr>
                             <th style={s.th}>#</th>
-                            <th style={s.th}>Player</th>
-                            <th style={s.th}>Streak</th>
-                            <th style={s.th}>Period</th>
-                            <th style={s.th}>Period Deposit</th>
-                            <th style={s.th}>Bonus</th>
-                            <th style={s.th}>Pay Date</th>
-                            <th style={s.th}>Status</th>
-                            <th style={s.th}>Notes</th>
+                            <th style={s.th}>{L2('Player','玩家')}</th>
+                            <th style={s.th}>{L2('Streak','连续奖励')}</th>
+                            <th style={s.th}>{L2('Period','期间')}</th>
+                            <th style={s.th}>{L2('Period Deposit','期间存款')}</th>
+                            <th style={s.th}>{L2('Bonus','奖金')}</th>
+                            <th style={s.th}>{L2('Pay Date','派发日期')}</th>
+                            <th style={s.th}>{L2('Status','状态')}</th>
+                            <th style={s.th}>{L2('Notes','备注')}</th>
                           </tr></thead>
                           <tbody>
                             {allStreakRows.map((sb, i) => {
@@ -3310,20 +3330,20 @@ export default function Campaigns() {
                                       if (error) { console.error(error); return }
                                       await loadStreakBonuses(selected.id)
                                     }} style={{ ...s.tag(paid ? '#3fb950' : '#f59e0b', paid ? 'rgba(63,185,80,.15)' : 'rgba(245,158,11,.15)'), cursor:'pointer', border:`1px solid ${paid ? 'rgba(63,185,80,.3)' : 'rgba(245,158,11,.3)'}` }}>
-                                      {paid ? '✅ Paid' : '⏳ Pending'}
+                                      {paid ? L2('✅ Paid','✅ 已派') : L2('⏳ Pending','⏳ 待处理')}
                                     </button>
                                   </td>
                                   <td style={s.td}>
-                                    <input defaultValue={sb.notes||''} onBlur={async e => { const v=e.target.value; if(v!==(sb.notes||'')) { await supabase.from('campaign_streak_bonuses').update({notes:v}).eq('id',sb.id); await loadStreakBonuses(selected.id) }}} style={{ ...s.editInput, width:140 }} placeholder="Add note…" />
+                                    <input defaultValue={sb.notes||''} onBlur={async e => { const v=e.target.value; if(v!==(sb.notes||'')) { await supabase.from('campaign_streak_bonuses').update({notes:v}).eq('id',sb.id); await loadStreakBonuses(selected.id) }}} style={{ ...s.editInput, width:140 }} placeholder={L2('Add note…','添加备注…')} />
                                   </td>
                                 </tr>
                               )
                             })}
                             <tr style={{ background:'var(--surface2)', fontWeight:700 }}>
-                              <td colSpan={5} style={s.td}>Total streak bonuses</td>
+                              <td colSpan={5} style={s.td}>{L2('Total streak bonuses','连续奖励合计')}</td>
                               <td style={{ ...s.td, color:'#f59e0b', fontWeight:800 }}>{bonusFmt(allStreakRows.reduce((s,r)=>s+(parseFloat(r.bonus_amount)||0),0), campCurrency)}</td>
                               <td style={s.td} />
-                              <td style={s.td}><span style={{color:'#3fb950'}}>{bonusFmt(allStreakRows.filter(r=>r.payout_status==="paid").reduce((s,r)=>s+(parseFloat(r.bonus_amount)||0),0), campCurrency)} paid</span><span style={{color:'#f85149',marginLeft:8}}>{bonusFmt(allStreakRows.filter(r=>r.payout_status!=="paid").reduce((s,r)=>s+(parseFloat(r.bonus_amount)||0),0), campCurrency)} pending</span></td>
+                              <td style={s.td}><span style={{color:'#3fb950'}}>{bonusFmt(allStreakRows.filter(r=>r.payout_status==="paid").reduce((s,r)=>s+(parseFloat(r.bonus_amount)||0),0), campCurrency)} {L2('paid','已派')}</span><span style={{color:'#f85149',marginLeft:8}}>{bonusFmt(allStreakRows.filter(r=>r.payout_status!=="paid").reduce((s,r)=>s+(parseFloat(r.bonus_amount)||0),0), campCurrency)} {L2('pending','待处理')}</span></td>
                               <td style={s.td} />
                             </tr>
                           </tbody>
@@ -3362,10 +3382,10 @@ export default function Campaigns() {
               return (
                 <div style={{ overflowX:'auto' }}>
                   <div style={{ padding:'8px 24px', fontSize:11, color:'var(--muted)', background:'rgba(88,166,255,.04)', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', gap:12, flexWrap:'wrap' }}>
-                    <span>😴 Players enrolled but never qualified for a reward across the entire campaign period</span>
-                    {allDailyEntriesLoading && <span style={{ color:'#f59e0b' }}>Loading…</span>}
-                    <span style={{ color:'var(--muted)', marginLeft:4 }}>Sort:</span>
-                    {[['days','Days in Campaign'],['entries','Entries'],['name','Name']].map(([key,lbl])=>(
+                    <span>{L2('😴 Players enrolled but never qualified for a reward across the entire campaign period','😴 已加入但整个活动期间从未达标的玩家')}</span>
+                    {allDailyEntriesLoading && <span style={{ color:'#f59e0b' }}>{L2('Loading…','加载中…')}</span>}
+                    <span style={{ color:'var(--muted)', marginLeft:4 }}>{L2('Sort:','排序：')}</span>
+                    {[['days',L2('Days in Campaign','活动天数')],['entries',L2('Entries','记录数')],['name',L2('Name','名称')]].map(([key,lbl])=>(
                       <button key={key} onClick={()=>{ if(inactiveSort===key){setInactiveSortDir(d=>d==='asc'?'desc':'asc')}else{setInactiveSort(key);setInactiveSortDir('desc')} }}
                         style={{ padding:'2px 8px', borderRadius:12, fontSize:11, fontWeight:600, border:'1px solid var(--border)', cursor:'pointer',
                           background: inactiveSort===key ? 'var(--accent)' : 'var(--surface2)', color: inactiveSort===key ? '#fff' : 'var(--muted)' }}>
@@ -3375,15 +3395,15 @@ export default function Campaigns() {
                     <div style={{ marginLeft:'auto', display:'flex', gap:6 }}>
                       <button onClick={() => exportInactiveToExcel(inactivePlayers)} disabled={inactivePlayers.length === 0 || allDailyEntriesLoading}
                         style={{ background:'#166534', border:'1px solid #16a34a', color:'#4ade80', padding:'3px 10px', borderRadius:5, fontSize:11, cursor:'pointer', fontWeight:600, opacity: inactivePlayers.length === 0 ? 0.5 : 1 }}>
-                        ⬇ Export Excel
+                        ⬇ {L2('Export Excel','导出 Excel')}
                       </button>
-                      <button onClick={() => loadAllDailyEntries(selected.id)} style={{ background:'var(--surface2)', border:'1px solid var(--border)', color:'var(--muted)', padding:'3px 10px', borderRadius:5, fontSize:11, cursor:'pointer' }}>↺ Refresh</button>
+                      <button onClick={() => loadAllDailyEntries(selected.id)} style={{ background:'var(--surface2)', border:'1px solid var(--border)', color:'var(--muted)', padding:'3px 10px', borderRadius:5, fontSize:11, cursor:'pointer' }}>{L2('↺ Refresh','↺ 刷新')}</button>
                     </div>
                   </div>
                   {/* Inactive tab host filter */}
                   {inactiveHosts.length > 1 && (
                     <div style={{ padding:'6px 24px', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', gap:6, flexWrap:'wrap' }}>
-                      <span style={{ fontSize:11, color:'var(--muted)', marginRight:2 }}>Host:</span>
+                      <span style={{ fontSize:11, color:'var(--muted)', marginRight:2 }}>{L2('Host:','负责人：')}</span>
                       {inactiveHosts.map(h => (
                         <button key={h} onClick={() => setInactiveHostFilter(h)} style={{
                           padding:'3px 12px', borderRadius:16, fontSize:12, fontWeight:600, border:'1px solid var(--border)', cursor:'pointer',
@@ -3394,19 +3414,19 @@ export default function Campaigns() {
                     </div>
                   )}
                   {!allDailyEntriesLoading && inactivePlayers.length === 0 && (
-                    <div style={{ padding:'32px 24px', textAlign:'center', color:'var(--muted)', fontSize:13 }}>🎉 All enrolled players have qualified at least once!</div>
+                    <div style={{ padding:'32px 24px', textAlign:'center', color:'var(--muted)', fontSize:13 }}>{L2('🎉 All enrolled players have qualified at least once!','🎉 所有已加入的玩家都至少达标过一次！')}</div>
                   )}
                   {inactivePlayers.length > 0 && (
                     <table style={s.tbl}>
                       <thead><tr>
                         <th style={s.th}>#</th>
-                        <th style={s.th}>Player</th>
-                        <th style={s.th}>Tier</th>
-                        <th style={s.th}>Host</th>
+                        <th style={s.th}>{L2('Player','玩家')}</th>
+                        <th style={s.th}>{L2('Tier','等级')}</th>
+                        <th style={s.th}>{L2('Host','负责人')}</th>
                         <th style={s.th}>WhatsApp</th>
-                        <th style={s.th}>Last Contact</th>
-                        <th style={s.th}>Enrolled</th>
-                        <th style={s.th}>Days in Campaign</th>
+                        <th style={s.th}>{L2('Last Contact','最后联系')}</th>
+                        <th style={s.th}>{L2('Enrolled','加入日期')}</th>
+                        <th style={s.th}>{L2('Days in Campaign','活动天数')}</th>
                       </tr></thead>
                       <tbody>
                         {inactivePlayers.map((p, i) => {
@@ -3429,30 +3449,30 @@ export default function Campaigns() {
                                     const days = Math.floor((Date.now() - new Date(lastContact.contacted_at).getTime()) / 86400000)
                                     const col = days === 0 ? '#3fb950' : days <= 2 ? '#f59e0b' : '#f85149'
                                     badge = <div style={{ fontSize:10, color:col, fontWeight:700, marginBottom:3, cursor:'pointer' }}
-                                      onClick={()=>{setContactLog(null);setContactNote('');setContactHistory(contactHistory===p.id?null:p.id)}} title="View contact history">
-                                      {CT_ICON[lastContact.contact_type]||'📞'} {days === 0 ? 'Today' : `${days}d ago`}
-                                      <span style={{ color:'var(--muted)', fontWeight:400, marginLeft:3 }}>{CT_LABEL[lastContact.contact_type]||lastContact.contact_type}</span>
+                                      onClick={()=>{setContactLog(null);setContactNote('');setContactHistory(contactHistory===p.id?null:p.id)}} title={L2('View contact history','查看联系记录')}>
+                                      {CT_ICON[lastContact.contact_type]||'📞'} {days === 0 ? L2('Today','今天') : L2(`${days}d ago`, `${days} 天前`)}
+                                      <span style={{ color:'var(--muted)', fontWeight:400, marginLeft:3 }}>{ctLabel(lastContact.contact_type)}</span>
                                       {lastContact.notes && <div style={{ color:'var(--muted)', fontWeight:400, fontSize:9, fontStyle:'italic', maxWidth:140, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>"{lastContact.notes}"</div>}
                                     </div>
                                   } else {
-                                    badge = <div style={{ fontSize:10, color:'#f85149', fontWeight:700, marginBottom:3 }}>📞 Never</div>
+                                    badge = <div style={{ fontSize:10, color:'#f85149', fontWeight:700, marginBottom:3 }}>📞 {L2('Never','从未')}</div>
                                   }
                                   return <>
                                     {badge}
                                     {contactLog === p.id ? (
                                       <div style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:8, minWidth:210 }}>
-                                        <div style={{ fontSize:11, color:'var(--muted)', marginBottom:5, fontWeight:600 }}>Log contact</div>
-                                        <textarea value={contactNote} onChange={e=>setContactNote(e.target.value)} placeholder="Notes (optional)..." rows={2}
+                                        <div style={{ fontSize:11, color:'var(--muted)', marginBottom:5, fontWeight:600 }}>{L2('Log contact','记录联系')}</div>
+                                        <textarea value={contactNote} onChange={e=>setContactNote(e.target.value)} placeholder={L2('Notes (optional)...','备注（可选）...')} rows={2}
                                           style={{ width:'100%', background:'var(--surface)', border:'1px solid var(--border)', borderRadius:5, color:'var(--text)', fontSize:11, padding:'4px 6px', resize:'none', marginBottom:5, boxSizing:'border-box' }} />
                                         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:3, marginBottom:5 }}>
                                           {CONTACT_TYPES.map(([type,icon,lbl])=>(
                                             <button key={type} onClick={()=>logContact(p.id, type)}
                                               style={{ textAlign:'left', background:'none', border:'1px solid var(--border)', color:'var(--text)', borderRadius:5, padding:'3px 6px', fontSize:10, cursor:'pointer' }}>
-                                              {icon} {lbl}
+                                              {icon} {ctLabel(type)}
                                             </button>
                                           ))}
                                         </div>
-                                        <button onClick={()=>{setContactLog(null);setContactNote('')}} style={{ background:'none', border:'none', color:'var(--muted)', fontSize:10, cursor:'pointer' }}>✕ Cancel</button>
+                                        <button onClick={()=>{setContactLog(null);setContactNote('')}} style={{ background:'none', border:'none', color:'var(--muted)', fontSize:10, cursor:'pointer' }}>✕ {L2('Cancel','取消')}</button>
                                       </div>
                                     ) : contactHistory === p.id ? (
                                       <div style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:8, minWidth:210, maxHeight:220, overflowY:'auto' }}>
@@ -3464,14 +3484,14 @@ export default function Campaigns() {
                                           const d=Math.floor((Date.now()-new Date(c.contacted_at).getTime())/86400000)
                                           return <div key={ci} style={{ borderBottom:'1px solid var(--border)', paddingBottom:4, marginBottom:4 }}>
                                             <div style={{ fontSize:10, fontWeight:600, color:d===0?'#3fb950':d<=2?'#f59e0b':'var(--muted)' }}>
-                                              {CT_ICON[c.contact_type]||'📞'} {CT_LABEL[c.contact_type]||c.contact_type} · {d===0?'Today':`${d}d ago`}
+                                              {CT_ICON[c.contact_type]||'📞'} {ctLabel(c.contact_type)} · {d===0?L2('Today','今天'):L2(`${d}d ago`, `${d} 天前`)}
                                               {c.host&&<span style={{ fontWeight:400, color:'var(--muted)', marginLeft:4 }}>{c.host.split('@')[0]}</span>}
                                             </div>
                                             {c.notes&&<div style={{ fontSize:9, color:'var(--muted)', marginTop:1, fontStyle:'italic' }}>"{c.notes}"</div>}
                                           </div>
                                         })}
-                                        {!(contacts[p.id]||[]).length&&<div style={{ fontSize:10, color:'var(--muted)' }}>No contacts yet.</div>}
-                                        <button onClick={()=>{setContactHistory(null);setContactLog(p.id)}} style={{ background:'rgba(88,166,255,.1)', color:'#58a6ff', border:'1px solid rgba(88,166,255,.25)', borderRadius:5, padding:'2px 7px', fontSize:10, cursor:'pointer', fontWeight:600, marginTop:2 }}>+ Log New</button>
+                                        {!(contacts[p.id]||[]).length&&<div style={{ fontSize:10, color:'var(--muted)' }}>{L2('No contacts yet.','暂无联系记录。')}</div>}
+                                        <button onClick={()=>{setContactHistory(null);setContactLog(p.id)}} style={{ background:'rgba(88,166,255,.1)', color:'#58a6ff', border:'1px solid rgba(88,166,255,.25)', borderRadius:5, padding:'2px 7px', fontSize:10, cursor:'pointer', fontWeight:600, marginTop:2 }}>{L2('+ Log New','+ 新记录')}</button>
                                       </div>
                                     ) : (
                                       <button onClick={()=>{setContactHistory(null);setContactNote('');setContactLog(p.id)}}
@@ -3484,7 +3504,7 @@ export default function Campaigns() {
                               </td>
                               <td style={{ ...s.td, fontSize:11, color:'var(--muted)' }}>{enrolledDate}</td>
                               <td style={{ ...s.td, fontSize:12, color: playerEntryDates.length > 0 ? '#f59e0b' : '#f85149' }}>
-                                {playerEntryDates.length > 0 ? `${playerEntryDates.length} entries (0 qualifying)` : 'No entries at all'}
+                                {playerEntryDates.length > 0 ? L2(`${playerEntryDates.length} entries (0 qualifying)`, `${playerEntryDates.length} 条记录（0 达标）`) : L2('No entries at all','完全没有记录')}
                               </td>
                             </tr>
                           )
@@ -3557,9 +3577,9 @@ export default function Campaigns() {
                 <div style={{ overflowX:'auto' }}>
                   {/* Header */}
                   <div style={{ padding:'8px 24px', fontSize:11, color:'var(--muted)', background:'rgba(245,158,11,.04)', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', gap:12 }}>
-                    <span>🔥 Streak target: <strong>{streakDays} consecutive days</strong> · Bonus: {bonusType === 'pct' ? `${bonusPct}% of period deposit` : `RM ${bonusFixed} fixed`}{bonusCap > 0 ? ` (cap: ${rmFmt(bonusCap, campCurrency)})` : ''}</span>
-                    {allDailyEntriesLoading && <span style={{ color:'#f59e0b' }}>Loading…</span>}
-                    {!selected?.streak_enabled && <span style={{ background:'rgba(248,81,73,.15)', color:'#f85149', borderRadius:4, padding:'1px 8px', fontSize:10, fontWeight:700 }}>STREAK DISABLED</span>}
+                    <span>🔥 {L2('Streak target:','连续目标：')} <strong>{L2(`${streakDays} consecutive days`, `连续 ${streakDays} 天`)}</strong> · {L2('Bonus:','奖金：')} {bonusType === 'pct' ? L2(`${bonusPct}% of period deposit`, `期间存款的 ${bonusPct}%`) : L2(`RM ${bonusFixed} fixed`, `固定 RM ${bonusFixed}`)}{bonusCap > 0 ? ` (${L2('cap','上限')}: ${rmFmt(bonusCap, campCurrency)})` : ''}</span>
+                    {allDailyEntriesLoading && <span style={{ color:'#f59e0b' }}>{L2('Loading…','加载中…')}</span>}
+                    {!selected?.streak_enabled && <span style={{ background:'rgba(248,81,73,.15)', color:'#f85149', borderRadius:4, padding:'1px 8px', fontSize:10, fontWeight:700 }}>{L2('STREAK DISABLED','连续奖励已停用')}</span>}
                     <button onClick={async () => {
                       await loadAllDailyEntries(selected.id)
                       if (selected?.streak_enabled) {
@@ -3567,18 +3587,18 @@ export default function Campaigns() {
                         for (const p of players) await checkAndAwardStreak(p.id, today)
                       }
                       await loadStreakBonuses(selected.id)
-                    }} style={{ marginLeft:'auto', background:'var(--surface2)', border:'1px solid var(--border)', color:'var(--muted)', padding:'3px 10px', borderRadius:5, fontSize:11, cursor:'pointer' }}>↺ Refresh</button>
+                    }} style={{ marginLeft:'auto', background:'var(--surface2)', border:'1px solid var(--border)', color:'var(--muted)', padding:'3px 10px', borderRadius:5, fontSize:11, cursor:'pointer' }}>{L2('↺ Refresh','↺ 刷新')}</button>
                   </div>
 
                   {/* Streak Bonus Payout section — shown first */}
                   <div style={{ borderBottom:'2px solid var(--border)', marginBottom:8 }}>
                     <div style={{ padding:'10px 24px', display:'flex', alignItems:'center', gap:10, background:'rgba(245,158,11,.04)' }}>
-                      <span style={{ fontSize:13, fontWeight:800 }}>💸 Streak Bonus Payout</span>
-                      {streakBonusesLoading && <span style={{ fontSize:11, color:'var(--muted)' }}>Loading…</span>}
+                      <span style={{ fontSize:13, fontWeight:800 }}>{L2('💸 Streak Bonus Payout','💸 连续奖励派彩')}</span>
+                      {streakBonusesLoading && <span style={{ fontSize:11, color:'var(--muted)' }}>{L2('Loading…','加载中…')}</span>}
                       {!streakBonusesLoading && <span style={{ fontSize:11, color:'var(--muted)' }}>
-                        {allStreakRows.length} bonus{allStreakRows.length !== 1 ? 'es' : ''} · {allStreakRows.filter(r=>r.payout_status==='paid').length} paid · {bonusFmt(allStreakRows.filter(r=>r.payout_status!=="paid").reduce((s,r)=>s+(parseFloat(r.bonus_amount)||0),0), campCurrency)} pending
+                        {allStreakRows.length} {L2('bonus'+(allStreakRows.length !== 1 ? 'es' : ''),'笔奖金')} · {allStreakRows.filter(r=>r.payout_status==='paid').length} {L2('paid','已派')} · {bonusFmt(allStreakRows.filter(r=>r.payout_status!=="paid").reduce((s,r)=>s+(parseFloat(r.bonus_amount)||0),0), campCurrency)} pending
                       </span>}
-                      <button onClick={() => loadStreakBonuses(selected.id)} style={{ marginLeft:'auto', background:'var(--surface2)', border:'1px solid var(--border)', color:'var(--muted)', padding:'3px 10px', borderRadius:5, fontSize:11, cursor:'pointer' }}>↺ Refresh</button>
+                      <button onClick={() => loadStreakBonuses(selected.id)} style={{ marginLeft:'auto', background:'var(--surface2)', border:'1px solid var(--border)', color:'var(--muted)', padding:'3px 10px', borderRadius:5, fontSize:11, cursor:'pointer' }}>{L2('↺ Refresh','↺ 刷新')}</button>
                     </div>
                     {allStreakRows.length === 0 && !streakBonusesLoading && (
                       <div style={{ padding:'16px 24px', fontSize:12, color:'var(--muted)' }}>
@@ -3589,15 +3609,15 @@ export default function Campaigns() {
                       <table style={s.tbl}>
                         <thead><tr>
                           <th style={s.th}>#</th>
-                          <th style={s.th}>Player</th>
-                          <th style={s.th}>Host</th>
-                          <th style={s.th}>Streak #</th>
-                          <th style={s.th}>Period</th>
-                          <th style={s.th}>Period Deposit</th>
-                          <th style={s.th}>Bonus</th>
-                          <th style={s.th}>Pay Date</th>
-                          <th style={s.th}>Status</th>
-                          <th style={s.th}>Notes</th>
+                          <th style={s.th}>{L2('Player','玩家')}</th>
+                          <th style={s.th}>{L2('Host','负责人')}</th>
+                          <th style={s.th}>{L2('Streak #','连续奖励 #')}</th>
+                          <th style={s.th}>{L2('Period','期间')}</th>
+                          <th style={s.th}>{L2('Period Deposit','期间存款')}</th>
+                          <th style={s.th}>{L2('Bonus','奖金')}</th>
+                          <th style={s.th}>{L2('Pay Date','派发日期')}</th>
+                          <th style={s.th}>{L2('Status','状态')}</th>
+                          <th style={s.th}>{L2('Notes','备注')}</th>
                         </tr></thead>
                         <tbody>
                           {allStreakRows.map((sb, i) => {
@@ -3622,22 +3642,22 @@ export default function Campaigns() {
                                     if (error) { console.error(error); return }
                                     await loadStreakBonuses(selected.id)
                                   }} style={{ ...s.tag(paid ? '#3fb950' : '#f59e0b', paid ? 'rgba(63,185,80,.15)' : 'rgba(245,158,11,.15)'), cursor:'pointer', border:`1px solid ${paid ? 'rgba(63,185,80,.3)' : 'rgba(245,158,11,.3)'}` }}>
-                                    {paid ? '✅ Paid' : '⏳ Pending'}
+                                    {paid ? L2('✅ Paid','✅ 已派') : L2('⏳ Pending','⏳ 待处理')}
                                   </button>
                                 </td>
                                 <td style={s.td}>
-                                  <input defaultValue={sb.notes||''} onBlur={async e => { const v=e.target.value; if(v!==(sb.notes||'')) { await supabase.from('campaign_streak_bonuses').update({notes:v}).eq('id',sb.id); await loadStreakBonuses(selected.id) }}} style={{ ...s.editInput, width:140 }} placeholder="Add note…" />
+                                  <input defaultValue={sb.notes||''} onBlur={async e => { const v=e.target.value; if(v!==(sb.notes||'')) { await supabase.from('campaign_streak_bonuses').update({notes:v}).eq('id',sb.id); await loadStreakBonuses(selected.id) }}} style={{ ...s.editInput, width:140 }} placeholder={L2('Add note…','添加备注…')} />
                                 </td>
                               </tr>
                             )
                           })}
                           <tr style={{ background:'var(--surface2)', fontWeight:700 }}>
-                            <td colSpan={6} style={s.td}>Total streak bonuses</td>
+                            <td colSpan={6} style={s.td}>{L2('Total streak bonuses','连续奖励合计')}</td>
                             <td style={{ ...s.td, color:'#f59e0b', fontWeight:800 }}>{bonusFmt(allStreakRows.reduce((s,r)=>s+(parseFloat(r.bonus_amount)||0),0), campCurrency)}</td>
                             <td style={s.td} />
                             <td style={s.td}>
-                              <span style={{color:'#3fb950'}}>{bonusFmt(allStreakRows.filter(r=>r.payout_status==="paid").reduce((s,r)=>s+(parseFloat(r.bonus_amount)||0),0), campCurrency)} paid</span>
-                              <span style={{color:'#f85149',marginLeft:8}}>{bonusFmt(allStreakRows.filter(r=>r.payout_status!=="paid").reduce((s,r)=>s+(parseFloat(r.bonus_amount)||0),0), campCurrency)} pending</span>
+                              <span style={{color:'#3fb950'}}>{bonusFmt(allStreakRows.filter(r=>r.payout_status==="paid").reduce((s,r)=>s+(parseFloat(r.bonus_amount)||0),0), campCurrency)} {L2('paid','已派')}</span>
+                              <span style={{color:'#f85149',marginLeft:8}}>{bonusFmt(allStreakRows.filter(r=>r.payout_status!=="paid").reduce((s,r)=>s+(parseFloat(r.bonus_amount)||0),0), campCurrency)} {L2('pending','待处理')}</span>
                             </td>
                             <td style={s.td} />
                           </tr>
@@ -3650,16 +3670,16 @@ export default function Campaigns() {
                   <table style={s.tbl}>
                     <thead><tr>
                       <th style={s.th}>#</th>
-                      <th style={s.th}>Player</th>
-                      <th style={s.th}>Tier</th>
-                      <th style={s.th}>Host</th>
-                      <th style={s.th}>Qualifying Days</th>
-                      <th style={s.th}>Max Streak</th>
-                      <th style={s.th}>Current Run</th>
-                      <th style={s.th}>Target ({streakDays}d)</th>
-                      <th style={s.th}>Cap Override</th>
-                      <th style={s.th}>Est. Bonus</th>
-                      <th style={s.th}>Awarded</th>
+                      <th style={s.th}>{L2('Player','玩家')}</th>
+                      <th style={s.th}>{L2('Tier','等级')}</th>
+                      <th style={s.th}>{L2('Host','负责人')}</th>
+                      <th style={s.th}>{L2('Qualifying Days','达标天数')}</th>
+                      <th style={s.th}>{L2('Max Streak','最长连续')}</th>
+                      <th style={s.th}>{L2('Current Run','当前连续')}</th>
+                      <th style={s.th}>{L2('Target','目标')} ({streakDays}{L2('d','天')})</th>
+                      <th style={s.th}>{L2('Cap Override','上限覆盖')}</th>
+                      <th style={s.th}>{L2('Est. Bonus','预估奖金')}</th>
+                      <th style={s.th}>{L2('Awarded','已发放')}</th>
                     </tr></thead>
                     <tbody>
                       {playerStreakRows.map(({ p, dates, maxStreak, currentRun, achieved, bonusAmt, awardedBonuses }, i) => {
@@ -3682,15 +3702,15 @@ export default function Campaigns() {
                             </td>
                             <td style={s.td}>
                               {achieved
-                                ? <span style={{ color:'#3fb950', fontWeight:700 }}>✅ Hit</span>
-                                : <span style={{ color:'#f85149', fontWeight:600 }}>❌ {streakDays - maxStreak}d short</span>
+                                ? <span style={{ color:'#3fb950', fontWeight:700 }}>✅ {L2('Hit','已达成')}</span>
+                                : <span style={{ color:'#f85149', fontWeight:600 }}>❌ {L2(`${streakDays - maxStreak}d short`, `差 ${streakDays - maxStreak} 天`)}</span>
                               }
                             </td>
                             <td style={{ ...s.td, fontSize:11 }}>
                               <input
                                 key={p.streak_bonus_cap_override}
                                 defaultValue={playerCapOverride > 0 ? playerCapOverride : ''}
-                                placeholder={campaignCap > 0 ? `${campaignCap} (camp)` : 'No cap'}
+                                placeholder={campaignCap > 0 ? `${campaignCap} (${L2('camp','活动')})` : L2('No cap','无上限')}
                                 onBlur={async e => {
                                   const val = e.target.value.trim()
                                   const newCap = val === '' ? null : parseFloat(val)
@@ -3709,7 +3729,7 @@ export default function Campaigns() {
                             </td>
                             <td style={{ ...s.td, fontSize:11 }}>
                               {awardedBonuses.length > 0
-                                ? <span>{awardedBonuses.length} bonus{awardedBonuses.length>1?'es':''} · {rmFmt(awardedTotal, campCurrency)} · {awardedPaid}/{awardedBonuses.length} paid</span>
+                                ? <span>{awardedBonuses.length} {L2('bonus'+(awardedBonuses.length>1?'es':''),'笔奖金')} · {rmFmt(awardedTotal, campCurrency)} · {awardedPaid}/{awardedBonuses.length} {L2('paid','已派')}</span>
                                 : <span style={{ color:'var(--surface2)' }}>—</span>
                               }
                             </td>
@@ -3757,7 +3777,7 @@ export default function Campaigns() {
               return (
               <div style={{ overflowX:'auto' }}>
                 <div style={{ padding:'8px 24px', fontSize:11, color:'var(--muted)', background:'rgba(88,166,255,.04)', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-                  <span>Deposit is manually tracked for reward eligibility · Turnover/Withdrawal are real platform data for the campaign period ({fmtDate(selected.start_date)} → {fmtDate(selected.end_date)})</span>
+                  <span>{L2('Deposit is manually tracked for reward eligibility · Turnover/Withdrawal are real platform data for the campaign period','存款为手动追踪，用于判断奖励资格 · 流水/提款为活动期间的真实平台数据')} ({fmtDate(selected.start_date)} → {fmtDate(selected.end_date)})</span>
                   <button onClick={()=>{
                     const headers = ['#','Username','Tier','WhatsApp','Deposit (RM)','Turnover Real (RM)','Withdrawal Real (RM)','vs Target','Reward (RM)','Status','Added']
                     const rows = players.map((p,i)=>{
@@ -3783,21 +3803,21 @@ export default function Campaigns() {
                     a.download = `${selected.campaign_code||selected.campaign_name}-all-players.csv`
                     a.click()
                     URL.revokeObjectURL(url)
-                  }} style={{ background:'var(--surface2)', border:'1px solid var(--border)', color:'var(--text)', padding:'5px 12px', borderRadius:6, fontSize:11, cursor:'pointer', whiteSpace:'nowrap', flexShrink:0 }}>⬇ Export CSV</button>
+                  }} style={{ background:'var(--surface2)', border:'1px solid var(--border)', color:'var(--text)', padding:'5px 12px', borderRadius:6, fontSize:11, cursor:'pointer', whiteSpace:'nowrap', flexShrink:0 }}>⬇ {L2('Export CSV','导出 CSV')}</button>
                 </div>
                 {selectedForRemoval.size > 0 && (
                   <div style={{ padding:'8px 24px', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', gap:8 }}>
                     <button onClick={bulkRemovePlayers}
                       style={{ background:'rgba(248,81,73,.1)', border:'1px solid rgba(248,81,73,.4)', color:'#f85149', padding:'5px 12px', borderRadius:6, fontSize:11, fontWeight:700, cursor:'pointer' }}>
-                      🗑 Remove Selected ({selectedForRemoval.size})
+                      🗑 {L2('Remove Selected','移除所选')} ({selectedForRemoval.size})
                     </button>
-                    <button onClick={()=>setSelectedForRemoval(new Set())} style={{ background:'none', border:'1px solid var(--border)', borderRadius:6, padding:'5px 10px', fontSize:11, color:'var(--muted)', cursor:'pointer' }}>Clear</button>
+                    <button onClick={()=>setSelectedForRemoval(new Set())} style={{ background:'none', border:'1px solid var(--border)', borderRadius:6, padding:'5px 10px', fontSize:11, color:'var(--muted)', cursor:'pointer' }}>{L2('Clear','清除')}</button>
                   </div>
                 )}
                 <table style={s.tbl}>
                   <thead><tr>
                     <th style={{ ...s.th, width:32 }}>
-                      <input type="checkbox" title="Select all"
+                      <input type="checkbox" title={L2('Select all','全选')}
                         checked={players.length > 0 && players.every(p => selectedForRemoval.has(p.id))}
                         onChange={e => {
                           setSelectedForRemoval(prev => {
@@ -3810,21 +3830,21 @@ export default function Campaigns() {
                         style={{ accentColor:'var(--accent)', cursor:'pointer' }} />
                     </th>
                     <th style={s.th}>#</th>
-                    {[['name','Username'],['deposit','Deposit'],['turnover','Turnover (real)'],['withdrawal','Withdrawal (real)'],['reward','Reward'],['status','Status']].map(([key,lbl])=>(
+                    {[['name',L2('Username','用户名')],['deposit',L2('Deposit','存款')],['turnover',L2('Turnover (real)','流水（真实）')],['withdrawal',L2('Withdrawal (real)','提款（真实）')],['reward',L2('Reward','奖励')],['status',L2('Status','状态')]].map(([key,lbl])=>(
                       <th key={key} style={{ ...s.th, cursor:'pointer', userSelect:'none' }} onClick={()=>{ if(allPlayerSort===key){setAllPlayerSortDir(d=>d==='asc'?'desc':'asc')}else{setAllPlayerSort(key);setAllPlayerSortDir('desc')} }}>
                         {lbl} {allPlayerSort===key ? (allPlayerSortDir==='asc' ? '↑' : '↓') : <span style={{ color:'var(--surface2)', fontSize:9 }}>⇅</span>}
                       </th>
                     ))}
-                    <th style={s.th}>Tier</th>
+                    <th style={s.th}>{L2('Tier','等级')}</th>
                     <th style={s.th}>WhatsApp</th>
-                    <th style={s.th}>{selected?.is_multi_level ? 'Next Level' : 'vs Target'}</th>
-                    {selected?.streak_enabled && <th key="streak" style={{ ...s.th, cursor:'pointer', userSelect:'none' }} onClick={()=>{ if(allPlayerSort==='streak'){setAllPlayerSortDir(d=>d==='asc'?'desc':'asc')}else{setAllPlayerSort('streak');setAllPlayerSortDir('desc')} }}>Streak 🔥 {allPlayerSort==='streak' ? (allPlayerSortDir==='asc' ? '↑' : '↓') : <span style={{ color:'var(--surface2)', fontSize:9 }}>⇅</span>}</th>}
-                    <th style={s.th}>Added</th>
+                    <th style={s.th}>{selected?.is_multi_level ? L2('Next Level','下一级别') : L2('vs Target','对比目标')}</th>
+                    {selected?.streak_enabled && <th key="streak" style={{ ...s.th, cursor:'pointer', userSelect:'none' }} onClick={()=>{ if(allPlayerSort==='streak'){setAllPlayerSortDir(d=>d==='asc'?'desc':'asc')}else{setAllPlayerSort('streak');setAllPlayerSortDir('desc')} }}>{L2('Streak','连续奖励')} 🔥 {allPlayerSort==='streak' ? (allPlayerSortDir==='asc' ? '↑' : '↓') : <span style={{ color:'var(--surface2)', fontSize:9 }}>⇅</span>}</th>}
+                    <th style={s.th}>{L2('Added','加入日期')}</th>
                     <th style={s.th}>✕</th>
                   </tr></thead>
                   <tbody>
                     {sortedAllPlayers.length===0
-                      ? <tr><td colSpan={13} style={{ ...s.td, textAlign:'center', padding:24, color:'var(--muted)' }}>No players yet.</td></tr>
+                      ? <tr><td colSpan={13} style={{ ...s.td, textAlign:'center', padding:24, color:'var(--muted)' }}>{L2('No players yet.','暂无玩家。')}</td></tr>
                       : sortedAllPlayers.map((p,i)=>{
                           const real = realFinancials?.byPlayer?.[p.username]
                           // Daily mode never writes to campaign_players.total_deposit/valid_bet —
@@ -3841,7 +3861,7 @@ export default function Campaigns() {
                             : !qualified ? 0 : campType==='dual_tier' ? (dualReward.creditAmount + dualReward.wcashAmount) : calcReward(campType, playerDeposit(p), rewardPct, rewardFixed, goldVal, rewardCap, rewardTiers, campaignLevels, selected?.is_multi_level)
                           const gap = multi ? (multiMetric?.nextLevel ? playerDeposit(p) - Number(multiMetric.nextLevel.deposit_threshold) : 0) : campType === 'dual_tier' ? null : playerDeposit(p) - depTarget
                           const rowStatusColor = multi ? (multiMetric?.allCompleted ? '#3fb950' : qualified ? '#f59e0b' : 'var(--muted)') : (p.payout_status==='paid' ? '#3fb950' : qualified ? '#f59e0b' : 'var(--muted)')
-                          const rowStatusLabel = multi ? (multiMetric?.allCompleted ? 'Complete' : `${multiMetric?.completedCount||0}/${campaignLevels.length} Levels`) : (p.payout_status==='paid' ? 'Paid' : qualified ? 'Qualified' : 'In Progress')
+                          const rowStatusLabel = multi ? (multiMetric?.allCompleted ? L2('Complete','已完成') : `${multiMetric?.completedCount||0}/${campaignLevels.length} ${L2('Levels','级别')}`) : (p.payout_status==='paid' ? L2('Paid','已派') : qualified ? L2('Qualified','已达标') : L2('In Progress','进行中'))
                           return (
                             <tr key={p.id} onMouseEnter={e=>e.currentTarget.style.background='var(--surface2)'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
                               <td style={{ ...s.td, width:32 }} onClick={e=>e.stopPropagation()}>
@@ -3859,7 +3879,7 @@ export default function Campaigns() {
                               <td style={{ ...s.td, color:'var(--accent)' }}>{real ? rmFmt(real.validBet, campCurrency) : <span style={{ color:'var(--muted)' }}>—</span>}</td>
                               <td style={{ ...s.td, color:'#f85149' }}>{real ? rmFmt(real.withdrawal, campCurrency) : <span style={{ color:'var(--muted)' }}>—</span>}</td>
                               <td style={{ ...s.td, color:typeInfo.color, fontWeight:qualified?700:400 }}>
-                                {qualified ? (multi ? (<span>{rmFmt(reward,campCurrency)} total<br /><span style={{ fontSize:10, color:'var(--muted)' }}>{multiMetric?.completedCount||0}/{campaignLevels.length} levels</span></span>) : rmFmt(reward,campCurrency)) : '—'}
+                                {qualified ? (multi ? (<span>{rmFmt(reward,campCurrency)} {L2('total','合计')}<br /><span style={{ fontSize:10, color:'var(--muted)' }}>{multiMetric?.completedCount||0}/{campaignLevels.length} {L2('levels','级')}</span></span>) : rmFmt(reward,campCurrency)) : '—'}
                               </td>
                               <td style={s.td}>
                                 <span style={{ ...s.tag(rowStatusColor, rowStatusColor==='var(--muted)' ? 'rgba(139,148,158,.15)' : undefined), fontSize:10 }}>
@@ -3871,7 +3891,7 @@ export default function Campaigns() {
                               <td style={s.td}>
                                 {multi
                                   ? (multiMetric?.allCompleted
-                                      ? <span style={{ fontSize:11, color:'#3fb950', fontWeight:700 }}>All levels unlocked</span>
+                                      ? <span style={{ fontSize:11, color:'#3fb950', fontWeight:700 }}>{L2('All levels unlocked','已解锁所有级别')}</span>
                                       : <span style={{ fontSize:11, color:gap>=0?'#3fb950':'#f85149', fontWeight:600 }}>{multiMetric?.nextLevel ? `${multiMetric.nextLevel.level_name} · ${gap>=0?'+':''}${rmFmt(gap,campCurrency)}` : '—'}</span>)
                                   : campType === 'dual_tier'
                                     ? <span style={{ fontSize:11, color:'var(--muted)' }}>N/A</span>
@@ -3887,8 +3907,8 @@ export default function Campaigns() {
                                     {pStreaks.length === 0
                                       ? <span style={{ fontSize:10, color:'var(--muted)' }}>—</span>
                                       : <div style={{ display:'flex', flexDirection:'column', gap:2 }}>
-                                          {pPaid.length > 0 && <span style={{ fontSize:10, background:'rgba(63,185,80,.15)', color:'#3fb950', borderRadius:4, padding:'1px 5px', fontWeight:600 }}>🔥×{pPaid.length} paid</span>}
-                                          {pPending.length > 0 && <span style={{ fontSize:10, background:'rgba(245,158,11,.15)', color:'#f59e0b', borderRadius:4, padding:'1px 5px', fontWeight:600 }}>🔥×{pPending.length} pending</span>}
+                                          {pPaid.length > 0 && <span style={{ fontSize:10, background:'rgba(63,185,80,.15)', color:'#3fb950', borderRadius:4, padding:'1px 5px', fontWeight:600 }}>🔥×{pPaid.length} {L2('paid','已派')}</span>}
+                                          {pPending.length > 0 && <span style={{ fontSize:10, background:'rgba(245,158,11,.15)', color:'#f59e0b', borderRadius:4, padding:'1px 5px', fontWeight:600 }}>🔥×{pPending.length} {L2('pending','待处理')}</span>}
                                           <span style={{ fontSize:10, color:'var(--muted)' }}>{bonusFmt(pTotal, campCurrency)}</span>
                                         </div>
                                     }
@@ -3912,17 +3932,17 @@ export default function Campaigns() {
             })()}
             {activeTab === 'summary' && (
               <div style={{ padding:24 }}>
-                <div style={{ fontSize:13, fontWeight:700, marginBottom:8 }}>💰 Campaign Summary — {fmtDate(selected.start_date)} → {fmtDate(selected.end_date)}</div>
+                <div style={{ fontSize:13, fontWeight:700, marginBottom:8 }}>💰 {L2('Campaign Summary','活动汇总')} — {fmtDate(selected.start_date)} → {fmtDate(selected.end_date)}</div>
                 <div style={{ display:'grid', gridTemplateColumns:'repeat(6,1fr)', gap:12, marginBottom:18 }}>
                   {[
-                    ['Players',players.length,'#a78bfa'],['Qualified',achieved.length,'#3fb950'],
-                    ['Reward Rows', isDailyMode && selected?.is_multi_level ? (summaryData?.qualifyingEntries ?? '…') : selected?.is_multi_level ? multiSummary.rewardRows : achieved.length, '#c9a961'],
-                    ['Total Reward',rewardFmt(totalReward,campCurrency),typeInfo.color],['Paid',rewardFmt(paidOut,campCurrency),'#3fb950'],['Pending',rewardFmt(pendingPay,campCurrency),'#f85149'],
+                    [L2('Players','玩家'),players.length,'#a78bfa'],[L2('Qualified','已达标'),achieved.length,'#3fb950'],
+                    [L2('Reward Rows','奖励笔数'), isDailyMode && selected?.is_multi_level ? (summaryData?.qualifyingEntries ?? '…') : selected?.is_multi_level ? multiSummary.rewardRows : achieved.length, '#c9a961'],
+                    [L2('Total Reward','奖励总额'),rewardFmt(totalReward,campCurrency),typeInfo.color],[L2('Paid','已派'),rewardFmt(paidOut,campCurrency),'#3fb950'],[L2('Pending','待处理'),rewardFmt(pendingPay,campCurrency),'#f85149'],
                   ].map(([label,val,color])=><div key={label} style={{background:'var(--bg)',border:'1px solid var(--border)',borderRadius:8,padding:14}}><div style={{fontSize:18,fontWeight:700,color}}>{val}</div><div style={{fontSize:11,color:'var(--muted)',marginTop:2}}>{label}</div></div>)}
                 </div>
 
                 {selected?.is_multi_level && <>
-                  <div style={{fontSize:13,fontWeight:700,marginBottom:8}}>🏆 Multi-Level Progress</div>
+                  <div style={{fontSize:13,fontWeight:700,marginBottom:8}}>🏆 {L2('Multi-Level Progress','多级别进度')}</div>
                   <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12,marginBottom:18}}>
                     {(()=>{
                       const sortedLvls = [...campaignLevels].sort((a,b)=>Number(b.deposit_threshold)-Number(a.deposit_threshold))
@@ -3932,11 +3952,11 @@ export default function Campaigns() {
                       const dailyUnlockedLevels = isDailyMode ? Object.values(summaryData?.levelPlayerCounts || {}).reduce((s,v)=>s+v,0) : multiSummary.unlockedLevels
                       const dailySuccessRate = isDailyMode ? (players.length ? Math.round(dailyFullyCompleted/players.length*100) : 0) : multiSummary.successRate
                       return [
-                        ['Players with reward',dailyPlayersWithReward,'#3fb950'],['Fully completed',dailyFullyCompleted,'#a78bfa'],['Levels unlocked',dailyUnlockedLevels,'#c9a961'],['Full completion rate',dailySuccessRate+'%','#3fb950'],
+                        [L2('Players with reward','获得奖励的玩家'),dailyPlayersWithReward,'#3fb950'],[L2('Fully completed','全部完成'),dailyFullyCompleted,'#a78bfa'],[L2('Levels unlocked','已解锁级别'),dailyUnlockedLevels,'#c9a961'],[L2('Full completion rate','全部完成率'),dailySuccessRate+'%','#3fb950'],
                       ]
                     })().map(([label,val,color])=><div key={label} style={{background:'var(--bg)',border:'1px solid var(--border)',borderRadius:8,padding:14}}><div style={{fontSize:20,fontWeight:700,color}}>{val}</div><div style={{fontSize:11,color:'var(--muted)',marginTop:2}}>{label}</div></div>)}
                   </div>
-                  <table style={{...s.tbl,marginBottom:24}}><thead><tr><th style={s.th}>Level</th><th style={s.th}>Target</th><th style={s.th}>Qualified Players</th><th style={s.th}>Reward Each</th><th style={s.th}>{isDailyMode?'Player-Days':'Reward Rows'}</th></tr></thead><tbody>
+                  <table style={{...s.tbl,marginBottom:24}}><thead><tr><th style={s.th}>{L2('Level','级别')}</th><th style={s.th}>{L2('Target','目标')}</th><th style={s.th}>{L2('Qualified Players','达标玩家')}</th><th style={s.th}>{L2('Reward Each','每份奖励')}</th><th style={s.th}>{isDailyMode?L2('Player-Days','玩家天数'):L2('Reward Rows','奖励笔数')}</th></tr></thead><tbody>
                     {campaignLevels.map(level=>{
                       const unlockedCount=isDailyMode
                         ? (summaryData?.levelPlayerCounts?.[level.id] || 0)
@@ -3949,9 +3969,9 @@ export default function Campaigns() {
                   </tbody></table>
                 </>}
 
-                {realFinancialsLoading ? <div style={{textAlign:'center',padding:24,color:'var(--muted)'}}>Loading real platform financials…</div> : !realFinancials ? <div style={{textAlign:'center',padding:24,color:'var(--muted)'}}>No real platform data available for the selected campaign period.</div> : (()=>{const rewardCost=totalReward;const netPnl=realFinancials.deposit-realFinancials.withdrawal-rewardCost;const roi=calculateCampaignROI(rewardCost,netPnl);const roiLabel=roi===null?'N/A':`${roi.toFixed(1)}%`;return <><div style={{fontSize:13,fontWeight:700,marginBottom:8}}>💼 Campaign P&amp;L — Real Platform Data</div><div style={{display:'grid',gridTemplateColumns:'repeat(6,minmax(0,1fr))',gap:12,marginBottom:10}}>{[['Real Deposit',rmFmt(realFinancials.deposit,campCurrency),'#3fb950'],['Real Withdrawal',rmFmt(realFinancials.withdrawal,campCurrency),'#f85149'],['Real Valid Bet',rmFmt(realFinancials.validBet,campCurrency),'var(--accent)'],['Reward Cost',rewardFmt(rewardCost,campCurrency),'#c9a961'],['Net P&L',rmFmt(netPnl,campCurrency),netPnl>=0?'#3fb950':'#f85149'],['ROI',roiLabel,roi===null?'var(--muted)':roi>=0?'#3fb950':'#f85149']].map(([label,val,color])=><div key={label} style={{background:'var(--bg)',border:'1px solid var(--border)',borderRadius:8,padding:14}}><div style={{fontSize:18,fontWeight:700,color}}>{val}</div><div style={{fontSize:11,color:'var(--muted)',marginTop:2}}>{label}</div></div>)}</div><div style={{fontSize:11,color:'var(--muted)',marginBottom:24}}>Net P&amp;L = Real Deposit − Real Withdrawal − Reward Cost. ROI = Net P&amp;L ÷ Reward Cost × 100%. ROI is N/A when there is no reward cost. Real figures come from platform snapshots for the campaign period; qualification uses the campaign-period deposit tracked above.</div></>})()}
+                {realFinancialsLoading ? <div style={{textAlign:'center',padding:24,color:'var(--muted)'}}>{L2('Loading real platform financials…','正在加载真实平台财务数据…')}</div> : !realFinancials ? <div style={{textAlign:'center',padding:24,color:'var(--muted)'}}>{L2('No real platform data available for the selected campaign period.','所选活动期间没有真实平台数据。')}</div> : (()=>{const rewardCost=totalReward;const netPnl=realFinancials.deposit-realFinancials.withdrawal-rewardCost;const roi=calculateCampaignROI(rewardCost,netPnl);const roiLabel=roi===null?'N/A':`${roi.toFixed(1)}%`;return <><div style={{fontSize:13,fontWeight:700,marginBottom:8}}>💼 {L2('Campaign P&L — Real Platform Data','活动盈亏 — 真实平台数据')}</div><div style={{display:'grid',gridTemplateColumns:'repeat(6,minmax(0,1fr))',gap:12,marginBottom:10}}>{[[L2('Real Deposit','真实存款'),rmFmt(realFinancials.deposit,campCurrency),'#3fb950'],[L2('Real Withdrawal','真实提款'),rmFmt(realFinancials.withdrawal,campCurrency),'#f85149'],[L2('Real Valid Bet','真实有效投注'),rmFmt(realFinancials.validBet,campCurrency),'var(--accent)'],[L2('Reward Cost','奖励成本'),rewardFmt(rewardCost,campCurrency),'#c9a961'],[L2('Net P&L','净盈亏'),rmFmt(netPnl,campCurrency),netPnl>=0?'#3fb950':'#f85149'],['ROI',roiLabel,roi===null?'var(--muted)':roi>=0?'#3fb950':'#f85149']].map(([label,val,color])=><div key={label} style={{background:'var(--bg)',border:'1px solid var(--border)',borderRadius:8,padding:14}}><div style={{fontSize:18,fontWeight:700,color}}>{val}</div><div style={{fontSize:11,color:'var(--muted)',marginTop:2}}>{label}</div></div>)}</div><div style={{fontSize:11,color:'var(--muted)',marginBottom:24}}>{L2('Net P&L = Real Deposit − Real Withdrawal − Reward Cost. ROI = Net P&L ÷ Reward Cost × 100%. ROI is N/A when there is no reward cost. Real figures come from platform snapshots for the campaign period; qualification uses the campaign-period deposit tracked above.','净盈亏 = 真实存款 − 真实提款 − 奖励成本。ROI = 净盈亏 ÷ 奖励成本 × 100%。没有奖励成本时 ROI 为 N/A。真实数据来自活动期间的平台快照；资格判定使用上方追踪的活动期间存款。')}</div></>})()}
 
-                {isDailyMode && (summaryLoading ? <div style={{textAlign:'center',padding:40,color:'var(--muted)'}}>Loading daily entries…</div> : !summaryData ? <div style={{textAlign:'center',padding:40,color:'var(--muted)'}}>No daily entries yet.</div> : <div><div style={{fontSize:13,fontWeight:700,marginBottom:8}}>📅 Daily Turnover Settlement</div><div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12,marginBottom:18}}>{[['Days with Entries',summaryData.totalEntryDays,'#a78bfa'],['Participants / Enrolled',`${summaryData.uniqueParticipants} / ${players.length}`,'#3fb950'],['Total Credit Given',rmFmt(summaryData.totalCredit,campCurrency),'#c9a961'],['Total WCash Given',rmFmt(summaryData.totalWcash,campCurrency),'#f59e0b']].map(([label,val,color])=><div key={label} style={{background:'var(--bg)',border:'1px solid var(--border)',borderRadius:8,padding:14}}><div style={{fontSize:20,fontWeight:700,color}}>{val}</div><div style={{fontSize:11,color:'var(--muted)',marginTop:2}}>{label}</div></div>)}</div></div>)}
+                {isDailyMode && (summaryLoading ? <div style={{textAlign:'center',padding:40,color:'var(--muted)'}}>{L2('Loading daily entries…','正在加载每日记录…')}</div> : !summaryData ? <div style={{textAlign:'center',padding:40,color:'var(--muted)'}}>{L2('No daily entries yet.','暂无每日记录。')}</div> : <div><div style={{fontSize:13,fontWeight:700,marginBottom:8}}>📅 {L2('Daily Turnover Settlement','每日流水结算')}</div><div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12,marginBottom:18}}>{[[L2('Days with Entries','有记录的天数'),summaryData.totalEntryDays,'#a78bfa'],[L2('Participants / Enrolled','参与 / 已加入'),`${summaryData.uniqueParticipants} / ${players.length}`,'#3fb950'],[L2('Total Credit Given','已发 Credit 总额'),rmFmt(summaryData.totalCredit,campCurrency),'#c9a961'],[L2('Total WCash Given','已发 WCash 总额'),rmFmt(summaryData.totalWcash,campCurrency),'#f59e0b']].map(([label,val,color])=><div key={label} style={{background:'var(--bg)',border:'1px solid var(--border)',borderRadius:8,padding:14}}><div style={{fontSize:20,fontWeight:700,color}}>{val}</div><div style={{fontSize:11,color:'var(--muted)',marginTop:2}}>{label}</div></div>)}</div></div>)}
 
                 {selected?.streak_enabled && (() => {
                   const allSRows = Object.entries(streakBonuses).flatMap(([pid, rows]) => {
@@ -3966,21 +3986,21 @@ export default function Campaigns() {
                   const playersWithStreak = new Set(allSRows.map(r => r.username)).size
                   return (
                     <div style={{ marginTop:18 }}>
-                      <div style={{ fontSize:13, fontWeight:700, marginBottom:8 }}>🔥 Streak Bonus Summary</div>
+                      <div style={{ fontSize:13, fontWeight:700, marginBottom:8 }}>🔥 {L2('Streak Bonus Summary','连续奖励汇总')}</div>
                       {streakBonusesLoading
-                        ? <div style={{ color:'var(--muted)', fontSize:12 }}>Loading streak bonuses…</div>
+                        ? <div style={{ color:'var(--muted)', fontSize:12 }}>{L2('Loading streak bonuses…','正在加载连续奖励…')}</div>
                         : allSRows.length === 0
                           ? <div style={{ background:'rgba(255,165,0,.06)', border:'1px solid rgba(245,158,11,.2)', borderRadius:8, padding:'14px 18px', fontSize:12, color:'#f59e0b' }}>
-                              🔥 Streak bonus is <strong>enabled</strong> for this campaign ({selected.streak_days} days · {selected.streak_bonus_type === 'pct' ? `${selected.streak_bonus_pct}%` : rmFmt(selected.streak_bonus_fixed, campCurrency)} per streak). No bonuses awarded yet — keep logging daily entries to trigger streak milestones.
+                              🔥 {L2('Streak bonus is','此活动的连续奖励已')} <strong>{L2('enabled','启用')}</strong> {L2('for this campaign','')} ({selected.streak_days} {L2('days','天')} · {selected.streak_bonus_type === 'pct' ? `${selected.streak_bonus_pct}%` : rmFmt(selected.streak_bonus_fixed, campCurrency)} {L2('per streak','每次连续')}). {L2('No bonuses awarded yet — keep logging daily entries to trigger streak milestones.','尚未发放奖金 — 请继续录入每日记录以触发连续奖励里程碑。')}
                             </div>
                           : <>
                               <div style={{ display:'grid', gridTemplateColumns:'repeat(5,1fr)', gap:12, marginBottom:12 }}>
                                 {[
-                                  ['Streak Days Target', selected.streak_days, '#f59e0b'],
-                                  ['Players with Streak', playersWithStreak, '#a78bfa'],
-                                  ['Total Bonuses', allSRows.length, '#c9a961'],
-                                  ['Paid Amount', bonusFmt(paidStreakAmt, campCurrency), '#3fb950'],
-                                  ['Pending Amount', bonusFmt(pendingStreakAmt, campCurrency), '#f85149'],
+                                  [L2('Streak Days Target','连续天数目标'), selected.streak_days, '#f59e0b'],
+                                  [L2('Players with Streak','有连续奖励的玩家'), playersWithStreak, '#a78bfa'],
+                                  [L2('Total Bonuses','奖金总笔数'), allSRows.length, '#c9a961'],
+                                  [L2('Paid Amount','已派金额'), bonusFmt(paidStreakAmt, campCurrency), '#3fb950'],
+                                  [L2('Pending Amount','待处理金额'), bonusFmt(pendingStreakAmt, campCurrency), '#f85149'],
                                 ].map(([label,val,color]) => (
                                   <div key={label} style={{ background:'var(--bg)', border:'1px solid var(--border)', borderRadius:8, padding:14 }}>
                                     <div style={{ fontSize:18, fontWeight:700, color }}>{val}</div>
@@ -3990,11 +4010,11 @@ export default function Campaigns() {
                               </div>
                               <table style={{ ...s.tbl, marginBottom:8 }}>
                                 <thead><tr>
-                                  <th style={s.th}>Player</th>
-                                  <th style={s.th}>Streak #</th>
-                                  <th style={s.th}>Bonus Amount</th>
-                                  <th style={s.th}>Status</th>
-                                  <th style={s.th}>Awarded At</th>
+                                  <th style={s.th}>{L2('Player','玩家')}</th>
+                                  <th style={s.th}>{L2('Streak #','连续奖励 #')}</th>
+                                  <th style={s.th}>{L2('Bonus Amount','奖金金额')}</th>
+                                  <th style={s.th}>{L2('Status','状态')}</th>
+                                  <th style={s.th}>{L2('Awarded At','发放时间')}</th>
                                 </tr></thead>
                                 <tbody>
                                   {allSRows.sort((a,b) => a.username.localeCompare(b.username) || a.streak_number - b.streak_number).map((sb,i) => (
@@ -4004,7 +4024,7 @@ export default function Campaigns() {
                                       <td style={{ ...s.td, color:'#c9a961', fontWeight:700 }}>{bonusFmt(sb.bonus_amount, campCurrency)}</td>
                                       <td style={s.td}>
                                         <span style={{ ...s.tag(sb.payout_status==='paid'?'#3fb950':'#f59e0b'), fontSize:10 }}>
-                                          {sb.payout_status==='paid' ? '✓ Paid' : 'Pending'}
+                                          {sb.payout_status==='paid' ? L2('✓ Paid','✓ 已派') : L2('Pending','待处理')}
                                         </span>
                                       </td>
                                       <td style={{ ...s.td, fontSize:11, color:'var(--muted)' }}>
@@ -4014,7 +4034,7 @@ export default function Campaigns() {
                                   ))}
                                 </tbody>
                               </table>
-                              <div style={{ fontSize:11, color:'var(--muted)' }}>Total streak bonus cost: {bonusFmt(totalStreakAmt, campCurrency)} ({paidSRows.length} paid · {pendingSRows.length} pending)</div>
+                              <div style={{ fontSize:11, color:'var(--muted)' }}>{L2('Total streak bonus cost:','连续奖励总成本：')} {bonusFmt(totalStreakAmt, campCurrency)} ({paidSRows.length} {L2('paid','已派')} · {pendingSRows.length} {L2('pending','待处理')})</div>
                             </>
                       }
                     </div>
@@ -4034,20 +4054,20 @@ export default function Campaigns() {
               return (
                 <div>
                   <div style={{ padding:'12px 24px', borderBottom:'1px solid var(--border)', background:'rgba(167,139,250,.06)', display:'flex', gap:24, flexWrap:'wrap' }}>
-                    {[['Players',players.length,'#a78bfa'],['Min Valid Bet',rmFmt(minBet, campCurrency),'#a78bfa'],['Min Deposit',rmFmt(parseFloat(selected.min_deposit_lb)||0, campCurrency),'#a78bfa'],['Top N','Top '+topN,'#ffd700'],['Total Cost',rewardFmt(totalCost, campCurrency),'#f85149'],['Total Deposit',rmFmt(totalDep2, campCurrency),'#3fb950'],['Withdrawal',rmFmt(totalWith, campCurrency),'#f59e0b'],['ROI',roi+'%',parseFloat(roi)>=0?'#3fb950':'#f85149']].map(([l,v,c])=>(
+                    {[[L2('Players','玩家'),players.length,'#a78bfa'],[L2('Min Valid Bet','最低有效投注'),rmFmt(minBet, campCurrency),'#a78bfa'],[L2('Min Deposit','最低存款'),rmFmt(parseFloat(selected.min_deposit_lb)||0, campCurrency),'#a78bfa'],[L2('Top N','前 N 名'),L2('Top '+topN,'前 '+topN+' 名'),'#ffd700'],[L2('Total Cost','总成本'),rewardFmt(totalCost, campCurrency),'#f85149'],[L2('Total Deposit','总存款'),rmFmt(totalDep2, campCurrency),'#3fb950'],[L2('Withdrawal','提款'),rmFmt(totalWith, campCurrency),'#f59e0b'],['ROI',roi+'%',parseFloat(roi)>=0?'#3fb950':'#f85149']].map(([l,v,c])=>(
                       <div key={l}><div style={{ fontSize:15, fontWeight:800, color:c }}>{v}</div><div style={{ fontSize:10, color:'var(--muted)' }}>{l}</div></div>
                     ))}
                   </div>
                   <div style={{ overflowX:'auto' }}>
                     <table style={s.tbl}>
                       <thead><tr>
-                        <th style={s.th}>Rank</th><th style={s.th}>Player</th><th style={s.th}>Tier</th>
-                        <th style={s.th}>Valid Bet</th><th style={s.th}>Deposit</th><th style={s.th}>Withdrawal</th>
-                        <th style={s.th}>Net</th><th style={s.th}>Reward</th><th style={s.th}>Status</th>
+                        <th style={s.th}>{L2('Rank','名次')}</th><th style={s.th}>{L2('Player','玩家')}</th><th style={s.th}>{L2('Tier','等级')}</th>
+                        <th style={s.th}>{L2('Valid Bet','有效投注')}</th><th style={s.th}>{L2('Deposit','存款')}</th><th style={s.th}>{L2('Withdrawal','提款')}</th>
+                        <th style={s.th}>{L2('Net','净额')}</th><th style={s.th}>{L2('Reward','奖励')}</th><th style={s.th}>{L2('Status','状态')}</th>
                       </tr></thead>
                       <tbody>
                         {players.length===0 ? (
-                          <tr><td colSpan={9} style={{ ...s.td, textAlign:'center', color:'var(--muted)', padding:32 }}>No players yet</td></tr>
+                          <tr><td colSpan={9} style={{ ...s.td, textAlign:'center', color:'var(--muted)', padding:32 }}>{L2('No players yet','暂无玩家')}</td></tr>
                         ) : [...players].sort((a,b)=>leaderboardRankingValue(b)-leaderboardRankingValue(a) || String(a.username||'').localeCompare(String(b.username||''))).map((p,i)=>{
                           const vb=parseFloat(p.valid_bet)||0
                           const dep=playerDeposit(p)
@@ -4063,8 +4083,8 @@ export default function Campaigns() {
                               <td style={{ ...s.td, fontWeight:700 }}>{p.username}</td>
                               <td style={s.td}><span style={{ ...s.badge, background:TIER_BG[p.tier]||'', color:TIER_COLOR[p.tier]||'var(--muted)' }}>{p.tier}</span></td>
                               <td style={{ ...s.td, color:qualified?'#a78bfa':'var(--muted)', fontWeight:700 }}>
-                                <input type="number" style={{ ...s.editInput, width:90 }} defaultValue={vb||''} onBlur={e=>updatePlayer(p.id,{valid_bet:parseFloat(e.target.value)||0})} placeholder="valid bet" />
-                                {!qualified&&vb>0&&<div style={{ fontSize:10, color:'#f85149' }}>short {rmFmt(minBet-vb, campCurrency)}</div>}
+                                <input type="number" style={{ ...s.editInput, width:90 }} defaultValue={vb||''} onBlur={e=>updatePlayer(p.id,{valid_bet:parseFloat(e.target.value)||0})} placeholder={L2('valid bet','有效投注')} />
+                                {!qualified&&vb>0&&<div style={{ fontSize:10, color:'#f85149' }}>{L2('short','差')} {rmFmt(minBet-vb, campCurrency)}</div>}
                               </td>
                               <td style={s.td}><input type="number" style={{ ...s.editInput, width:80 }} defaultValue={dep||''} onBlur={e=>updatePlayer(p.id,{total_deposit:parseFloat(e.target.value)||0})} placeholder="0" /></td>
                               <td style={s.td}><input type="number" style={{ ...s.editInput, width:80 }} defaultValue={wit||''} onBlur={e=>updatePlayer(p.id,{total_withdrawal:parseFloat(e.target.value)||0})} placeholder="0" /></td>
@@ -4073,7 +4093,7 @@ export default function Campaigns() {
                               <td style={s.td}>
                                 <select value={p.payout_status||'pending'} onChange={e=>updatePlayer(p.id,{payout_status:e.target.value})}
                                   style={{ background:'var(--surface2)', border:'1px solid var(--border)', color:'var(--text)', padding:'3px 8px', borderRadius:5, fontSize:11 }}>
-                                  <option value="pending">Pending</option><option value="paid">Paid</option><option value="na">N/A</option>
+                                  <option value="pending">{L2('Pending','待处理')}</option><option value="paid">{L2('Paid','已派')}</option><option value="na">N/A</option>
                                 </select>
                               </td>
                             </tr>
@@ -4083,7 +4103,7 @@ export default function Campaigns() {
                     </table>
                   </div>
                   <div style={{ padding:'10px 24px', fontSize:11, color:'var(--muted)', borderTop:'1px solid var(--border)' }}>
-                    ROI = (Total Deposit - Total Withdrawal - Reward Cost) / Reward Cost x 100%
+                    {L2('ROI = (Total Deposit - Total Withdrawal - Reward Cost) / Reward Cost x 100%','ROI = (总存款 - 总提款 - 奖励成本) / 奖励成本 x 100%')}
                   </div>
                 </div>
               )
@@ -4095,7 +4115,7 @@ export default function Campaigns() {
         <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.6)', zIndex:1000, display:'flex', alignItems:'center', justifyContent:'center' }} onClick={()=>setWaPopup(null)}>
           <div style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:14, padding:24, width:520, maxWidth:'94vw' }} onClick={e=>e.stopPropagation()}>
             <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
-              <div style={{ fontSize:14, fontWeight:700 }}>💬 WhatsApp Message</div>
+              <div style={{ fontSize:14, fontWeight:700 }}>💬 {L2('WhatsApp Message','WhatsApp 讯息')}</div>
               {(waPopup.enBody || waPopup.zhBody) && (
                 <div style={{ display:'flex', gap:4 }}>
                   {waPopup.enBody && (
@@ -4116,16 +4136,18 @@ export default function Campaigns() {
             <textarea rows={10} style={{ ...s.fta, width:'100%', marginBottom:14, fontFamily:"'Segoe UI Emoji','Apple Color Emoji','Noto Color Emoji','Twemoji Mozilla',sans-serif" }} value={waPopup.message} onChange={e=>setWaPopup(p=>({...p,message:e.target.value}))} />
             <div style={{ display:'flex', gap:8 }}>
               <a href={`https://wa.me/${waPopup.rawNumber}?text=${encodeURIComponent(waPopup.message)}`} target="_blank" rel="noopener noreferrer" onClick={()=>setWaPopup(null)}
-                style={{ ...s.btnG, textDecoration:'none', padding:'8px 18px' }}>Open WhatsApp</a>
+                style={{ ...s.btnG, textDecoration:'none', padding:'8px 18px' }}>{L2('Open WhatsApp','打开 WhatsApp')}</a>
               <button style={{ ...s.btnSm, background: waCopied ? '#3fb950' : undefined, color: waCopied ? '#fff' : undefined }}
                 onClick={()=>{ navigator.clipboard.writeText(waPopup.message); setWaCopied(true); setTimeout(()=>setWaCopied(false), 2000) }}>
-                {waCopied ? '✅ Copied!' : '📋 Copy'}
+                {waCopied ? L2('✅ Copied!','✅ 已复制！') : L2('📋 Copy','📋 复制')}
               </button>
-              <button style={s.btnSm} onClick={()=>{ setWaPopup(null); setWaCopied(false) }}>Cancel</button>
+              <button style={s.btnSm} onClick={()=>{ setWaPopup(null); setWaCopied(false) }}>{L2('Cancel','取消')}</button>
             </div>
           </div>
         </div>
       )}
+
+      {challengeCamp && <ChallengeDetail campaign={challengeCamp} onClose={() => setChallengeCamp(null)} onChanged={loadCampaigns} />}
     </div>
   )
 }
