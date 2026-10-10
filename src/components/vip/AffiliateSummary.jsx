@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
+import * as XLSX from 'xlsx'
 import { SEGMENTS, fmtRM, fetchAll } from '../../lib/depositProfile'
 
 const th = { textAlign: 'right', padding: '10px 12px', color: 'var(--muted)', fontWeight: 600, whiteSpace: 'nowrap', cursor: 'pointer', userSelect: 'none' }
@@ -15,6 +16,7 @@ export default function AffiliateSummary() {
   const [sortKey, setSortKey] = useState('dep_total_3m')
   const [sortDir, setSortDir] = useState('desc')
   const [search, setSearch] = useState('')
+  const [exporting, setExporting] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -54,6 +56,68 @@ export default function AffiliateSummary() {
   if (loading) return <div style={{ textAlign: 'center', padding: 60, color: 'var(--muted)' }}>Loading affiliates…</div>
   if (err) return <div style={{ padding: 24, color: '#f87171' }}>Error loading affiliates: {err}</div>
 
+  // Export: sheet 1 = affiliate summary (as shown), sheet 2 = every VIP with its affiliate
+  async function exportExcel() {
+    setExporting(true)
+    try {
+      const affName = a => a === '(direct)' ? 'Direct (no affiliate)' : a === '(unknown)' ? 'Unknown (no deposit data)' : a
+      const summary = list.map(r => {
+        const normal = Number(r.normal_month || 0)
+        return {
+          'Affiliate 代理': affName(r.affiliate),
+          'VIPs': Number(r.vips), 'Gold': Number(r.gold), 'Platinum': Number(r.platinum), 'Diamond+': Number(r.diamond_plus),
+          'Deposits Jul-Sep (RM)': Math.round(Number(r.dep_total_3m)),
+          'Normal / month (RM)': Math.round(normal),
+          'Last 30d (RM)': Math.round(Number(r.dep_30d)),
+          'Trend %': normal > 0 ? Math.round((Number(r.dep_30d) / normal - 1) * 100) : '',
+          'Silent': Number(r.silent), 'Declining': Number(r.declining), 'Need action': Number(r.silent) + Number(r.declining),
+          'Growing': Number(r.growing), 'Stable': Number(r.stable), 'New': Number(r.new_vips),
+        }
+      })
+      const [members, prof] = await Promise.all([
+        fetchAll(() => supabase.from('vip_members')
+          .select('username, full_name, tier, host_assigned, region, currency, affiliate_login, affiliate_updated_at, is_excluded')
+          .order('username')),
+        fetchAll(() => supabase.from('v_vip_deposit_profile')
+          .select('login, segment, deposit_style, dep_total, dep_30d, dep_prev_60d, trend_pct, last_deposit_at, days_since_last, peak_day_name, peak_hour, main_method')
+          .order('login')),
+      ])
+      const pm = {}; prof.forEach(p => { pm[p.login] = p })
+      const vips = members.filter(m => !m.is_excluded).map(m => {
+        const p = pm[m.username] || {}
+        return {
+          'Affiliate 代理': m.affiliate_login || (m.affiliate_updated_at ? 'Direct (no affiliate)' : 'Unknown (no deposit data)'),
+          'Username': m.username, 'Full Name': m.full_name || '', 'Tier': m.tier || '', 'Host': m.host_assigned || '',
+          'Region': m.region || '', 'Currency': m.currency || '',
+          'Segment 分群': p.segment || 'No deposits', 'Deposit Style': p.deposit_style || '',
+          'Deposits Jul-Sep (RM)': p.dep_total != null ? Math.round(Number(p.dep_total)) : 0,
+          'Normal / month (RM)': p.dep_prev_60d != null ? Math.round(Number(p.dep_prev_60d) / 2) : 0,
+          'Last 30d (RM)': p.dep_30d != null ? Math.round(Number(p.dep_30d)) : 0,
+          'Trend %': p.trend_pct ?? '',
+          'Last Deposit': p.last_deposit_at ? String(p.last_deposit_at).slice(0, 10) : '',
+          'Days Since Last': p.days_since_last ?? '',
+          'Best Time': p.peak_day_name ? `${p.peak_day_name} ${p.peak_hour}:00` : '',
+          'Main Method': p.main_method || '',
+        }
+      }).sort((a, b) => a['Affiliate 代理'].localeCompare(b['Affiliate 代理']) || b['Deposits Jul-Sep (RM)'] - a['Deposits Jul-Sep (RM)'])
+
+      const wb = XLSX.utils.book_new()
+      const ws1 = XLSX.utils.json_to_sheet(summary)
+      ws1['!cols'] = [{ wch: 26 }, ...Array(14).fill({ wch: 14 })]
+      const ws2 = XLSX.utils.json_to_sheet(vips)
+      ws2['!cols'] = [{ wch: 26 }, { wch: 18 }, { wch: 28 }, ...Array(14).fill({ wch: 14 })]
+      ws1['!autofilter'] = { ref: ws1['!ref'] }
+      ws2['!autofilter'] = { ref: ws2['!ref'] }
+      XLSX.utils.book_append_sheet(wb, ws1, 'Affiliate Summary')
+      XLSX.utils.book_append_sheet(wb, ws2, 'VIPs by Affiliate')
+      XLSX.writeFile(wb, `Affiliates_VIPs_${new Date().toISOString().slice(0, 10)}.xlsx`)
+    } catch (e) {
+      console.error('Affiliate export error', e)
+      alert('Export failed: ' + (e.message || e))
+    }
+    setExporting(false)
+  }
+
   const openList = (aff, segment) => {
     const a = aff === '(direct)' ? '__direct__' : aff === '(unknown)' ? '__unknown__' : aff
     navigate(`/vips?affiliate=${encodeURIComponent(a)}${segment ? `&segment=${segment}` : ''}`)
@@ -86,6 +150,10 @@ export default function AffiliateSummary() {
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search affiliate"
           style={{ background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 10px', fontSize: 12, color: 'var(--text)', minWidth: 200 }} />
         <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--muted)' }}>{list.length} rows</span>
+        <button onClick={exportExcel} disabled={exporting} style={{
+          background: 'var(--brand, #FF6B00)', color: '#fff', border: 'none', borderRadius: 6,
+          padding: '7px 14px', fontSize: 12, fontWeight: 700, cursor: exporting ? 'wait' : 'pointer', opacity: exporting ? 0.6 : 1,
+        }}>{exporting ? 'Exporting…' : '⬇ Export Excel'}</button>
       </div>
 
       <div style={{ overflowX: 'auto' }}>

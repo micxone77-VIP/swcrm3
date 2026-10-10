@@ -8,6 +8,7 @@ import { formatMoney } from '../lib/format'
 import { useUrlParam, useUrlParamNumber } from '../hooks/useUrlParam'
 import { callAI } from '../lib/aiApi'
 import { useLanguage } from '../contexts/LanguageContext'
+import * as XLSX from 'xlsx'
 
 const CONTACT_TYPES    = ['WhatsApp','Call','In-person','Other']
 const CONTACT_OUTCOMES = ['Contacted','No Reply','Replied','Deposited','Reactivated']
@@ -373,6 +374,112 @@ export default function ContactLog() {
 
   const [showForm, setShowForm]     = useState(false)
   const [notePopup, setNotePopup]   = useState(null) // { username, notes }
+  const [copyMsg, setCopyMsg]       = useState('')
+  const [exporting, setExporting]   = useState(false)
+
+  // ── Copy helpers ───────────────────────────────────────────────────────────
+  async function copyText(text, label) {
+    try {
+      await navigator.clipboard.writeText(text)
+    } catch {
+      // fallback for older browsers / non-https
+      const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta)
+      ta.select(); document.execCommand('copy'); document.body.removeChild(ta)
+    }
+    setCopyMsg(label || 'Copied ✓'); setTimeout(() => setCopyMsg(''), 1800)
+  }
+  function fmtLogTime(ts) {
+    if (!ts) return ''
+    const d = new Date(ts)
+    return d.toLocaleString('en-GB', { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', hour12:false })
+  }
+  // All logs for one VIP (oldest first) as one text block
+  async function copyVipHistory(username) {
+    const { data, error } = await supabase.from('contact_logs')
+      .select('logged_at, host_name, channel, outcome, notes, bonus_offered, bonus_type')
+      .eq('username', username).order('logged_at', { ascending: true }).range(0, 999)
+    if (error) { setCopyMsg('Copy failed'); return }
+    const text = [`=== ${username} — contact history (${(data||[]).length} logs) ===`, '',
+      ...(data||[]).map(l => `[${fmtLogTime(l.logged_at)}] ${l.host_name || ''} · ${l.channel || ''} · ${l.outcome || ''}${l.bonus_offered ? ` · Bonus ${l.bonus_offered}${l.bonus_type ? ' ' + l.bonus_type : ''}` : ''}\n${l.notes || '(no note)'}\n`)
+    ].join('\n')
+    copyText(text, `Copied ${(data||[]).length} logs ✓`)
+  }
+
+  // ── Export all logs matching current filters (host / tier / date / search) ──
+  async function exportLogs() {
+    setExporting(true)
+    try {
+      const all = []
+      for (let from = 0; ; from += 1000) {
+        let q = supabase.from('contact_logs')
+          .select('logged_at, username, tier, host_name, channel, direction, outcome, notes, vip_response, bonus_offered, bonus_type, follow_up_needed, follow_up_date, wa_number_used, vip_members(tier, full_name, currency)')
+        if (viewMode === 'mine' && profile) {
+          const me = profile.full_name || profile.username || (profile.email ? profile.email.split('@')[0] : null)
+          if (me) q = q.eq('host_name', me)
+        }
+        if (hostF !== 'ALL') q = q.eq('host_name', hostF)
+        if (tierF !== 'ALL') q = q.eq('vip_members.tier', tierF).not('vip_members', 'is', null)
+        if (search.trim())   q = q.ilike('username', `%${search}%`)
+        if (dateFrom)        q = q.gte('logged_at', dateFrom)
+        if (dateTo)          q = q.lte('logged_at', dateTo + 'T23:59:59')
+        q = q.order('logged_at', { ascending: true }).range(from, from + 999)
+        const { data, error } = await q
+        if (error) throw error
+        all.push(...(data || []))
+        if (!data || data.length < 1000) break
+      }
+      if (all.length === 0) { alert('No logs match the current filters.'); setExporting(false); return }
+
+      // Sheet 1: one row per log
+      const rows = all.map(l => ({
+        'Date/Time': fmtLogTime(l.logged_at),
+        'Host': l.host_name || '',
+        'VIP': l.username,
+        'Full Name': l.vip_members?.full_name || '',
+        'Tier': l.vip_members?.tier || l.tier || '',
+        'Channel': l.channel || '',
+        'Outcome': l.outcome || '',
+        'Note / Conversation': l.notes || '',
+        'VIP Response': l.vip_response || '',
+        'Bonus': l.bonus_offered || '',
+        'Bonus Type': l.bonus_type || '',
+        'Currency': l.vip_members?.currency || '',
+        'Follow Up': l.follow_up_needed ? (l.follow_up_date || 'Yes') : '',
+        'WA Number': l.wa_number_used || '',
+      }))
+      // Sheet 2: one row per VIP, full conversation in time order
+      const byVip = {}
+      all.forEach(l => {
+        const k = l.username
+        if (!byVip[k]) byVip[k] = { vip: k, name: l.vip_members?.full_name || '', tier: l.vip_members?.tier || l.tier || '', hosts: new Set(), logs: [] }
+        if (l.host_name) byVip[k].hosts.add(l.host_name)
+        byVip[k].logs.push(`[${fmtLogTime(l.logged_at)}] ${l.host_name || ''} (${l.outcome || ''})\n${l.notes || ''}`)
+      })
+      const vipRows = Object.values(byVip).sort((a, b) => b.logs.length - a.logs.length).map(v => ({
+        'VIP': v.vip, 'Full Name': v.name, 'Tier': v.tier, 'Host(s)': [...v.hosts].join(', '),
+        'Logs': v.logs.length,
+        'Full Conversation': v.logs.join('\n\n').slice(0, 32000), // Excel cell limit
+      }))
+
+      const wb = XLSX.utils.book_new()
+      const ws1 = XLSX.utils.json_to_sheet(rows)
+      ws1['!cols'] = [{ wch:17 }, { wch:12 }, { wch:16 }, { wch:22 }, { wch:10 }, { wch:10 }, { wch:12 }, { wch:70 }, { wch:30 }, { wch:8 }, { wch:12 }, { wch:8 }, { wch:12 }, { wch:12 }]
+      ws1['!autofilter'] = { ref: ws1['!ref'] }
+      const ws2 = XLSX.utils.json_to_sheet(vipRows)
+      ws2['!cols'] = [{ wch:16 }, { wch:22 }, { wch:10 }, { wch:18 }, { wch:6 }, { wch:100 }]
+      ws2['!autofilter'] = { ref: ws2['!ref'] }
+      XLSX.utils.book_append_sheet(wb, ws1, 'Contact Logs')
+      XLSX.utils.book_append_sheet(wb, ws2, 'By VIP')
+
+      const hostPart = viewMode === 'mine' ? 'Me' : hostF === 'ALL' ? 'AllHosts' : hostF.replace(/[^\w]+/g, '_')
+      const datePart = `${dateFrom || 'start'}_to_${dateTo || new Date().toISOString().slice(0,10)}`
+      XLSX.writeFile(wb, `ContactLog_${hostPart}_${datePart}.xlsx`)
+    } catch (e) {
+      console.error('Contact log export error', e)
+      alert('Export failed: ' + (e.message || e))
+    }
+    setExporting(false)
+  }
   const [editingLogId, setEditingLogId]       = useState(null)
   const [editingNote, setEditingNote]         = useState('')
   const [editingOutcome, setEditingOutcome]   = useState('Contacted')
@@ -733,6 +840,11 @@ export default function ContactLog() {
           <div style={{ marginLeft:'auto', fontSize:12, color:'var(--muted)' }}>
             {loading ? 'Loading...' : `${total} logs · page ${page+1}/${Math.max(1,totalPages)}`}
           </div>
+          <button onClick={exportLogs} disabled={exporting || total === 0}
+            title="Export every log matching the current Host / Tier / Date / Search filters"
+            style={{ background:'var(--brand, #FF6B00)', color:'#fff', border:'none', borderRadius:6, padding:'7px 14px', fontSize:12, fontWeight:700, cursor: exporting ? 'wait' : 'pointer', opacity: (exporting || total === 0) ? 0.6 : 1 }}>
+            {exporting ? 'Exporting…' : `⬇ Export ${total} logs`}
+          </button>
         </div>
       </div>
 
@@ -881,7 +993,18 @@ export default function ContactLog() {
               <div style={{ fontSize:13, fontWeight:700, color:'var(--accent)' }}>{notePopup.username} — Note</div>
               <button onClick={() => setNotePopup(null)} style={{ background:'none', border:'none', color:'var(--muted)', fontSize:18, cursor:'pointer', lineHeight:1 }}>✕</button>
             </div>
-            <div style={{ fontSize:13, color:'var(--text)', lineHeight:1.6, whiteSpace:'pre-wrap', wordBreak:'break-word' }}>{notePopup.notes}</div>
+            <div style={{ fontSize:13, color:'var(--text)', lineHeight:1.6, whiteSpace:'pre-wrap', wordBreak:'break-word', maxHeight:'60vh', overflowY:'auto' }}>{notePopup.notes}</div>
+            <div style={{ display:'flex', gap:8, alignItems:'center', marginTop:18, paddingTop:14, borderTop:'1px solid var(--border)', flexWrap:'wrap' }}>
+              <button onClick={() => copyText(notePopup.notes, 'Note copied ✓')}
+                style={{ background:'var(--brand, #FF6B00)', color:'#fff', border:'none', borderRadius:6, padding:'7px 14px', fontSize:12, fontWeight:700, cursor:'pointer' }}>
+                📋 Copy this note
+              </button>
+              <button onClick={() => copyVipHistory(notePopup.username)}
+                style={{ background:'var(--surface2)', color:'var(--text)', border:'1px solid var(--border)', borderRadius:6, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>
+                📋 Copy all notes for {notePopup.username}
+              </button>
+              {copyMsg && <span style={{ fontSize:12, color:'#34d399', fontWeight:600 }}>{copyMsg}</span>}
+            </div>
           </div>
         </div>
       )}
