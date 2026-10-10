@@ -18,6 +18,7 @@ export default function DepositSegments({ myName = 'VIP Team' }) {
   const [segF, setSegF] = useState('RISK')       // RISK = Silent + Declining
   const [tierF, setTierF] = useState('ALL')
   const [hostF, setHostF] = useState('ALL')
+  const [affF, setAffF] = useState('ALL')
   const [search, setSearch] = useState('')
   const [sortKey, setSortKey] = useState('at_risk')
   const [sortDir, setSortDir] = useState('desc')
@@ -44,14 +45,16 @@ export default function DepositSegments({ myName = 'VIP Team' }) {
   }, [])
 
   const hosts = useMemo(() => [...new Set(rows.map(r => r.host_assigned).filter(Boolean))].sort(), [rows])
+  const affs = useMemo(() => [...new Set(rows.map(r => r.affiliate_login).filter(Boolean))].sort(), [rows])
   const tiers = useMemo(() => [...new Set(rows.map(r => r.tier).filter(Boolean))].sort(), [rows])
 
   // rows after tier/host/search (segment counts reflect these filters)
   const scoped = useMemo(() => rows.filter(r =>
     (tierF === 'ALL' || r.tier === tierF) &&
     (hostF === 'ALL' || (hostF === '__none' ? !r.host_assigned : r.host_assigned === hostF)) &&
+    (affF === 'ALL' || (affF === '__direct' ? !r.affiliate_login : r.affiliate_login === affF)) &&
     (!search || r.login.toLowerCase().includes(search.toLowerCase()) || (r.member_name || '').toLowerCase().includes(search.toLowerCase()))
-  ), [rows, tierF, hostF, search])
+  ), [rows, tierF, hostF, affF, search])
 
   const counts = useMemo(() => {
     const c = {}
@@ -133,6 +136,11 @@ export default function DepositSegments({ myName = 'VIP Team' }) {
           <option value="__none">(No host)</option>
           {hosts.map(h => <option key={h} value={h}>{h}</option>)}
         </select>
+        <select value={affF} onChange={e => setAffF(e.target.value)} style={sel}>
+          <option value="ALL">All affiliates</option>
+          <option value="__direct">Direct (no affiliate)</option>
+          {affs.map(a => <option key={a} value={a}>{a}</option>)}
+        </select>
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search username / name" style={{ ...sel, minWidth: 180 }} />
         <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--muted)' }}>{list.length} players</span>
       </div>
@@ -145,6 +153,7 @@ export default function DepositSegments({ myName = 'VIP Team' }) {
               <th style={th} onClick={() => sortBy('login')}>Player{arrow('login')}</th>
               <th style={th}>Tier</th>
               <th style={th}>Host</th>
+              <th style={th}>Affiliate</th>
               <th style={th}>Segment</th>
               <th style={th}>Style</th>
               <th style={{ ...th, textAlign: 'right' }} onClick={() => sortBy('normal')}>Normal / mth{arrow('normal')}</th>
@@ -159,7 +168,7 @@ export default function DepositSegments({ myName = 'VIP Team' }) {
           </thead>
           <tbody>
             {list.length === 0 ? (
-              <tr><td colSpan={13} style={{ textAlign: 'center', padding: 32, color: 'var(--muted)' }}>No players in this segment.</td></tr>
+              <tr><td colSpan={14} style={{ textAlign: 'center', padding: 32, color: 'var(--muted)' }}>No players in this segment.</td></tr>
             ) : list.map(r => {
               const m = members[r.login] || {}
               const seg = SEGMENTS[r.segment] || SEGMENTS.Stable
@@ -186,6 +195,7 @@ export default function DepositSegments({ myName = 'VIP Team' }) {
                     {r.tier && <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: TIER_BG[r.tier] || 'transparent', color: TIER_COLOR[r.tier] || 'var(--text)' }}>{r.tier}</span>}
                   </td>
                   <td style={{ ...td, color: r.host_assigned ? 'var(--text)' : 'var(--muted)' }}>{r.host_assigned || '—'}</td>
+                  <td style={{ ...td, color: r.affiliate_login ? 'var(--brand, #FF6B00)' : 'var(--muted)', fontWeight: r.affiliate_login ? 600 : 400 }}>{r.affiliate_login || 'Direct'}</td>
                   <td style={td}>
                     <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: seg.bg, color: seg.color }}>{seg.icon} {r.segment}</span>
                   </td>

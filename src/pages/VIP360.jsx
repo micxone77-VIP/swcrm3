@@ -440,6 +440,7 @@ onMouseLeave={e => e.currentTarget.style.opacity=.6}
 <div style={{ fontSize:12, color:'var(--muted)', marginTop:4 }}>
 {vip.region && <span>{vip.region}</span>}
 {vip.host_assigned && <span> · Host: {vip.host_assigned}</span>}
+{vip.affiliate_login && <span> · Affiliate: <b style={{ color:'var(--brand)' }}>{vip.affiliate_login}</b></span>}
 {vip.currency && <span> · {vip.currency}</span>}
 </div>
 {gamingLabel && (
@@ -512,6 +513,8 @@ color: m.isWL ? (m.wl <= 0 ? 'var(--success)' : 'var(--danger)') : 'var(--text)'
 <div style={{ padding:'20px' }}>
 {/* OVERVIEW */}
 {tab === 'overview' && (
+<>
+<DepositProfileCard username={vip.username} />
 <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:20 }}>
 {/* Left: profile summary */}
 <div>
@@ -524,6 +527,7 @@ color: m.isWL ? (m.wl <= 0 ? 'var(--success)' : 'var(--danger)') : 'var(--text)'
 <Field label="Region">{vip.region}</Field>
 <Field label="Currency">{vip.currency}</Field>
 <Field label="Host">{vip.host_assigned}</Field>
+<Field label="Affiliate">{vip.affiliate_login ? vip.affiliate_login : vip.affiliate_updated_at ? 'Direct (no affiliate)' : '—'}</Field>
 <Field label="Phone">{vip.phone}</Field>
 <Field label="WhatsApp">{vip.whatsapp}</Field>
 <Field label="Email">{vip.email}</Field>
@@ -565,6 +569,7 @@ color: m.isWL ? (m.wl <= 0 ? 'var(--success)' : 'var(--danger)') : 'var(--text)'
 )}
 </div>
 </div>
+</>
 )}
 
 {/* FINANCIAL */}
@@ -1154,9 +1159,6 @@ const relOpt = RELATIONSHIP_OPTIONS.find(r => r.val === profileForm.relationship
 
 return (
 <div style={{ maxWidth:760 }}>
-  {/* Deposit Profile 充值画像 — from vip_deposit_logs */}
-  <DepositProfileCard username={vip?.username} />
-
   {/* Relationship & Quick Info */}
   <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16, marginBottom:20 }}>
     {/* Relationship Level */}

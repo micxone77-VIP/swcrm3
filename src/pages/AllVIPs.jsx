@@ -1,6 +1,7 @@
 // src/pages/AllVIPs.jsx — VIP Operations / All VIPs (V2)
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import { SEGMENTS, fetchAll } from '../lib/depositProfile'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { useLanguage } from '../contexts/LanguageContext'
@@ -40,6 +41,7 @@ function downloadCSV(rows, filename) {
     'Last Deposit Date','Last Contacted','Last Contact Date',
     'Churn Risk','VIP Score','Birthday',
     'TNG Verify Status','TNG Verified Name',
+    'Affiliate','Deposit Segment',
   ]
   const csv = [
     headers.join(','),
@@ -64,6 +66,8 @@ function downloadCSV(rows, filename) {
       escCSV(r.birthday),
       escCSV(r.tng_verify_status),
       escCSV(r.tng_verified_name),
+      escCSV(r.affiliate_login || (r.affiliate_updated_at ? 'Direct' : '')),
+      escCSV(r._segment || ''),
     ].join(','))
   ].join('\n')
   const bom = '﻿'
@@ -98,6 +102,11 @@ export default function AllVIPs() {
   // Gaming labels (username -> { player_type, player_type_icon })
   const [gamingLabels, setGamingLabels] = useState({})
   const [playerTypeFilter, setPlayerTypeFilter] = useState('ALL')
+  // Affiliate + deposit segment (from vip_deposit_logs)
+  const [searchParams] = useSearchParams()
+  const [affiliate, setAffiliate] = useState(searchParams.get('affiliate') || 'ALL')
+  const [segFilter, setSegFilter] = useState(searchParams.get('segment') || 'ALL')
+  const [segMap, setSegMap] = useState({})
 
   const TIER_ORDER = { BLACK:0, DIAMOND:1, PLATINUM:2, GOLD:3, SILVER:4, BRONZE:5 }
 
@@ -106,7 +115,7 @@ export default function AllVIPs() {
     try {
       const [vipRes, hostRes] = await Promise.all([
         supabase.from('vip_members')
-          .select('id,username,full_name,tier,region,currency,days_inactive,churn_risk,host_assigned,last_deposit_date,total_deposit,win_loss,activity_status,last_contacted,last_contact_date,vip_score,is_excluded,birthday,phone,whatsapp,tng_verify_status,tng_verified_name')
+          .select('id,username,full_name,tier,region,currency,days_inactive,churn_risk,host_assigned,last_deposit_date,total_deposit,win_loss,activity_status,last_contacted,last_contact_date,vip_score,is_excluded,birthday,phone,whatsapp,tng_verify_status,tng_verified_name,affiliate_login,affiliate_updated_at')
           .neq('is_excluded', true),
         supabase.from('profiles').select('full_name').in('role',['admin','host']).order('full_name'),
       ])
@@ -114,6 +123,10 @@ export default function AllVIPs() {
       setVips(vipRes.data || [])
       const hostNames = ['ALL', '__unassigned__', ...(hostRes.data||[]).map(h => h.full_name).filter(Boolean)]
       setHosts(hostNames)
+      // Deposit segments (v_vip_deposit_profile)
+      fetchAll(() => supabase.from('v_vip_deposit_profile').select('login,segment,trend_pct,days_since_last').order('login'))
+        .then(rows => { const m = {}; rows.forEach(r => { m[r.login] = r }); setSegMap(m) })
+        .catch(e => console.error('segment load error', e))
       // Load gaming labels (latest month per player)
       supabase.from('player_gaming_labels')
         .select('username,player_type,player_type_icon')
@@ -192,6 +205,13 @@ export default function AllVIPs() {
     if (v === 'noctact')  { setTier('ALL'); setStatus('ALL') }
   }
 
+  // Affiliate dropdown options (with VIP counts)
+  const affiliateOptions = (() => {
+    const c = {}
+    vips.forEach(v => { if (v.affiliate_login) c[v.affiliate_login] = (c[v.affiliate_login] || 0) + 1 })
+    return Object.entries(c).map(([name, n]) => ({ name, n })).sort((a, b) => b.n - a.n || a.name.localeCompare(b.name))
+  })()
+
   // Filter + sort
   const now = new Date()
   const filtered = vips.filter(v => {
@@ -200,6 +220,13 @@ export default function AllVIPs() {
     if (region !== 'ALL' && v.region !== region) return false
     if (host === '__unassigned__') { if (v.host_assigned) return false }
     else if (host !== 'ALL' && v.host_assigned !== host) return false
+    if (affiliate === '__direct__') { if (v.affiliate_login || !v.affiliate_updated_at) return false }
+    else if (affiliate === '__unknown__') { if (v.affiliate_updated_at) return false }
+    else if (affiliate !== 'ALL' && v.affiliate_login !== affiliate) return false
+    if (segFilter !== 'ALL') {
+      const sg = segMap[v.username]?.segment || 'No deposits'
+      if (segFilter === 'RISK' ? !(sg === 'Silent' || sg === 'Declining') : sg !== segFilter) return false
+    }
     if (playerTypeFilter !== 'ALL') {
       const gl = gamingLabels[v.username]
       if (!gl || gl.player_type !== playerTypeFilter) return false
@@ -223,6 +250,7 @@ export default function AllVIPs() {
     else if (sortCol === 'dep')   { va = a.total_deposit||0; vb = b.total_deposit||0 }
     else if (sortCol === 'days')  { va = a.days_inactive||0; vb = b.days_inactive||0 }
     else if (sortCol === 'name')  { va = a.full_name||a.username||''; vb = b.full_name||b.username||'' }
+    else if (sortCol === 'affiliate_login') { va = a.affiliate_login||'~'; vb = b.affiliate_login||'~' }
     else                         { va = a[sortCol]||0; vb = b[sortCol]||0 }
     return sortAsc ? (va > vb ? 1 : -1) : (va < vb ? 1 : -1)
   })
@@ -255,7 +283,7 @@ export default function AllVIPs() {
         actions={
           <>
             {profile?.role === 'admin' && (
-              <Btn size="sm" variant="ghost" onClick={() => downloadCSV(filtered, 'vips-export.csv')}>
+              <Btn size="sm" variant="ghost" onClick={() => downloadCSV(filtered.map(v => ({ ...v, _segment: segMap[v.username]?.segment || '' })), 'vips-export.csv')}>
                 {t('allVips.exportCsv')}
               </Btn>
             )}
@@ -325,8 +353,20 @@ export default function AllVIPs() {
           <option value="Multi-Platform">🎯 Multi-Platform</option>
           <option value="Casual">🃏 Casual</option>
         </Select>
-        {(search || tier !== 'ALL' || status !== 'ALL' || region !== 'ALL' || host !== 'ALL' || playerTypeFilter !== 'ALL') && (
-          <Btn size="sm" variant="ghost" onClick={() => { setSearch(''); setTier('ALL'); setStatus('ALL'); setRegion('ALL'); setHost('ALL'); setPlayerTypeFilter('ALL'); setPage(1) }}>
+        <Select value={affiliate} onChange={e => { setAffiliate(e.target.value); setPage(1) }} style={{ minWidth: 150 }}>
+          <option value="ALL">🤝 All Affiliates</option>
+          <option value="__direct__">Direct (no affiliate)</option>
+          <option value="__unknown__">Unknown (no deposit data)</option>
+          {affiliateOptions.map(a => <option key={a.name} value={a.name}>{a.name} ({a.n})</option>)}
+        </Select>
+        <Select value={segFilter} onChange={e => { setSegFilter(e.target.value); setPage(1) }} style={{ minWidth: 150 }}>
+          <option value="ALL">🧭 All Segments</option>
+          <option value="RISK">🚨 Need action (Silent + Declining)</option>
+          {Object.keys(SEGMENTS).map(k => <option key={k} value={k}>{SEGMENTS[k].icon} {k} {SEGMENTS[k].zh}</option>)}
+          <option value="No deposits">No deposits (Jul–Sep)</option>
+        </Select>
+        {(search || tier !== 'ALL' || status !== 'ALL' || region !== 'ALL' || host !== 'ALL' || playerTypeFilter !== 'ALL' || affiliate !== 'ALL' || segFilter !== 'ALL') && (
+          <Btn size="sm" variant="ghost" onClick={() => { setSearch(''); setTier('ALL'); setStatus('ALL'); setRegion('ALL'); setHost('ALL'); setPlayerTypeFilter('ALL'); setAffiliate('ALL'); setSegFilter('ALL'); setPage(1) }}>
             {t('allVips.clearFilters')}
           </Btn>
         )}
@@ -344,11 +384,13 @@ export default function AllVIPs() {
                     { key:'tng', label:'T&G', sortable:false },
                     { key:'tier', label:t('common.tier'), sortable:true },
                     { key:'activity_status', label:t('common.status'), sortable:false },
+                    { key:'segment', label:'Segment 分群', sortable:false },
                     { key:'dep', label:t('allVips.colDeposit'), sortable:true },
                     { key:'win_loss', label:t('common.winLoss'), sortable:false },
                     { key:'last_contact_date', label:t('allVips.colLastContact'), sortable:false },
                     { key:'last_deposit_date', label:t('allVips.colLastDeposit'), sortable:false },
                     { key:'host_assigned', label:t('common.host'), sortable:false },
+                    { key:'affiliate_login', label:'Affiliate 代理', sortable:true },
                     { key:'churn_risk', label:t('common.atRisk'), sortable:false },
                     { key:'action', label:t('allVips.colNextAction'), sortable:false },
                   ].map(col => (
@@ -370,7 +412,7 @@ export default function AllVIPs() {
               </thead>
               <tbody>
                 {paged.length === 0 ? (
-                  <tr><td colSpan={11} style={{ textAlign:'center', padding:'32px', color:'var(--muted)' }}>
+                  <tr><td colSpan={13} style={{ textAlign:'center', padding:'32px', color:'var(--muted)' }}>
                     No VIPs match the current filters.
                   </td></tr>
                 ) : paged.map(v => {
@@ -408,6 +450,14 @@ export default function AllVIPs() {
                       </td>
                       <td style={{ padding:'9px 12px', borderBottom:'1px solid var(--border)' }}>
                         <StatusBadge status={v.activity_status} />
+                      </td>
+                      <td style={{ padding:'9px 12px', borderBottom:'1px solid var(--border)', whiteSpace:'nowrap' }}>
+                        {(() => {
+                          const sg = segMap[v.username]
+                          if (!sg) return <span style={{ color:'var(--muted)', fontSize:11 }}>No deposits</span>
+                          const cfg = SEGMENTS[sg.segment] || SEGMENTS.Stable
+                          return <span title={sg.trend_pct != null ? `Trend ${sg.trend_pct}% · ${sg.days_since_last}d since last deposit` : ''} style={{ fontSize:11, fontWeight:700, padding:'2px 8px', borderRadius:10, background:cfg.bg, color:cfg.color }}>{cfg.icon} {sg.segment}</span>
+                        })()}
                       </td>
                       <td style={{ padding:'9px 12px', borderBottom:'1px solid var(--border)', fontWeight:600 }}>
                         {formatMoney(v.total_deposit, v.currency)}
@@ -462,6 +512,11 @@ export default function AllVIPs() {
                         ) : (
                           <span style={{ color:'var(--muted)' }}>—</span>
                         )}
+                      </td>
+                      <td style={{ padding:'9px 12px', borderBottom:'1px solid var(--border)', fontSize:12, whiteSpace:'nowrap' }}>
+                        {v.affiliate_login ? <span style={{ fontWeight:600, color:'var(--brand)' }}>{v.affiliate_login}</span>
+                          : v.affiliate_updated_at ? <span style={{ color:'var(--text)' }}>Direct</span>
+                          : <span style={{ color:'var(--muted)' }}>—</span>}
                       </td>
                       <td style={{ padding:'9px 12px', borderBottom:'1px solid var(--border)' }}>
                         <RiskBadge risk={v.churn_risk} />
