@@ -9,6 +9,7 @@ import { useUrlParam, useUrlParamNumber } from '../hooks/useUrlParam'
 import { callAI } from '../lib/aiApi'
 import { useLanguage } from '../contexts/LanguageContext'
 import * as XLSX from 'xlsx'
+import AwaitingReplyAffiliate from '../components/contact/AwaitingReplyAffiliate'
 
 const CONTACT_TYPES    = ['WhatsApp','Call','In-person','Other']
 const CONTACT_OUTCOMES = ['Contacted','No Reply','Replied','Deposited','Reactivated']
@@ -228,110 +229,7 @@ function BenefitsTab({ onBack }) {
   )
 }
 
-function AwaitingReplyTab({ onBack, myName, viewMode }) {
-  const { t, lang } = useLanguage()
-  const L2 = (en, zh) => (lang === 'zh' ? zh : en)
-  const [loading, setLoading] = useState(true)
-  const [rows, setRows] = useState([])
-
-  useEffect(() => { load() }, [viewMode])
-
-  async function load() {
-    setLoading(true)
-    try {
-      // Pull recent logs (90 days is plenty — anything older and the "latest
-      // log per VIP" logic below would already have picked up a newer one if
-      // it existed) and find, per VIP, only their single most recent entry.
-      const since = new Date(); since.setDate(since.getDate() - 90)
-      let q = supabase.from('contact_logs')
-        .select('id, username, tier, host_name, outcome, notes, logged_at')
-        .gte('logged_at', since.toISOString())
-        .order('logged_at', { ascending: false })
-      if (viewMode === 'mine' && myName) q = q.eq('host_name', myName)
-      const { data, error } = await q
-      if (error) { console.error(error); setRows([]); return }
-
-      const latestByUser = {}
-      ;(data || []).forEach(log => {
-        if (!latestByUser[log.username]) latestByUser[log.username] = log // first seen = most recent, since sorted desc
-      })
-
-      const now = new Date()
-      const stuck = Object.values(latestByUser)
-        .filter(log => log.outcome === 'Contacted')
-        .map(log => ({ ...log, daysSince: Math.floor((now - new Date(log.logged_at)) / (1000*60*60*24)) }))
-        .filter(log => log.daysSince >= 1)
-        .sort((a,b) => b.daysSince - a.daysSince)
-
-      // Pull phone/whatsapp for the follow-up button.
-      const usernames = stuck.map(r => r.username)
-      let extraMap = {}
-      if (usernames.length > 0 && usernames.length <= 200) {
-        const { data: extras } = await supabase.from('vip_members').select('username, whatsapp, phone').in('username', usernames)
-        ;(extras || []).forEach(e => { extraMap[e.username] = e })
-      }
-      setRows(stuck.map(r => ({ ...r, ...extraMap[r.username] })))
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  return (
-    <div style={s.page}>
-      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:20 }}>
-        <div>
-          <div style={s.title}>{L2('⏳ Awaiting Reply', '⏳ 等待回复')}</div>
-          <div style={s.sub}>{L2('VIPs where the last thing logged was "Contacted" — 1+ days ago, no follow-up recorded since', '最后一条记录为「已联系」的VIP — 已超过1天，之后没有跟进记录')}</div>
-        </div>
-        <button style={{ ...s.btn, background:'var(--surface2)', color:'var(--text)', border:'1px solid var(--border)' }} onClick={onBack}>← {t('common.back')}</button>
-      </div>
-
-      {loading ? (
-        <div style={{ textAlign:'center', padding:60, color:'var(--muted)' }}>{t('common.loading')}</div>
-      ) : rows.length === 0 ? (
-        <div style={{ textAlign:'center', padding:60, color:'#3fb950' }}>{L2('✓ Nothing waiting on a reply right now.', '✓ 目前没有等待回复的VIP。')}</div>
-      ) : (
-        <div style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:10, overflow:'hidden' }}>
-          <table style={{ width:'100%', borderCollapse:'collapse', fontSize:13 }}>
-            <thead>
-              <tr style={{ borderBottom:'1px solid var(--border)' }}>
-                <th style={{ ...s.th }}>VIP</th>
-                <th style={{ ...s.th }}>{L2('Tier', '等级')}</th>
-                <th style={{ ...s.th }}>{L2('Contacted By', '联系人')}</th>
-                <th style={{ ...s.th }}>{L2('Days Waiting', '等待天数')}</th>
-                <th style={{ ...s.th }}>{L2('Note', '备注')}</th>
-                <th style={{ ...s.th }}>{L2('Follow Up', '跟进')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map(r => {
-                const rawNumber = (r.phone && r.phone.replace(/\D/g,'').length >= 10) ? r.phone
-                  : (r.whatsapp && r.whatsapp.replace(/\D/g,'').length >= 10) ? r.whatsapp : ''
-                const waNumber = rawNumber.replace(/\D/g,'')
-                const greeting = encodeURIComponent(`Hi ${r.username}, just following up — wanted to check if you saw my earlier message. This is ${r.host_name || myName || 'the VIP team'}.`)
-                return (
-                  <tr key={r.username} style={{ borderBottom:'1px solid var(--border)' }}>
-                    <td style={{ ...s.td, fontWeight:700 }}>{r.username}</td>
-                    <td style={s.td}>{r.tier && <span style={{ ...s.badge, background:TIER_BG[r.tier]||'transparent', color:TIER_COLOR[r.tier]||'var(--text)' }}>{L2(r.tier, TIER_ZH[r.tier] || r.tier)}</span>}</td>
-                    <td style={{ ...s.td, fontSize:12, color:'var(--muted)' }}>{r.host_name || '—'}</td>
-                    <td style={{ ...s.td, fontWeight:700, color: r.daysSince >= 3 ? '#f85149' : '#d29922' }}>{L2(`${r.daysSince}d`, `${r.daysSince}天`)}</td>
-                    <td style={{ ...s.td, fontSize:12, color:'var(--muted)', maxWidth:260, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{r.notes || '—'}</td>
-                    <td style={s.td}>
-                      {waNumber ? (
-                        <a href={`https://wa.me/${waNumber}?text=${greeting}`} target="_blank" rel="noopener noreferrer"
-                          style={{ display:'inline-flex', width:26, height:26, borderRadius:13, background:'#25D366', color:'#fff', alignItems:'center', justifyContent:'center', fontSize:13, fontWeight:700, textDecoration:'none' }}>W</a>
-                      ) : <span style={{ color:'var(--muted)' }}>—</span>}
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
-  )
-}
+// Awaiting Reply tab → see src/components/contact/AwaitingReplyAffiliate.jsx
 
 export default function ContactLog() {
   const { profile } = useAuth()
@@ -344,6 +242,8 @@ export default function ContactLog() {
   const [search,   setSearch]   = useUrlParam('search', '')
   const [hostF,    setHostF]    = useUrlParam('host', 'ALL')
   const [tierF,    setTierF]    = useUrlParam('tier', 'ALL')
+  const [affF,     setAffF]     = useUrlParam('aff', 'ALL') // affiliate filter: ALL | __direct | <affiliate_login>
+  const [affList,  setAffList]  = useState([])
   const [dateFrom, setDateFrom] = useUrlParam('from', '')
   const [dateTo,   setDateTo]   = useUrlParam('to', '')
   const [logs,     setLogs]     = useState([])
@@ -364,7 +264,7 @@ export default function ContactLog() {
   }, [logs])
   // Total Bonus Given must reflect every matching log across all pages, in one
   // currency at a time — not just the 50 rows on the current page.
-  useEffect(() => { loadBonusTotal() }, [viewMode, hostF, tierF, dateFrom, dateTo, search, bonusCurrency, profile])
+  useEffect(() => { loadBonusTotal() }, [viewMode, hostF, tierF, affF, dateFrom, dateTo, search, bonusCurrency, profile])
   const [page,     setPage]     = useUrlParamNumber('page', 0)
   const [hosts,    setHosts]    = useState([])
   const [stats,    setStats]    = useState({ total:0, today:0, positive:0, bonusTotal:0 })
@@ -423,13 +323,14 @@ export default function ContactLog() {
       const all = []
       for (let from = 0; ; from += 1000) {
         let q = supabase.from('contact_logs')
-          .select('logged_at, username, tier, host_name, channel, direction, outcome, notes, vip_response, bonus_offered, bonus_type, follow_up_needed, follow_up_date, wa_number_used, vip_members(tier, full_name, currency)')
+          .select('logged_at, username, tier, host_name, channel, direction, outcome, notes, vip_response, bonus_offered, bonus_type, follow_up_needed, follow_up_date, wa_number_used, vip_members(tier, full_name, currency, affiliate_login, affiliate_updated_at)')
         if (viewMode === 'mine' && profile) {
           const me = profile.full_name || profile.username || (profile.email ? profile.email.split('@')[0] : null)
           if (me) q = q.eq('host_name', me)
         }
         if (hostF !== 'ALL') q = q.eq('host_name', hostF)
         if (tierF !== 'ALL') q = q.eq('vip_members.tier', tierF).not('vip_members', 'is', null)
+        q = applyAff(q)
         if (search.trim())   q = q.ilike('username', `%${search}%`)
         if (dateFrom)        q = q.gte('logged_at', dateFrom)
         if (dateTo)          q = q.lte('logged_at', dateTo + 'T23:59:59')
@@ -455,6 +356,7 @@ export default function ContactLog() {
         'Bonus': l.bonus_offered || '',
         'Bonus Type': l.bonus_type || '',
         'Currency': l.vip_members?.currency || '',
+        'Affiliate': l.vip_members?.affiliate_login || (l.vip_members?.affiliate_updated_at ? 'Direct' : ''),
         'Follow Up': l.follow_up_needed ? (l.follow_up_date || 'Yes') : '',
         'WA Number': l.wa_number_used || '',
       }))
@@ -511,14 +413,22 @@ export default function ContactLog() {
   // Page reset happens as its own effect, not chained inside each filter's
   // change handler — chaining two different URL-param setters in one handler
   // causes the second one to silently discard the first (see useUrlParam.js).
-  useEffect(() => { setPage(0) }, [viewMode, hostF, tierF, dateFrom, dateTo, search])
-  useEffect(() => { loadLogs() }, [viewMode, hostF, tierF, dateFrom, dateTo, search, page])
+  useEffect(() => { setPage(0) }, [viewMode, hostF, tierF, affF, dateFrom, dateTo, search])
+  useEffect(() => { loadLogs() }, [viewMode, hostF, tierF, affF, dateFrom, dateTo, search, page])
   useEffect(() => { setPage(0); loadLogs() }, [search])
   useEffect(() => { loadHosts() }, [viewMode, profile])
+
+  function applyAff(q) {
+    if (affF === '__direct') return q.is('vip_members.affiliate_login', null).not('vip_members', 'is', null)
+    if (affF !== 'ALL') return q.eq('vip_members.affiliate_login', affF).not('vip_members', 'is', null)
+    return q
+  }
 
   async function loadHosts() {
     const { data } = await supabase.from('profiles').select('full_name, id').order('full_name')
     if (data) setHosts(data)
+    const { data: affs } = await supabase.from('vip_members').select('affiliate_login').not('affiliate_login', 'is', null).range(0, 4999)
+    setAffList([...new Set((affs || []).map(r => r.affiliate_login))].sort())
   }
 
   // Stats computed from logs useEffect
@@ -527,13 +437,14 @@ export default function ContactLog() {
     setLoading(true)
     let q = supabase
       .from('contact_logs')
-      .select('*, vip_members(tier, full_name, currency)', { count:'exact' })
+      .select('*, vip_members(tier, full_name, currency, affiliate_login, affiliate_updated_at)', { count:'exact' })
     if (viewMode === 'mine' && profile) {
       const myName = profile.full_name || profile.username || (profile.email ? profile.email.split('@')[0] : null)
       if (myName) q = q.eq('host_name', myName)
     }
     if (hostF !== 'ALL') q = q.eq('host_name', hostF)
     if (tierF !== 'ALL') q = q.eq('vip_members.tier', tierF).not('vip_members', 'is', null)
+    q = applyAff(q)
     if (search.trim())   q = q.ilike('username', `%${search}%`)
     if (dateFrom)        q = q.gte('logged_at', dateFrom)
     if (dateTo)          q = q.lte('logged_at', dateTo + 'T23:59:59')
@@ -647,7 +558,7 @@ export default function ContactLog() {
   }
 
   function resetFilters() {
-    setSearch(''); setHostF('ALL'); setTierF('ALL'); setDateFrom(''); setDateTo(''); setPage(0)
+    setSearch(''); setHostF('ALL'); setTierF('ALL'); setAffF('ALL'); setDateFrom(''); setDateTo(''); setPage(0)
   }
 
   const totalPages = Math.ceil(total / PAGE_SIZE)
@@ -657,7 +568,7 @@ export default function ContactLog() {
     return <BenefitsTab onBack={() => setPageTab('log')} />
   }
   if (pageTab === 'awaiting') {
-    return <AwaitingReplyTab onBack={() => setPageTab('log')} myName={myName} viewMode={viewMode} />
+    return <AwaitingReplyAffiliate onBack={() => setPageTab('log')} myName={myName} viewMode={viewMode} />
   }
 
   return (
@@ -833,6 +744,11 @@ export default function ContactLog() {
           <select style={s.sel} value={tierF} onChange={e => setTierF(e.target.value)}>
             {TIERS.map(t => <option key={t} value={t}>{L2(t, TIER_ZH[t])}</option>)}
           </select>
+          <select style={{ ...s.sel, minWidth:140 }} value={affF} onChange={e => setAffF(e.target.value)}>
+            <option value="ALL">{L2('All affiliates', '全部代理')}</option>
+            <option value="__direct">{L2('Direct / unknown', '直客 / 未知')}</option>
+            {affList.map(a => <option key={a} value={a}>{a}</option>)}
+          </select>
           {viewMode === 'all' && (
             <select style={{ ...s.sel, minWidth:140 }} value={hostF} onChange={e => setHostF(e.target.value)}>
               <option value="ALL">{L2('All Hosts', '全部负责人')}</option>
@@ -845,7 +761,7 @@ export default function ContactLog() {
             <span style={{ fontSize:12, color:'var(--muted)' }}>{L2('To', '至')}</span>
             <input type="date" style={s.input} value={dateTo} onChange={e => setDateTo(e.target.value)} />
           </div>
-          {(search||hostF!=='ALL'||tierF!=='ALL'||dateFrom||dateTo) && (
+          {(search||hostF!=='ALL'||tierF!=='ALL'||affF!=='ALL'||dateFrom||dateTo) && (
             <button style={s.btnSm} onClick={resetFilters}>{L2('Clear', '清除')}</button>
           )}
           <div style={{ marginLeft:'auto', fontSize:12, color:'var(--muted)' }}>
@@ -867,6 +783,7 @@ export default function ContactLog() {
                 <th style={s.th}>#</th>
                 <th style={s.th}>VIP</th>
                 <th style={s.th}>{L2('Tier', '等级')}</th>
+                <th style={s.th}>{L2('Affiliate', '代理')}</th>
                 <th style={s.th}>{L2('Type', '方式')}</th>
                 <th style={s.th}>{L2('Outcome', '结果')}</th>
                 <th style={s.th}>{L2('WA #', 'WA号码')}</th>
@@ -879,9 +796,9 @@ export default function ContactLog() {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={10} style={{ ...s.td, textAlign:'center', padding:'40px', color:'var(--muted)' }}>{L2('Loading...', '载入中…')}</td></tr>
+                <tr><td colSpan={11} style={{ ...s.td, textAlign:'center', padding:'40px', color:'var(--muted)' }}>{L2('Loading...', '载入中…')}</td></tr>
               ) : logs.length === 0 ? (
-                <tr><td colSpan={10} style={{ ...s.td, textAlign:'center', padding:'40px', color:'var(--muted)' }}>
+                <tr><td colSpan={11} style={{ ...s.td, textAlign:'center', padding:'40px', color:'var(--muted)' }}>
                   {L2('No contact logs found.', '找不到联系记录。')}{' '}
                   {!showForm && <span style={{ color:'var(--accent)', cursor:'pointer' }} onClick={() => setShowForm(true)}>{L2('Log one now', '立即记录一条')}</span>}
                 </td></tr>
@@ -909,6 +826,9 @@ export default function ContactLog() {
                     <td style={s.td}>
                       {tier ? <span style={{ ...s.badge, background:TIER_BG[tier]||'transparent', color:TIER_COLOR[tier]||'var(--text)' }}>{L2(tier, TIER_ZH[tier] || tier)}</span>
                              : <span style={{ color:'var(--muted)' }}>-</span>}
+                    </td>
+                    <td style={{ ...s.td, fontSize:12, fontWeight: log.vip_members?.affiliate_login ? 600 : 400, color: log.vip_members?.affiliate_login ? 'var(--accent)' : 'var(--muted)' }}>
+                      {log.vip_members?.affiliate_login || (log.vip_members?.affiliate_updated_at ? L2('Direct', '直客') : '—')}
                     </td>
                     <td style={s.td}>
                       <span style={{ ...s.tag, background:`${TYPE_COLOR[log.channel]||'#8b949e'}22`, color:TYPE_COLOR[log.channel]||'#8b949e' }}>
