@@ -52,8 +52,9 @@ export function Badge({ children, color, bg, style }) {
 export function TierBadge({ tier }) {
   if (!tier) return null
   const cfg = TIER_CONFIG[(tier || '').toUpperCase()] || TIER_CONFIG.SILVER
+  const restricted = String(tier).toUpperCase() === 'DIAMOND-P'
   return (
-    <span style={{
+    <span title={restricted ? 'DIAMOND-P: restricted VIP — no rebate (special platform tier) · 受限VIP — 无返水（平台特别等级）' : undefined} style={{
       display: 'inline-block', padding: '2px 9px', borderRadius: 4,
       fontSize: 11, fontWeight: 700,
       color: cfg.color, background: cfg.bg,

@@ -116,7 +116,7 @@ export default function ChallengeCreator({ mode = 'trust_credit', onCancel, onCr
 
   // filters
   const [countries, setCountries] = useState(['MY'])
-  const [tiers, setTiers] = useState(trust ? ['PLATINUM', 'DIAMOND', 'DIAMOND-P', 'BLACK'] : ['GOLD', 'PLATINUM', 'DIAMOND', 'DIAMOND-P', 'BLACK'])
+  const [tiers, setTiers] = useState(trust ? ['PLATINUM', 'DIAMOND', 'DIAMOND-P', 'BLACK'] : ['GOLD', 'PLATINUM', 'DIAMOND', 'BLACK']) // DIAMOND-P = restricted, no rebate → not in Rebate Challenge by default
   const [segF, setSegF] = useState(trust ? ['Silent', 'Declining'] : [])
   const [hostF, setHostF] = useState('ALL')
   const [affF, setAffF] = useState('ALL')
@@ -283,6 +283,7 @@ export default function ChallengeCreator({ mode = 'trust_credit', onCancel, onCr
           {CAMPAIGN_COUNTRIES.map(x => <Chip key={x} active={countries.includes(x)} onClick={() => toggleList(countries, setCountries, x)}>{COUNTRY_LABEL[x]}</Chip>)}
           <span style={{ width: 10 }} />
           {TIERS.map(x => <Chip key={x} active={tiers.includes(x)} onClick={() => toggleList(tiers, setTiers, x)}>{x}</Chip>)}
+          {tiers.includes('DIAMOND-P') && (cfg.completion_type === 'rebate_pct' || !trust) && <div style={{ width: '100%', fontSize: 11, color: '#fbbf24', marginTop: 4 }}>⚠️ {T('DIAMOND-P players are restricted from rebate on the platform — a rebate reward may not be allowed for them.', 'DIAMOND-P 玩家在平台上被限制返水 — 返水奖励可能不适用于他们。')}</div>}
         </div>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
           {[...Object.keys(SEGMENTS), 'No deposits'].map(k => <Chip key={k} color={SEGMENTS[k]?.color} active={segF.includes(k)} onClick={() => toggleList(segF, setSegF, k)}>{SEGMENTS[k] ? `${SEGMENTS[k].icon} ${lang === 'zh' ? SEGMENTS[k].zh : k}` : T('No deposits', '无存款')}</Chip>)}

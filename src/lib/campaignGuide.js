@@ -75,7 +75,7 @@ export const CAMPAIGN_GUIDE = {
     logic: { en: 'Player completes a deposit and/or turnover target in the period → receives a rebate of X% (e.g. 0.2–0.3%) of total turnover, with an optional cap. Optional streak bonus for daily deposits (at least N days with deposit ≥ RM X). Progress is tracked automatically.', zh: '玩家在活动期间完成存款和/或流水目标 → 获得总流水 X%（如 0.2–0.3%）的返水，可设上限。可选每日存款连续奖励（至少N天每日存款 ≥ RM X）。进度自动追踪。' },
     howTo: { en: '1) Pick the Rebate template. 2) Set the default target (or use the suggested personal target) and rebate %. 3) Set streak rules. 4) Select audience. 5) Chase with WhatsApp progress messages. 6) After the end date, pay rebate + streak from the detail page.', zh: '1) 选择返水模板。2) 设定默认目标（或使用系统建议的个人目标）与返水%。3) 设定连续规则。4) 选择受众。5) 用WhatsApp进度信息跟进。6) 结束后在详情页派发返水与连续奖励。' },
     purpose: { en: 'Rewards real turnover with a cost that scales with play, and builds a daily deposit habit through the streak.', zh: '按真实流水奖励，成本随投注量变化；通过连续奖励培养每日存款习惯。' },
-    audience: { en: 'Active, Stable or Growing players with steady turnover; also Declining players to lift volume.', zh: '流水稳定的活跃、稳定或增长型玩家；也适合下滑型玩家以拉升流水。' },
+    audience: { en: 'Active, Stable or Growing players with steady turnover; also Declining players to lift volume. Not for DIAMOND-P (restricted, no rebate on the platform).', zh: '流水稳定的活跃、稳定或增长型玩家；也适合下滑型玩家以拉升流水。不适用于 DIAMOND-P（平台限制、无返水）。' },
   },
 }
 
