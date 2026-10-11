@@ -3,7 +3,7 @@
 // queries derive from these definitions — never define ad-hoc status strings
 // in individual pages.
 
-export const VIP_TIER = ['BLACK', 'DIAMOND', 'PLATINUM', 'GOLD', 'SILVER', 'BRONZE']
+export const VIP_TIER = ['BLACK', 'DIAMOND-P', 'DIAMOND', 'PLATINUM', 'GOLD', 'SILVER', 'BRONZE']
 
 export const VIP_STATUS = {
   ACTIVE:   'Active',
@@ -92,6 +92,7 @@ export function enumLabel(v, lang = 'en') {
 
 export const TIER_CONFIG = {
   BLACK:    { color: '#E5E7EB', bg: 'rgba(229,231,235,.1)',  cssVar: 'var(--tier-black)'    },
+  'DIAMOND-P': { color: '#22D3EE', bg: 'rgba(34,211,238,.12)', cssVar: 'var(--tier-diamond)' },
   DIAMOND:  { color: '#8B5CF6', bg: 'rgba(139,92,246,.12)', cssVar: 'var(--tier-diamond)'  },
   PLATINUM: { color: '#3B82F6', bg: 'rgba(59,130,246,.12)', cssVar: 'var(--tier-platinum)' },
   GOLD:     { color: '#EAB308', bg: 'rgba(234,179,8,.12)',   cssVar: 'var(--tier-gold)'     },

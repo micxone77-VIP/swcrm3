@@ -8,6 +8,7 @@
 // that uses CURRENCY_SYMBOL below.
 
 export const TIER_COLOR = {
+  'DIAMOND-P': '#22d3ee',
   DIAMOND:  '#b9f2ff',
   PLATINUM: '#C0C0C0',
   GOLD:     '#ffd700',
@@ -17,6 +18,7 @@ export const TIER_COLOR = {
 }
 
 export const TIER_BG = {
+  'DIAMOND-P': 'rgba(34,211,238,.12)',
   DIAMOND:  'rgba(185,242,255,.12)',
   PLATINUM: 'rgba(192,192,192,.12)',
   GOLD:     'rgba(255,215,0,.12)',

@@ -7,7 +7,7 @@ import { useLanguage } from '../contexts/LanguageContext'
 import { CampaignInfoButton, CampaignGuideButton } from '../components/campaign/CampaignGuide'
 import ChallengeCreator from '../components/campaign/ChallengeCreator'
 
-const TIERS=['BLACK','DIAMOND','PLATINUM','GOLD','SILVER','BRONZE']
+const TIERS=['BLACK','DIAMOND-P','DIAMOND','PLATINUM','GOLD','SILVER','BRONZE']
 const COUNTRY_LABEL={MY:'🇲🇾 Malaysia',SG:'🇸🇬 Singapore',KH:'🇰🇭 Cambodia'}
 const TYPE_INFO={gold_bar:['Deposit threshold → physical gold bar / gift','达到存款门槛 → 实体金条 / 礼品'],pct_reward:['Deposit amount × percentage cashback','存款金额 × 百分比返现'],fixed_reward:['Deposit threshold → fixed reward','达到存款门槛 → 固定奖励'],tiered_reward:['Different percentage reward by deposit tier','按存款区间给不同百分比'],dual_tier:['Deposit + turnover → Credit + WCash','存款 + 流水 → Credit + WCash'],leaderboard:['Top players by valid bet → rank rewards','按有效投注排名 → 名次奖励'],tiered_deposit_reward:['Multiple deposit milestones → fixed Credit at each level','多个存款级别 → 每级固定Credit'],challenge_trust:['Free credit first → personal turnover task → reviewed bonus + streak','先送信用额 → 个人流水任务 → 审核奖金 + 连续奖励'],challenge_rebate:['Deposit / turnover target → rebate % of turnover + streak','存款 / 流水目标 → 流水返水% + 连续奖励']}
 const TYPE_LABEL_ZH={gold_bar:'🥇 金条奖励',pct_reward:'💰 百分比返利',fixed_reward:'🎁 固定奖励',tiered_reward:'📊 阶梯百分比返利',dual_tier:'🎯 存款 + 流水阶梯',leaderboard:'🏆 排行榜',tiered_deposit_reward:'🎁 阶梯存款奖励',challenge_trust:'💝 信任金挑战',challenge_rebate:'💰 返水挑战'}

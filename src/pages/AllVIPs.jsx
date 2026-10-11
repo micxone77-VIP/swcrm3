@@ -14,7 +14,7 @@ import { formatMoney } from '../lib/format'
 import { enumLabel } from '../lib/enums'
 
 const PAGE_SIZE = 50
-const TIERS    = ['ALL','BLACK','DIAMOND','PLATINUM','GOLD','SILVER','BRONZE']
+const TIERS    = ['ALL','BLACK','DIAMOND-P','DIAMOND','PLATINUM','GOLD','SILVER','BRONZE']
 const STATUSES = ['ALL','Active','Watch','At Risk','Dormant']
 const REGIONS  = [{ value:'ALL',label:'🌏 All',zh:'🌏 全部' },{ value:'Malaysia',label:'🇲🇾 Malaysia',zh:'🇲🇾 马来西亚' },{ value:'Singapore',label:'🇸🇬 Singapore',zh:'🇸🇬 新加坡' },{ value:'Cambodia',label:'🇰🇭 Cambodia',zh:'🇰🇭 柬埔寨' }]
 
@@ -122,7 +122,7 @@ export default function AllVIPs() {
   const [chaseFilter, setChaseFilter] = useState(searchParams.get('chase') || 'ALL') // ALL | needs_chase | dep_no_contact | contact_no_dep
   const [chaseDays, setChaseDays] = useState('7')
 
-  const TIER_ORDER = { BLACK:0, DIAMOND:1, PLATINUM:2, GOLD:3, SILVER:4, BRONZE:5 }
+  const TIER_ORDER = { BLACK:0, 'DIAMOND-P':0.5, DIAMOND:1, PLATINUM:2, GOLD:3, SILVER:4, BRONZE:5 }
 
   const load = useCallback(async () => {
     setLoading(true); setError(null)

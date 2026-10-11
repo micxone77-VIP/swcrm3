@@ -61,7 +61,7 @@ export default function BirthdayReminder() {
   const { profile }         = useAuth()
   const { t, lang }         = useLanguage()
   const L2 = (en, zh) => (lang === 'zh' ? zh : en)
-  const TIER_ZH = { BLACK:'黑金', DIAMOND:'钻石', PLATINUM:'白金', GOLD:'黄金', SILVER:'白银', BRONZE:'青铜' }
+  const TIER_ZH = { BLACK:'黑金', 'DIAMOND-P': '钻石P', DIAMOND:'钻石', PLATINUM:'白金', GOLD:'黄金', SILVER:'白银', BRONZE:'青铜' }
   const CHANNEL_ZH = { WhatsApp:'WhatsApp', Call:'电话', 'In-person':'面对面', Other:'其他' }
   const OUTCOME_ZH = { Contacted:'已联系', 'No Reply':'未回复', Replied:'已回复', Deposited:'已存款' }
   const myName    = profile?.full_name || ''
@@ -249,7 +249,7 @@ export default function BirthdayReminder() {
         </button>
         <select style={{ background:'var(--surface)', border:'1px solid var(--border)', color:'var(--text)', padding:'6px 10px', borderRadius:8, fontSize:13, outline:'none' }} value={tierF} onChange={e => setTierF(e.target.value)}>
           <option value="ALL">{t('birthdayReminder.allTiers')}</option>
-          {['BLACK','DIAMOND','PLATINUM','GOLD','SILVER','BRONZE'].map(t => <option key={t} value={t}>{L2(t, TIER_ZH[t])}</option>)}
+          {['BLACK','DIAMOND-P','DIAMOND','PLATINUM','GOLD','SILVER','BRONZE'].map(t => <option key={t} value={t}>{L2(t, TIER_ZH[t])}</option>)}
         </select>
         <input style={{ ...s.finput, width:180 }} placeholder={t('birthdayReminder.searchPlaceholder')} value={search} onChange={e => setSearch(e.target.value)} />
         <span style={{ marginLeft:'auto', fontSize:12, color:'var(--muted)' }}>{filtered.length} {t('birthdayReminder.shown')}</span>

@@ -7,7 +7,7 @@ import { useLanguage } from '../contexts/LanguageContext'
 
 const TIER_COLOR  = { DIAMOND:'#58a6ff', PLATINUM:'#cbd5e1' }
 const TIERS       = ['DIAMOND', 'PLATINUM']
-const TIER_ZH     = { DIAMOND: '钻石', PLATINUM: '白金' }
+const TIER_ZH     = { 'DIAMOND-P': '钻石P', DIAMOND: '钻石', PLATINUM: '白金' }
 
 function fmt(d) { return d.toISOString().slice(0, 10) }
 function pad(n)  { return new Date(Date.now() - n * 86400000) }

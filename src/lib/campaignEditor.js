@@ -106,7 +106,7 @@ export function validateCampaignEditor(form, levels = []) {
   }
 
   const tiers = Array.isArray(form?.target_tier) ? form.target_tier : []
-  if (tiers.some(t => !['BLACK','DIAMOND','PLATINUM','GOLD','SILVER','BRONZE'].includes(String(t).toUpperCase()))) {
+  if (tiers.some(t => !['BLACK','DIAMOND-P','DIAMOND','PLATINUM','GOLD','SILVER','BRONZE'].includes(String(t).toUpperCase()))) {
     errors.push('Target tiers contain an invalid tier.')
   }
 

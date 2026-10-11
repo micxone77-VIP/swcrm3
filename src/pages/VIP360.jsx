@@ -15,7 +15,7 @@ import { callAI } from '../lib/aiApi'
 import { useLanguage } from '../contexts/LanguageContext'
 import DepositProfileCard from '../components/vip/DepositProfileCard'
 
-const TIERS = ['BRONZE','SILVER','GOLD','PLATINUM','DIAMOND','BLACK']
+const TIERS = ['BRONZE','SILVER','GOLD','PLATINUM','DIAMOND','DIAMOND-P','BLACK']
 const PERIODS = [
 { value: '30', label: '30D', zh: '30天' },
 { value: 'mtd', label: 'MTD', zh: '本月' },

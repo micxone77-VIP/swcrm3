@@ -8,7 +8,7 @@ import { callAI } from '../lib/aiApi'
 import { useLanguage } from '../contexts/LanguageContext'
 import { useUrlParam } from '../hooks/useUrlParam'
 
-const TIERS = ['BLACK', 'DIAMOND', 'PLATINUM', 'GOLD']
+const TIERS = ['BLACK', 'DIAMOND-P', 'DIAMOND', 'PLATINUM', 'GOLD']
 
 function toDateStr(d) { return d.toISOString().slice(0, 10) }
 function getMonday(d) {

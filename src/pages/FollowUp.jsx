@@ -18,7 +18,7 @@ function daysAgoLabel(d, lang = 'en') {
 const OUTCOMES = ['Contacted', 'No Reply', 'Replied', 'Deposited', 'Reactivated']
 const OUTCOME_ZH = { Contacted: '已联系', 'No Reply': '未回复', Replied: '已回复', Deposited: '已存款', Reactivated: '已召回' }
 
-const TIER_FILTERS = ['ALL','BLACK','DIAMOND','PLATINUM','GOLD','SILVER','BRONZE']
+const TIER_FILTERS = ['ALL','BLACK','DIAMOND-P','DIAMOND','PLATINUM','GOLD','SILVER','BRONZE']
 
 export default function FollowUp() {
   const navigate = useNavigate()

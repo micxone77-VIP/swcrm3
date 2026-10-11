@@ -12,7 +12,7 @@ import * as XLSX from 'xlsx'
 
 const CONTACT_TYPES    = ['WhatsApp','Call','In-person','Other']
 const CONTACT_OUTCOMES = ['Contacted','No Reply','Replied','Deposited','Reactivated']
-const TIERS             = ['ALL','BLACK','DIAMOND','PLATINUM','GOLD','SILVER','BRONZE']
+const TIERS             = ['ALL','BLACK','DIAMOND-P','DIAMOND','PLATINUM','GOLD','SILVER','BRONZE']
 const PAGE_SIZE        = 50
 
 const OUTCOME_COLOR = {
@@ -26,7 +26,7 @@ const TYPE_COLOR = {
 // Display-only labels for stored English values
 const OUTCOME_ZH = { Contacted:'已联系', 'No Reply':'未回复', Replied:'已回复', Deposited:'已存款', Reactivated:'已召回' }
 const CHANNEL_ZH = { WhatsApp:'WhatsApp', Call:'电话', 'In-person':'面对面', Other:'其他' }
-const TIER_ZH = { ALL:'全部', BLACK:'黑金', DIAMOND:'钻石', PLATINUM:'白金', GOLD:'黄金', SILVER:'白银', BRONZE:'青铜' }
+const TIER_ZH = { ALL:'全部', BLACK:'黑金', 'DIAMOND-P': '钻石P', DIAMOND:'钻石', PLATINUM:'白金', GOLD:'黄金', SILVER:'白银', BRONZE:'青铜' }
 
 function timeAgo(dateStr, lang = 'en') {
   if (!dateStr) return '-'
@@ -173,7 +173,7 @@ function BenefitsTab({ onBack }) {
         <StatCard label={L2('Deposit Increased After', '之后存款增加')} value={positiveCount}
           sub={filtered.length ? Math.round(positiveCount/filtered.length*100)+'%' : '-'} color="#3fb950" />
         <select value={tierF} onChange={e => setTierF(e.target.value)} style={s.sel}>
-          {['ALL','BLACK','DIAMOND','PLATINUM','GOLD','SILVER','BRONZE'].map(tOpt => <option key={tOpt} value={tOpt}>{L2(tOpt, TIER_ZH[tOpt])}</option>)}
+          {['ALL','BLACK','DIAMOND-P','DIAMOND','PLATINUM','GOLD','SILVER','BRONZE'].map(tOpt => <option key={tOpt} value={tOpt}>{L2(tOpt, TIER_ZH[tOpt])}</option>)}
         </select>
       </div>
       <div style={{ fontSize:11, color:'var(--muted)', marginTop:-14, marginBottom:16 }}>
@@ -717,7 +717,7 @@ export default function ContactLog() {
                   <input style={{ ...s.finput, flex:1, minWidth:120 }} value={manualUsername}
                     onChange={e => setManualUsername(e.target.value)} placeholder={L2('Username...', '用户名…')} autoFocus />
                   <select style={{ ...s.fsel, width:130 }} value={manualTier} onChange={e => setManualTier(e.target.value)}>
-                    {['BLACK','DIAMOND','PLATINUM','GOLD','SILVER','BRONZE'].map(t => (
+                    {['BLACK','DIAMOND-P','DIAMOND','PLATINUM','GOLD','SILVER','BRONZE'].map(t => (
                       <option key={t} value={t}>{L2(t, TIER_ZH[t])}</option>
                     ))}
                   </select>

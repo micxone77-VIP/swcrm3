@@ -188,7 +188,7 @@ export default function BudgetStrategy() {
               <div style={{ marginBottom:16, padding:'12px 14px', background:'rgba(88,166,255,.08)', border:'1px solid rgba(88,166,255,.2)', borderRadius:8 }}>
                 <div style={{ fontSize:11, color:'var(--muted)', marginBottom:10 }}>{L2('Set monthly budget per tier','设置各等级每月预算')} ({CURRENCY_SYMBOL[currency]})</div>
                 <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:10 }}>
-                  {['BLACK','DIAMOND','PLATINUM','GOLD','SILVER','BRONZE'].map(tier => (
+                  {['BLACK','DIAMOND-P','DIAMOND','PLATINUM','GOLD','SILVER','BRONZE'].map(tier => (
                     <div key={tier}>
                       <div style={{ ...s.flbl, color:TIER_COLOR[tier] }}>{tier}</div>
                       <input type="number" style={s.input} value={editB[tier]||''}
@@ -203,7 +203,7 @@ export default function BudgetStrategy() {
                 </div>
               </div>
             )}
-            {['BLACK','DIAMOND','PLATINUM','GOLD','SILVER','BRONZE'].map(tier => {
+            {['BLACK','DIAMOND-P','DIAMOND','PLATINUM','GOLD','SILVER','BRONZE'].map(tier => {
               const spent     = tierStats[tier]?.total || 0
               const allocated = budget[tier] || 0
               const p         = allocated ? Math.min(100, Math.round(spent/allocated*100)) : 0

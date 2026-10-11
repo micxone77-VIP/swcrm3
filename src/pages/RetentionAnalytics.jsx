@@ -8,7 +8,7 @@ const monthKey = (date) => { const d = new Date(date); return `${d.getUTCFullYea
 const money = (n,c) => `${c || ''} ${Number(n || 0).toLocaleString(undefined,{maximumFractionDigits:2})}`.trim()
 const recoveryAmount = row => Number(row?.reactivation_deposit ?? row?.deposit_amount ?? row?.amount ?? 0) || 0
 const playerKey = row => String(row?.vip_id || row?.username || row?.id || '').trim().toLowerCase()
-const TIER_ZH = { BLACK:'黑卡', DIAMOND:'钻石', PLATINUM:'白金', GOLD:'黄金', SILVER:'白银', BRONZE:'青铜' }
+const TIER_ZH = { BLACK:'黑卡', 'DIAMOND-P': '钻石P', DIAMOND:'钻石', PLATINUM:'白金', GOLD:'黄金', SILVER:'白银', BRONZE:'青铜' }
 const monthLabel = (m, lg) => m ? new Date(`${m}-01T00:00:00Z`).toLocaleDateString(lg === 'zh' ? 'zh-CN' : 'en-MY',{month:'short',year:'numeric',timeZone:'UTC'}) : '—'
 
 function aggregateReactivationLogs(logs = [], stats = []) {
@@ -66,7 +66,7 @@ export default function RetentionAnalytics() {
   const [usedFallback, setUsedFallback] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const ALL_TIERS = ['BLACK','DIAMOND','PLATINUM','GOLD','SILVER','BRONZE']
+  const ALL_TIERS = ['BLACK','DIAMOND-P','DIAMOND','PLATINUM','GOLD','SILVER','BRONZE']
   const [selectedTiers, setSelectedTiers] = useState(['DIAMOND','PLATINUM','GOLD'])
   const [vipListTab, setVipListTab] = useState(null) // null | 'churned' | 'inactive' | 'reactivated'
   const [vipListSearch, setVipListSearch] = useState('')

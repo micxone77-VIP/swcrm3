@@ -13,7 +13,7 @@ import ChallengeDetail from '../components/campaign/ChallengeDetail'
 import { CampaignInfoButton } from '../components/campaign/CampaignGuide'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-const TIERS = ['BLACK','DIAMOND','PLATINUM','GOLD','SILVER','BRONZE']
+const TIERS = ['BLACK','DIAMOND-P','DIAMOND','PLATINUM','GOLD','SILVER','BRONZE']
 const TIER_COLOR = { DIAMOND:'#b9f2ff', PLATINUM:'#C0C0C0', GOLD:'#ffd700', SILVER:'#a8a8a8', BRONZE:'#cd7f32' }
 const TIER_BG    = { DIAMOND:'rgba(185,242,255,.12)', PLATINUM:'rgba(192,192,192,.12)', GOLD:'rgba(255,215,0,.12)', SILVER:'rgba(168,168,168,.1)', BRONZE:'rgba(205,127,50,.1)' }
 

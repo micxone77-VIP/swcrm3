@@ -9,7 +9,7 @@ import { TIER_COLOR, TIER_BG } from '../lib/constants'
 
 // ── Tier config ───────────────────────────────────────────────────────────────
 const TIER_ORDER = ['BRONZE', 'SILVER', 'GOLD', 'PLATINUM', 'DIAMOND', 'BLACK']
-const TIER_ZH = { BLACK:'黑金', DIAMOND:'钻石', PLATINUM:'白金', GOLD:'黄金', SILVER:'白银', BRONZE:'青铜', ALL:'全部' }
+const TIER_ZH = { BLACK:'黑金', 'DIAMOND-P': '钻石P', DIAMOND:'钻石', PLATINUM:'白金', GOLD:'黄金', SILVER:'白银', BRONZE:'青铜', ALL:'全部' }
 // UI-language helper: returns [L2(en, zh), lang]
 function useL2() {
   const { lang } = useLanguage()

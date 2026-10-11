@@ -39,7 +39,7 @@ function TabBar({ active, onChange }) {
 
 const OUTCOMES = ['Contacted', 'No Reply', 'Replied', 'Deposited', 'Reactivated']
 const OUTCOME_ZH = { Contacted: '已联系', 'No Reply': '未回复', Replied: '已回复', Deposited: '已存款', Reactivated: '已召回' }
-const TIER_ZH = { BLACK: '黑金', DIAMOND: '钻石', PLATINUM: '白金', GOLD: '黄金', SILVER: '白银', BRONZE: '青铜' }
+const TIER_ZH = { BLACK: '黑金', 'DIAMOND-P': '钻石P', DIAMOND: '钻石', PLATINUM: '白金', GOLD: '黄金', SILVER: '白银', BRONZE: '青铜' }
 // Display-only translation of queue trigger labels produced by useDashboard
 const REASON_ZH = {
   '🎂 Birthday today': '🎂 今天生日', '🔴 Critical risk': '🔴 严重风险', '⚠️ High risk': '⚠️ 高风险',

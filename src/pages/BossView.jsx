@@ -205,7 +205,7 @@ export default function BossView() {
         <div style={s.card}>
           <div style={s.cardHdr}>💎 {t('bossView.portfolioByTier')}</div>
           <div style={s.cardBody}>
-            {['BLACK','DIAMOND','PLATINUM','GOLD','SILVER','BRONZE'].map(tier => {
+            {['BLACK','DIAMOND-P','DIAMOND','PLATINUM','GOLD','SILVER','BRONZE'].map(tier => {
               const count = d.tierCounts[tier] || 0
               const p = d.totalVIPs ? Math.round(count/d.totalVIPs*100) : 0
               return (

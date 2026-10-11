@@ -20,7 +20,7 @@ const TIER_C = {
   BLACK:    'A0A0C0', DIAMOND: '7DD3FC', PLATINUM: 'CBD5E1',
   GOLD:     'FCD34D', SILVER:  'D1D5DB', BRONZE:   'D97706',
 }
-const TIERS = ['BLACK','DIAMOND','PLATINUM','GOLD','SILVER','BRONZE']
+const TIERS = ['BLACK','DIAMOND-P','DIAMOND','PLATINUM','GOLD','SILVER','BRONZE']
 const MONTH_NAMES = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -336,7 +336,7 @@ function slide11_diamond_summary(pptx, d) {
   // slide09_10_diamond handles Diamond; this does a summary of Diamond+Platinum combined
   const sl = pptx.addSlide(); bg(sl)
   header(sl, 'Premium Tier Summary (Diamond + Platinum)', mLabel(d.month))
-  const premTiers = ['BLACK','DIAMOND','PLATINUM']
+  const premTiers = ['BLACK','DIAMOND-P','DIAMOND','PLATINUM']
   const ts=tierStats(d.currRows), tsP=tierStats(d.prevRows)
   const rows = premTiers.map((t,ri)=>{
     const c=ts[t],p=tsP[t]

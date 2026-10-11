@@ -11,7 +11,7 @@ import { getRetentionTierRank, isFollowUpDue, calculateChurnUrgency } from '../l
 
 const RISK_COLOR = { HIGH:'#f85149', MEDIUM:'#d29922', LOW:'#3fb950' }
 const RISK_ZH    = { HIGH:'高', MEDIUM:'中', LOW:'低', CRITICAL:'严重' }
-const TIER_ZH    = { BLACK:'黑金', DIAMOND:'钻石', PLATINUM:'白金', GOLD:'黄金', SILVER:'白银', BRONZE:'青铜' }
+const TIER_ZH    = { BLACK:'黑金', 'DIAMOND-P': '钻石P', DIAMOND:'钻石', PLATINUM:'白金', GOLD:'黄金', SILVER:'白银', BRONZE:'青铜' }
 const RISK_BG    = { HIGH:'rgba(248,81,73,.12)', MEDIUM:'rgba(210,153,34,.12)', LOW:'rgba(63,185,80,.1)' }
 
 const s = {
