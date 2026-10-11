@@ -154,14 +154,23 @@ export default function Today() {
   async function submitLog() {
     if (!logTarget || logSaving) return
     setLogSaving(true)
+    const nowD = new Date(), nowIso = nowD.toISOString()
+    // contact_logs has no created_at column — logged_at is the timestamp. log_month/log_week are
+    // required for monthly coverage counts (Churn Urgency, Boss View, KPI).
     const { error: err } = await supabase.from('contact_logs').insert({
       username: logTarget.username,
       vip_id: logTarget.id,
+      tier: logTarget.tier || null,
+      channel: 'WhatsApp',
+      direction: 'outbound',
       outcome: logOutcome,
       notes: logNote || null,
+      message_summary: logNote || null,
       host_name: profile?.full_name || null,
-      logged_at: new Date().toISOString(),
-      created_at: new Date().toISOString(),
+      host_id: profile?.id || null,
+      logged_at: nowIso,
+      log_month: nowIso.slice(0, 7),
+      log_week: String(Math.ceil(nowD.getDate() / 7)),
       wa_number_used: logWaNumber || null,
     })
     setLogSaving(false)

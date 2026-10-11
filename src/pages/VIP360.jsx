@@ -292,10 +292,11 @@ if (logSaving) return
 setLogSaving(true)
 const nowStr = new Date().toISOString()
 const { error: err } = await supabase.from('contact_logs').insert({
-vip_id: id, username: vip.username,
-channel: logType, outcome: logOutcome,
-notes: logNote || null, host_name: profile?.full_name || null,
-logged_at: nowStr,
+vip_id: id, username: vip.username, tier: vip.tier || null,
+channel: logType, outcome: logOutcome, direction: 'outbound',
+notes: logNote || null, message_summary: logNote || null,
+host_name: profile?.full_name || null, host_id: profile?.id || null,
+logged_at: nowStr, log_month: nowStr.slice(0, 7), log_week: String(Math.ceil(new Date().getDate() / 7)),
 })
 await supabase.from('vip_members').update({ last_contacted: nowStr, last_contact_date: nowStr.slice(0,10) }).eq('id', id)
 setLogSaving(false)
