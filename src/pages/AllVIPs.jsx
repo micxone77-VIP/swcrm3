@@ -26,6 +26,14 @@ function daysAgoLabel(date, lang = 'en') {
   return lang === 'zh' ? d + '天前' : d + 'd ago'
 }
 
+// Days since a date (null when no date)
+function daysSince(date) {
+  if (!date) return null
+  const d = Math.floor((Date.now() - new Date(date)) / 86400000)
+  return d < 0 ? 0 : d
+}
+const QUIET_DAYS = 3 // "going quiet" = no deposit for 3+ days
+
 function escCSV(v) {
   if (v === null || v === undefined) return ''
   const s = String(v)
@@ -109,6 +117,10 @@ export default function AllVIPs() {
   const [affiliate, setAffiliate] = useState(searchParams.get('affiliate') || 'ALL')
   const [segFilter, setSegFilter] = useState(searchParams.get('segment') || 'ALL')
   const [segMap, setSegMap] = useState({})
+  // Chase helpers: latest contact per VIP from contact_logs (v_vip_last_contact)
+  const [contactMap, setContactMap] = useState({})
+  const [chaseFilter, setChaseFilter] = useState(searchParams.get('chase') || 'ALL') // ALL | needs_chase | dep_no_contact | contact_no_dep
+  const [chaseDays, setChaseDays] = useState('7')
 
   const TIER_ORDER = { BLACK:0, DIAMOND:1, PLATINUM:2, GOLD:3, SILVER:4, BRONZE:5 }
 
@@ -129,6 +141,10 @@ export default function AllVIPs() {
       fetchAll(() => supabase.from('v_vip_deposit_profile').select('login,segment,trend_pct,days_since_last').order('login'))
         .then(rows => { const m = {}; rows.forEach(r => { m[r.login] = r }); setSegMap(m) })
         .catch(e => console.error('segment load error', e))
+      // Latest contact per VIP (contact_logs is more complete than vip_members.last_contacted)
+      fetchAll(() => supabase.from('v_vip_last_contact').select('username,last_contact_at,last_contact_host,last_contact_outcome').order('username'))
+        .then(rows => { const m = {}; rows.forEach(r => { m[r.username] = r }); setContactMap(m) })
+        .catch(e => console.error('last contact load error', e))
       // Load gaming labels (latest month per player)
       supabase.from('player_gaming_labels')
         .select('username,player_type,player_type_icon')
@@ -214,6 +230,19 @@ export default function AllVIPs() {
     return Object.entries(c).map(([name, n]) => ({ name, n })).sort((a, b) => b.n - a.n || a.name.localeCompare(b.name))
   })()
 
+  // Chase info: last contact (latest of contact log / vip_members fields) vs last deposit
+  const chaseInfo = v => {
+    const cands = [contactMap[v.username]?.last_contact_at, v.last_contacted, v.last_contact_date].filter(Boolean)
+    const lastContact = cands.length ? cands.reduce((a, b) => (new Date(a) > new Date(b) ? a : b)) : null
+    const lastDeposit = v.last_deposit_date || null
+    const dc = daysSince(lastContact), dd = daysSince(lastDeposit)
+    const contactDay = lastContact ? String(lastContact).slice(0, 10) : null
+    // Needs chase: player has gone quiet (no deposit 3+ days) AND nobody has contacted them since their last deposit
+    const needsChase = dd !== null && dd >= QUIET_DAYS && dd <= 30 && (contactDay === null || contactDay < String(lastDeposit).slice(0, 10))
+    return { lastContact, lastDeposit, dc, dd, needsChase, host: contactMap[v.username]?.last_contact_host || null, outcome: contactMap[v.username]?.last_contact_outcome || null }
+  }
+  const needCount = vips.filter(v => chaseInfo(v).needsChase).length
+
   // Filter + sort
   const now = new Date()
   const filtered = vips.filter(v => {
@@ -229,12 +258,20 @@ export default function AllVIPs() {
       const sg = segMap[v.username]?.segment || 'No deposits'
       if (segFilter === 'RISK' ? !(sg === 'Silent' || sg === 'Declining') : sg !== segFilter) return false
     }
+    if (chaseFilter !== 'ALL') {
+      const ci = chaseInfo(v), n = Number(chaseDays) || 7
+      if (chaseFilter === 'needs_chase' && !ci.needsChase) return false
+      // deposited within N days, but not contacted within N days
+      if (chaseFilter === 'dep_no_contact' && !(ci.dd !== null && ci.dd <= n && (ci.dc === null || ci.dc > n))) return false
+      // contacted within N days, but no deposit since that contact
+      if (chaseFilter === 'contact_no_dep' && !(ci.dc !== null && ci.dc <= n && (ci.lastDeposit === null || String(ci.lastDeposit).slice(0, 10) < String(ci.lastContact).slice(0, 10)))) return false
+    }
     if (playerTypeFilter !== 'ALL') {
       const gl = gamingLabels[v.username]
       if (!gl || gl.player_type !== playerTypeFilter) return false
     }
     if (view === 'noctact') {
-      const lastC = v.last_contacted || v.last_contact_date
+      const lastC = chaseInfo(v).lastContact
       if (lastC && Math.floor((now - new Date(lastC)) / 86400000) < 7) return false
     }
     if (search.trim()) {
@@ -253,6 +290,8 @@ export default function AllVIPs() {
     else if (sortCol === 'days')  { va = a.days_inactive||0; vb = b.days_inactive||0 }
     else if (sortCol === 'name')  { va = a.full_name||a.username||''; vb = b.full_name||b.username||'' }
     else if (sortCol === 'affiliate_login') { va = a.affiliate_login||'~'; vb = b.affiliate_login||'~' }
+    else if (sortCol === 'last_contact_date') { va = chaseInfo(a).lastContact ? new Date(chaseInfo(a).lastContact).getTime() : 0; vb = chaseInfo(b).lastContact ? new Date(chaseInfo(b).lastContact).getTime() : 0 }
+    else if (sortCol === 'last_deposit_date') { va = a.last_deposit_date ? new Date(a.last_deposit_date).getTime() : 0; vb = b.last_deposit_date ? new Date(b.last_deposit_date).getTime() : 0 }
     else                         { va = a[sortCol]||0; vb = b[sortCol]||0 }
     return sortAsc ? (va > vb ? 1 : -1) : (va < vb ? 1 : -1)
   })
@@ -367,8 +406,19 @@ export default function AllVIPs() {
           {Object.keys(SEGMENTS).map(k => <option key={k} value={k}>{SEGMENTS[k].icon} {L2(k, SEGMENTS[k].zh)}</option>)}
           <option value="No deposits">{L2('No deposits (Jul–Sep)', '无存款（7–9月）')}</option>
         </Select>
-        {(search || tier !== 'ALL' || status !== 'ALL' || region !== 'ALL' || host !== 'ALL' || playerTypeFilter !== 'ALL' || affiliate !== 'ALL' || segFilter !== 'ALL') && (
-          <Btn size="sm" variant="ghost" onClick={() => { setSearch(''); setTier('ALL'); setStatus('ALL'); setRegion('ALL'); setHost('ALL'); setPlayerTypeFilter('ALL'); setAffiliate('ALL'); setSegFilter('ALL'); setPage(1) }}>
+        <Select value={chaseFilter} onChange={e => { setChaseFilter(e.target.value); setPage(1) }} style={{ minWidth: 190 }}>
+          <option value="ALL">{L2('📞 All (chase filter)', '📞 全部（跟进筛选）')}</option>
+          <option value="needs_chase">{L2(`🔴 Needs chase now (${needCount})`, `🔴 需立即跟进（${needCount}）`)}</option>
+          <option value="dep_no_contact">{L2('Deposited, not contacted', '有存款但未联系')}</option>
+          <option value="contact_no_dep">{L2('Contacted, no deposit yet', '已联系但未存款')}</option>
+        </Select>
+        {(chaseFilter === 'dep_no_contact' || chaseFilter === 'contact_no_dep') && (
+          <Select value={chaseDays} onChange={e => { setChaseDays(e.target.value); setPage(1) }} style={{ minWidth: 110 }}>
+            {['3', '7', '14', '30'].map(d => <option key={d} value={d}>{L2(`Within ${d} days`, `${d}天内`)}</option>)}
+          </Select>
+        )}
+        {(search || tier !== 'ALL' || status !== 'ALL' || region !== 'ALL' || host !== 'ALL' || playerTypeFilter !== 'ALL' || affiliate !== 'ALL' || segFilter !== 'ALL' || chaseFilter !== 'ALL') && (
+          <Btn size="sm" variant="ghost" onClick={() => { setSearch(''); setTier('ALL'); setStatus('ALL'); setRegion('ALL'); setHost('ALL'); setPlayerTypeFilter('ALL'); setAffiliate('ALL'); setSegFilter('ALL'); setChaseFilter('ALL'); setPage(1) }}>
             {t('allVips.clearFilters')}
           </Btn>
         )}
@@ -389,8 +439,8 @@ export default function AllVIPs() {
                     { key:'segment', label:L2('Segment', '分群'), sortable:false },
                     { key:'dep', label:t('allVips.colDeposit'), sortable:true },
                     { key:'win_loss', label:t('common.winLoss'), sortable:false },
-                    { key:'last_contact_date', label:t('allVips.colLastContact'), sortable:false },
-                    { key:'last_deposit_date', label:t('allVips.colLastDeposit'), sortable:false },
+                    { key:'last_contact_date', label:t('allVips.colLastContact'), sortable:true },
+                    { key:'last_deposit_date', label:t('allVips.colLastDeposit'), sortable:true },
                     { key:'host_assigned', label:t('common.host'), sortable:false },
                     { key:'affiliate_login', label:L2('Affiliate', '代理'), sortable:true },
                     { key:'churn_risk', label:t('common.atRisk'), sortable:false },
@@ -418,14 +468,17 @@ export default function AllVIPs() {
                     {L2('No VIPs match the current filters.', '没有符合当前筛选条件的VIP。')}
                   </td></tr>
                 ) : paged.map(v => {
-                  const lastContact = v.last_contacted || v.last_contact_date
+                  const ci = chaseInfo(v)
+                  const lastContact = ci.lastContact
+                  const rowBg = ci.needsChase ? 'rgba(248,81,73,.08)' : 'transparent'
                   const wl = v.win_loss
                   return (
                     <tr key={v.id}
                       onClick={() => navigate(`/vips/${v.id}`)}
                       onMouseEnter={e => e.currentTarget.style.background = 'var(--surface2)'}
-                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                      style={{ cursor:'pointer', transition:'background .1s' }}
+                      onMouseLeave={e => e.currentTarget.style.background = rowBg}
+                      title={ci.needsChase ? L2('Needs chase: no deposit for 3–30 days and not contacted since the last deposit', '需跟进：3–30天未存款，且最后存款后未联系') : undefined}
+                      style={{ cursor:'pointer', transition:'background .1s', background: rowBg, boxShadow: ci.needsChase ? 'inset 3px 0 0 #f85149' : 'none' }}
                     >
                       <td style={{ padding:'9px 12px', borderBottom:'1px solid var(--border)' }}>
                         <div style={{ fontWeight:600, color:'var(--text)' }}>{v.username}</div>
@@ -471,10 +524,11 @@ export default function AllVIPs() {
                           </span>
                         )}
                       </td>
-                      <td style={{ padding:'9px 12px', borderBottom:'1px solid var(--border)', color:'var(--muted)', fontSize:12 }}>
-                        {daysAgoLabel(lastContact, lang)}
+                      <td style={{ padding:'9px 12px', borderBottom:'1px solid var(--border)', color: ci.needsChase ? '#f85149' : 'var(--muted)', fontSize:12, fontWeight: ci.needsChase ? 700 : 400, whiteSpace:'nowrap' }}>
+                        {lastContact ? daysAgoLabel(lastContact, lang) : L2('Never', '从未')}
+                        {ci.host && <div style={{ fontSize:10, color:'var(--muted)', fontWeight:400 }}>{ci.host}</div>}
                       </td>
-                      <td style={{ padding:'9px 12px', borderBottom:'1px solid var(--border)', color:'var(--muted)', fontSize:12 }}>
+                      <td style={{ padding:'9px 12px', borderBottom:'1px solid var(--border)', color: ci.dd !== null && ci.dd >= QUIET_DAYS ? '#d29922' : 'var(--muted)', fontSize:12, whiteSpace:'nowrap' }}>
                         {daysAgoLabel(v.last_deposit_date, lang)}
                       </td>
                       <td style={{ padding:'9px 12px', borderBottom:'1px solid var(--border)', fontSize:12 }} onClick={e => e.stopPropagation()}>
