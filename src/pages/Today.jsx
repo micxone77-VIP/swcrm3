@@ -12,6 +12,7 @@ import {
 import { TierBadge, RiskBadge, ListCount } from '../components/ui'
 import { formatMoney } from '../lib/format'
 import VipQuickSearch from '../components/VipQuickSearch'
+import BigWinLossBanner from '../components/alerts/BigWinLossBanner'
 import { useLanguage } from '../contexts/LanguageContext'
 
 const FollowUpTab = lazy(() => import('./FollowUp'))
@@ -217,6 +218,8 @@ export default function Today() {
     <div style={{ padding: '24px 28px', maxWidth: 1200 }}>
       <ToastContainer />
       <TabBar active={mainTab} onChange={setMainTab} />
+
+      <BigWinLossBanner />
 
       {/* ── Header ── */}
       <div style={{ marginBottom: 24 }}>

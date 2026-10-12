@@ -9,6 +9,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { useLanguage } from '../contexts/LanguageContext'
+import { loadBigWinLoss } from '../lib/bigWinLoss'
 
 const POLL_INTERVAL_MS = 5 * 60 * 1000 // 5 minutes
 const HIGH_RISK_DAYS = 60
@@ -40,7 +41,7 @@ function playChime() {
   }
 }
 
-async function checkAlerts() {
+async function checkAlerts(myName) {
   const now = new Date()
   const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
   const alerts = []
@@ -102,6 +103,23 @@ async function checkAlerts() {
     })
   }
 
+  // Big win / big loss yesterday (per-tier thresholds in app_settings)
+  try {
+    const wl = await loadBigWinLoss()
+    const mine = rows => rows.filter(r => r.host === myName)
+    const hasMine = myName && (mine(wl.losses).length + mine(wl.wins).length) > 0
+    const L = hasMine ? mine(wl.losses) : wl.losses, W = hasMine ? mine(wl.wins) : wl.wins
+    if (L.length + W.length > 0) {
+      alerts.push({
+        key: 'big_winloss', icon: '💰', severity: L.length ? 'high' : 'low',
+        title: `${L.length} big loss · ${W.length} big win yesterday`, titleZh: `昨日 ${L.length} 位大输 · ${W.length} 位大赢`,
+        desc: `${hasMine ? 'Your VIPs' : 'All VIPs'} · data ${wl.dataDate || '-'} — care for losers, congratulate winners`,
+        descZh: `${hasMine ? '我的VIP' : '全部VIP'} · 数据 ${wl.dataDate || '-'} — 关怀输家，祝贺赢家`,
+        link: '/alerts?tab=winloss',
+      })
+    }
+  } catch (e) { console.error('big win/loss check failed', e) }
+
   return alerts
 }
 
@@ -126,7 +144,7 @@ export default function NotificationBell() {
 
     async function poll() {
       try {
-        const next = await checkAlerts()
+        const next = await checkAlerts(profile?.full_name || '')
         if (cancelled) return
         // Only chime when the count goes UP — not on every poll, and not on
         // first load (so opening the app doesn't immediately make noise).
@@ -194,8 +212,8 @@ export default function NotificationBell() {
                   onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                   <div style={{ fontSize: 18, flexShrink: 0 }}>{a.icon}</div>
                   <div>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: a.severity === 'high' ? '#f85149' : '#d29922' }}>{applyParams(t(a.titleKey), a.titleParams)}</div>
-                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{t(a.descKey)}</div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: a.severity === 'high' ? '#f85149' : '#d29922' }}>{a.title ? (lang === 'zh' ? a.titleZh : a.title) : applyParams(t(a.titleKey), a.titleParams)}</div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{a.desc ? (lang === 'zh' ? a.descZh : a.desc) : t(a.descKey)}</div>
                   </div>
                 </div>
               ))

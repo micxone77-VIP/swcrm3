@@ -1,6 +1,8 @@
 // src/pages/Alerts.jsx — Command Center / Alerts (V2)
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import BigWinLoss from '../components/alerts/BigWinLoss'
+import { loadBigWinLoss } from '../lib/bigWinLoss'
 import { supabase } from '../lib/supabase'
 import { PageHeader, Card, Tabs, Btn, Badge, LoadingState, EmptyState } from '../components/ui'
 import { TierBadge, RiskBadge } from '../components/ui'
@@ -21,7 +23,11 @@ export default function Alerts() {
   const { t, lang } = useLanguage()
   const [vips, setVips]       = useState([])
   const [loading, setLoading] = useState(true)
-  const [tab, setTab]         = useState('critical')
+  const [params, setParams]   = useSearchParams()
+  const tab = params.get('tab') || 'critical'
+  const setTab = k => setParams(p => { const n = new URLSearchParams(p); n.set('tab', k); return n }, { replace: true })
+  const [wlCount, setWlCount] = useState(null)
+  useEffect(() => { loadBigWinLoss().then(r => setWlCount(r.losses.length + r.wins.length)).catch(() => {}) }, [])
 
   useEffect(() => {
     (async () => {
@@ -52,13 +58,14 @@ export default function Alerts() {
     { key: 'critical', label: t('alerts.tabCritical'),  count: critical.length },
     { key: 'high',     label: t('alerts.tabHigh'),      count: highRisk.length },
     { key: 'contact',  label: t('alerts.tabNoContact'), count: noContact.length },
+    { key: 'winloss',  label: lang === 'zh' ? '💰 昨日大赢/大输' : '💰 Big Win/Loss', count: wlCount ?? undefined },
   ]
 
   const displayMap = { critical, high: highRisk, contact: noContact }
   const display = displayMap[tab] || []
 
   return (
-    <div style={{ padding: '24px 28px', maxWidth: 1100 }}>
+    <div style={{ padding: '24px 28px', maxWidth: tab === 'winloss' ? 1400 : 1100 }}>
       <PageHeader title={t('alerts.title')} subtitle={t('alerts.subtitle')} />
 
       {loading ? <LoadingState /> : (
@@ -66,7 +73,9 @@ export default function Alerts() {
           <div style={{ padding: '0 16px' }}>
             <Tabs tabs={tabs} active={tab} onChange={setTab} />
           </div>
-          {display.length === 0 ? (
+          {tab === 'winloss' ? (
+            <div style={{ padding: 16 }}><BigWinLoss /></div>
+          ) : display.length === 0 ? (
             <EmptyState icon="✅" title={t('alerts.noAlerts')} message={t('alerts.noAlertsMsg')} />
           ) : (
             <div style={{ overflowX: 'auto' }}>
