@@ -7,6 +7,7 @@ import { supabase } from '../lib/supabase'
 import { PageHeader, Card, Tabs, Btn, Badge, LoadingState, EmptyState } from '../components/ui'
 import { TierBadge, RiskBadge } from '../components/ui'
 import { useLanguage } from '../contexts/LanguageContext'
+import { useAuth } from '../hooks/useAuth'
 
 function timeAgo(d, lang = 'en') {
   if (!d) return '—'
@@ -27,6 +28,8 @@ export default function Alerts() {
   const tab = params.get('tab') || 'critical'
   const setTab = k => setParams(p => { const n = new URLSearchParams(p); n.set('tab', k); return n }, { replace: true })
   const [wlCount, setWlCount] = useState(null)
+  const { profile } = useAuth()
+  const myName = profile?.full_name || ''
   useEffect(() => { loadBigWinLoss().then(r => setWlCount(r.losses.length + r.wins.length)).catch(() => {}) }, [])
 
   useEffect(() => {
@@ -46,10 +49,16 @@ export default function Alerts() {
     return v.days_inactive ?? null
   }
 
-  const critical  = vips.filter(v => (v.churn_risk||'').toUpperCase() === 'CRITICAL')
-  const highRisk  = vips.filter(v => (v.churn_risk||'').toUpperCase() === 'HIGH')
+  // Host filter: defaults to my own VIPs (if I have any), switchable to any host or All
+  const hostList = [...new Set(vips.map(v => (v.host_assigned || '').trim()).filter(Boolean))].sort()
+  const hostF = params.get('host') || (hostList.includes(myName) ? myName : 'ALL')
+  const setHostF = h => setParams(p => { const n = new URLSearchParams(p); n.set('host', h); return n }, { replace: true })
+  const scoped = hostF === 'ALL' ? vips : vips.filter(v => (v.host_assigned || '').trim() === hostF)
+
+  const critical  = scoped.filter(v => (v.churn_risk||'').toUpperCase() === 'CRITICAL')
+  const highRisk  = scoped.filter(v => (v.churn_risk||'').toUpperCase() === 'HIGH')
   // Only VIPs that have a host assigned — unassigned VIPs have nobody to contact them yet
-  const noContact = vips.filter(v => (v.host_assigned || '').trim()).filter(v => {
+  const noContact = scoped.filter(v => (v.host_assigned || '').trim()).filter(v => {
     const lastC = v.last_contacted || v.last_contact_date
     if (!lastC) return true
     return Math.floor((now - new Date(lastC)) / 86400000) >= 7
@@ -74,6 +83,23 @@ export default function Alerts() {
           <div style={{ padding: '0 16px' }}>
             <Tabs tabs={tabs} active={tab} onChange={setTab} />
           </div>
+          {tab !== 'winloss' && (
+            <div style={{ padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', borderBottom: '1px solid var(--border)' }}>
+              <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600, marginRight: 4 }}>{lang === 'zh' ? '负责人：' : 'Host:'}</span>
+              {['ALL', ...hostList].map(h => {
+                const on = hostF === h
+                return (
+                  <button key={h} onClick={() => setHostF(h)} style={{
+                    padding: '4px 12px', borderRadius: 20, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                    border: `1px solid ${on ? 'var(--brand)' : 'var(--border)'}`,
+                    background: on ? 'var(--brand-dim)' : 'transparent', color: on ? 'var(--brand)' : 'var(--muted)',
+                  }}>
+                    {h === 'ALL' ? (lang === 'zh' ? '全部' : 'All') : h}{h === myName ? (lang === 'zh' ? '（我）' : ' (me)') : ''}
+                  </button>
+                )
+              })}
+            </div>
+          )}
           {tab === 'winloss' ? (
             <div style={{ padding: 16 }}><BigWinLoss /></div>
           ) : display.length === 0 ? (
