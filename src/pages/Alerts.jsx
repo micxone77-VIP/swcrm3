@@ -48,7 +48,8 @@ export default function Alerts() {
 
   const critical  = vips.filter(v => (v.churn_risk||'').toUpperCase() === 'CRITICAL')
   const highRisk  = vips.filter(v => (v.churn_risk||'').toUpperCase() === 'HIGH')
-  const noContact = vips.filter(v => {
+  // Only VIPs that have a host assigned — unassigned VIPs have nobody to contact them yet
+  const noContact = vips.filter(v => (v.host_assigned || '').trim()).filter(v => {
     const lastC = v.last_contacted || v.last_contact_date
     if (!lastC) return true
     return Math.floor((now - new Date(lastC)) / 86400000) >= 7
