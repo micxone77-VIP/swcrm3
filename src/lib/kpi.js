@@ -146,7 +146,7 @@ export async function loadKpiAutoData(monthStr) {
     .select('monthly_valid_bet, tier, currency')
     .eq('snapshot_month', monthStr)
     .eq('currency', 'MYR')
-    .in('tier', ['PLATINUM', 'DIAMOND', 'BLACK'])
+    .in('tier', ['PLATINUM', 'DIAMOND', 'DIAMOND-P', 'BLACK'])
   // Also include GOLD members that are assigned to a host (managed Gold)
   const { data: goldVips } = await supabase
     .from('vip_monthly_totals')
