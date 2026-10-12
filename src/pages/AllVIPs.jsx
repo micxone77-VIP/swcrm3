@@ -7,7 +7,7 @@ import { useAuth } from '../hooks/useAuth'
 import { useLanguage } from '../contexts/LanguageContext'
 import {
   PageHeader, Card, Btn, Input, Select, FilterPills,
-  LoadingState, ErrorState, EmptyState, Pagination, Badge,
+  LoadingState, ErrorState, EmptyState, Pagination, Badge, ListCount,
 } from '../components/ui'
 import { TierBadge, StatusBadge, RiskBadge } from '../components/ui'
 import { formatMoney } from '../lib/format'
@@ -427,11 +427,13 @@ export default function AllVIPs() {
       {/* Table */}
       {loading ? <LoadingState /> : error ? <ErrorState message={error} onRetry={load} /> : (
         <Card>
+          <ListCount total={total} page={page} pageSize={PAGE_SIZE} label="VIPs" labelZh="位VIP" />
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
                 <tr>
                   {[
+                    { key:'rownum', label:'#', sortable:false },
                     { key:'name', label:t('allVips.colVip'), sortable:true },
                     { key:'tng', label:'T&G', sortable:false },
                     { key:'tier', label:t('common.tier'), sortable:true },
@@ -464,10 +466,10 @@ export default function AllVIPs() {
               </thead>
               <tbody>
                 {paged.length === 0 ? (
-                  <tr><td colSpan={13} style={{ textAlign:'center', padding:'32px', color:'var(--muted)' }}>
+                  <tr><td colSpan={14} style={{ textAlign:'center', padding:'32px', color:'var(--muted)' }}>
                     {L2('No VIPs match the current filters.', '没有符合当前筛选条件的VIP。')}
                   </td></tr>
-                ) : paged.map(v => {
+                ) : paged.map((v, rowIdx) => {
                   const ci = chaseInfo(v)
                   const lastContact = ci.lastContact
                   const rowBg = ci.needsChase ? 'rgba(248,81,73,.08)' : 'transparent'
@@ -480,6 +482,7 @@ export default function AllVIPs() {
                       title={ci.needsChase ? L2('Needs chase: no deposit for 3–30 days and not contacted since the last deposit', '需跟进：3–30天未存款，且最后存款后未联系') : undefined}
                       style={{ cursor:'pointer', transition:'background .1s', background: rowBg, boxShadow: ci.needsChase ? 'inset 3px 0 0 #f85149' : 'none' }}
                     >
+                      <td style={{ padding:'9px 8px 9px 12px', borderBottom:'1px solid var(--border)', color:'var(--muted)', fontSize:12, width:36 }}>{(page-1)*PAGE_SIZE + rowIdx + 1}</td>
                       <td style={{ padding:'9px 12px', borderBottom:'1px solid var(--border)' }}>
                         <div style={{ fontWeight:600, color:'var(--text)' }}>{v.username}</div>
                         <div style={{ fontSize:11, color:'var(--muted)' }}>{v.full_name || ''}</div>

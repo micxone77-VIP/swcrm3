@@ -181,7 +181,7 @@ export default function AwaitingReplyAffiliate({ onBack, myName, viewMode }) {
     <div style={{ overflowX: 'auto' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
         <thead><tr>
-          <th style={st.th}>VIP</th><th style={st.th}>{L2('Tier', '等级')}</th>
+          <th style={st.th}>#</th><th style={st.th}>VIP</th><th style={st.th}>{L2('Tier', '等级')}</th>
           {!grouped && <th style={st.th}>{L2('Affiliate', '代理')}</th>}
           <th style={st.th}>{L2('Status', '状态')}</th><th style={st.th}>{L2('Days no reply', '未回复天数')}</th>
           <th style={st.th}>{L2('Attempts', '联系次数')}</th><th style={st.th}>{L2('Last contact', '最后联系')}</th>
@@ -189,12 +189,13 @@ export default function AwaitingReplyAffiliate({ onBack, myName, viewMode }) {
           <th style={st.th}>{L2('Last note', '最后备注')}</th><th style={st.th}>WA</th>
         </tr></thead>
         <tbody>
-          {list.map(r => {
+          {list.map((r, rowIdx) => {
             const raw = (r.phone && r.phone.replace(/\D/g, '').length >= 10) ? r.phone : (r.whatsapp && r.whatsapp.replace(/\D/g, '').length >= 10) ? r.whatsapp : ''
             const wa = raw.replace(/\D/g, '')
             const greet = encodeURIComponent(`Hi ${r.username}, just following up — wanted to check if you saw my earlier message. This is ${r.host || myName || 'the VIP team'}.`)
             return (
               <tr key={r.username}>
+                <td style={{ ...st.td, color: 'var(--muted)', fontSize: 12, width: 36 }}>{rowIdx + 1}</td>
                 <td style={st.td}><b>{r.username}</b><div style={{ fontSize: 10, color: 'var(--muted)' }}>{r.full_name}</div></td>
                 <td style={st.td}>{r.tier && <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: TIER_BG[r.tier] || 'transparent', color: TIER_COLOR[r.tier] || 'var(--text)' }}>{r.tier}</span>}</td>
                 {!grouped && <td style={{ ...st.td, color: r.affiliate.startsWith('(') ? 'var(--muted)' : 'var(--brand, #FF6B00)', fontWeight: 600 }}>{affLabel(r.affiliate)}</td>}

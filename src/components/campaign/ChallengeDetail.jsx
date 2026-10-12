@@ -284,6 +284,7 @@ export default function ChallengeDetail({ campaign: initial, onClose, onChanged 
         <div style={{ overflow: 'auto', maxHeight: '62vh', borderTop: '1px solid var(--border)' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead><tr>
+              <th style={th}>#</th>
               <th style={th}>VIP</th>
               {cfg.credit_enabled && <th style={th}>{T('Credit', '信用额')}</th>}
               <th style={th}>{cfg.goal_metric === 'deposit' ? T('Deposit progress', '存款进度') : T('Turnover progress', '流水进度')}</th>
@@ -296,9 +297,9 @@ export default function ChallengeDetail({ campaign: initial, onClose, onChanged 
               <th style={th}></th>
             </tr></thead>
             <tbody>
-              {loading ? <tr><td colSpan={10} style={{ ...td, textAlign: 'center', padding: 30, color: 'var(--muted)' }}>{T('Loading…', '载入中…')}</td></tr>
-                : rows.length === 0 ? <tr><td colSpan={10} style={{ ...td, textAlign: 'center', padding: 30, color: 'var(--muted)' }}>{T('No players.', '没有玩家。')}</td></tr>
-                : rows.map(r => {
+              {loading ? <tr><td colSpan={11} style={{ ...td, textAlign: 'center', padding: 30, color: 'var(--muted)' }}>{T('Loading…', '载入中…')}</td></tr>
+                : rows.length === 0 ? <tr><td colSpan={11} style={{ ...td, textAlign: 'center', padding: 30, color: 'var(--muted)' }}>{T('No players.', '没有玩家。')}</td></tr>
+                : rows.map((r, rowIdx) => {
                   const p = r.prog
                   const st = STATUS_STYLE[p.status]
                   const wa = (r.m.phone && r.m.phone.replace(/\D/g, '').length >= 10) ? r.m.phone : (r.whatsapp || r.m.whatsapp || '')
@@ -312,6 +313,7 @@ export default function ChallengeDetail({ campaign: initial, onClose, onChanged 
                   )
                   return (
                     <tr key={r.id}>
+                      <td style={{ ...td, color: 'var(--muted)', fontSize: 12, width: 36 }}>{rowIdx + 1}</td>
                       <td style={td}>
                         <div style={{ fontWeight: 700 }}>{r.username}</div>
                         <div style={{ fontSize: 10, color: 'var(--muted)' }}>{r.m.full_name} · {r.m.tier || r.tier} · {r.m.host_assigned || T('no host', '无负责人')}</div>

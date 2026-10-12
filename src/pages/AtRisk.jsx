@@ -6,7 +6,7 @@ import {
   PageHeader, Card, KpiCard, Btn, FilterPills,
   LoadingState, ErrorState, EmptyState,
 } from '../components/ui'
-import { TierBadge, RiskBadge } from '../components/ui'
+import { TierBadge, RiskBadge, ListCount } from '../components/ui'
 import { formatMoney } from '../lib/format'
 import { useLanguage } from '../contexts/LanguageContext'
 import { useAuth } from '../hooks/useAuth'
@@ -114,6 +114,7 @@ export default function AtRisk() {
 
       {/* Table */}
       <Card>
+        <ListCount total={sorted.length} label="VIPs" labelZh="位VIP" />
         {sorted.length === 0 ? (
           <EmptyState icon="🟢" title={t('atRisk.noAtRisk')} message={t('atRisk.noAtRiskMsg')} />
         ) : (
@@ -121,13 +122,13 @@ export default function AtRisk() {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
                 <tr>
-                  {[t('atRisk.colVip'), t('common.tier'), t('atRisk.colRiskLevel'), t('atRisk.colReason'), t('atRisk.colDaysInactive'), t('atRisk.colLastContact'), t('atRisk.colDeposit'), t('common.host'), t('atRisk.colAction')].map(h => (
+                  {['#', t('atRisk.colVip'), t('common.tier'), t('atRisk.colRiskLevel'), t('atRisk.colReason'), t('atRisk.colDaysInactive'), t('atRisk.colLastContact'), t('atRisk.colDeposit'), t('common.host'), t('atRisk.colAction')].map(h => (
                     <th key={h} style={{ padding:'9px 14px', textAlign:'left', background:'var(--surface)', color:'var(--muted)', fontWeight:600, fontSize:11, borderBottom:'1px solid var(--border)', whiteSpace:'nowrap' }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {sorted.map(v => {
+                {sorted.map((v, rowIdx) => {
                   const days = getDays(v)
                   const reasons = []
                   if (days != null && days >= 7) reasons.push(L2(`No deposit ${days}d`, `${days}天未存款`))
@@ -144,6 +145,7 @@ export default function AtRisk() {
                       onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                       style={{ cursor:'pointer', transition:'background .1s' }}
                     >
+                      <td style={{ padding:'10px 14px', borderBottom:'1px solid var(--border)', color:'var(--muted)', fontSize:12, width:36 }}>{rowIdx + 1}</td>
                       <td style={{ padding:'10px 14px', borderBottom:'1px solid var(--border)' }}>
                         <div style={{ fontWeight:600 }}>{v.username}</div>
                         <div style={{ fontSize:11, color:'var(--muted)' }}>{v.full_name || ''}</div>

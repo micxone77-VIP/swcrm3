@@ -163,6 +163,7 @@ export default function AffiliateSummary() {
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
           <thead>
             <tr style={{ borderBottom: '1px solid var(--border)' }}>
+              <th style={{ ...th, textAlign: 'left', cursor: 'default' }}>#</th>
               <th style={{ ...th, textAlign: 'left' }} onClick={() => sortBy('affiliate')}>{L2('Affiliate', '代理')}{arrow('affiliate')}</th>
               <th style={th} onClick={() => sortBy('vips')}>{L2('VIPs', 'VIP数')}{arrow('vips')}</th>
               <th style={th} onClick={() => sortBy('gold')}>{L2('Gold', '黄金')}{arrow('gold')}</th>
@@ -177,7 +178,7 @@ export default function AffiliateSummary() {
             </tr>
           </thead>
           <tbody>
-            {list.map(r => {
+            {list.map((r, rowIdx) => {
               const normal = Number(r.normal_month || 0)
               const trend = normal > 0 ? Math.round((Number(r.dep_30d) / normal - 1) * 100) : null
               const risk = Number(r.silent) + Number(r.declining)
@@ -186,6 +187,7 @@ export default function AffiliateSummary() {
                 <tr key={r.affiliate} onClick={() => openList(r.affiliate)} style={{ borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
                   onMouseEnter={e => { e.currentTarget.style.background = 'var(--surface2)' }}
                   onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}>
+                  <td style={{ ...td, textAlign: 'left', color: 'var(--muted)', fontSize: 12, width: 36 }}>{rowIdx + 1}</td>
                   <td style={{ ...td, textAlign: 'left', fontWeight: 700, color: special ? 'var(--muted)' : 'var(--brand, #FF6B00)' }}>
                     {r.affiliate === '(direct)' ? L2('Direct (no affiliate)', '直客（无代理）') : r.affiliate === '(unknown)' ? L2('Unknown (no deposit data)', '未知（无存款数据）') : r.affiliate}
                   </td>

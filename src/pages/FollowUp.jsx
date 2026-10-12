@@ -4,7 +4,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { useLanguage } from '../contexts/LanguageContext'
-import { PageHeader, Card, KpiCard, Btn, FilterPills, LoadingState, ErrorState, EmptyState, Modal, Select, Textarea, useToast, TierBadge, RiskBadge } from '../components/ui'
+import { PageHeader, Card, KpiCard, Btn, FilterPills, LoadingState, ErrorState, EmptyState, Modal, Select, Textarea, useToast, TierBadge, RiskBadge, ListCount } from '../components/ui'
 import WaSenderModal from '../components/WaSenderModal'
 
 function daysAgoLabel(d, lang = 'en') {
@@ -156,18 +156,19 @@ export default function FollowUp() {
         </select>
       </div>
       <Card>
+        <ListCount total={focusedDisplay.length} label="VIPs" labelZh="位VIP" />
         {focusedDisplay.length === 0
           ? <EmptyState icon="✅" title={t('followUp.allFollowedUp')} message={t('followUp.allFollowedUpMsg')} />
           : (
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead><tr>
-                {[t('followUp.colVip'), t('common.tier'), t('followUp.colLastContact'), t('followUp.colDays'), t('common.atRisk'), t('common.host'), t('followUp.colAction')].map(h => (
+                {['#', t('followUp.colVip'), t('common.tier'), t('followUp.colLastContact'), t('followUp.colDays'), t('common.atRisk'), t('common.host'), t('followUp.colAction')].map(h => (
                   <th key={h} style={{ padding:'9px 14px', textAlign:'left', background:'var(--surface)', color:'var(--muted)', fontWeight:600, fontSize:11, borderBottom:'1px solid var(--border)', whiteSpace:'nowrap' }}>{h}</th>
                 ))}
               </tr></thead>
               <tbody>
-                {focusedDisplay.map(v => {
+                {focusedDisplay.map((v, rowIdx) => {
                   const days = getDays(v)
                   const isUrgent = days >= 7 || ['HIGH','CRITICAL'].includes((v.churn_risk||'').toUpperCase())
                   const isFocused = requestedVip && String(v.id) === String(requestedVip.id)
@@ -179,6 +180,7 @@ export default function FollowUp() {
                       style={{ cursor:'pointer', transition:'background .1s', outline: isFocused ? '2px solid var(--accent)' : 'none', outlineOffset:'-2px' }}
                       onClick={() => navigate(`/vips/${v.id}`)}
                     >
+                      <td style={{ padding:'10px 14px', borderBottom:'1px solid var(--border)', color:'var(--muted)', fontSize:12, width:36 }}>{rowIdx + 1}</td>
                       <td style={{ padding:'10px 14px', borderBottom:'1px solid var(--border)' }}>
                         <div style={{ fontWeight:600, color: isUrgent ? 'var(--danger)' : 'var(--text)' }}>{v.username}</div>
                         <div style={{ fontSize:11, color:'var(--muted)' }}>{v.full_name || ''}</div>

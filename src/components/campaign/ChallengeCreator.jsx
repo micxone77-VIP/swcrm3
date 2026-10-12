@@ -322,7 +322,7 @@ export default function ChallengeCreator({ mode = 'trust_credit', onCancel, onCr
         <div style={{ maxHeight: 360, overflow: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead><tr>
-              <th style={th}></th><th style={th}>VIP</th><th style={th}>{T('Tier', '等级')}</th><th style={th}>{T('Host', '负责人')}</th><th style={th}>{T('Affiliate', '代理')}</th>
+              <th style={th}>#</th><th style={th}></th><th style={th}>VIP</th><th style={th}>{T('Tier', '等级')}</th><th style={th}>{T('Host', '负责人')}</th><th style={th}>{T('Affiliate', '代理')}</th>
               <th style={th}>{T('Segment', '分群')}</th><th style={{ ...th, textAlign: 'right' }}>{T('30d net loss', '30天净亏损')}</th><th style={{ ...th, textAlign: 'right' }}>{T('Avg daily turnover', '日均流水')}</th>
               {cfg.credit_enabled && <th style={th}>{T('Credit', '信用额')}</th>}
               {cfg.goal_metric !== 'deposit' && <th style={th}>{T('Turnover target', '流水目标')}</th>}
@@ -330,13 +330,14 @@ export default function ChallengeCreator({ mode = 'trust_credit', onCancel, onCr
               <th style={th}>{T('Notes', '备注')}</th>
             </tr></thead>
             <tbody>
-              {loading ? <tr><td colSpan={12} style={{ ...td, textAlign: 'center', padding: 24, color: 'var(--muted)' }}>{T('Loading CRM data…', '载入CRM数据中…')}</td></tr>
-                : rows.length === 0 ? <tr><td colSpan={12} style={{ ...td, textAlign: 'center', padding: 24, color: 'var(--muted)' }}>{T('No players match these filters.', '没有符合条件的玩家。')}</td></tr>
-                : rows.slice(0, 500).map(r => {
+              {loading ? <tr><td colSpan={13} style={{ ...td, textAlign: 'center', padding: 24, color: 'var(--muted)' }}>{T('Loading CRM data…', '载入CRM数据中…')}</td></tr>
+                : rows.length === 0 ? <tr><td colSpan={13} style={{ ...td, textAlign: 'center', padding: 24, color: 'var(--muted)' }}>{T('No players match these filters.', '没有符合条件的玩家。')}</td></tr>
+                : rows.slice(0, 500).map((r, rowIdx) => {
                   const on = picked.has(r.username)
                   const seg = SEGMENTS[r.segment]
                   return (
                     <tr key={r.username} style={{ background: on ? 'rgba(255,106,0,.06)' : 'transparent' }}>
+                      <td style={{ ...td, color: 'var(--muted)', fontSize: 12, width: 36 }}>{rowIdx + 1}</td>
                       <td style={td}><input type="checkbox" checked={on} onChange={() => toggle(r.username)} /></td>
                       <td style={td}><b>{r.username}</b>{r.manual && <span style={{ fontSize: 10, color: '#a78bfa', marginLeft: 4 }}>{T('manual', '手动')}</span>}<div style={{ fontSize: 10, color: 'var(--muted)' }}>{r.full_name}</div></td>
                       <td style={td}>{r.tier}</td>

@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { useLanguage } from '../contexts/LanguageContext'
+import { ListCount } from '../components/ui'
 
 function useL2() {
   const { lang } = useLanguage()
@@ -317,7 +318,7 @@ function reloadUrgency(row) {
 }
 
 // ─── Row ──────────────────────────────────────────────────────────────────────
-function NumberRow({ row, standbys, onEdit, onDelete, onPromote }) {
+function NumberRow({ row, rowNum, standbys, onEdit, onDelete, onPromote }) {
   const L2 = useL2()
   const fmtDate = d => d ? new Date(d).toLocaleDateString('en-MY', { day: '2-digit', month: 'short', year: '2-digit' }) : '—'
   const isExpired = row.valid_until && new Date(row.valid_until) < new Date()
@@ -326,6 +327,7 @@ function NumberRow({ row, standbys, onEdit, onDelete, onPromote }) {
 
   return (
     <tr style={{ borderBottom: '1px solid var(--border)', fontSize: 13 }}>
+      <td style={{ padding: '8px 10px', color: 'var(--muted)', fontSize: 12, width: 36 }}>{rowNum}</td>
       <td style={{ padding: '8px 10px', fontWeight: 700, color: 'var(--text)' }}>{row.codename}</td>
       <td style={{ padding: '8px 10px', color: 'var(--text)', fontFamily: 'monospace' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
@@ -382,7 +384,7 @@ function StatusSection({ status, rows, standbys, onEdit, onDelete, onPromote }) 
   const m = STATUS_META[status] || { color: '#6B7280', bg: '#6B728011' }
   if (!rows.length) return null
 
-  const cols = [L2('Codename','代号'), L2('Number','号码'), L2('Type','类型'), L2('Telco','电信商'), L2('Phone Slot','手机槽位'), L2('Email','邮箱'), L2('Valid Until','有效期至'), L2('Last Reload','上次充值'), L2('Notes','备注'), '']
+  const cols = ['#', L2('Codename','代号'), L2('Number','号码'), L2('Type','类型'), L2('Telco','电信商'), L2('Phone Slot','手机槽位'), L2('Email','邮箱'), L2('Valid Until','有效期至'), L2('Last Reload','上次充值'), L2('Notes','备注'), '']
 
   return (
     <div style={{ marginBottom: 20, borderRadius: 10, border: `1px solid ${m.color}33`, overflow: 'hidden' }}>
@@ -408,8 +410,8 @@ function StatusSection({ status, rows, standbys, onEdit, onDelete, onPromote }) 
               </tr>
             </thead>
             <tbody>
-              {rows.map(r => (
-                <NumberRow key={r.id} row={r} standbys={standbys} onEdit={onEdit} onDelete={onDelete} onPromote={onPromote} />
+              {rows.map((r, rowIdx) => (
+                <NumberRow key={r.id} row={r} rowNum={rowIdx + 1} standbys={standbys} onEdit={onEdit} onDelete={onDelete} onPromote={onPromote} />
               ))}
             </tbody>
           </table>
@@ -531,7 +533,9 @@ export default function WANumbers() {
           <div style={{ fontSize: 15 }}>{L2('No numbers yet. Click ','暂无号码。点击 ')}<strong>{L2('+ Add Number','+ 添加号码')}</strong>{L2(' to start.',' 开始。')}</div>
         </div>
       ) : (
-        STATUSES.map(status => (
+        <>
+        <ListCount total={visible.length} label="numbers" labelZh="个号码" style={{ borderBottom: 'none', padding: '0 2px 12px' }} />
+        {STATUSES.map(status => (
           <StatusSection
             key={status}
             status={status}
@@ -541,7 +545,8 @@ export default function WANumbers() {
             onDelete={row => setDeleteRow(row)}
             onPromote={handlePromote}
           />
-        ))
+        ))}
+        </>
       )}
 
       {/* Add / Edit modal */}

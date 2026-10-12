@@ -9,7 +9,7 @@ import {
   LoadingState, ErrorState, FilterPills, Badge, Modal,
   Select, Textarea, useToast,
 } from '../components/ui'
-import { TierBadge, RiskBadge } from '../components/ui'
+import { TierBadge, RiskBadge, ListCount } from '../components/ui'
 import { formatMoney } from '../lib/format'
 import VipQuickSearch from '../components/VipQuickSearch'
 import { useLanguage } from '../contexts/LanguageContext'
@@ -370,6 +370,7 @@ export default function Today() {
           </div>
         </CardHeader>
 
+        <ListCount total={displayItems.length} label="VIPs" labelZh="位VIP" />
         {displayItems.length === 0 ? (
           <div style={{ padding: '32px', textAlign: 'center', color: 'var(--muted)' }}>
             <div style={{ fontSize: 28, marginBottom: 8 }}>✅</div>
@@ -381,7 +382,7 @@ export default function Today() {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
                 <tr>
-                  {[t('today.colVip'), t('today.colTier'), t('today.colTrigger'), t('today.colLastContact'), t('today.colLastDeposit'), t('today.colRisk'), t('today.colAction')].map(h => (
+                  {['#', t('today.colVip'), t('today.colTier'), t('today.colTrigger'), t('today.colLastContact'), t('today.colLastDeposit'), t('today.colRisk'), t('today.colAction')].map(h => (
                     <th key={h} style={{ padding: '9px 14px', textAlign: 'left', background: 'var(--surface)', color: 'var(--muted)', fontWeight: 600, fontSize: 11, borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap', letterSpacing: '.3px' }}>{h}</th>
                   ))}
                 </tr>
@@ -396,6 +397,7 @@ export default function Today() {
                       onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                       style={{ transition: 'background .1s', opacity: isContacted ? .6 : 1 }}
                     >
+                      <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', color: 'var(--muted)', fontSize: 12, width: 36 }}>{i + 1}</td>
                       <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)' }}>
                         <div style={{ fontWeight: 600, cursor: 'pointer', color: 'var(--text)' }}
                           onClick={() => navigate(`/vips/${v.id}`)}>{v.username}</div>

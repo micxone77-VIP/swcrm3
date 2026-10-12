@@ -649,6 +649,7 @@ export default function HostPerformance() {
           <thead>
             <tr style={{ background: 'var(--surface2)', borderBottom: '2px solid var(--border)' }}>
               {[
+                ['#', '36px'],
                 [L2('Username','用户名'), '140px'],
                 [L2('Tier','等级'), '80px'],
                 [L2('Host','负责人'), '120px'],
@@ -667,7 +668,7 @@ export default function HostPerformance() {
           </thead>
           <tbody>
             {visibleRows.length === 0 && !loading && (
-              <tr><td colSpan={9} style={{ padding: '40px 14px', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>{L2('No data found. Try loading data first.','未找到数据。请先载入数据。')}</td></tr>
+              <tr><td colSpan={10} style={{ padding: '40px 14px', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>{L2('No data found. Try loading data first.','未找到数据。请先载入数据。')}</td></tr>
             )}
             {visibleRows.map((r, idx) => {
               const isInactive30 = r.daysInactive > 30
@@ -678,6 +679,7 @@ export default function HostPerformance() {
                   background: idx % 2 === 0 ? 'transparent' : 'var(--surface2)',
                   opacity: isInactive30 ? 0.65 : 1,
                 }}>
+                  <td style={{ padding: '10px 14px', color: 'var(--muted)', fontSize: 12, width: 36 }}>{idx + 1}</td>
                   {/* Username */}
                   <td style={{ padding: '10px 14px' }}>
                     <div style={{ fontWeight: 700, fontSize: 13 }}>{r.username}</div>

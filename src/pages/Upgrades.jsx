@@ -985,15 +985,15 @@ function VIPCandidatesTab({ hostFilter = 'ALL' }) {
           <table style={s.table}>
             <thead>
               <tr>
-                {[t('common.username', 'Username'), t('upgrades.colCurrentTier', 'Current Tier'), t('upgrades.colValidBet', 'Valid Bet'), t('upgrades.colLastMonthTurnover'), t('upgrades.colProgress', 'Progress'), t('upgrades.colUpgradesTo', 'Upgrades To'), t('upgrades.colGap', 'Gap'), t('upgrades.colLastDeposit', 'Last Deposit'), t('upgrades.colHost', 'Host'), 'Phone / WA', ''].map(h => (
+                {['#', t('common.username', 'Username'), t('upgrades.colCurrentTier', 'Current Tier'), t('upgrades.colValidBet', 'Valid Bet'), t('upgrades.colLastMonthTurnover'), t('upgrades.colProgress', 'Progress'), t('upgrades.colUpgradesTo', 'Upgrades To'), t('upgrades.colGap', 'Gap'), t('upgrades.colLastDeposit', 'Last Deposit'), t('upgrades.colHost', 'Host'), 'Phone / WA', ''].map(h => (
                   <th key={h} style={s.th}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0
-                ? <tr><td colSpan={11}><div style={s.empty}>{L2('No members match this filter', '没有符合筛选的会员')}</div></td></tr>
-                : filtered.map(v => {
+                ? <tr><td colSpan={12}><div style={s.empty}>{L2('No members match this filter', '没有符合筛选的会员')}</div></td></tr>
+                : filtered.map((v, rowIdx) => {
                   const pct = v.upgrade ? Math.min(100, (v.monthly_valid_bet / v.upgrade.threshold) * 100) : 0
                   const isSkip = v.upgrade && TIER_ORDER.indexOf(v.upgrade.tier) - TIER_ORDER.indexOf(v.tier) > 1
                   // Next tier thresholds for "Not yet" gap display
@@ -1008,6 +1008,7 @@ function VIPCandidatesTab({ hostFilter = 'ALL' }) {
                       onMouseLeave={() => setHovered(null)}
                       onClick={() => navigate(`/vips/${v.id}`)}
                     >
+                      <td style={{ ...s.td, color:'var(--muted)', fontSize:12, width:36 }}>{rowIdx + 1}</td>
                       <td style={s.td}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                           <strong>{v.username}</strong>
@@ -1344,15 +1345,15 @@ function PotentialsTab({ hostFilter = 'ALL' }) {
             <table style={s.table}>
               <thead>
                 <tr>
-                  {[t('common.username', 'Username'), t('upgrades.colTier', 'Tier'), t('upgrades.colValidBet', 'Valid Bet'), t('upgrades.colProgress', 'Progress'), t('upgrades.colGapToNext', 'Gap to Next'), t('common.totalDeposit', 'Total Deposit'), t('upgrades.colMemberSince', 'Member Since'), t('upgrades.colLastMonth', 'Last Month'), t('common.status', 'Status'), ''].map(h => (
+                  {['#', t('common.username', 'Username'), t('upgrades.colTier', 'Tier'), t('upgrades.colValidBet', 'Valid Bet'), t('upgrades.colProgress', 'Progress'), t('upgrades.colGapToNext', 'Gap to Next'), t('common.totalDeposit', 'Total Deposit'), t('upgrades.colMemberSince', 'Member Since'), t('upgrades.colLastMonth', 'Last Month'), t('common.status', 'Status'), ''].map(h => (
                     <th key={h} style={s.th}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {paginated.length === 0
-                  ? <tr><td colSpan={9}><div style={s.empty}>{L2('No players match this filter', '没有符合筛选的玩家')}</div></td></tr>
-                  : paginated.map(p => {
+                  ? <tr><td colSpan={10}><div style={s.empty}>{L2('No players match this filter', '没有符合筛选的玩家')}</div></td></tr>
+                  : paginated.map((p, rowIdx) => {
                     const target = getPotentialUpgradeTarget(p.tier, p.monthly_valid_bet, thresholds)
                     const nextTarget = getNextUpgradeTarget(p.tier, thresholds)
                     const thresh = nextTarget?.threshold ?? 99999999
@@ -1364,6 +1365,7 @@ function PotentialsTab({ hostFilter = 'ALL' }) {
                         onMouseEnter={() => setHovered(p.id)}
                         onMouseLeave={() => setHovered(null)}
                       >
+                        <td style={{ ...s.td, color:'var(--muted)', fontSize:12, width:36 }}>{page * PAGE + rowIdx + 1}</td>
                         <td style={s.td}><strong>{p.username}</strong></td>
                         <td style={s.td}><span style={s.tierBadge(p.tier)}>{L2(p.tier, TIER_ZH[p.tier] || p.tier)}</span></td>
                         <td style={s.td}>{fmt(p.monthly_valid_bet, p.currency)}</td>
@@ -1522,21 +1524,22 @@ function GraduatedTab({ hostFilter = 'ALL' }) {
           <table style={s.table}>
             <thead>
               <tr>
-                {[t('common.username', 'Username'), t('upgrades.colWas', 'Was'), t('upgrades.colUpgradedTo', 'Upgraded To'), t('upgrades.colUpgradedOn', 'Upgraded On'), t('upgrades.colMonthsAsPotential', 'Months as Potential'), t('upgrades.colDepositAtUpgrade', 'Total Deposit at Upgrade'), t('upgrades.colValidBetAtUpgrade', 'Valid Bet at Upgrade'), t('upgrades.colViewVip', 'View VIP')].map(h => (
+                {['#', t('common.username', 'Username'), t('upgrades.colWas', 'Was'), t('upgrades.colUpgradedTo', 'Upgraded To'), t('upgrades.colUpgradedOn', 'Upgraded On'), t('upgrades.colMonthsAsPotential', 'Months as Potential'), t('upgrades.colDepositAtUpgrade', 'Total Deposit at Upgrade'), t('upgrades.colValidBetAtUpgrade', 'Valid Bet at Upgrade'), t('upgrades.colViewVip', 'View VIP')].map(h => (
                   <th key={h} style={s.th}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0
-                ? <tr><td colSpan={8}><div style={s.empty}>{L2('No graduated players yet', '暂无已晋升玩家')}</div></td></tr>
-                : filtered.map(p => (
+                ? <tr><td colSpan={9}><div style={s.empty}>{L2('No graduated players yet', '暂无已晋升玩家')}</div></td></tr>
+                : filtered.map((p, rowIdx) => (
                   <tr
                     key={p.id}
                     style={s.tr(hovered === p.id)}
                     onMouseEnter={() => setHovered(p.id)}
                     onMouseLeave={() => setHovered(null)}
                   >
+                    <td style={{ ...s.td, color:'var(--muted)', fontSize:12, width:36 }}>{rowIdx + 1}</td>
                     <td style={s.td}><strong>{p.username}</strong></td>
                     <td style={s.td}><span style={s.tierBadge(p.tier)}>{L2(p.tier, TIER_ZH[p.tier] || p.tier)}</span></td>
                     <td style={s.td}>
@@ -1699,7 +1702,7 @@ function TierHistoryTab({ hostFilter = 'ALL' }) {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead>
               <tr style={{ borderBottom: '2px solid var(--border)' }}>
-                {[L2('Date', '日期'), L2('Player', '玩家'), L2('Change', '变动'), L2('Type', '类型'), L2('Source', '来源')].map(h => (
+                {['#', L2('Date', '日期'), L2('Player', '玩家'), L2('Change', '变动'), L2('Type', '类型'), L2('Source', '来源')].map(h => (
                   <th key={h} style={{ padding: '8px 12px', textAlign: 'left',
                     fontSize: 11, fontWeight: 700, color: 'var(--muted)',
                     textTransform: 'uppercase', letterSpacing: '.5px' }}>{h}</th>
@@ -1721,6 +1724,7 @@ function TierHistoryTab({ hostFilter = 'ALL' }) {
                       cursor: log.vip_id ? 'pointer' : 'default',
                       transition: 'background .1s',
                     }}>
+                    <td style={{ padding: '10px 12px', color: 'var(--muted)', fontSize: 12, width: 36 }}>{i + 1}</td>
                     <td style={{ padding: '10px 12px', color: 'var(--muted)', fontSize: 12, whiteSpace: 'nowrap' }}>
                       {fmtDate(log.changed_at || log.import_month, uiLang)}
                       {!log.changed_at && log.import_month && (
@@ -1869,15 +1873,15 @@ function DowngradeRiskTab({ hostFilter = 'ALL' }) {
           <table style={s.table}>
             <thead>
               <tr>
-                {[L2('Username', '用户名'), L2('Tier', '等级'), L2('Quarterly VB', '季度有效投注'), L2('Quota', '门槛'), L2('Gap', '差距'), L2('Months', '月数'), L2('Downgrade To', '降级至'), L2('Host', '负责人'), L2('Status', '状态')].map(h => (
+                {['#', L2('Username', '用户名'), L2('Tier', '等级'), L2('Quarterly VB', '季度有效投注'), L2('Quota', '门槛'), L2('Gap', '差距'), L2('Months', '月数'), L2('Downgrade To', '降级至'), L2('Host', '负责人'), L2('Status', '状态')].map(h => (
                   <th key={h} style={s.th}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0
-                ? <tr><td colSpan={9}><div style={s.empty}>{L2('No players match this filter', '没有符合筛选的玩家')}</div></td></tr>
-                : filtered.map(r => {
+                ? <tr><td colSpan={10}><div style={s.empty}>{L2('No players match this filter', '没有符合筛选的玩家')}</div></td></tr>
+                : filtered.map((r, rowIdx) => {
                   const pct = r.maintenance_threshold > 0
                     ? Math.min(100, (r.quarterly_vb / r.maintenance_threshold) * 100)
                     : 0
@@ -1900,6 +1904,7 @@ function DowngradeRiskTab({ hostFilter = 'ALL' }) {
                       onMouseLeave={() => setHovered(null)}
                       onClick={() => r.id && navigate(`/vips/${r.id}`)}
                     >
+                      <td style={{ ...s.td, color:'var(--muted)', fontSize:12, width:36 }}>{rowIdx + 1}</td>
                       <td style={s.td}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                           <strong>{r.username}</strong>

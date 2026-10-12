@@ -221,13 +221,13 @@ function Section({ title, subtitle, color, players, activeThisWeek, activeLastWe
             <table style={{ width:'100%', borderCollapse:'collapse', fontSize:13 }}>
               <thead>
                 <tr style={{ background:'var(--surface)' }}>
-                  {[L2('Username', '用户名'), L2('Host', '负责人'), L2('Days Inactive', '不活跃天数'), L2('Active Last Week?', '上周活跃？'), L2('Active This Month?', '本月活跃？'), ''].map(h => (
+                  {['#', L2('Username', '用户名'), L2('Host', '负责人'), L2('Days Inactive', '不活跃天数'), L2('Active Last Week?', '上周活跃？'), L2('Active This Month?', '本月活跃？'), ''].map(h => (
                     <th key={h} style={{ padding:'8px 16px', textAlign:'left', color:'var(--muted)', fontWeight:600, fontSize:11, borderBottom:'1px solid var(--border)', whiteSpace:'nowrap' }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {players.map(p => {
+                {players.map((p, rowIdx) => {
                   const wasLW = activeLastWeek.has(p.username)
                   const activeMo = activeThisMonth.has(p.username)
                   const lastActiveDate = lastActiveDateMap?.[p.username]
@@ -243,6 +243,7 @@ function Section({ title, subtitle, color, players, activeThisWeek, activeLastWe
                       style={{ transition:'background .1s', cursor:'pointer' }}
                       onClick={() => navigate(`/vips/${p.id}`)}
                     >
+                      <td style={{ padding:'10px 16px', borderBottom:'1px solid var(--border)', color:'var(--muted)', fontSize:12, width:36 }}>{rowIdx + 1}</td>
                       <td style={{ padding:'10px 16px', borderBottom:'1px solid var(--border)' }}>
                         <div style={{ fontWeight:700, color: tierColor }}>{p.username}</div>
                         {p.full_name && <div style={{ fontSize:11, color:'var(--muted)' }}>{p.full_name}</div>}

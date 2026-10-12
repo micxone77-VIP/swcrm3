@@ -170,6 +170,7 @@ export default function DepositSegments({ myName = 'VIP Team' }) {
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
           <thead>
             <tr style={{ borderBottom: '1px solid var(--border)' }}>
+              <th style={{ ...th, cursor: 'default' }}>#</th>
               <th style={th} onClick={() => sortBy('login')}>{L2('Player', '玩家')}{arrow('login')}</th>
               <th style={th}>{L2('Tier', '等级')}</th>
               <th style={th}>{L2('Host', '负责人')}</th>
@@ -189,8 +190,8 @@ export default function DepositSegments({ myName = 'VIP Team' }) {
           </thead>
           <tbody>
             {list.length === 0 ? (
-              <tr><td colSpan={15} style={{ textAlign: 'center', padding: 32, color: 'var(--muted)' }}>{L2('No players in this segment.', '此分群没有玩家。')}</td></tr>
-            ) : list.map(r => {
+              <tr><td colSpan={16} style={{ textAlign: 'center', padding: 32, color: 'var(--muted)' }}>{L2('No players in this segment.', '此分群没有玩家。')}</td></tr>
+            ) : list.map((r, rowIdx) => {
               const m = members[r.login] || {}
               const seg = SEGMENTS[r.segment] || SEGMENTS.Stable
               const sty = STYLES[r.deposit_style] || STYLES.Regular
@@ -208,6 +209,7 @@ export default function DepositSegments({ myName = 'VIP Team' }) {
                   title={ci.needsChase ? L2('Needs chase: no deposit for 3–30 days and not contacted since the last deposit', '需跟进：3–30天未存款，且最后存款后未联系') : undefined}
                   onMouseEnter={e => { e.currentTarget.style.background = 'var(--surface2)' }}
                   onMouseLeave={e => { e.currentTarget.style.background = ci.needsChase ? 'rgba(248,81,73,.08)' : 'transparent' }}>
+                  <td style={{ ...td, color: 'var(--muted)', fontSize: 12, width: 36 }}>{rowIdx + 1}</td>
                   <td style={td}>
                     {m.id ? (
                       <span onClick={() => navigate(`/vips/${m.id}`)} style={{ fontWeight: 700, color: 'var(--brand, #FF6B00)', cursor: 'pointer' }}>{r.login}</span>

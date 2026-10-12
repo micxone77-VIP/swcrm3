@@ -280,20 +280,21 @@ export default function TransferTracker() {
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ background: 'var(--surface2)' }}>
-                  {[ L2('Username','用户名'), t('transferTracker.colSourcePlatform'), t('transferTracker.colLatestDeposit'), t('transferTracker.colLatestWithdrawal'), t('common.winLoss'), t('transferTracker.colOurCost'), t('transferTracker.colNetProfit'), t('transferTracker.colLastSnapshot'), t('common.actions') ].map(h => (
+                  {[ '#', L2('Username','用户名'), t('transferTracker.colSourcePlatform'), t('transferTracker.colLatestDeposit'), t('transferTracker.colLatestWithdrawal'), t('common.winLoss'), t('transferTracker.colOurCost'), t('transferTracker.colNetProfit'), t('transferTracker.colLastSnapshot'), t('common.actions') ].map(h => (
                     <th key={h} style={s.th}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {players.length === 0 ? (
-                  <tr><td colSpan={9} style={{ ...s.td, textAlign: 'center', color: 'var(--muted)', padding: 32 }}>{t('transferTracker.noPlayersYet')}</td></tr>
-                ) : players.map(p => {
+                  <tr><td colSpan={10} style={{ ...s.td, textAlign: 'center', color: 'var(--muted)', padding: 32 }}>{t('transferTracker.noPlayersYet')}</td></tr>
+                ) : players.map((p, rowIdx) => {
                   const latestSnap = (snapshots[p.username]||[])[0]
                   const totalCost  = (costs[p.username]||[]).reduce((s,c) => s + (parseFloat(c.amount)||0), 0)
                   const pnl        = calcPnl(p.username)
                   return (
                     <tr key={p.username} style={{ cursor: 'pointer' }} onClick={() => setSelected(selected?.username === p.username ? null : p)}>
+                      <td style={{ ...s.td, color: 'var(--muted)', fontSize: 12, width: 36 }}>{rowIdx + 1}</td>
                       <td style={s.td}><span style={{ fontWeight: 700 }}>{p.username}</span></td>
                       <td style={s.td}><span style={{ background: 'rgba(88,166,255,.15)', color: '#58a6ff', padding: '2px 8px', borderRadius: 5, fontSize: 11, fontWeight: 700 }}>{p.source_platform}</span></td>
                       <td style={s.td}>{latestSnap ? fmtMoney(latestSnap.total_deposit, currency) : '—'}</td>

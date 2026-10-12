@@ -4,6 +4,7 @@ import { useAuth } from '../hooks/useAuth'
 import { useLanguage } from '../contexts/LanguageContext'
 import { TIER_COLOR, TIER_BG } from '../lib/constants'
 import { NAV_GROUPS } from '../components/Sidebar'
+import { ListCount } from '../components/ui'
 
 // ── styles ────────────────────────────────────────────────────────────────────
 const ROLE_COLOR = { admin:'#58a6ff', host:'#3fb950', readonly:'#8b949e' }
@@ -409,6 +410,7 @@ export default function ManageUsers() {
           <table style={s.tbl}>
             <thead>
               <tr>
+                <th style={s.th}>#</th>
                 <th style={s.th}>{L2('User','用户')}</th>
                 <th style={s.th}>{L2('Role','角色')}</th>
                 <th style={s.th}>{L2('Status','状态')}</th>
@@ -419,8 +421,8 @@ export default function ManageUsers() {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={6} style={{ ...s.td, textAlign:'center', padding:40, color:'var(--muted)' }}>{L2('Loading...','载入中...')}</td></tr>
-              ) : users.map(user => {
+                <tr><td colSpan={7} style={{ ...s.td, textAlign:'center', padding:40, color:'var(--muted)' }}>{L2('Loading...','载入中...')}</td></tr>
+              ) : users.map((user, rowIdx) => {
                 const stats  = userStats[user.id] || { logs:0, vips:0 }
                 const isMe   = user.id === myProfile?.id
                 const active = user.is_active !== false
@@ -428,6 +430,7 @@ export default function ManageUsers() {
                   <tr key={user.id}
                     onMouseEnter={e => e.currentTarget.style.background='var(--surface2)'}
                     onMouseLeave={e => e.currentTarget.style.background='transparent'}>
+                    <td style={{ ...s.td, color:'var(--muted)', fontSize:12, width:36 }}>{rowIdx + 1}</td>
                     <td style={s.td}>
                       <div style={{ display:'flex', alignItems:'center', gap:10 }}>
                         <Avatar name={user.full_name || user.username} role={user.role} />
@@ -670,10 +673,12 @@ export default function ManageUsers() {
                 placeholder={L2('🔍 Search VIP username or name...','🔍 搜索 VIP 用户名或姓名...')}
                 value={assignSearch} onChange={e => setAssignSearch(e.target.value)} />
             </div>
+            <ListCount total={filteredVIPs.length} label="VIPs" labelZh="位VIP" />
             <div style={{ maxHeight:420, overflowY:'auto' }}>
               <table style={s.tbl}>
                 <thead>
                   <tr>
+                    <th style={s.th}>#</th>
                     <th style={s.th}>VIP</th>
                     <th style={s.th}>{L2('Tier','等级')}</th>
                     <th style={s.th}>{L2('Current Host','当前负责人')}</th>
@@ -681,7 +686,7 @@ export default function ManageUsers() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredVIPs.slice(0,100).map(v => {
+                  {filteredVIPs.slice(0,100).map((v, rowIdx) => {
                     const hostName  = selected.full_name || selected.username
                     const isAssigned = v.host_assigned === hostName
                     return (
@@ -689,6 +694,7 @@ export default function ManageUsers() {
                         onMouseEnter={e => e.currentTarget.style.background='var(--surface2)'}
                         onMouseLeave={e => e.currentTarget.style.background=isAssigned?'rgba(88,166,255,.05)':'transparent'}
                         style={{ background: isAssigned ? 'rgba(88,166,255,.05)' : 'transparent' }}>
+                        <td style={{ ...s.td, color:'var(--muted)', fontSize:12, width:36 }}>{rowIdx + 1}</td>
                         <td style={{ ...s.td, fontWeight:700 }}>{v.username}
                           {v.full_name && <span style={{ fontSize:11, color:'var(--muted)', fontWeight:400, marginLeft:6 }}>{v.full_name}</span>}
                         </td>

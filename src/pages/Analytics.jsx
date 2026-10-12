@@ -8,6 +8,7 @@ import { useLanguage } from '../contexts/LanguageContext'
 import { useUrlParam, useUrlParamBool } from '../hooks/useUrlParam'
 import DepositSegments from '../components/vip/DepositSegments'
 import AffiliateSummary from '../components/vip/AffiliateSummary'
+import { ListCount } from '../components/ui'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 // fmt() is defined inside the component so it can use the selected currency state
@@ -508,9 +509,11 @@ export default function Analytics() {
                 ))}
               </div>
 
+              <ListCount total={filteredActivity.length} label="VIPs" labelZh="位VIP" />
               <div style={{ overflowX:'auto' }}>
                 <table style={s.tbl}>
                   <thead><tr>
+                    <th style={s.th}>#</th>
                     <th style={s.th}>{t('common.username')}</th>
                     <th style={s.th}>{t('common.tier')}</th>
                     <th style={s.th}>{t('analytics.colActivityScore', { month: fmtMonth(month) })}</th>
@@ -523,11 +526,12 @@ export default function Analytics() {
                   </tr></thead>
                   <tbody>
                     {filteredActivity.length === 0 ? (
-                      <tr><td colSpan={9} style={{ ...s.td, textAlign:'center', padding:32, color:'var(--muted)' }}>{t('analytics.noMatchingVips')}</td></tr>
+                      <tr><td colSpan={10} style={{ ...s.td, textAlign:'center', padding:32, color:'var(--muted)' }}>{t('analytics.noMatchingVips')}</td></tr>
                     ) : filteredActivity.slice(0, 100).map((v,i) => (
                       <tr key={v.username}
                         onMouseEnter={e=>e.currentTarget.style.background='var(--surface2)'}
                         onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+                        <td style={{ ...s.td, color:'var(--muted)', fontSize:12, width:36 }}>{i + 1}</td>
                         <td style={{ ...s.td, fontWeight:600 }}>{v.username}</td>
                         <td style={s.td}><span style={s.badge(v.tier)}>{v.tier}</span></td>
                         <td style={s.td}>
@@ -832,6 +836,7 @@ export default function Analytics() {
                     <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12 }}>
                       <thead>
                         <tr style={{ borderBottom:'1px solid var(--border)' }}>
+                          <th style={{ textAlign:'left', padding:'10px 16px', color:'var(--muted)', fontWeight:600 }}>#</th>
                           <th style={{ textAlign:'left', padding:'10px 16px', color:'var(--muted)', fontWeight:600 }}>{t('common.username')}</th>
                           <th style={{ textAlign:'left', padding:'10px 16px', color:'var(--muted)', fontWeight:600 }}>{t('common.tier')}</th>
                           <th style={{ textAlign:'right', padding:'10px 16px', color:'var(--muted)', fontWeight:600 }}>{t('analytics.declineLastMonth')}</th>
@@ -843,8 +848,8 @@ export default function Analytics() {
                       </thead>
                       <tbody>
                         {declineList.length === 0 ? (
-                          <tr><td colSpan={7} style={{ textAlign:'center', padding:32, color:'var(--muted)' }}>{t('analytics.declineNone')}</td></tr>
-                        ) : declineList.map(r => {
+                          <tr><td colSpan={8} style={{ textAlign:'center', padding:32, color:'var(--muted)' }}>{t('analytics.declineNone')}</td></tr>
+                        ) : declineList.map((r, rowIdx) => {
                           // Prefer 'phone' — it's kept clean by the CSV import fix (strips
                           // Excel artifacts, normalizes to digits-only). 'whatsapp' is a
                           // separate, older field that import never touches, so it can hold
@@ -860,6 +865,7 @@ export default function Analytics() {
                             <tr key={r.username} style={{ borderBottom:'1px solid var(--border)' }}
                               onMouseEnter={e => e.currentTarget.style.background='var(--surface2)'}
                               onMouseLeave={e => e.currentTarget.style.background='transparent'}>
+                              <td style={{ padding:'10px 16px', color:'var(--muted)', fontSize:12, width:36 }}>{rowIdx + 1}</td>
                               <td style={{ padding:'10px 16px', fontWeight:700 }}>{r.username}</td>
                               <td style={{ padding:'10px 16px' }}>
                                 {r.tier && <span style={{ fontSize:11, fontWeight:700, padding:'2px 8px', borderRadius:10, background:TIER_BG[r.tier]||'transparent', color:TIER_COLOR[r.tier]||'var(--text)' }}>{r.tier}</span>}

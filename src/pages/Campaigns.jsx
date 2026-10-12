@@ -11,6 +11,7 @@ import { buildMultiLevelPlayerMetrics, buildPayoutRows, buildCampaignSummary, ca
 import * as XLSX from 'xlsx'
 import ChallengeDetail from '../components/campaign/ChallengeDetail'
 import { CampaignInfoButton } from '../components/campaign/CampaignGuide'
+import { ListCount } from '../components/ui'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const TIERS = ['BLACK','DIAMOND-P','DIAMOND','PLATINUM','GOLD','SILVER','BRONZE']
@@ -2598,6 +2599,7 @@ export default function Campaigns() {
                     )}
                   </div>
                 )}
+                <ListCount total={filteredChaseList.length} label="players" labelZh="位玩家" />
                 <table style={s.tbl}>
                   {campType === 'leaderboard' ? (
                     <>
@@ -2966,6 +2968,7 @@ export default function Campaigns() {
                 <div style={{ padding:'8px 24px', fontSize:11, color:'var(--muted)', background:'rgba(63,185,80,.04)', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', gap:12, flexWrap:'wrap' }}>
                   {selected?.is_multi_level ? (selected?.payout_mode === 'highest_only' ? L2('Payout mode: Highest level only — one reward per player. Mark paid only after it is actually issued.','派彩模式：只派最高级别 — 每位玩家一份奖励。确实发放后才标记为已派。') : L2('Payout mode: All levels — each unlocked level earns its own reward. Mark the individual reward paid only after it is actually issued.','派彩模式：所有级别 — 每个已解锁级别各自获得奖励。确实发放后才将该奖励标记为已派。')) : isDailyMode ? <><span>{L2('Showing players who qualified on','显示以下日期达标的玩家')}</span><input type="date" value={entryDate} min={selected?.start_date||undefined} max={selected?.end_date||undefined} onChange={e=>setEntryDate(e.target.value)} style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:6, padding:'3px 8px', fontSize:11, color:'#c9a961', fontWeight:700, cursor:'pointer' }} /></> : L2('Only showing players who reached the campaign target.','只显示已达到活动目标的玩家。')}
                 </div>
+                {selected?.is_multi_level && !isDailyMode && multiPayoutRows.length > 0 && <ListCount total={multiPayoutRows.length} label="players" labelZh="位玩家" />}
                 {selected?.is_multi_level && !isDailyMode ? (
                   multiPayoutRows.length === 0 ? <div style={{ padding:32, textAlign:'center', color:'var(--muted)' }}>{L2('No unlocked rewards are ready for payout yet.','暂无可派彩的已解锁奖励。')}</div> : (
                     <table style={s.tbl}>
@@ -3416,6 +3419,7 @@ export default function Campaigns() {
                   {!allDailyEntriesLoading && inactivePlayers.length === 0 && (
                     <div style={{ padding:'32px 24px', textAlign:'center', color:'var(--muted)', fontSize:13 }}>{L2('🎉 All enrolled players have qualified at least once!','🎉 所有已加入的玩家都至少达标过一次！')}</div>
                   )}
+                  {inactivePlayers.length > 0 && <ListCount total={inactivePlayers.length} label="players" labelZh="位玩家" />}
                   {inactivePlayers.length > 0 && (
                     <table style={s.tbl}>
                       <thead><tr>
@@ -3667,6 +3671,7 @@ export default function Campaigns() {
                   </div>
 
                   {/* Streak progress table — below payout */}
+                  <ListCount total={playerStreakRows.length} label="players" labelZh="位玩家" />
                   <table style={s.tbl}>
                     <thead><tr>
                       <th style={s.th}>#</th>
@@ -3814,6 +3819,7 @@ export default function Campaigns() {
                     <button onClick={()=>setSelectedForRemoval(new Set())} style={{ background:'none', border:'1px solid var(--border)', borderRadius:6, padding:'5px 10px', fontSize:11, color:'var(--muted)', cursor:'pointer' }}>{L2('Clear','清除')}</button>
                   </div>
                 )}
+                <ListCount total={sortedAllPlayers.length} label="players" labelZh="位玩家" />
                 <table style={s.tbl}>
                   <thead><tr>
                     <th style={{ ...s.th, width:32 }}>
@@ -4010,6 +4016,7 @@ export default function Campaigns() {
                               </div>
                               <table style={{ ...s.tbl, marginBottom:8 }}>
                                 <thead><tr>
+                                  <th style={s.th}>#</th>
                                   <th style={s.th}>{L2('Player','玩家')}</th>
                                   <th style={s.th}>{L2('Streak #','连续奖励 #')}</th>
                                   <th style={s.th}>{L2('Bonus Amount','奖金金额')}</th>
@@ -4019,6 +4026,7 @@ export default function Campaigns() {
                                 <tbody>
                                   {allSRows.sort((a,b) => a.username.localeCompare(b.username) || a.streak_number - b.streak_number).map((sb,i) => (
                                     <tr key={i} onMouseEnter={e=>e.currentTarget.style.background='var(--surface2)'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+                                      <td style={{ ...s.td, color:'var(--muted)', fontSize:12, width:36 }}>{i + 1}</td>
                                       <td style={{ ...s.td, fontWeight:700 }}>{sb.username}</td>
                                       <td style={s.td}><span style={{ fontSize:12, fontWeight:700, color:'#f59e0b' }}>🔥 #{sb.streak_number}</span></td>
                                       <td style={{ ...s.td, color:'#c9a961', fontWeight:700 }}>{bonusFmt(sb.bonus_amount, campCurrency)}</td>

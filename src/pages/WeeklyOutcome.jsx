@@ -167,6 +167,7 @@ export default function WeeklyOutcome() {
           <table style={s.tbl}>
             <thead>
               <tr>
+                <th style={s.th}>#</th>
                 <th style={s.th}>{L2('Date','日期')}</th>
                 <th style={s.th}>{L2('Username','用户名')}</th>
                 <th style={s.th}>{L2('Tier','等级')}</th>
@@ -177,8 +178,9 @@ export default function WeeklyOutcome() {
               </tr>
             </thead>
             <tbody>
-              {logs.map(l => (
+              {logs.map((l, rowIdx) => (
                 <tr key={l.id}>
+                  <td style={{ ...s.td, color:'var(--muted)', fontSize:12, width:36 }}>{rowIdx + 1}</td>
                   <td style={s.td}>{l.logged_at?.slice(0,10) || '-'}</td>
                   <td style={s.td}><strong>{l.vip_members?.username || l.vip_id}</strong></td>
                   <td style={s.td}>{l.vip_members?.tier || '-'}</td>

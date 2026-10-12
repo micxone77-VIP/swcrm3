@@ -363,6 +363,23 @@ export function Pagination({ page, total, pageSize, onChange }) {
   )
 }
 
+// ── ListCount ─────────────────────────────────────────────────────────────────
+// "Showing 1–50 of 312" bar for list pages. Pass page/pageSize for paginated lists.
+export function ListCount({ total, page = 1, pageSize, label, labelZh, style }) {
+  const { lang } = useLanguage()
+  const zh = lang === 'zh'
+  const from = total === 0 ? 0 : pageSize ? (page - 1) * pageSize + 1 : 1
+  const to = pageSize ? Math.min(page * pageSize, total) : total
+  const pages = pageSize ? Math.max(1, Math.ceil(total / pageSize)) : 1
+  const what = zh ? (labelZh || '条') : (label || 'rows')
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', borderBottom: '1px solid var(--border)', fontSize: 13, color: 'var(--muted)', ...style }}>
+      <span>{zh ? '共' : 'Total'} <b style={{ color: 'var(--brand, #FF6B00)', fontSize: 15 }}>{Number(total).toLocaleString()}</b> {what}</span>
+      {pageSize && pages > 1 && <span>· {zh ? `显示第 ${from}–${to} 位 · 第 ${page}/${pages} 页` : `showing ${from}–${to} · page ${page} of ${pages}`}</span>}
+    </div>
+  )
+}
+
 // ── PageHeader ────────────────────────────────────────────────────────────────
 export function PageHeader({ title, subtitle, actions, style }) {
   return (
