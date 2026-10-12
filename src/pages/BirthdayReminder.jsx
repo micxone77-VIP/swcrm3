@@ -62,7 +62,7 @@ export default function BirthdayReminder() {
   const { t, lang }         = useLanguage()
   const L2 = (en, zh) => (lang === 'zh' ? zh : en)
   const TIER_ZH = { BLACK:'黑金', 'DIAMOND-P': '钻石P', DIAMOND:'钻石', PLATINUM:'白金', GOLD:'黄金', SILVER:'白银', BRONZE:'青铜' }
-  const CHANNEL_ZH = { WhatsApp:'WhatsApp', Call:'电话', 'In-person':'面对面', Other:'其他' }
+  const CHANNEL_ZH = { WhatsApp:'WhatsApp', Call:'电话', Telegram:'Telegram', 'In-person':'面对面', Other:'其他' }
   const OUTCOME_ZH = { Contacted:'已联系', 'No Reply':'未回复', Replied:'已回复', Deposited:'已存款' }
   const myName    = profile?.full_name || ''
   const [mineOnly, setMineOnly] = useUrlParamBool('mine', false)
@@ -458,7 +458,7 @@ export default function BirthdayReminder() {
                 <div>
                   <div style={s.flbl}>{t('birthdayReminder.contactType')}</div>
                   <select style={{ ...s.finput, marginTop:0 }} value={contactForm.channel} onChange={e => setContactForm({...contactForm, channel:e.target.value})}>
-                    {['WhatsApp','Call','In-person','Other'].map(c => <option key={c} value={c}>{L2(c, CHANNEL_ZH[c])}</option>)}
+                    {['WhatsApp','Call','Telegram','In-person','Other'].map(c => <option key={c} value={c}>{L2(c, CHANNEL_ZH[c])}</option>)}
                   </select>
                 </div>
                 <div>

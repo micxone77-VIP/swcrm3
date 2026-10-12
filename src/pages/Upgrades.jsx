@@ -712,13 +712,13 @@ function ChallengeModal({ player, challenge, agentName, waNumbers = [], onClose,
 function ContactLogForm({ player, onClose }) {
   const [channel, setChannel]   = useState('WhatsApp')
   const [L2] = useL2()
-  const CHANNEL_ZH = { WhatsApp:'WhatsApp', Call:'电话', 'In-person':'面对面', Other:'其他' }
+  const CHANNEL_ZH = { WhatsApp:'WhatsApp', Call:'电话', Telegram:'Telegram', 'In-person':'面对面', Other:'其他' }
   const OUTCOME_ZH = { Contacted:'已联系', 'No Reply':'未回复', Replied:'已回复', Deposited:'已存款', Reactivated:'已召回' }
   const [outcome, setOutcome]   = useState('Contacted')
   const [notes, setNotes]       = useState('')
   const [saving, setSaving]     = useState(false)
 
-  const CHANNELS = ['WhatsApp','Call','In-person','Other']
+  const CHANNELS = ['WhatsApp','Call','Telegram','In-person','Other']
   const OUTCOMES = ['Contacted','No Reply','Replied','Deposited','Reactivated']
 
   const handleSave = async () => {

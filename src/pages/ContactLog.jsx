@@ -11,7 +11,7 @@ import { useLanguage } from '../contexts/LanguageContext'
 import * as XLSX from 'xlsx'
 import AwaitingReplyAffiliate from '../components/contact/AwaitingReplyAffiliate'
 
-const CONTACT_TYPES    = ['WhatsApp','Call','In-person','Other']
+const CONTACT_TYPES    = ['WhatsApp','Call','Telegram','In-person','Other']
 const CONTACT_OUTCOMES = ['Contacted','No Reply','Replied','Deposited','Reactivated']
 const TIERS             = ['ALL','BLACK','DIAMOND-P','DIAMOND','PLATINUM','GOLD','SILVER','BRONZE']
 const PAGE_SIZE        = 50
@@ -21,12 +21,12 @@ const OUTCOME_COLOR = {
   'No Reply':'#d29922', Reactivated:'#b9f2ff',
 }
 const TYPE_COLOR = {
-  WhatsApp:'#3fb950', Call:'#58a6ff', 'In-person':'#b9f2ff', Other:'#8b949e',
+  WhatsApp:'#3fb950', Call:'#58a6ff', Telegram:'#2aabee', 'In-person':'#b9f2ff', Other:'#8b949e',
 }
 
 // Display-only labels for stored English values
 const OUTCOME_ZH = { Contacted:'已联系', 'No Reply':'未回复', Replied:'已回复', Deposited:'已存款', Reactivated:'已召回' }
-const CHANNEL_ZH = { WhatsApp:'WhatsApp', Call:'电话', 'In-person':'面对面', Other:'其他' }
+const CHANNEL_ZH = { WhatsApp:'WhatsApp', Call:'电话', Telegram:'Telegram', 'In-person':'面对面', Other:'其他' }
 const TIER_ZH = { ALL:'全部', BLACK:'黑金', 'DIAMOND-P': '钻石P', DIAMOND:'钻石', PLATINUM:'白金', GOLD:'黄金', SILVER:'白银', BRONZE:'青铜' }
 
 function timeAgo(dateStr, lang = 'en') {

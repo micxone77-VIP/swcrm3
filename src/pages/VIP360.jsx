@@ -825,7 +825,7 @@ return (
 ) : contacts.map(c => (
 <div key={c.id} style={{ borderBottom:'1px solid var(--border)', padding:'12px 0', display:'flex', gap:12 }}>
 <div style={{ width:36, height:36, borderRadius:'50%', background:'var(--surface2)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:16, flexShrink:0 }}>
-{c.channel === 'WhatsApp' ? '💬' : c.channel === 'Call' ? '📞' : '📋'}
+{c.channel === 'WhatsApp' ? '💬' : c.channel === 'Call' ? '📞' : c.channel === 'Telegram' ? '✈️' : '📋'}
 </div>
 <div style={{ flex:1 }}>
 <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>

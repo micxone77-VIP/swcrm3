@@ -10,9 +10,9 @@ const PRIORITY_RANK={FOLLOW_UP:0,AT_RISK:1,CONTACTED_TODAY:2,MONITOR:3,REACTIVAT
 const STATUS_COLOR={FOLLOW_UP:'#f85149',AT_RISK:'#d29922',CONTACTED_TODAY:'#3fb950',REACTIVATED:'#58a6ff',MONITOR:'var(--muted)'}
 // STATUS_TEXT is built dynamically inside the component via t() — see getStatusText()
 const STATUS_TEXT_KEYS={FOLLOW_UP:'retentionQueue.statusFollowUp',AT_RISK:'retentionQueue.statusAtRisk',CONTACTED_TODAY:'retentionQueue.statusContactedToday',REACTIVATED:'retentionQueue.statusReactivated',MONITOR:'retentionQueue.statusMonitor'}
-const CHANNELS=['WhatsApp','Call','In-person','Other']
+const CHANNELS=['WhatsApp','Call','Telegram','In-person','Other']
 const OUTCOMES=['Contacted','No Reply','Replied','Deposited','Reactivated']
-const OPT_ZH={WhatsApp:'WhatsApp',Call:'电话','In-person':'面谈',Other:'其他',Contacted:'已联系','No Reply':'未回复',Replied:'已回复',Deposited:'已存款',Reactivated:'已召回'}
+const OPT_ZH={WhatsApp:'WhatsApp',Call:'电话',Telegram:'Telegram','In-person':'面谈',Other:'其他',Contacted:'已联系','No Reply':'未回复',Replied:'已回复',Deposited:'已存款',Reactivated:'已召回'}
 
 function QueueSection({title,icon,rows,empty,navigate,onLog}){
   const { t, lang } = useLanguage()

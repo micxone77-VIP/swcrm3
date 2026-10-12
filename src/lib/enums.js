@@ -45,7 +45,7 @@ export const CAMPAIGN_STATUS = {
 }
 
 export const CONTACT_TYPE = [
-  'WhatsApp', 'Call', 'In-person', 'Birthday', 'Campaign', 'Other',
+  'WhatsApp', 'Call', 'Telegram', 'In-person', 'Birthday', 'Campaign', 'Other',
 ]
 
 export const CONTACT_OUTCOME = [
@@ -79,7 +79,7 @@ export const ENUM_ZH = {
   HIGH: '高', MEDIUM: '中', LOW: '低',
   Open: '待处理', 'In Progress': '进行中', Completed: '已完成', Snoozed: '已延后', Cancelled: '已取消', Overdue: '已逾期',
   Draft: '草稿', Planned: '已计划', Archived: '已归档',
-  WhatsApp: 'WhatsApp', Call: '电话', 'In-person': '面对面', Birthday: '生日', Campaign: '活动', Other: '其他',
+  WhatsApp: 'WhatsApp', Call: '电话', Telegram: 'Telegram', 'In-person': '面对面', Birthday: '生日', Campaign: '活动', Other: '其他',
   Contacted: '已联系', 'No Reply': '未回复', Replied: '已回复', Deposited: '已存款', Reactivated: '已重新激活',
   Churned: '已流失', Lost: '流失',
   admin: '管理员', host: '负责人', readonly: '只读',
