@@ -39,6 +39,8 @@ function TabBar({ active, onChange }) {
 }
 
 const OUTCOMES = ['Contacted', 'No Reply', 'Replied', 'Deposited', 'Reactivated']
+const CHANNELS = ['WhatsApp', 'Call', 'Telegram', 'In-person', 'Other']
+const CHANNEL_ZH = { WhatsApp: 'WhatsApp', Call: '电话', Telegram: 'Telegram', 'In-person': '面对面', Other: '其他' }
 const OUTCOME_ZH = { Contacted: '已联系', 'No Reply': '未回复', Replied: '已回复', Deposited: '已存款', Reactivated: '已召回' }
 const TIER_ZH = { BLACK: '黑金', 'DIAMOND-P': '钻石P', DIAMOND: '钻石', PLATINUM: '白金', GOLD: '黄金', SILVER: '白银', BRONZE: '青铜' }
 // Display-only translation of queue trigger labels produced by useDashboard
@@ -143,6 +145,7 @@ export default function Today() {
   // Quick-log modal
   const [logTarget, setLogTarget] = useState(null)
   const [logOutcome, setLogOutcome] = useState('Replied')
+  const [logChannel, setLogChannel] = useState('WhatsApp')
   const [logNote, setLogNote] = useState('')
   const [logWaNumber, setLogWaNumber] = useState('')
   const [logSaving, setLogSaving] = useState(false)
@@ -162,7 +165,7 @@ export default function Today() {
       username: logTarget.username,
       vip_id: logTarget.id,
       tier: logTarget.tier || null,
-      channel: 'WhatsApp',
+      channel: logChannel,
       direction: 'outbound',
       outcome: logOutcome,
       notes: logNote || null,
@@ -180,7 +183,7 @@ export default function Today() {
     const _now = new Date().toISOString()
     await supabase.from('vip_members').update({ last_contacted: _now, last_contact_date: _now.slice(0,10) }).eq('id', logTarget.id)
     toast(L2(`Logged: ${logTarget.username} — ${logOutcome}`, `已记录：${logTarget.username} — ${OUTCOME_ZH[logOutcome] || logOutcome}`), 'success')
-    setLogTarget(null); setLogNote(''); setLogOutcome('Replied'); setLogWaNumber('')
+    setLogTarget(null); setLogNote(''); setLogOutcome('Replied'); setLogWaNumber(''); setLogChannel('WhatsApp')
     refresh()
   }
 
@@ -452,6 +455,12 @@ export default function Today() {
         {logTarget && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div style={{ fontSize: 14, fontWeight: 600 }}>{(logTarget.full_name && logTarget.full_name !== '(Name)') ? logTarget.full_name : logTarget.username}</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <label style={{ fontSize: 12, color: 'var(--muted)' }}>{L2('Contact type', '联系方式')}</label>
+              <Select value={logChannel} onChange={e => setLogChannel(e.target.value)}>
+                {CHANNELS.map(c => <option key={c} value={c}>{L2(c, CHANNEL_ZH[c])}</option>)}
+              </Select>
+            </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               <label style={{ fontSize: 12, color: 'var(--muted)' }}>{t('today.outcome')}</label>
               <Select value={logOutcome} onChange={e => setLogOutcome(e.target.value)}>

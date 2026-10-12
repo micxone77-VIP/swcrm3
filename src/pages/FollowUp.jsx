@@ -17,6 +17,8 @@ function daysAgoLabel(d, lang = 'en') {
 
 const OUTCOMES = ['Contacted', 'No Reply', 'Replied', 'Deposited', 'Reactivated']
 const OUTCOME_ZH = { Contacted: '已联系', 'No Reply': '未回复', Replied: '已回复', Deposited: '已存款', Reactivated: '已召回' }
+const CHANNELS = ['WhatsApp', 'Call', 'Telegram', 'In-person', 'Other']
+const CHANNEL_ZH = { WhatsApp: 'WhatsApp', Call: '电话', Telegram: 'Telegram', 'In-person': '面对面', Other: '其他' }
 
 const TIER_FILTERS = ['ALL','BLACK','DIAMOND-P','DIAMOND','PLATINUM','GOLD','SILVER','BRONZE']
 
@@ -36,6 +38,7 @@ export default function FollowUp() {
   const [tierFilter, setTierFilter] = useState('ALL')
   const [logTarget, setLogTarget] = useState(null)
   const [logOutcome, setLogOutcome] = useState('Contacted')
+  const [logChannel, setLogChannel] = useState('WhatsApp')
   const [logNote, setLogNote] = useState('')
   const [recoveryAmount, setRecoveryAmount] = useState('')
   const [recoveryCurrency, setRecoveryCurrency] = useState('')
@@ -90,7 +93,7 @@ export default function FollowUp() {
   const focusedDisplay = requestedInQueue && requestedVip ? [requestedVip, ...display.filter(v => String(v.id) !== String(requestedVip.id))] : display
 
   const openLog = v => {
-    setLogTarget(v); setLogOutcome('Contacted'); setLogNote(''); setRecoveryAmount(''); setRecoveryCurrency(v.currency || 'MYR')
+    setLogTarget(v); setLogChannel('WhatsApp'); setLogOutcome('Contacted'); setLogNote(''); setRecoveryAmount(''); setRecoveryCurrency(v.currency || 'MYR')
   }
 
   async function submitLog() {
@@ -99,10 +102,12 @@ export default function FollowUp() {
       toast(L2('Reactivation requires a valid deposit amount and currency', '召回需填写有效的存款金额和货币'), 'error'); return
     }
     setLogSaving(true)
-    const nowIso = new Date().toISOString()
+    const nowD = new Date(), nowIso = nowD.toISOString()
     const { error: contactError } = await supabase.from('contact_logs').insert({
-      username: logTarget.username, vip_id: logTarget.id, outcome: logOutcome, notes: logNote || null,
-      host_name: profile?.full_name || null, logged_at: nowIso,
+      username: logTarget.username, vip_id: logTarget.id, tier: logTarget.tier || null, channel: logChannel, direction: 'outbound',
+      outcome: logOutcome, notes: logNote || null, message_summary: logNote || null,
+      host_name: profile?.full_name || null, host_id: profile?.id || null, logged_at: nowIso,
+      log_month: nowIso.slice(0, 7), log_week: String(Math.ceil(nowD.getDate() / 7)),
     })
     if (contactError) { setLogSaving(false); toast(L2(`Save failed: ${contactError.message}`, `保存失败：${contactError.message}`), 'error'); return }
 
@@ -214,6 +219,7 @@ export default function FollowUp() {
       <Modal open={!!logTarget} onClose={() => { if (!logSaving) { setLogTarget(null); setLogNote(''); setRecoveryAmount(''); setRecoveryCurrency('') } }} title={t('followUp.logTitle')} width={420}>
         {logTarget && <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
           <div style={{ fontSize:14, fontWeight:600 }}>{logTarget.username}{logTarget.full_name ? ` — ${logTarget.full_name}` : ''}</div>
+          <div><label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>{L2('Contact type', '联系方式')}</label><Select value={logChannel} onChange={e => setLogChannel(e.target.value)} style={{ width:'100%' }}>{CHANNELS.map(c => <option key={c} value={c}>{L2(c, CHANNEL_ZH[c])}</option>)}</Select></div>
           <div><label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>{t('followUp.outcome')}</label><Select value={logOutcome} onChange={e => setLogOutcome(e.target.value)} style={{ width:'100%' }}>{OUTCOMES.map(o => <option key={o} value={o}>{L2(o, OUTCOME_ZH[o])}</option>)}</Select></div>
           {logOutcome === 'Reactivated' && <>
             <div><label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>{t('followUp.recoveryDeposit')}</label><input type="number" min="0" step="0.01" value={recoveryAmount} onChange={e => setRecoveryAmount(e.target.value)} style={{ width:'100%', boxSizing:'border-box', padding:'9px 12px', borderRadius:8, border:'1px solid var(--border)', background:'var(--surface2)', color:'var(--text)' }} placeholder="0.00" /></div>

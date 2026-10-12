@@ -324,6 +324,7 @@ export default function Campaigns() {
   const [streakBonusesLoading, setStreakBonusesLoading] = useState(false)
   const [contacts, setContacts] = useState({})             // map: campaign_player_id → [...rows]
   const [contactLog, setContactLog] = useState(null)       // player_id of open log popup, or null
+  const [contactChannel, setContactChannel] = useState('WhatsApp') // via which app the chase happened
   const [contactNote, setContactNote] = useState('')       // note being entered in log popup
   const [contactHistory, setContactHistory] = useState(null) // player_id of open history view
   const [waPopup, setWaPopup] = useState(null)  // { rawNumber, message } — editable before opening WA
@@ -995,7 +996,7 @@ export default function Campaigns() {
           tier: player.tier || null,
           host_name: myName,
           host_id: profile?.id || null,
-          channel: channelMap[type] || 'WhatsApp',
+          channel: type === 'other' && contactChannel === 'WhatsApp' ? (channelMap[type] || 'WhatsApp') : contactChannel,
           outcome: 'Contacted',
           notes: noteText,
           message_summary: noteText,
@@ -2885,6 +2886,7 @@ export default function Campaigns() {
                                           <div style={{ fontSize:11, color:'var(--muted)', marginBottom:5, fontWeight:600 }}>{L2('Log contact','记录联系')}</div>
                                           <textarea value={contactNote} onChange={e=>setContactNote(e.target.value)} placeholder={L2('Notes (optional)...','备注（可选）...')} rows={2}
                                             style={{ width:'100%', background:'var(--surface)', border:'1px solid var(--border)', borderRadius:5, color:'var(--text)', fontSize:11, padding:'4px 6px', resize:'none', marginBottom:5, boxSizing:'border-box' }} />
+<div style={{ display:'flex', gap:3, marginBottom:5, flexWrap:'wrap' }}>{[['WhatsApp','💬'],['Call','📞'],['Telegram','✈️'],['In-person','🤝']].map(([c,ic])=><button key={c} type="button" onClick={()=>setContactChannel(c)} title={c} style={{ flex:1, padding:'3px 4px', borderRadius:5, fontSize:10, cursor:'pointer', fontWeight:contactChannel===c?700:500, border:`1px solid ${contactChannel===c?'var(--accent)':'var(--border)'}`, background:contactChannel===c?'var(--accent-dim, rgba(255,107,0,.15))':'var(--surface)', color:contactChannel===c?'var(--accent)':'var(--muted)' }}>{ic} {c==='In-person'?L2('Meet','面谈'):c==='Call'?L2('Call','电话'):c}</button>)}</div>
                                           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:3, marginBottom:5 }}>
                                             {CONTACT_TYPES.map(([type,icon,lbl])=>(
                                               <button key={type} onClick={()=>logContact(p.id, type)}
@@ -3199,6 +3201,7 @@ export default function Campaigns() {
                                   <div style={{ fontSize:11, color:'var(--muted)', marginBottom:5, fontWeight:600 }}>{L2('Log contact','记录联系')}</div>
                                   <textarea value={contactNote} onChange={e=>setContactNote(e.target.value)} placeholder={L2('Notes (optional)...','备注（可选）...')} rows={2}
                                     style={{ width:'100%', background:'var(--surface)', border:'1px solid var(--border)', borderRadius:5, color:'var(--text)', fontSize:11, padding:'4px 6px', resize:'none', marginBottom:5, boxSizing:'border-box' }} />
+<div style={{ display:'flex', gap:3, marginBottom:5, flexWrap:'wrap' }}>{[['WhatsApp','💬'],['Call','📞'],['Telegram','✈️'],['In-person','🤝']].map(([c,ic])=><button key={c} type="button" onClick={()=>setContactChannel(c)} title={c} style={{ flex:1, padding:'3px 4px', borderRadius:5, fontSize:10, cursor:'pointer', fontWeight:contactChannel===c?700:500, border:`1px solid ${contactChannel===c?'var(--accent)':'var(--border)'}`, background:contactChannel===c?'var(--accent-dim, rgba(255,107,0,.15))':'var(--surface)', color:contactChannel===c?'var(--accent)':'var(--muted)' }}>{ic} {c==='In-person'?L2('Meet','面谈'):c==='Call'?L2('Call','电话'):c}</button>)}</div>
                                   <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:3, marginBottom:5 }}>
                                     {CONTACT_TYPES.map(([type,icon,lbl])=>(
                                       <button key={type} onClick={()=>logContact(p.id, type)}
@@ -3468,6 +3471,7 @@ export default function Campaigns() {
                                         <div style={{ fontSize:11, color:'var(--muted)', marginBottom:5, fontWeight:600 }}>{L2('Log contact','记录联系')}</div>
                                         <textarea value={contactNote} onChange={e=>setContactNote(e.target.value)} placeholder={L2('Notes (optional)...','备注（可选）...')} rows={2}
                                           style={{ width:'100%', background:'var(--surface)', border:'1px solid var(--border)', borderRadius:5, color:'var(--text)', fontSize:11, padding:'4px 6px', resize:'none', marginBottom:5, boxSizing:'border-box' }} />
+<div style={{ display:'flex', gap:3, marginBottom:5, flexWrap:'wrap' }}>{[['WhatsApp','💬'],['Call','📞'],['Telegram','✈️'],['In-person','🤝']].map(([c,ic])=><button key={c} type="button" onClick={()=>setContactChannel(c)} title={c} style={{ flex:1, padding:'3px 4px', borderRadius:5, fontSize:10, cursor:'pointer', fontWeight:contactChannel===c?700:500, border:`1px solid ${contactChannel===c?'var(--accent)':'var(--border)'}`, background:contactChannel===c?'var(--accent-dim, rgba(255,107,0,.15))':'var(--surface)', color:contactChannel===c?'var(--accent)':'var(--muted)' }}>{ic} {c==='In-person'?L2('Meet','面谈'):c==='Call'?L2('Call','电话'):c}</button>)}</div>
                                         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:3, marginBottom:5 }}>
                                           {CONTACT_TYPES.map(([type,icon,lbl])=>(
                                             <button key={type} onClick={()=>logContact(p.id, type)}
