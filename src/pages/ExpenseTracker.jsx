@@ -90,6 +90,8 @@ export default function ExpenseTracker() {
   const [showForm, setShowForm] = useState(false)
   const [saving,   setSaving]   = useState(false)
   const [editId,   setEditId]   = useState(null)
+  const [msg,      setMsg]      = useState(null)   // { type: 'ok'|'err', text }
+  const [pendingDel, setPendingDel] = useState(null) // id waiting for 2nd click to confirm delete
 
   const FORM_DEFAULT = {
     category:         'Bonus 红包',
@@ -133,11 +135,20 @@ export default function ExpenseTracker() {
       vip_username:    form.vip_username.trim() || null,
       created_by:      profile?.id || null,
     }
+    let res
     if (editId) {
-      await supabase.from('department_expenses').update(record).eq('id', editId)
+      // Keep the original month + creator when editing
+      const { month: _m, created_by: _c, ...upd } = record
+      res = await supabase.from('department_expenses').update(upd).eq('id', editId).select('id')
     } else {
-      await supabase.from('department_expenses').insert(record)
+      res = await supabase.from('department_expenses').insert(record).select('id')
     }
+    if (res.error || !(res.data || []).length) {
+      setSaving(false)
+      setMsg({ type: 'err', text: L2(`Save failed: ${res.error?.message || 'no row was changed (no permission?)'}`, `保存失败：${res.error?.message || '没有记录被修改（权限不足？）'}`) })
+      return
+    }
+    setMsg({ type: 'ok', text: editId ? L2('Expense updated', '开支已更新') : L2('Expense added', '开支已新增') })
     setForm(FORM_DEFAULT)
     setShowForm(false)
     setEditId(null)
@@ -146,8 +157,16 @@ export default function ExpenseTracker() {
   }
 
   async function handleDelete(id) {
-    if (!window.confirm(t('expenseTracker.deleteConfirm'))) return
-    await supabase.from('department_expenses').delete().eq('id', id)
+    // Two-click confirm (browser confirm() pop-ups can be blocked)
+    if (pendingDel !== id) { setPendingDel(id); return }
+    setPendingDel(null)
+    const { data, error } = await supabase.from('department_expenses').delete().eq('id', id).select('id')
+    if (error || !(data || []).length) {
+      setMsg({ type: 'err', text: L2(`Delete failed: ${error?.message || 'no row was deleted (no permission?)'}`, `删除失败：${error?.message || '没有记录被删除（权限不足？）'}`) })
+      return
+    }
+    setMsg({ type: 'ok', text: L2('Expense deleted', '开支已删除') })
+    if (editId === id) { setEditId(null); setShowForm(false); setForm(FORM_DEFAULT) }
     loadExpenses()
   }
 
@@ -165,6 +184,8 @@ export default function ExpenseTracker() {
     })
     setEditId(exp.id)
     setShowForm(true)
+    setMsg(null); setPendingDel(null)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   // ── Calculations ────────────────────────────────────────────────────────────
@@ -266,6 +287,13 @@ export default function ExpenseTracker() {
       </div>
 
       {/* Add/Edit Form */}
+      {msg && (
+        <div onClick={() => setMsg(null)} style={{ marginBottom:12, padding:'10px 14px', borderRadius:8, cursor:'pointer', fontSize:13, fontWeight:600,
+          background: msg.type === 'err' ? 'rgba(248,81,73,.12)' : 'rgba(63,185,80,.12)', color: msg.type === 'err' ? '#f85149' : '#3fb950',
+          border: `1px solid ${msg.type === 'err' ? 'rgba(248,81,73,.4)' : 'rgba(63,185,80,.4)'}` }}>
+          {msg.type === 'err' ? '⚠️ ' : '✅ '}{msg.text}
+        </div>
+      )}
       {showForm && isAdmin && (
         <div style={{ ...s.card, border:'1px solid var(--accent)', marginBottom:16 }}>
           <div style={s.cardHdr}>
@@ -411,7 +439,7 @@ export default function ExpenseTracker() {
                         <td style={s.td} onClick={e => e.stopPropagation()}>
                           <div style={{ display:'flex', gap:6 }}>
                             <button style={s.btnSm()} onClick={() => startEdit(exp)}>{t('common.edit')}</button>
-                            <button style={{ ...s.btnSm(), borderColor:'rgba(248,81,73,.3)', color:'#f85149' }} onClick={() => handleDelete(exp.id)}>{t('common.delete')}</button>
+                            <button style={{ ...s.btnSm(), borderColor:'rgba(248,81,73,.3)', color:'#f85149' }} onClick={() => handleDelete(exp.id)} onMouseLeave={() => pendingDel === exp.id && setTimeout(() => setPendingDel(p => (p === exp.id ? null : p)), 2500)}>{pendingDel === exp.id ? L2('Confirm delete?', '确认删除？') : t('common.delete')}</button>
                           </div>
                         </td>
                       )}
