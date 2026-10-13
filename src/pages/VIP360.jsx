@@ -101,6 +101,7 @@ const [gamingAILoading, setGamingAILoading] = useState(false)
 // Department spending state
 const [vipExpenses, setVipExpenses] = useState([])
 const [expensesLoading, setExpensesLoading] = useState(false)
+const [expensesFor, setExpensesFor] = useState(null) // username the expenses were loaded for (stops re-fetch loop when a VIP has 0 records)
 
 // VIP Profile & Interests state
 const [vipProfile, setVipProfile] = useState(null)
@@ -257,14 +258,20 @@ supabase.from('vip_profiles')
 // Lazy-load department expenses when spending tab opens
 useEffect(() => {
 if (tab !== 'spending' || !vip?.username) return
-if (vipExpenses.length > 0 || expensesLoading) return
+if (expensesFor === vip.username) return
+const uname = vip.username
+setExpensesFor(uname)
 setExpensesLoading(true)
 supabase.from('department_expenses')
   .select('id,category,item_name,platform,currency,amount,expense_type,notes,created_at')
-  .eq('vip_username', vip.username)
+  .eq('vip_username', uname)
   .order('created_at', { ascending: false })
-  .then(({ data }) => { setVipExpenses(data || []); setExpensesLoading(false) })
-}, [tab, vip?.username, vipExpenses.length, expensesLoading])
+  .then(({ data, error }) => {
+    if (error) console.error('department_expenses load error', error)
+    setVipExpenses(data || [])
+  }, err => { console.error('department_expenses load error', err); setVipExpenses([]) })
+  .finally(() => setExpensesLoading(false))
+}, [tab, vip?.username, expensesFor])
 
 // Period-filtered monthly data
 const now = new Date()
