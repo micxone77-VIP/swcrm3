@@ -58,6 +58,7 @@ export default function App() {
       {/* VIP Operations */}
       <Route path="vips"          element={<RequireRole permKey="vips"><AllVIPs /></RequireRole>} />
       <Route path="vips/:id"      element={<RequireRole permKey="vips"><VIP360 /></RequireRole>} />
+      <Route path="vip360"        element={<RequireRole permKey="vips"><VIP360 /></RequireRole>} />{/* /vip360?player=<username>&tab=<tab> */}
       <Route path="at-risk"       element={<RequireRole permKey="at-risk"><AtRisk /></RequireRole>} />
       <Route path="active-tracker" element={<RequireRole permKey="active-tracker"><ActiveTracker /></RequireRole>} />
       <Route path="follow-up"     element={<RequireRole permKey="follow-up"><FollowUp /></RequireRole>} />

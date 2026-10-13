@@ -425,7 +425,7 @@ export default function ExpenseTracker() {
                       <td style={s.td}>
                         {exp.vip_username ? (
                           <button
-                            onClick={() => navigate(`/vip360?player=${encodeURIComponent(exp.vip_username)}`)}
+                            onClick={() => navigate(`/vip360?player=${encodeURIComponent(exp.vip_username)}&tab=spending`)}
                             style={{ background:'none', border:'1px solid var(--accent)', borderRadius:6, padding:'2px 9px', fontSize:11, fontWeight:700, color:'var(--accent)', cursor:'pointer', whiteSpace:'nowrap' }}>
                             👑 {exp.vip_username}
                           </button>
