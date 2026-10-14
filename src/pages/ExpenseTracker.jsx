@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { useLanguage } from '../contexts/LanguageContext'
 import { useUrlParam } from '../hooks/useUrlParam'
+import CashVoucherImportButton from '../components/expense/CashVoucherImportButton'
 
 const MONTHS     = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 // CATEGORIES (and the 'Bonus 红包' default below) are stored as literal values in
@@ -229,6 +230,7 @@ export default function ExpenseTracker() {
         <div style={{ display:'flex', gap:8, alignItems:'center' }}>
           <input type="month" value={month} onChange={e => setMonth(e.target.value)}
             style={{ ...s.input, width:160 }} />
+          {isAdmin && <CashVoucherImportButton onDone={() => loadExpenses()} />}
           {isAdmin && (
             <button style={s.btn()} onClick={() => { setShowForm(s => !s); setEditId(null); setForm(FORM_DEFAULT) }}>
               {showForm ? t('common.cancel') : t('expenseTracker.addExpenseBtn')}

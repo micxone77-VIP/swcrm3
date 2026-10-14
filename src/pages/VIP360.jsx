@@ -4,6 +4,7 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { formatMoney, fmtDate } from '../lib/format'
+import CashVoucherClaims from '../components/vip/CashVoucherClaims'
 import { TIER_CONFIG, STATUS_CONFIG, RISK_CONFIG, CONTACT_TYPE, CONTACT_OUTCOME, enumLabel } from '../lib/enums'
 import {
 Card, CardHeader, CardBody, Tabs, Btn, Badge,
@@ -263,7 +264,7 @@ const uname = vip.username
 setExpensesFor(uname)
 setExpensesLoading(true)
 supabase.from('department_expenses')
-  .select('id,category,item_name,platform,currency,amount,expense_type,notes,created_at')
+  .select('id,month,category,item_name,platform,currency,amount,expense_type,notes,created_at')
   .eq('vip_username', uname)
   .order('created_at', { ascending: false })
   .then(({ data, error }) => {
@@ -1379,7 +1380,7 @@ return (
                 onMouseLeave={ev => ev.currentTarget.style.background='transparent'}
               >
                 <td style={{ padding:'9px 12px', borderBottom:'1px solid var(--border)', whiteSpace:'nowrap', color:'var(--muted)', fontSize:12 }}>
-                  {e.created_at ? e.created_at.slice(0,10) : '—'}
+                  {e.month || (e.created_at ? e.created_at.slice(0,10) : '—')}
                 </td>
                 <td style={{ padding:'9px 12px', borderBottom:'1px solid var(--border)', fontWeight:600 }}>{e.category || '—'}</td>
                 <td style={{ padding:'9px 12px', borderBottom:'1px solid var(--border)', color:'var(--muted)', fontSize:12 }}>{e.item_name || '—'}</td>
@@ -1404,6 +1405,7 @@ return (
       </div>
     </div>
   )}
+  <CashVoucherClaims username={vip.username} />
 </div>
 )
 })()}
