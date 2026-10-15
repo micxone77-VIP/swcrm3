@@ -1405,7 +1405,7 @@ return (
       </div>
     </div>
   )}
-  <CashVoucherClaims username={vip.username} />
+  <CashVoucherClaims username={vip.username} onChange={() => setExpensesFor(null)} />
 </div>
 )
 })()}
