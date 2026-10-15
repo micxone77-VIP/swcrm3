@@ -6,6 +6,7 @@ import { useAuth } from '../hooks/useAuth'
 import { TIER_COLOR, TIER_BG, MONTHS } from '../lib/constants'
 import { formatMoney } from '../lib/format'
 import { ListCount } from '../components/ui'
+import { fetchAll } from '../lib/depositProfile'
 import { useLanguage } from '../contexts/LanguageContext'
 import { useUrlParam, useUrlParamNumber, useUrlParamBool, useUrlParamsRaw } from '../hooks/useUrlParam'
 import { getRetentionTierRank, isFollowUpDue, calculateChurnUrgency } from '../lib/retention'
@@ -171,8 +172,9 @@ export default function ChurnAlerts() {
 
   async function loadAll(){setLoading(true);try{const{data:members}=await supabase.from('vip_members').select('*').eq('is_excluded',false);const{data:logs}=await supabase.from('reactivation_logs').select('*').eq('reactivated_month',monthStr);const logSet=new Set((logs||[]).map(x=>x.username));setReactivated(logs||[]);setReactivatedSet(logSet);setVips(members||[]);setStats({high:(members||[]).filter(x=>x.churn_risk==='HIGH').length,medium:(members||[]).filter(x=>x.churn_risk==='MEDIUM').length,dormant:(members||[]).filter(x=>(x.days_inactive||0)>=dormantDays).length,atRisk:(members||[]).filter(x=>(x.churn_risk==='HIGH'||x.churn_risk==='MEDIUM')&&!logSet.has(x.username)).length});
     // contact_logs this month — for Diamond/Platinum coverage tracking
-    const dpNames=(members||[]).filter(v=>v.tier==='DIAMOND'||v.tier==='PLATINUM').map(v=>v.username);
-    if(dpNames.length){const{data:cLogs}=await supabase.from('contact_logs').select('username').eq('log_month',monthStr).in('username',dpNames);setContactedSet(new Set((cLogs||[]).map(l=>l.username)))}else{setContactedSet(new Set())}
+    // Contacted this month — ALL tiers (Diamond / Platinum / Gold tabs). Previously only Diamond+Platinum were checked,
+    // so every Gold VIP showed "Not yet". Paged + no .in() list (breaks with 100+ names); compared case-insensitively.
+    {const cl=await fetchAll(()=>supabase.from('contact_logs').select('username').eq('log_month',monthStr).order('username'));setContactedSet(new Set(cl.map(l=>String(l.username||'').toLowerCase())))}
   }catch(e){console.error(e)}finally{setLoading(false)}}
 
   const visibleVips=vips.filter(v=>(tierF==='ALL'||v.tier===tierF)&&(!mineOnly||v.host_assigned===myName)); const reactRows=reactivated.filter(v=>(reactTierF==='ALL'||v.tier===reactTierF)&&inMkt({currency:curByUser[v.username]||v.currency}))
@@ -228,8 +230,8 @@ export default function ChurnAlerts() {
       {tab==='diamond'&&(()=>{
         const allDHosts=[...new Set(vips.filter(v=>v.tier==='DIAMOND'&&v.host_assigned).map(v=>v.host_assigned))].sort()
         const allD=vips.filter(v=>v.tier==='DIAMOND'&&(dHostF==='ALL'||v.host_assigned===dHostF))
-        const dVips=allD.filter(v=>!dUncontactedOnly||!contactedSet.has(v.username)).sort((a,b)=>Number(contactedSet.has(a.username))-Number(contactedSet.has(b.username))||(b.days_inactive||0)-(a.days_inactive||0))
-        const dContacted=allD.filter(v=>contactedSet.has(v.username)).length
+        const dVips=allD.filter(v=>!dUncontactedOnly||!contactedSet.has(String(v.username||'').toLowerCase())).sort((a,b)=>Number(contactedSet.has(String(a.username||'').toLowerCase()))-Number(contactedSet.has(String(b.username||'').toLowerCase()))||(b.days_inactive||0)-(a.days_inactive||0))
+        const dContacted=allD.filter(v=>contactedSet.has(String(v.username||'').toLowerCase())).length
         const dNotYet=allD.length-dContacted
         return(<div>
           <div style={{display:'flex',gap:8,padding:'10px 14px',borderBottom:'1px solid var(--border)',alignItems:'center',flexWrap:'wrap'}}>
@@ -245,7 +247,7 @@ export default function ChurnAlerts() {
           </div>
           <ListCount total={dVips.length} label="VIPs" labelZh="位VIP" />
           <div style={{overflowX:'auto'}}><table style={s.tbl}><thead><tr>{['#',L2('Player','玩家'),L2('Host','负责人'),L2('Phone / WA','电话 / WA'),L2('Risk','风险'),L2('Days Inactive','不活跃天数'),L2('Last Deposit','最后存款'),L2('Last Contact','最后联系'),L2('This Month','本月'),L2('Actions','操作')].map(h=><th key={h} style={s.th}>{h}</th>)}</tr></thead>
-            <tbody>{dVips.map((v,rowIdx)=>{const isC=contactedSet.has(v.username);return(
+            <tbody>{dVips.map((v,rowIdx)=>{const isC=contactedSet.has(String(v.username||'').toLowerCase());return(
               <tr key={v.id}>
                 <td style={{...s.td,color:'var(--muted)',fontSize:12,width:36}}>{rowIdx+1}</td>
                 <td style={s.td}><span style={{display:'inline-flex',alignItems:'center',gap:4}}><button style={{background:'none',border:0,padding:0,cursor:'pointer',color:'var(--text)',fontWeight:700}} onClick={()=>navigate(`/vips/${v.id}`)}>{v.username}</button><button title={L2('Copy username','复制用户名')} onClick={e=>{e.stopPropagation();navigator.clipboard.writeText(v.username)}} style={{background:'none',border:'none',color:'var(--muted)',cursor:'pointer',fontSize:12,padding:'0 2px',lineHeight:1,opacity:.6}} onMouseEnter={e=>e.currentTarget.style.opacity=1} onMouseLeave={e=>e.currentTarget.style.opacity=.6}>⎘</button></span></td>
@@ -266,8 +268,8 @@ export default function ChurnAlerts() {
       {tab==='platinum'&&(()=>{
         const allPHosts=[...new Set(vips.filter(v=>v.tier==='PLATINUM'&&v.host_assigned).map(v=>v.host_assigned))].sort()
         const allP=vips.filter(v=>v.tier==='PLATINUM'&&(pHostF==='ALL'||v.host_assigned===pHostF))
-        const pVips=allP.filter(v=>!pUncontactedOnly||!contactedSet.has(v.username)).sort((a,b)=>Number(contactedSet.has(a.username))-Number(contactedSet.has(b.username))||(b.days_inactive||0)-(a.days_inactive||0))
-        const pContacted=allP.filter(v=>contactedSet.has(v.username)).length
+        const pVips=allP.filter(v=>!pUncontactedOnly||!contactedSet.has(String(v.username||'').toLowerCase())).sort((a,b)=>Number(contactedSet.has(String(a.username||'').toLowerCase()))-Number(contactedSet.has(String(b.username||'').toLowerCase()))||(b.days_inactive||0)-(a.days_inactive||0))
+        const pContacted=allP.filter(v=>contactedSet.has(String(v.username||'').toLowerCase())).length
         const pNotYet=allP.length-pContacted
         return(<div>
           <div style={{display:'flex',gap:8,padding:'10px 14px',borderBottom:'1px solid var(--border)',alignItems:'center',flexWrap:'wrap'}}>
@@ -283,7 +285,7 @@ export default function ChurnAlerts() {
           </div>
           <ListCount total={pVips.length} label="VIPs" labelZh="位VIP" />
           <div style={{overflowX:'auto'}}><table style={s.tbl}><thead><tr>{['#',L2('Player','玩家'),L2('Host','负责人'),L2('Phone / WA','电话 / WA'),L2('Risk','风险'),L2('Days Inactive','不活跃天数'),L2('Last Deposit','最后存款'),L2('Last Contact','最后联系'),L2('This Month','本月'),L2('Actions','操作')].map(h=><th key={h} style={s.th}>{h}</th>)}</tr></thead>
-            <tbody>{pVips.map((v,rowIdx)=>{const isC=contactedSet.has(v.username);return(
+            <tbody>{pVips.map((v,rowIdx)=>{const isC=contactedSet.has(String(v.username||'').toLowerCase());return(
               <tr key={v.id}>
                 <td style={{...s.td,color:'var(--muted)',fontSize:12,width:36}}>{rowIdx+1}</td>
                 <td style={s.td}><span style={{display:'inline-flex',alignItems:'center',gap:4}}><button style={{background:'none',border:0,padding:0,cursor:'pointer',color:'var(--text)',fontWeight:700}} onClick={()=>navigate(`/vips/${v.id}`)}>{v.username}</button><button title={L2('Copy username','复制用户名')} onClick={e=>{e.stopPropagation();navigator.clipboard.writeText(v.username)}} style={{background:'none',border:'none',color:'var(--muted)',cursor:'pointer',fontSize:12,padding:'0 2px',lineHeight:1,opacity:.6}} onMouseEnter={e=>e.currentTarget.style.opacity=1} onMouseLeave={e=>e.currentTarget.style.opacity=.6}>⎘</button></span></td>
@@ -304,8 +306,8 @@ export default function ChurnAlerts() {
       {tab==='gold'&&(()=>{
         const allGHosts=[...new Set(vips.filter(v=>v.tier==='GOLD'&&v.host_assigned).map(v=>v.host_assigned))].sort()
         const allG=vips.filter(v=>v.tier==='GOLD'&&(gHostF==='ALL'||v.host_assigned===gHostF))
-        const gVips=allG.filter(v=>!gUncontactedOnly||!contactedSet.has(v.username)).sort((a,b)=>Number(contactedSet.has(a.username))-Number(contactedSet.has(b.username))||(b.days_inactive||0)-(a.days_inactive||0))
-        const gContacted=allG.filter(v=>contactedSet.has(v.username)).length
+        const gVips=allG.filter(v=>!gUncontactedOnly||!contactedSet.has(String(v.username||'').toLowerCase())).sort((a,b)=>Number(contactedSet.has(String(a.username||'').toLowerCase()))-Number(contactedSet.has(String(b.username||'').toLowerCase()))||(b.days_inactive||0)-(a.days_inactive||0))
+        const gContacted=allG.filter(v=>contactedSet.has(String(v.username||'').toLowerCase())).length
         const gNotYet=allG.length-gContacted
         return(<div>
           <div style={{display:'flex',gap:8,padding:'10px 14px',borderBottom:'1px solid var(--border)',alignItems:'center',flexWrap:'wrap'}}>
@@ -321,7 +323,7 @@ export default function ChurnAlerts() {
           </div>
           <ListCount total={gVips.length} label="VIPs" labelZh="位VIP" />
           <div style={{overflowX:'auto'}}><table style={s.tbl}><thead><tr>{['#',L2('Player','玩家'),L2('Host','负责人'),L2('Phone / WA','电话 / WA'),L2('Risk','风险'),L2('Days Inactive','不活跃天数'),L2('Last Deposit','最后存款'),L2('Last Contact','最后联系'),L2('This Month','本月'),L2('Actions','操作')].map(h=><th key={h} style={s.th}>{h}</th>)}</tr></thead>
-            <tbody>{gVips.map((v,rowIdx)=>{const isC=contactedSet.has(v.username);return(
+            <tbody>{gVips.map((v,rowIdx)=>{const isC=contactedSet.has(String(v.username||'').toLowerCase());return(
               <tr key={v.id}>
                 <td style={{...s.td,color:'var(--muted)',fontSize:12,width:36}}>{rowIdx+1}</td>
                 <td style={s.td}><span style={{display:'inline-flex',alignItems:'center',gap:4}}><button style={{background:'none',border:0,padding:0,cursor:'pointer',color:'var(--text)',fontWeight:700}} onClick={()=>navigate(`/vips/${v.id}`)}>{v.username}</button><button title={L2('Copy username','复制用户名')} onClick={e=>{e.stopPropagation();navigator.clipboard.writeText(v.username)}} style={{background:'none',border:'none',color:'var(--muted)',cursor:'pointer',fontSize:12,padding:'0 2px',lineHeight:1,opacity:.6}} onMouseEnter={e=>e.currentTarget.style.opacity=1} onMouseLeave={e=>e.currentTarget.style.opacity=.6}>⎘</button></span></td>
