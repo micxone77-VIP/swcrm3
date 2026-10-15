@@ -112,7 +112,8 @@ export async function importCashVoucherCsv(text, { userId, onProgress } = {}) {
   let statusUpdated = 0
   for (const p of parsed) {
     const e = exMap[p.username + '|' + new Date(p.claimed_at).toISOString()]
-    if (e && e.status !== p.status) {
+    // only apply a decision from the sheet (accept/decline); never revert a status set in the CRM back to pending
+    if (e && p.status !== 'pending' && e.status !== p.status) {
       await supabase.from('cash_voucher_claims').update({ status: p.status }).eq('id', e.id)
       statusUpdated++
     }
@@ -162,4 +163,28 @@ export async function importCashVoucherCsv(text, { userId, onProgress } = {}) {
   }
 
   return { total: parsed.length, inserted, skipped: parsed.length - toInsert.length, statusUpdated, expensesAdded, expensesLinked, profilesFilled, unknown: [...new Set(unknown)], badRows: bad }
+}
+
+// Change a claim's status. Accepted ⇒ creates the Dept Spending record (if missing);
+// Pending/Declined ⇒ removes the record this importer created (hand-entered ones are only unlinked).
+export async function setClaimStatus(claim, status, userId) {
+  let expense_id = claim.expense_id || null
+  if (status === 'accepted' && !expense_id) {
+    const { data: ex, error } = await supabase.from('department_expenses').insert({
+      month: claim.claim_month, category: 'Cash Voucher',
+      item_name: /credit/i.test(claim.remark || '') ? 'Credit (form claim)' : 'Cash Voucher (form claim)',
+      platform: claim.currency === 'SGD' ? 'SG' : claim.currency === 'KHUSD' ? 'KH' : 'MY', currency: claim.currency || 'MYR',
+      amount: Number(claim.amount) || 0, expense_type: 'online', vip_username: claim.username, created_by: userId || null,
+      notes: `Imported from Cash Voucher form · claimed ${String(claim.claimed_at).slice(0, 10)} · ref ${claim.id}`,
+    }).select('id').single()
+    if (error) throw error
+    expense_id = ex.id
+  } else if (status !== 'accepted' && expense_id) {
+    const { data: ex } = await supabase.from('department_expenses').select('id, notes').eq('id', expense_id).maybeSingle()
+    if (ex && /^Imported from Cash Voucher form/.test(ex.notes || '')) await supabase.from('department_expenses').delete().eq('id', expense_id)
+    expense_id = null
+  }
+  const { error } = await supabase.from('cash_voucher_claims').update({ status, expense_id }).eq('id', claim.id)
+  if (error) throw error
+  return { status, expense_id }
 }

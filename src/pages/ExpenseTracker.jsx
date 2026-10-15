@@ -6,6 +6,7 @@ import { useAuth } from '../hooks/useAuth'
 import { useLanguage } from '../contexts/LanguageContext'
 import { useUrlParam } from '../hooks/useUrlParam'
 import CashVoucherImportButton from '../components/expense/CashVoucherImportButton'
+import CashVoucherOverview from '../components/expense/CashVoucherOverview'
 
 const MONTHS     = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 // CATEGORIES (and the 'Bonus 红包' default below) are stored as literal values in
@@ -86,6 +87,7 @@ export default function ExpenseTracker() {
   const isAdmin = profile?.role === 'admin'
 
   const [month,    setMonth]    = useUrlParam('month', currentYearMonth())
+  const [view,     setView]     = useUrlParam('view', 'expenses') // 'expenses' | 'vouchers'
   const [expenses, setExpenses] = useState([])
   const [loading,  setLoading]  = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -219,6 +221,29 @@ export default function ExpenseTracker() {
     { key:'KH-offline', label:L2('🇰🇭 Cambodia — Offline','🇰🇭 柬埔寨 — 线下'),              platform:'KH', type:'offline', items:khOffline, total:khOfflineTotal, currency:'KHUSD', color:'#fb923c' },
   ]
 
+  const viewTabs = (
+    <div style={{ display:'flex', gap:6, margin:'10px 0 16px' }}>
+      {[['expenses', L2('💼 Expenses', '💼 开支')], ['vouchers', L2('🎟️ Cash Voucher Claims', '🎟️ 现金券申请')]].map(([k, lbl]) => (
+        <button key={k} onClick={() => setView(k)} style={{ padding:'7px 14px', borderRadius:8, fontSize:13, fontWeight:700, cursor:'pointer',
+          border:`1px solid ${view===k?'var(--accent)':'var(--border)'}`, background: view===k?'var(--accent)':'var(--surface2)', color: view===k?'#fff':'var(--text)' }}>{lbl}</button>
+      ))}
+    </div>
+  )
+
+  if (view === 'vouchers') return (
+    <div style={s.page}>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', flexWrap:'wrap', gap:12 }}>
+        <div>
+          <div style={s.title}>🎟️ {L2('Cash Voucher Claims', '现金券申请')}</div>
+          <div style={s.sub}>{L2('Totals (online / offline), monthly summary and pending claims', '总额（线上 / 线下）、每月汇总及待处理申请')}</div>
+        </div>
+        {isAdmin && <CashVoucherImportButton onDone={() => window.location.reload()} />}
+      </div>
+      {viewTabs}
+      <CashVoucherOverview />
+    </div>
+  )
+
   return (
     <div style={s.page}>
       {/* Header */}
@@ -238,6 +263,8 @@ export default function ExpenseTracker() {
           )}
         </div>
       </div>
+
+      {viewTabs}
 
       {/* Summary cards */}
       <div style={s.grid}>
