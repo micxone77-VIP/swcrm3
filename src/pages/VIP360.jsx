@@ -1388,9 +1388,19 @@ return (
                   <span style={{ fontSize:11, fontWeight:700, padding:'1px 7px', borderRadius:10, background:'var(--surface2)', color:'var(--text)' }}>{e.platform || '—'}</span>
                 </td>
                 <td style={{ padding:'9px 12px', borderBottom:'1px solid var(--border)' }}>
-                  <span style={{ fontSize:11, fontWeight:700, padding:'1px 7px', borderRadius:10, background: e.expense_type==='online'?'rgba(59,130,246,.12)':'rgba(245,158,11,.12)', color: TYPE_COLOR[e.expense_type] || 'var(--muted)' }}>
-                    {e.expense_type ? (lang === 'zh' ? ({ online:'线上', offline:'线下' }[e.expense_type] || e.expense_type) : e.expense_type) : '—'}
-                  </span>
+                  {/* Click to switch Online ⇄ Offline (saved straight to the expense record) */}
+                  <select value={e.expense_type || 'online'}
+                    onChange={async ev => {
+                      const v = ev.target.value
+                      const { error: err } = await supabase.from('department_expenses').update({ expense_type: v }).eq('id', e.id)
+                      if (err) { window.alert(L2(`Update failed: ${err.message}`, `更新失败：${err.message}`)); return }
+                      setVipExpenses(list => list.map(x => (x.id === e.id ? { ...x, expense_type: v } : x)))
+                    }}
+                    title={L2('Change Online / Offline', '更改线上 / 线下')}
+                    style={{ fontSize:11, fontWeight:700, padding:'2px 6px', borderRadius:10, cursor:'pointer', border:`1px solid ${e.expense_type==='offline'?'rgba(245,158,11,.4)':'rgba(59,130,246,.4)'}`, background: e.expense_type==='offline'?'rgba(245,158,11,.12)':'rgba(59,130,246,.12)', color: TYPE_COLOR[e.expense_type] || 'var(--muted)' }}>
+                    <option value="online">{L2('Online', '线上')}</option>
+                    <option value="offline">{L2('Offline', '线下')}</option>
+                  </select>
                 </td>
                 <td style={{ padding:'9px 12px', borderBottom:'1px solid var(--border)', textAlign:'right', fontWeight:700, whiteSpace:'nowrap' }}>
                   {fmtExact(e.amount, e.currency)}
