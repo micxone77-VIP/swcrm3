@@ -16,15 +16,15 @@ import { DailyRulesEditor, cleanDailyConfig } from './DailyRulesEditor'
 
 const fmt = v => Math.round(num(v)).toLocaleString('en-MY')
 const sym = c => (c === 'SGD' ? 'SGD ' : c === 'KHUSD' ? 'USD ' : 'RM ')
-const btn = { background: 'var(--accent)', color: '#fff', border: 'none', padding: '7px 14px', borderRadius: 7, fontWeight: 700, cursor: 'pointer', fontSize: 12 }
-const sec = { background: 'var(--surface2)', color: 'var(--text)', border: '1px solid var(--border)', padding: '6px 12px', borderRadius: 7, fontWeight: 600, cursor: 'pointer', fontSize: 12 }
-const input = { background: 'var(--surface2)', border: '1px solid var(--border)', color: 'var(--text)', padding: '5px 8px', borderRadius: 6, fontSize: 12, boxSizing: 'border-box' }
-const card = { background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px' }
-const th = { textAlign: 'left', padding: '7px 8px', color: 'var(--muted)', fontWeight: 700, fontSize: 11, whiteSpace: 'nowrap', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0, background: 'var(--surface)', zIndex: 1 }
-const td = { padding: '6px 8px', borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap', fontSize: 12 }
+const btn = { background: 'var(--accent)', color: '#fff', border: 'none', padding: '9px 16px', borderRadius: 8, fontWeight: 700, cursor: 'pointer', fontSize: 14 }
+const sec = { background: 'var(--surface2)', color: 'var(--text)', border: '1px solid var(--border)', padding: '8px 14px', borderRadius: 8, fontWeight: 600, cursor: 'pointer', fontSize: 14 }
+const input = { background: 'var(--surface2)', border: '1px solid var(--border)', color: 'var(--text)', padding: '7px 10px', borderRadius: 7, fontSize: 14, boxSizing: 'border-box' }
+const card = { background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 16px' }
+const th = { textAlign: 'left', padding: '10px 12px', color: 'var(--muted)', fontWeight: 700, fontSize: 13, whiteSpace: 'nowrap', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0, background: 'var(--surface)', zIndex: 1 }
+const td = { padding: '10px 12px', borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap', fontSize: 14 }
 
 function Kpi({ label, value, sub, color }) {
-  return <div style={card}><div style={{ fontSize: 11, color: 'var(--muted)' }}>{label}</div><div style={{ fontSize: 18, fontWeight: 800, color: color || 'var(--text)' }}>{value}</div>{sub && <div style={{ fontSize: 10, color: 'var(--muted)' }}>{sub}</div>}</div>
+  return <div style={card}><div style={{ fontSize: 13, color: 'var(--muted)' }}>{label}</div><div style={{ fontSize: 28, fontWeight: 800, color: color || 'var(--text)' }}>{value}</div>{sub && <div style={{ fontSize: 12, color: 'var(--muted)' }}>{sub}</div>}</div>
 }
 
 export default function DailyMilestoneDetail({ campaign: initial, onClose, onChanged }) {
@@ -288,17 +288,17 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
   const tabBtn = k => ({ ...sec, background: tab === k ? 'var(--accent)' : 'var(--surface2)', color: tab === k ? '#fff' : 'var(--text)', fontWeight: 700 })
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.72)', zIndex: 1200, overflow: 'auto', padding: '24px 16px' }}>
-      <div style={{ maxWidth: 1280, margin: '0 auto', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, padding: 18 }}>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.72)', zIndex: 1200, overflow: 'auto', padding: '16px' }}>
+      <div style={{ width: '100%', maxWidth: 'none', minHeight: 'calc(100vh - 32px)', margin: '0 auto', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, padding: '22px 26px', boxSizing: 'border-box' }}>
         {/* header */}
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
-          <div style={{ fontSize: 26 }}>⚡</div>
+          <div style={{ fontSize: 34 }}>⚡</div>
           <div style={{ flex: 1, minWidth: 260 }}>
-            <div style={{ fontSize: 18, fontWeight: 800 }}>{camp.campaign_name}</div>
-            <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+            <div style={{ fontSize: 26, fontWeight: 800 }}>{camp.campaign_name}</div>
+            <div style={{ fontSize: 14, color: 'var(--muted)' }}>
               {T('Daily Milestone', '每日流水里程碑')} · {camp.start_date} → {camp.end_date} · {players.length} {T('players', '位玩家')} · {camp.status}
             </div>
-            <div style={{ fontSize: 12, marginTop: 4 }}>
+            <div style={{ fontSize: 15, marginTop: 6 }}>
               {tiers.map(t => <span key={t.turnover} style={{ marginRight: 10 }}>{fmt(t.turnover)} → <b>{fmt(t.reward)}</b></span>)}
               {cfg.streak_enabled && <span style={{ color: '#f97316' }}>🔥 {cfg.streak_days}{T('-day streak', '天连续')} = {cfg.streak_pct}% {T('of deposits', '存款')} ({cfg.streak_style === 'rolling' ? T('rolling', '滚动') : T('every block', '每轮')}{num(cfg.streak_cap) > 0 ? `, cap ${fmt(cfg.streak_cap)}` : ''})</span>}
             </div>
@@ -308,7 +308,7 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
         </div>
 
         {/* data date banner */}
-        <div style={{ marginTop: 12, padding: '8px 12px', borderRadius: 8, background: 'rgba(88,166,255,.10)', border: '1px solid rgba(88,166,255,.3)', fontSize: 12 }}>
+        <div style={{ marginTop: 12, padding: '8px 12px', borderRadius: 8, background: 'rgba(88,166,255,.10)', border: '1px solid rgba(88,166,255,.3)', fontSize: 14 }}>
           📅 {T('Data up to', '数据截至')} <b>{asOf || '—'}</b> {T('(yesterday). Each day is settled the next day: today you pay yesterday\'s rewards and send today\'s follow-up.', '（昨天）。每天隔天结算：今天派发昨天的奖励，并发送今天的跟进信息。')}
           {!started && <span style={{ color: '#fbbf24' }}> {T('Campaign has not started yet — use the 📣 Intro message to announce it.', '活动尚未开始 — 可用 📣 活动介绍 信息先通知玩家。')}</span>}
         </div>
@@ -316,7 +316,7 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
         {err && <div style={{ color: '#f87171', marginTop: 10 }}>{err}</div>}
         {loading ? <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>{T('Loading…', '载入中…')}</div> : <>
           {/* KPIs */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 10, marginTop: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))', gap: 14, marginTop: 14 }}>
             <Kpi label={T(`Qualified on ${asOf || '—'}`, `${asOf || '—'} 达标人数`)} value={`${summary.winners} / ${players.length}`} color="#3fb950" sub={T(`top reward ${fmt(summary.topReward)}`, `最高 ${fmt(summary.topReward)}`)} />
             <Kpi label={T('To pay today', '今天要派发')} value={fmt(summary.yCredit + summary.yStreak)} color="var(--accent)" sub={`${T('tier', '阶梯')} ${fmt(summary.yCredit)} + ${T('streak', '连续')} ${fmt(summary.yStreak)}`} />
             <Kpi label={T('Total cost so far', '至今总成本')} value={fmt(summary.credit + summary.streak)} sub={`${T('tier', '阶梯')} ${fmt(summary.credit)} + ${T('streak', '连续')} ${fmt(summary.streak)}`} />
@@ -335,8 +335,8 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
           {/* shared filters */}
           {tab !== 'rules' && (
             <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-              <span style={{ fontSize: 12, color: 'var(--muted)' }}>{T('Host:', '负责人：')}</span>
-              {['ALL', ...hosts, '__none'].map(h => <button key={h} style={{ ...sec, padding: '4px 10px', background: hostF === h ? 'var(--accent)' : 'var(--surface2)', color: hostF === h ? '#fff' : 'var(--text)' }} onClick={() => setHostF(h)}>{h === 'ALL' ? T('All', '全部') : h === '__none' ? T('(No host)', '（无负责人）') : h}{h === myName ? T(' (me)', '（我）') : ''}</button>)}
+              <span style={{ fontSize: 14, color: 'var(--muted)' }}>{T('Host:', '负责人：')}</span>
+              {['ALL', ...hosts, '__none'].map(h => <button key={h} style={{ ...sec, padding: '6px 12px', background: hostF === h ? 'var(--accent)' : 'var(--surface2)', color: hostF === h ? '#fff' : 'var(--text)' }} onClick={() => setHostF(h)}>{h === 'ALL' ? T('All', '全部') : h === '__none' ? T('(No host)', '（无负责人）') : h}{h === myName ? T(' (me)', '（我）') : ''}</button>)}
               <input style={{ ...input, marginLeft: 8, width: 170 }} placeholder={T('Search VIP…', '搜索VIP…')} value={search} onChange={e => setSearch(e.target.value)} />
               <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--muted)' }}>{T('Message type', '信息类型')}</span>
               <select value={msgType} onChange={e => { setMsgType(e.target.value); setRowType({}) }} style={{ ...input, padding: '4px 6px' }}>
@@ -344,7 +344,7 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
                 {MSG_TYPES.map(k => <option key={k} value={k}>{MSG_LABEL(k)}</option>)}
               </select>
               <span style={{ fontSize: 12, color: 'var(--muted)' }}>{T('WhatsApp language', 'WhatsApp 语言')}</span>
-              {['zh', 'en'].map(l => <button key={l} style={{ ...sec, padding: '4px 10px', background: waLang === l ? 'var(--accent)' : 'var(--surface2)', color: waLang === l ? '#fff' : 'var(--text)' }} onClick={() => setWaLang(l)}>{l === 'zh' ? '中文' : 'EN'}</button>)}
+              {['zh', 'en'].map(l => <button key={l} style={{ ...sec, padding: '6px 12px', background: waLang === l ? 'var(--accent)' : 'var(--surface2)', color: waLang === l ? '#fff' : 'var(--text)' }} onClick={() => setWaLang(l)}>{l === 'zh' ? '中文' : 'EN'}</button>)}
             </div>
           )}
 
@@ -362,10 +362,10 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
                 <button style={{ ...sec, background: unsentOnly ? '#f85149' : 'var(--surface2)', color: unsentOnly ? '#fff' : 'var(--text)' }} onClick={() => setUnsentOnly(v => !v)}>⏳ {T('Not sent yet only', '只看未发送')}</button>
                 <button style={sec} onClick={markShownSent} title={T('For messages sent outside the CRM (broadcast / own phone)', '用于在CRM以外发送的信息（广播 / 自己的手机）')}>✅ {T('Mark shown as sent', '显示中的标记为已发')}</button>
               </div>
-              <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>
+              <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 8 }}>
                 {T('Group is based on yesterday. 🔥 = qualified and one more day unlocks the streak bonus · 😬 = played ≥ ', '分组依据昨天的结果。🔥 = 已达标，再1天就拿连续奖励 · 😬 = 流水 ≥ 第一档的 ')}{cfg.near_pct}%{T(' of the first tier but missed · 💙 = big loss yesterday: send care, don\'t push.', ' 但没达标 · 💙 = 昨天大输：只关怀，不催。')}
               </div>
-              <div style={{ maxHeight: 520, overflow: 'auto', border: '1px solid var(--border)', borderRadius: 8 }}>
+              <div style={{ maxHeight: 'calc(100vh - 430px)', minHeight: 360, overflow: 'auto', border: '1px solid var(--border)', borderRadius: 10 }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead><tr>{['#', 'VIP', T('Host', '负责人'), T('Group', '分组'), T(`Turnover ${asOf || ''}`, `${asOf || ''} 流水`), T('Reward', '奖励'), T('Missed by / next', '差多少 / 下一档'), T('Streak', '连续'), T('Total so far', '累计'), T('Sent today', '今天已发'), T('Message', '信息')].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
                   <tbody>
@@ -376,12 +376,12 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
                       return (
                         <tr key={r.id} style={{ opacity: sentOf(r) ? 0.6 : 1 }}>
                           <td style={{ ...td, color: 'var(--muted)' }}>{i + 1}</td>
-                          <td style={td}><b>{r.username}</b><div style={{ fontSize: 10, color: 'var(--muted)' }}>{r.m.full_name || ''} · {r.m.tier || r.tier}{r.m.currency && r.m.currency !== 'MYR' ? ` · ${r.m.currency}` : ''}</div></td>
+                          <td style={td}><b>{r.username}</b><div style={{ fontSize: 12, color: 'var(--muted)' }}>{r.m.full_name || ''} · {r.m.tier || r.tier}{r.m.currency && r.m.currency !== 'MYR' ? ` · ${r.m.currency}` : ''}</div></td>
                           <td style={td}>{r.m.host_assigned || '—'}</td>
-                          <td style={td}><span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: g.color + '22', color: g.color }}>{g.icon} {lang === 'zh' ? g.zh : g.en}</span></td>
+                          <td style={td}><span style={{ fontSize: 13, fontWeight: 700, padding: '3px 10px', borderRadius: 12, background: g.color + '22', color: g.color }}>{g.icon} {lang === 'zh' ? g.zh : g.en}</span></td>
                           <td style={{ ...td, textAlign: 'right' }}>{l.vb ? c + fmt(l.vb) : '—'}</td>
-                          <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: l.reward ? '#3fb950' : 'var(--muted)' }}>{l.reward ? fmt(l.reward) : '—'}{l.streakBonus ? <div style={{ fontSize: 10, color: '#f97316' }}>🔥 +{fmt(l.streakBonus)}</div> : null}</td>
-                          <td style={{ ...td, fontSize: 11 }}>
+                          <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: l.reward ? '#3fb950' : 'var(--muted)' }}>{l.reward ? fmt(l.reward) : '—'}{l.streakBonus ? <div style={{ fontSize: 12, color: '#f97316' }}>🔥 +{fmt(l.streakBonus)}</div> : null}</td>
+                          <td style={{ ...td, fontSize: 13 }}>
                             {!l.qualifies && tiers[0] ? <span style={{ color: '#fbbf24' }}>{T('needs', '差')} {c}{fmt(Math.max(0, tiers[0].turnover - num(l.vb)))} → {fmt(tiers[0].reward)}</span>
                               : l.nextTurnover ? <span>{T('next', '下一档')} {c}{fmt(l.nextTurnover)} → {fmt(l.nextReward)}</span> : <span style={{ color: '#3fb950' }}>{T('top tier', '最高档')}</span>}
                           </td>
@@ -389,17 +389,17 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
                           <td style={{ ...td, textAlign: 'right' }}>{fmt(r.prog.cost)}</td>
                           <td style={td}>
                             {sentOf(r)
-                              ? <span onClick={() => unmarkSent(r)} title={T('Click to undo', '点击撤销')} style={{ cursor: 'pointer', color: '#3fb950', fontWeight: 700, fontSize: 11 }}>✅ {new Date(sentOf(r).at).toLocaleTimeString('en-MY', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kuala_Lumpur' })}<div style={{ fontWeight: 400, color: 'var(--muted)' }}>{sentOf(r).by} · {sentOf(r).via === 'wa' ? 'WA' : sentOf(r).via === 'copy' ? T('copied', '复制') : T('manual', '手动')}</div></span>
-                              : <button style={{ ...sec, padding: '2px 8px', fontSize: 11 }} onClick={() => markSent(r, typeFor(r), 'manual')} title={T('Sent outside the CRM? Mark it here', '在CRM以外发送了？在这里标记')}>⏳ {T('Mark sent', '标记已发')}</button>}
+                              ? <span onClick={() => unmarkSent(r)} title={T('Click to undo', '点击撤销')} style={{ cursor: 'pointer', color: '#3fb950', fontWeight: 700, fontSize: 13 }}>✅ {new Date(sentOf(r).at).toLocaleTimeString('en-MY', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kuala_Lumpur' })}<div style={{ fontWeight: 400, color: 'var(--muted)' }}>{sentOf(r).by} · {sentOf(r).via === 'wa' ? 'WA' : sentOf(r).via === 'copy' ? T('copied', '复制') : T('manual', '手动')}</div></span>
+                              : <button style={{ ...sec, padding: '5px 10px', fontSize: 13 }} onClick={() => markSent(r, typeFor(r), 'manual')} title={T('Sent outside the CRM? Mark it here', '在CRM以外发送了？在这里标记')}>⏳ {T('Mark sent', '标记已发')}</button>}
                           </td>
                           <td style={td}>
                             <div style={{ display: 'flex', gap: 4 }}>
-                              <select value={rowType[r.id] || 'auto'} onChange={e => setRowType(m0 => ({ ...m0, [r.id]: e.target.value }))} style={{ ...input, padding: '2px 4px', fontSize: 11 }} title={T('Message type for this player', '这位玩家的信息类型')}>
+                              <select value={rowType[r.id] || 'auto'} onChange={e => setRowType(m0 => ({ ...m0, [r.id]: e.target.value }))} style={{ ...input, padding: '5px 6px', fontSize: 13 }} title={T('Message type for this player', '这位玩家的信息类型')}>
                                 <option value="auto">{T('Auto', '自动')} ({started ? (lang === 'zh' ? GROUPS[r.group].zh : GROUPS[r.group].en) : T('Intro', '活动介绍')})</option>
                                 {MSG_TYPES.map(k => <option key={k} value={k}>{MSG_LABEL(k)}</option>)}
                               </select>
-                              <button style={{ ...sec, padding: '3px 8px', background: '#25D366', color: '#fff', border: 'none' }} onClick={() => openWa(r, typeFor(r))} title={msgFor(r, typeFor(r))}>💬 WA</button>
-                              <button style={{ ...sec, padding: '3px 8px' }} onClick={() => copyMsg(r, typeFor(r))} title={T('Copy message', '复制信息')}>⎘</button>
+                              <button style={{ ...sec, padding: '6px 12px', background: '#25D366', color: '#fff', border: 'none' }} onClick={() => openWa(r, typeFor(r))} title={msgFor(r, typeFor(r))}>💬 WA</button>
+                              <button style={{ ...sec, padding: '6px 12px' }} onClick={() => copyMsg(r, typeFor(r))} title={T('Copy message', '复制信息')}>⎘</button>
                             </div>
                           </td>
                         </tr>
@@ -417,13 +417,13 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
             <div style={{ marginTop: 10 }}>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginBottom: 8 }}>
                 <span style={{ fontSize: 12, color: 'var(--muted)' }}>{T('Settled day:', '结算日：')}</span>
-                {pastDays.map(d => <button key={d} style={{ ...sec, padding: '4px 10px', background: settle === d ? 'var(--accent)' : 'var(--surface2)', color: settle === d ? '#fff' : 'var(--text)' }} onClick={() => setPayDay(d)}>{d.slice(5)}</button>)}
+                {pastDays.map(d => <button key={d} style={{ ...sec, padding: '6px 12px', background: settle === d ? 'var(--accent)' : 'var(--surface2)', color: settle === d ? '#fff' : 'var(--text)' }} onClick={() => setPayDay(d)}>{d.slice(5)}</button>)}
                 {!pastDays.length && <span style={{ fontSize: 12, color: 'var(--muted)' }}>{T('No settled day yet.', '还没有结算日。')}</span>}
                 <span style={{ marginLeft: 'auto' }} />
                 {payRows.length > 0 && <><button style={sec} onClick={exportPay}>⬇ {T('Export for BO', '导出给BO')}</button><button style={btn} onClick={markAllPaid}>✅ {T('Mark all paid', '全部标记已派发')}</button></>}
               </div>
-              <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>{T(`Rewards earned on ${settle || '—'} — pay on the next day. Streak bonus = ${cfg.streak_pct}% of deposits on the ${cfg.streak_days} streak days.`, `${settle || '—'} 的奖励 — 隔天派发。连续奖励 = ${cfg.streak_days} 天连续达标日存款的 ${cfg.streak_pct}%。`)}</div>
-              <div style={{ maxHeight: 520, overflow: 'auto', border: '1px solid var(--border)', borderRadius: 8 }}>
+              <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 8 }}>{T(`Rewards earned on ${settle || '—'} — pay on the next day. Streak bonus = ${cfg.streak_pct}% of deposits on the ${cfg.streak_days} streak days.`, `${settle || '—'} 的奖励 — 隔天派发。连续奖励 = ${cfg.streak_days} 天连续达标日存款的 ${cfg.streak_pct}%。`)}</div>
+              <div style={{ maxHeight: 'calc(100vh - 430px)', minHeight: 360, overflow: 'auto', border: '1px solid var(--border)', borderRadius: 10 }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead><tr>{['#', 'VIP', T('Host', '负责人'), T('Turnover', '流水'), T('Tier reward', '阶梯奖励'), T('Paid', '已派'), T('Streak bonus', '连续奖励'), T('Paid', '已派'), T('Total', '合计')].map((h, i) => <th key={i} style={th}>{h}</th>)}</tr></thead>
                   <tbody>
@@ -432,12 +432,12 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
                       return (
                         <tr key={r.id}>
                           <td style={{ ...td, color: 'var(--muted)' }}>{i + 1}</td>
-                          <td style={td}><b>{r.username}</b><div style={{ fontSize: 10, color: 'var(--muted)' }}>{r.m.full_name || ''}{r.m.currency && r.m.currency !== 'MYR' ? ` · ${r.m.currency}` : ''}</div></td>
+                          <td style={td}><b>{r.username}</b><div style={{ fontSize: 12, color: 'var(--muted)' }}>{r.m.full_name || ''}{r.m.currency && r.m.currency !== 'MYR' ? ` · ${r.m.currency}` : ''}</div></td>
                           <td style={td}>{r.m.host_assigned || '—'}</td>
                           <td style={{ ...td, textAlign: 'right' }}>{sym(r.m.currency)}{fmt(d.vb)}</td>
                           <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: '#3fb950' }}>{d.reward ? fmt(d.reward) : '—'}</td>
                           <td style={td}>{d.reward > 0 && <input type="checkbox" checked={!!p.c} onChange={e => markPaid(r, 'c', e.target.checked)} />}</td>
-                          <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: '#f97316' }}>{d.streakBonus ? fmt(d.streakBonus) : '—'}{d.streakBonus ? <div style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 400 }}>{cfg.streak_pct}% × {fmt(d.streakBase)}</div> : null}</td>
+                          <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: '#f97316' }}>{d.streakBonus ? fmt(d.streakBonus) : '—'}{d.streakBonus ? <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 400 }}>{cfg.streak_pct}% × {fmt(d.streakBase)}</div> : null}</td>
                           <td style={td}>{d.streakBonus > 0 && <input type="checkbox" checked={!!p.s} onChange={e => markPaid(r, 's', e.target.checked)} />}</td>
                           <td style={{ ...td, textAlign: 'right', fontWeight: 800 }}>{fmt(d.reward + d.streakBonus)}</td>
                         </tr>
@@ -457,7 +457,7 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
               <button style={sec} onClick={() => setSel(new Set(scoped.map(r => r.id)))}>{T('Select all shown', '全选显示中的')}</button>
               <button style={sec} onClick={() => setSel(new Set())}>{T('Clear', '清除')}</button>
               <button style={{ ...sec, background: sel.size ? '#f85149' : 'var(--surface2)', color: sel.size ? '#fff' : 'var(--muted)' }} disabled={!sel.size} onClick={removeSelected}>🗑 {T(`Remove selected (${sel.size})`, `移出已选（${sel.size}）`)}</button>
-              <span style={{ fontSize: 11, color: 'var(--muted)' }}>{T('Tip: use the Host buttons above to show e.g. only Jennifer\'s players → Select all shown → Remove.', '提示：先用上面的负责人按钮只显示某位负责人的玩家 → 全选显示中的 → 移出。')}</span>
+              <span style={{ fontSize: 13, color: 'var(--muted)' }}>{T('Tip: use the Host buttons above to show e.g. only Jennifer\'s players → Select all shown → Remove.', '提示：先用上面的负责人按钮只显示某位负责人的玩家 → 全选显示中的 → 移出。')}</span>
               <button style={{ ...btn, marginLeft: 'auto' }} onClick={openBulk}>➕ {T('Bulk add by host / tier', '按负责人 / 等级批量加入')}</button>
             </div>
             {bulkOpen && (
@@ -468,15 +468,15 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
                     {['BLACK', 'DIAMOND-P', 'DIAMOND', 'PLATINUM', 'GOLD', 'SILVER'].map(t0 => <button key={t0} style={{ ...sec, padding: '3px 9px', background: bulkTiers.includes(t0) ? 'var(--accent)' : 'var(--surface2)', color: bulkTiers.includes(t0) ? '#fff' : 'var(--text)' }} onClick={() => toggleArr(bulkTiers, setBulkTiers, t0)}>{t0}</button>)}
                   </div>
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginBottom: 8 }}>
-                    <span style={{ fontSize: 12, color: 'var(--muted)' }}>{T('Host:', '负责人：')}</span>
+                    <span style={{ fontSize: 14, color: 'var(--muted)' }}>{T('Host:', '负责人：')}</span>
                     {[...allHosts, '__none'].map(h => <button key={h} style={{ ...sec, padding: '3px 9px', background: bulkHosts.includes(h) ? 'var(--accent)' : 'var(--surface2)', color: bulkHosts.includes(h) ? '#fff' : 'var(--text)' }} onClick={() => toggleArr(bulkHosts, setBulkHosts, h)}>{h === '__none' ? T('(No host)', '（无负责人）') : h}</button>)}
                   </div>
                   <button style={btn} disabled={!bulkMatches.length} onClick={addBulk}>{T(`Add ${bulkMatches.length} matching players (not yet in campaign)`, `加入 ${bulkMatches.length} 位符合的玩家（尚未在活动中）`)}</button>
-                  <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 8 }}>{T('Empty = any. Excluded players are skipped.', '不选 = 全部。已排除的玩家会跳过。')}</span>
+                  <span style={{ fontSize: 13, color: 'var(--muted)', marginLeft: 8 }}>{T('Empty = any. Excluded players are skipped.', '不选 = 全部。已排除的玩家会跳过。')}</span>
                 </>}
               </div>
             )}
-            <div style={{ marginTop: 10, maxHeight: 560, overflow: 'auto', border: '1px solid var(--border)', borderRadius: 8 }}>
+            <div style={{ marginTop: 10, maxHeight: 'calc(100vh - 430px)', minHeight: 360, overflow: 'auto', border: '1px solid var(--border)', borderRadius: 10 }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead><tr><th style={th}><input type="checkbox" checked={scoped.length > 0 && scoped.every(r => sel.has(r.id))} onChange={e => setSel(e.target.checked ? new Set([...sel, ...scoped.map(r => r.id)]) : new Set([...sel].filter(id => !scoped.some(r => r.id === id))))} title={T('Select all shown', '全选显示中的')} /></th><th style={th}>#</th><th style={th}>VIP</th>{dates.map(d => <th key={d} style={{ ...th, textAlign: 'center' }}>{d.slice(5)}</th>)}<th style={th}>{T('Tier total', '阶梯合计')}</th><th style={th}>{T('Streak', '连续')}</th><th style={th}></th></tr></thead>
                 <tbody>
@@ -484,16 +484,16 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
                     <tr key={r.id} style={{ background: sel.has(r.id) ? 'rgba(248,81,73,.08)' : 'transparent' }}>
                       <td style={td}><input type="checkbox" checked={sel.has(r.id)} onChange={() => setSel(s0 => { const n = new Set(s0); n.has(r.id) ? n.delete(r.id) : n.add(r.id); return n })} /></td>
                       <td style={{ ...td, color: 'var(--muted)' }}>{i + 1}</td>
-                      <td style={td}><b>{r.username}</b><div style={{ fontSize: 10, color: 'var(--muted)' }}>{r.m.host_assigned || T('(no host)', '（无负责人）')} · {r.m.tier || r.tier}</div></td>
+                      <td style={td}><b>{r.username}</b><div style={{ fontSize: 12, color: 'var(--muted)' }}>{r.m.host_assigned || T('(no host)', '（无负责人）')} · {r.m.tier || r.tier}</div></td>
                       {r.prog.days.map(d => (
                         <td key={d.date} title={`${T('Turnover', '流水')} ${fmt(d.vb)} · ${T('Deposit', '存款')} ${fmt(d.dep)}`} style={{ ...td, textAlign: 'center', background: d.future ? 'transparent' : d.qualifies ? 'rgba(63,185,80,.12)' : d.vb > 0 ? 'rgba(251,191,36,.08)' : 'transparent' }}>
-                          {d.future ? <span style={{ color: 'var(--muted)' }}>·</span> : d.qualifies ? <b style={{ color: '#3fb950' }}>{fmt(d.reward)}</b> : <span style={{ fontSize: 10, color: 'var(--muted)' }}>{d.vb ? fmt(d.vb / 1000) + 'k' : '—'}</span>}
-                          {d.streakBonus > 0 && <div style={{ fontSize: 10, color: '#f97316' }}>🔥{fmt(d.streakBonus)}</div>}
+                          {d.future ? <span style={{ color: 'var(--muted)' }}>·</span> : d.qualifies ? <b style={{ color: '#3fb950' }}>{fmt(d.reward)}</b> : <span style={{ fontSize: 12, color: 'var(--muted)' }}>{d.vb ? fmt(d.vb / 1000) + 'k' : '—'}</span>}
+                          {d.streakBonus > 0 && <div style={{ fontSize: 12, color: '#f97316' }}>🔥{fmt(d.streakBonus)}</div>}
                         </td>
                       ))}
                       <td style={{ ...td, textAlign: 'right', fontWeight: 700 }}>{fmt(r.prog.credit)}</td>
                       <td style={{ ...td, textAlign: 'right', color: '#f97316', fontWeight: 700 }}>{fmt(r.prog.streak)}</td>
-                      <td style={td}><button style={{ ...sec, padding: '2px 6px', fontSize: 11 }} onClick={() => removePlayer(r)}>✕</button></td>
+                      <td style={td}><button style={{ ...sec, padding: '2px 6px', fontSize: 13 }} onClick={() => removePlayer(r)}>✕</button></td>
                     </tr>
                   ))}
                 </tbody>
