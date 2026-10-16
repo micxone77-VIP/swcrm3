@@ -224,6 +224,26 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
     }
     setPlayers(ps => [...ps]); flash(T('All marked paid', '已全部标记派发'))
   }
+  // Text payout list (same style as other campaigns) — copy & paste to BO / group chat
+  function payoutText() {
+    const scopedPay = payRows.filter(({ r }) => !hostF || hostF === 'ALL' || (hostF === '__none' ? !r.m.host_assigned : r.m.host_assigned === hostF))
+    const label = cfg.reward_label || 'Credit'
+    const cur = r => (String(r.m.currency || 'MYR').toUpperCase() === 'SGD' ? 'SGD' : String(r.m.currency || 'MYR').toUpperCase() === 'KHUSD' ? 'USD' : 'RM')
+    const tierLines = scopedPay.filter(x => x.d.reward > 0).sort((a, b) => b.d.reward - a.d.reward)
+      .map(({ r, d }) => `${r.username} - ${cur(r)} ${fmt(d.reward)} ${label}`)
+    const streakLines = scopedPay.filter(x => x.d.streakBonus > 0).sort((a, b) => b.d.streakBonus - a.d.streakBonus)
+      .map(({ r, d }) => `${r.username} - ${cur(r)} ${fmt(d.streakBonus)} ${label}`)
+    const out = [camp.campaign_name.toUpperCase(), settle, '']
+    out.push(...tierLines)
+    if (streakLines.length) out.push('', `🔥 ${cfg.streak_days}-DAY STREAK BONUS (${cfg.streak_pct}%)`, ...streakLines)
+    if (num(cfg.turnover_multiplier) > 0) out.push('', `x${num(cfg.turnover_multiplier)} turnover`)
+    return out.join('\n')
+  }
+  function copyPayout() {
+    if (!payRows.length) return
+    navigator.clipboard.writeText(payoutText()); flash(T('Payout list copied', '已复制派发名单'))
+  }
+
   function exportPay() {
     const data = payRows.map(({ r, d }, i) => ({
       '#': i + 1, Username: r.username, Name: r.m.full_name || '', Tier: r.m.tier || r.tier || '', Currency: r.m.currency || 'MYR', Host: r.m.host_assigned || '',
@@ -461,7 +481,7 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
               </div>
               <div style={{ maxHeight: 'calc(100vh - 430px)', minHeight: 360, overflow: 'auto', border: '1px solid var(--border)', borderRadius: 10 }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <thead><tr>{['#', 'VIP', T('Host', '负责人'), T('Group', '分组'), T(`Turnover ${asOf || ''}`, `${asOf || ''} 流水`), T('Reward', '奖励'), T('Missed by / next', '差多少 / 下一档'), T('Streak', '连续'), T('Total so far', '累计'), T('Sent today', '今天已发'), T('Message', '信息')].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
+                  <thead><tr>{['#', 'VIP', T('Host', '负责人'), T('Phone', '电话'), T('Group', '分组'), T(`Turnover ${asOf || ''}`, `${asOf || ''} 流水`), T('Reward', '奖励'), T('Missed by / next', '差多少 / 下一档'), T('Streak', '连续'), T('Total so far', '累计'), T('Sent today', '今天已发'), T('Message', '信息')].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
                   <tbody>
                     {followRows.map((r, i) => {
                       const l = r.prog.last || {}
@@ -472,6 +492,9 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
                           <td style={{ ...td, color: 'var(--muted)' }}>{i + 1}</td>
                           <td style={td}>{nameCell(r, `${r.m.full_name || ''} · ${r.m.tier || r.tier}${r.m.currency && r.m.currency !== 'MYR' ? ` · ${r.m.currency}` : ''}`)}</td>
                           <td style={td}>{r.m.host_assigned || '—'}</td>
+                          <td style={td}>{(() => { const ph = String(r.m.whatsapp || r.m.phone || r.whatsapp || '').replace(/\D/g, ''); return ph
+                            ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><span style={{ fontVariantNumeric: 'tabular-nums' }}>{ph}</span><button onClick={() => { navigator.clipboard.writeText(ph); flash(T(`Copied ${ph}`, `已复制 ${ph}`)) }} title={T('Copy phone', '复制电话')} style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 15, padding: '0 2px' }}>⎘</button></span>
+                            : <span style={{ color: 'var(--muted)' }}>—</span> })()}</td>
                           <td style={td}><span style={{ fontSize: 13, fontWeight: 700, padding: '3px 10px', borderRadius: 12, background: g.color + '22', color: g.color }}>{g.icon} {lang === 'zh' ? g.zh : g.en}</span></td>
                           <td style={{ ...td, textAlign: 'right' }}>{l.vb ? c + fmt(l.vb) : '—'}</td>
                           <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: l.reward ? '#3fb950' : 'var(--muted)' }}>{l.reward ? fmt(l.reward) : '—'}{l.streakBonus ? <div style={{ fontSize: 12, color: '#f97316' }}>🔥 +{fmt(l.streakBonus)}</div> : null}</td>
@@ -500,7 +523,7 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
                         </tr>
                       )
                     })}
-                    {!followRows.length && <tr><td colSpan={11} style={{ ...td, textAlign: 'center', padding: 24, color: 'var(--muted)' }}>{T('No players in this group.', '此分组没有玩家。')}</td></tr>}
+                    {!followRows.length && <tr><td colSpan={12} style={{ ...td, textAlign: 'center', padding: 24, color: 'var(--muted)' }}>{T('No players in this group.', '此分组没有玩家。')}</td></tr>}
                   </tbody>
                 </table>
               </div>
@@ -515,9 +538,15 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
                 {pastDays.map(d => <button key={d} style={{ ...sec, padding: '6px 12px', background: settle === d ? 'var(--accent)' : 'var(--surface2)', color: settle === d ? '#fff' : 'var(--text)' }} onClick={() => setPayDay(d)}>{d.slice(5)}</button>)}
                 {!pastDays.length && <span style={{ fontSize: 12, color: 'var(--muted)' }}>{T('No settled day yet.', '还没有结算日。')}</span>}
                 <span style={{ marginLeft: 'auto' }} />
-                {payRows.length > 0 && <><button style={sec} onClick={exportPay}>⬇ {T('Export for BO', '导出给BO')}</button><button style={btn} onClick={markAllPaid}>✅ {T('Mark all paid', '全部标记已派发')}</button></>}
+                {payRows.length > 0 && <><button style={{ ...sec, borderColor: 'var(--accent)' }} onClick={copyPayout} title={T('Copy the payout list as text', '复制派发名单文字')}>📋 {T('Copy payout list', '复制派发名单')}</button><button style={sec} onClick={exportPay}>⬇ {T('Export for BO', '导出给BO')}</button><button style={btn} onClick={markAllPaid}>✅ {T('Mark all paid', '全部标记已派发')}</button></>}
               </div>
               <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 8 }}>{T(`Rewards earned on ${settle || '—'} — pay on the next day. Streak bonus = ${cfg.streak_pct}% of deposits on the ${cfg.streak_days} streak days.`, `${settle || '—'} 的奖励 — 隔天派发。连续奖励 = ${cfg.streak_days} 天连续达标日存款的 ${cfg.streak_pct}%。`)}</div>
+              {payRows.length > 0 && (
+                <details style={{ marginBottom: 8 }}>
+                  <summary style={{ cursor: 'pointer', fontSize: 13, color: 'var(--muted)' }}>{T('Preview payout text', '预览派发名单文字')}</summary>
+                  <pre style={{ ...card, whiteSpace: 'pre-wrap', fontSize: 14, marginTop: 6, fontFamily: 'inherit' }}>{payoutText()}</pre>
+                </details>
+              )}
               <div style={{ maxHeight: 'calc(100vh - 430px)', minHeight: 360, overflow: 'auto', border: '1px solid var(--border)', borderRadius: 10 }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead><tr>{['#', 'VIP', T('Host', '负责人'), T('Turnover', '流水'), T('Tier reward', '阶梯奖励'), T('Paid', '已派'), T('Streak bonus', '连续奖励'), T('Paid', '已派'), T('Total', '合计')].map((h, i) => <th key={i} style={th}>{h}</th>)}</tr></thead>
@@ -757,7 +786,8 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                   <div style={{ fontSize: 22, fontWeight: 800 }}>{r.username}</div>
                   <button style={{ ...sec, padding: '4px 10px' }} onClick={() => copyName(r.username)}>⎘</button>
-                  <div style={{ fontSize: 14, color: 'var(--muted)' }}>{r.m.full_name || ''} · {r.m.tier || r.tier} · {r.m.host_assigned || T('(no host)', '（无负责人）')} · {r.m.currency || 'MYR'}</div>
+                  <div style={{ fontSize: 14, color: 'var(--muted)' }}>{r.m.full_name || ''} · {r.m.tier || r.tier} · {r.m.host_assigned || T('(no host)', '（无负责人）')} · {r.m.currency || 'MYR'}{(r.m.whatsapp || r.m.phone) ? ` · 📞 ${String(r.m.whatsapp || r.m.phone).replace(/\D/g, '')}` : ''}</div>
+                  {(r.m.whatsapp || r.m.phone) && <button style={{ ...sec, padding: '4px 10px' }} onClick={() => { const ph = String(r.m.whatsapp || r.m.phone).replace(/\D/g, ''); navigator.clipboard.writeText(ph); flash(T(`Copied ${ph}`, `已复制 ${ph}`)) }}>📞 ⎘</button>}
                   <button style={{ ...sec, marginLeft: 'auto' }} onClick={() => setOpenP(null)}>✕ {T('Close', '关闭')}</button>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 12, marginTop: 14 }}>

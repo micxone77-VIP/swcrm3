@@ -13,7 +13,7 @@ export function cleanDailyConfig(cfg) {
   return {
     ...cfg,
     tiers: (cfg.tiers || []).map(t => ({ turnover: num(t.turnover), reward: num(t.reward) })).filter(t => t.turnover > 0).sort((a, b) => a.turnover - b.turnover),
-    streak_days: Math.max(1, Math.round(num(cfg.streak_days) || 3)), streak_pct: num(cfg.streak_pct), streak_cap: num(cfg.streak_cap), near_pct: num(cfg.near_pct ?? 50),
+    streak_days: Math.max(1, Math.round(num(cfg.streak_days) || 3)), streak_pct: num(cfg.streak_pct), streak_cap: num(cfg.streak_cap), near_pct: num(cfg.near_pct ?? 50), turnover_multiplier: num(cfg.turnover_multiplier ?? 3),
   }
 }
 
@@ -63,6 +63,7 @@ export function DailyRulesEditor({ cfg, setCfg, withTemplates = false }) {
             </div>
           )}
           {cfg.streak_enabled && cfg.streak_style === 'rolling' && <div style={{ fontSize: 11, color: '#fbbf24', marginTop: 6 }}>⚠️ {T(`Rolling: days 1-3, 2-4, 3-5… each pays, so one day's deposit can count in up to ${cfg.streak_days} bonuses (≈ ${num(cfg.streak_pct) * num(cfg.streak_days)}% of deposits for a player who qualifies every day).`, `滚动：第1-3、2-4、3-5天…每次都派，同一天的存款最多会被计算 ${cfg.streak_days} 次（每天都达标的玩家约等于存款的 ${num(cfg.streak_pct) * num(cfg.streak_days)}%）。`)}</div>}
+          <div style={{ marginTop: 10 }}><div style={lbl}>{T('Reward turnover requirement (×) — shown on the payout list', '奖励流水要求（倍）— 显示在派发名单')}</div><input type="number" style={{ ...input, width: 120 }} value={cfg.turnover_multiplier ?? 3} onChange={e => c('turnover_multiplier', e.target.value)} /></div>
           <div style={{ marginTop: 10 }}><div style={lbl}>{T('"Almost" = turnover ≥ % of first tier', '"差一点" = 流水 ≥ 第一档的 %')}</div><input type="number" style={{ ...input, width: 120 }} value={cfg.near_pct ?? 50} onChange={e => c('near_pct', e.target.value)} /></div>
         </div>
       </div>

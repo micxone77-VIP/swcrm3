@@ -26,6 +26,7 @@ export function defaultDailyConfig() {
     streak_pct: 1,             // % of deposits on the streak days
     streak_cap: 0,             // 0 = no cap
     near_pct: 50,              // "almost" = turnover ≥ this % of the first tier
+    turnover_multiplier: 3,    // reward turnover requirement shown on the payout list (x3 turnover)
     wa_templates: {},          // { intro|won|near|streak|idle|care : { en, zh } } — empty → built-in text
   }
 }
