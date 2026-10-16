@@ -202,7 +202,10 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
 
   // ── payout (per settled day) ──
   const pastDays = rowsAll[0]?.prog.days.filter(d => !d.future).map(d => d.date) || []
-  const settle = payDay || pastDays[pastDays.length - 1] || null
+  const allMode = payDay === 'ALL'
+  const settle = allMode ? null : (payDay || pastDays[pastDays.length - 1] || null)
+  const hostOk = r => !hostF || hostF === 'ALL' || (hostF === '__none' ? !r.m.host_assigned : r.m.host_assigned === hostF)
+  const payRowsFor = day => rowsAll.map(r => ({ r, d: r.prog.days.find(x => x.date === day) })).filter(x => x.d && (x.d.reward > 0 || x.d.streakBonus > 0))
   const payRows = settle ? rowsAll.map(r => ({ r, d: r.prog.days.find(x => x.date === settle) })).filter(x => x.d && (x.d.reward > 0 || x.d.streakBonus > 0))
     .sort((a, b) => (b.d.reward + b.d.streakBonus) - (a.d.reward + a.d.streakBonus)) : []
   async function markPaid(r, key, val) {
@@ -225,20 +228,45 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
     setPlayers(ps => [...ps]); flash(T('All marked paid', '已全部标记派发'))
   }
   // Text payout list (same style as other campaigns) — copy & paste to BO / group chat
-  function payoutText() {
-    const scopedPay = payRows.filter(({ r }) => !hostF || hostF === 'ALL' || (hostF === '__none' ? !r.m.host_assigned : r.m.host_assigned === hostF))
+  function payoutText(day = settle) {
+    const scopedPay = payRowsFor(day).filter(({ r }) => hostOk(r))
     const label = cfg.reward_label || 'Credit'
     const cur = r => (String(r.m.currency || 'MYR').toUpperCase() === 'SGD' ? 'SGD' : String(r.m.currency || 'MYR').toUpperCase() === 'KHUSD' ? 'USD' : 'RM')
     const tierLines = scopedPay.filter(x => x.d.reward > 0).sort((a, b) => b.d.reward - a.d.reward)
       .map(({ r, d }) => `${r.username} - ${cur(r)} ${fmt(d.reward)} ${label}`)
     const streakLines = scopedPay.filter(x => x.d.streakBonus > 0).sort((a, b) => b.d.streakBonus - a.d.streakBonus)
       .map(({ r, d }) => `${r.username} - ${cur(r)} ${fmt(d.streakBonus)} ${label}`)
-    const out = [camp.campaign_name.toUpperCase(), settle, '']
+    const out = [camp.campaign_name.toUpperCase(), day, '']
     out.push(...tierLines)
     if (streakLines.length) out.push('', `🔥 ${cfg.streak_days}-DAY STREAK BONUS (${cfg.streak_pct}%)`, ...streakLines)
     if (num(cfg.turnover_multiplier) > 0) out.push('', `x${num(cfg.turnover_multiplier)} turnover`)
     return out.join('\n')
   }
+  // 📜 history across all settled days
+  const history = pastDays.map(day => {
+    const rows = payRowsFor(day).filter(({ r }) => hostOk(r))
+    const h = { day, qualified: 0, streakN: 0, amt: {}, paid: {}, pend: {}, itemsPaid: 0, items: 0 }
+    rows.forEach(({ r, d }) => {
+      const c = String(r.m.currency || 'MYR').toUpperCase()
+      const p = (r.ch_paid || {})[day] || {}
+      const add = (o, v) => { o[c] = (o[c] || 0) + v }
+      if (d.reward > 0) { h.qualified++; h.items++; add(h.amt, d.reward); if (p.c) { h.itemsPaid++; add(h.paid, d.reward) } else add(h.pend, d.reward) }
+      if (d.streakBonus > 0) { h.streakN++; h.items++; add(h.amt, d.streakBonus); if (p.s) { h.itemsPaid++; add(h.paid, d.streakBonus) } else add(h.pend, d.streakBonus) }
+    })
+    return h
+  })
+  const histTotal = history.reduce((t, h) => {
+    ;['amt', 'paid', 'pend'].forEach(k => Object.entries(h[k]).forEach(([c, v]) => { t[k][c] = (t[k][c] || 0) + v }))
+    t.qualified += h.qualified; t.streakN += h.streakN; t.items += h.items; t.itemsPaid += h.itemsPaid
+    return t
+  }, { amt: {}, paid: {}, pend: {}, qualified: 0, streakN: 0, items: 0, itemsPaid: 0 })
+  const curAmt = o => Object.keys(o).length ? Object.entries(o).map(([c, v]) => `${sym(c)}${fmt(v)}`).join(' · ') : '—'
+  function copyAllDays() {
+    const txt = pastDays.filter(d => payRowsFor(d).some(({ r }) => hostOk(r))).map(d => payoutText(d)).join('\n\n────────\n\n')
+    if (!txt) return
+    navigator.clipboard.writeText(txt); flash(T('All days copied', '已复制全部日期'))
+  }
+
   function copyPayout() {
     if (!payRows.length) return
     navigator.clipboard.writeText(payoutText()); flash(T('Payout list copied', '已复制派发名单'))
@@ -535,11 +563,63 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
             <div style={{ marginTop: 10 }}>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginBottom: 8 }}>
                 <span style={{ fontSize: 12, color: 'var(--muted)' }}>{T('Settled day:', '结算日：')}</span>
+                {pastDays.length > 0 && <button style={{ ...sec, padding: '6px 12px', fontWeight: 700, background: allMode ? 'var(--accent)' : 'var(--surface2)', color: allMode ? '#fff' : 'var(--text)' }} onClick={() => setPayDay('ALL')}>📜 {T('All days', '全部日期')}</button>}
                 {pastDays.map(d => <button key={d} style={{ ...sec, padding: '6px 12px', background: settle === d ? 'var(--accent)' : 'var(--surface2)', color: settle === d ? '#fff' : 'var(--text)' }} onClick={() => setPayDay(d)}>{d.slice(5)}</button>)}
                 {!pastDays.length && <span style={{ fontSize: 12, color: 'var(--muted)' }}>{T('No settled day yet.', '还没有结算日。')}</span>}
                 <span style={{ marginLeft: 'auto' }} />
                 {payRows.length > 0 && <><button style={{ ...sec, borderColor: 'var(--accent)' }} onClick={copyPayout} title={T('Copy the payout list as text', '复制派发名单文字')}>📋 {T('Copy payout list', '复制派发名单')}</button><button style={sec} onClick={exportPay}>⬇ {T('Export for BO', '导出给BO')}</button><button style={btn} onClick={markAllPaid}>✅ {T('Mark all paid', '全部标记已派发')}</button></>}
               </div>
+              {allMode ? (<>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 13, color: 'var(--muted)' }}>{T('Payout history — every settled day of this campaign. Click a day to open its list.', '派发记录 — 本活动每个结算日。点日期打开当天名单。')}</span>
+                  <button style={{ ...sec, marginLeft: 'auto', borderColor: 'var(--accent)' }} onClick={copyAllDays}>📋 {T('Copy all days', '复制全部日期')}</button>
+                </div>
+                <div style={{ border: '1px solid var(--border)', borderRadius: 10, overflow: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead><tr>{[T('Settled day', '结算日'), T('Pay on', '派发日'), T('Qualified', '达标'), T('Streak bonuses', '连续奖励'), T('Total', '合计'), T('Paid', '已派'), T('Pending', '待派'), T('Status', '状态'), ''].map((h, i) => <th key={i} style={th}>{h}</th>)}</tr></thead>
+                    <tbody>
+                      {[...history].reverse().map(h => {
+                        const payOn = new Date(new Date(h.day + 'T00:00:00Z').getTime() + 86400000).toISOString().slice(0, 10)
+                        const pending = h.items - h.itemsPaid
+                        return (
+                          <tr key={h.day}>
+                            <td style={{ ...td, fontWeight: 800 }}>{h.day}</td>
+                            <td style={{ ...td, color: 'var(--muted)' }}>{payOn}</td>
+                            <td style={{ ...td, color: '#3fb950', fontWeight: 700 }}>{h.qualified}</td>
+                            <td style={{ ...td, color: '#f97316', fontWeight: 700 }}>{h.streakN || '—'}</td>
+                            <td style={{ ...td, fontWeight: 700 }}>{curAmt(h.amt)}</td>
+                            <td style={{ ...td, color: '#3fb950' }}>{curAmt(h.paid)}</td>
+                            <td style={{ ...td, color: pending ? '#f85149' : 'var(--muted)' }}>{curAmt(h.pend)}</td>
+                            <td style={td}>{!h.items ? <span style={{ color: 'var(--muted)' }}>{T('Nobody qualified', '无人达标')}</span>
+                              : pending ? <span style={{ fontWeight: 700, color: '#f85149' }}>⏳ {pending} {T('pending', '待派')}</span>
+                              : <span style={{ fontWeight: 700, color: '#3fb950' }}>✅ {T('All paid', '全部已派')}</span>}</td>
+                            <td style={td}>
+                              <div style={{ display: 'flex', gap: 6 }}>
+                                <button style={{ ...sec, padding: '5px 10px' }} onClick={() => setPayDay(h.day)}>{T('Open', '打开')}</button>
+                                {h.items > 0 && <button style={{ ...sec, padding: '5px 10px' }} onClick={() => { navigator.clipboard.writeText(payoutText(h.day)); flash(T('Copied', '已复制')) }}>📋</button>}
+                              </div>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                      {!history.length && <tr><td colSpan={9} style={{ ...td, textAlign: 'center', color: 'var(--muted)', padding: 24 }}>{T('No settled day yet.', '还没有结算日。')}</td></tr>}
+                      {history.length > 0 && (
+                        <tr style={{ background: 'var(--surface2)' }}>
+                          <td style={{ ...td, fontWeight: 800 }} colSpan={2}>{T('Campaign total', '活动合计')}</td>
+                          <td style={{ ...td, fontWeight: 800, color: '#3fb950' }}>{histTotal.qualified}</td>
+                          <td style={{ ...td, fontWeight: 800, color: '#f97316' }}>{histTotal.streakN}</td>
+                          <td style={{ ...td, fontWeight: 800 }}>{curAmt(histTotal.amt)}</td>
+                          <td style={{ ...td, fontWeight: 800, color: '#3fb950' }}>{curAmt(histTotal.paid)}</td>
+                          <td style={{ ...td, fontWeight: 800, color: histTotal.items - histTotal.itemsPaid ? '#f85149' : 'var(--muted)' }}>{curAmt(histTotal.pend)}</td>
+                          <td style={{ ...td, fontWeight: 800 }}>{histTotal.itemsPaid}/{histTotal.items} {T('paid', '已派')}</td>
+                          <td style={td}></td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 6 }}>{T('Amounts are per currency (RM / SGD), not mixed. Follows the Host filter above.', '金额按币种分开（RM / SGD），不混算。跟随上方负责人筛选。')}</div>
+              </>) : (<>
               <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 8 }}>{T(`Rewards earned on ${settle || '—'} — pay on the next day. Streak bonus = ${cfg.streak_pct}% of deposits on the ${cfg.streak_days} streak days.`, `${settle || '—'} 的奖励 — 隔天派发。连续奖励 = ${cfg.streak_days} 天连续达标日存款的 ${cfg.streak_pct}%。`)}</div>
               {payRows.length > 0 && (
                 <details style={{ marginBottom: 8 }}>
@@ -571,6 +651,7 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
                   </tbody>
                 </table>
               </div>
+              </>)}
             </div>
           )}
 
