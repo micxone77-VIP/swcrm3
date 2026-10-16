@@ -5,6 +5,8 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { formatMoney, fmtDate } from '../lib/format'
 import CashVoucherClaims from '../components/vip/CashVoucherClaims'
+import VipBonusSpending from '../components/vip/VipBonusSpending'
+import { money2 } from '../lib/vipBonus'
 import { TIER_CONFIG, STATUS_CONFIG, RISK_CONFIG, CONTACT_TYPE, CONTACT_OUTCOME, enumLabel } from '../lib/enums'
 import {
 Card, CardHeader, CardBody, Tabs, Btn, Badge,
@@ -101,6 +103,8 @@ const [gamingAILoading, setGamingAILoading] = useState(false)
 
 // Department spending state
 const [vipExpenses, setVipExpenses] = useState([])
+const [bonusTotals, setBonusTotals] = useState({})   // BO bonuses per currency (vip_bonus_txns)
+const onBonusTotals = useCallback(t => setBonusTotals(t), [])
 const [expensesLoading, setExpensesLoading] = useState(false)
 const [expensesFor, setExpensesFor] = useState(null) // username the expenses were loaded for (stops re-fetch loop when a VIP has 0 records)
 
@@ -1346,6 +1350,18 @@ return (
   <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
     <SectionLabel>{L2('Department Spending on', '部门开支 —')} {vip.username}</SectionLabel>
   </div>
+  {/* All-in = Dept expenses + BO bonuses */}
+  {!expensesLoading && Object.keys(bonusTotals).length > 0 && (
+    <div style={{ display:'flex', gap:12, marginBottom:16, flexWrap:'wrap' }}>
+      {[...new Set([...Object.keys(totals), ...Object.keys(bonusTotals)])].map(cur => (
+        <div key={cur} style={{ background:'linear-gradient(135deg,rgba(255,107,0,.16),rgba(255,107,0,.05))', border:'1px solid rgba(255,107,0,.4)', borderRadius:10, padding:'14px 20px', minWidth:220 }}>
+          <div style={{ fontSize:11, fontWeight:700, color:'var(--muted)', letterSpacing:'.5px', textTransform:'uppercase', marginBottom:6 }}>{L2('All-in spending', '总投入')} ({cur})</div>
+          <div style={{ fontSize:24, fontWeight:800, color:'#FF8C00' }}>{money2((totals[cur] || 0) + (bonusTotals[cur] || 0), cur)}</div>
+          <div style={{ fontSize:11, color:'var(--muted)', marginTop:3 }}>💼 {L2('Expenses', '开支')} {money2(totals[cur] || 0, cur)} + 🎁 {L2('Bonuses', '奖励')} {money2(bonusTotals[cur] || 0, cur)}</div>
+        </div>
+      ))}
+    </div>
+  )}
   {expensesLoading ? (
     <LoadingState message={L2('Loading spending records…', '载入开支记录中…')} />
   ) : vipExpenses.length === 0 ? (
@@ -1415,6 +1431,7 @@ return (
       </div>
     </div>
   )}
+  <VipBonusSpending username={vip.username} vipId={vip.id} currency={String(vip.currency || 'MYR').toUpperCase()} onTotals={onBonusTotals} />
   <CashVoucherClaims username={vip.username} onChange={() => setExpensesFor(null)} />
 </div>
 )

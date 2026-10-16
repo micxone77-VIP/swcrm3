@@ -7,6 +7,7 @@ import { useLanguage } from '../contexts/LanguageContext'
 import { useUrlParam } from '../hooks/useUrlParam'
 import CashVoucherImportButton from '../components/expense/CashVoucherImportButton'
 import CashVoucherOverview from '../components/expense/CashVoucherOverview'
+import BonusOverview from '../components/expense/BonusOverview'
 
 const MONTHS     = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 // CATEGORIES (and the 'Bonus 红包' default below) are stored as literal values in
@@ -223,10 +224,19 @@ export default function ExpenseTracker() {
 
   const viewTabs = (
     <div style={{ display:'flex', gap:6, margin:'10px 0 16px' }}>
-      {[['expenses', L2('💼 Expenses', '💼 开支')], ['vouchers', L2('🎟️ Cash Voucher Claims', '🎟️ 现金券申请')]].map(([k, lbl]) => (
+      {[['expenses', L2('💼 Expenses', '💼 开支')], ['vouchers', L2('🎟️ Cash Voucher Claims', '🎟️ 现金券申请')], ['bonuses', L2('🎁 VIP Bonuses (BO)', '🎁 VIP奖励（BO）')]].map(([k, lbl]) => (
         <button key={k} onClick={() => setView(k)} style={{ padding:'7px 14px', borderRadius:8, fontSize:13, fontWeight:700, cursor:'pointer',
           border:`1px solid ${view===k?'var(--accent)':'var(--border)'}`, background: view===k?'var(--accent)':'var(--surface2)', color: view===k?'#fff':'var(--text)' }}>{lbl}</button>
       ))}
+    </div>
+  )
+
+  if (view === 'bonuses') return (
+    <div style={s.page}>
+      <div style={s.title}>🎁 {L2('VIP Bonuses (BO)', 'VIP奖励（BO）')}</div>
+      <div style={s.sub}>{L2('All BO bonuses pasted on VIP360 › Dept Spending — by month, category and VIP', '在 VIP360 › 部门开支 粘贴的所有BO奖励 — 按月份、类别和VIP')}</div>
+      {viewTabs}
+      <BonusOverview />
     </div>
   )
 
