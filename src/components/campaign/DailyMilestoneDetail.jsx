@@ -38,6 +38,8 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
   const [players, setPlayers] = useState([])
   const [members, setMembers] = useState({})
   const [daily, setDaily] = useState({})
+  const [roiMkt, setRoiMkt] = useState('MYR')   // Summary market: MYR (MY) / SGD (SG) / KHUSD (KH) — never mixed
+  const [base, setBase] = useState({})   // username -> { vb, dep, wd, wl, days } for the same number of days BEFORE the campaign
   const [asOf, setAsOf] = useState(null)
   const [wlCfg, setWlCfg] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -72,15 +74,28 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
       const names = new Set(ps.map(p => p.username))
       const mem = await fetchAll(() => supabase.from('vip_members').select('id,username,full_name,tier,host_assigned,affiliate_login,phone,whatsapp,currency').order('username'))
       const mm = {}; mem.forEach(m => { if (names.has(m.username)) mm[m.username] = m }); setMembers(mm)
-      const rows = await fetchAll(() => supabase.from('vip_daily_snapshots').select('username,snapshot_date,total_deposit,win_loss,monthly_valid_bet')
+      const rows = await fetchAll(() => supabase.from('vip_daily_snapshots').select('username,snapshot_date,total_deposit,total_withdrawal,win_loss,monthly_valid_bet')
         .gte('snapshot_date', camp.start_date).lte('snapshot_date', camp.end_date).order('snapshot_date').order('username'))
       const out = {}
       rows.forEach(r => {
         if (!names.has(r.username)) return
         const ok = num(r.monthly_valid_bet) > 0
-        ;(out[r.username] = out[r.username] || {})[r.snapshot_date] = { vb: Math.max(0, num(r.monthly_valid_bet)), dep: ok ? num(r.total_deposit) : 0, wl: ok ? num(r.win_loss) : 0 }
+        ;(out[r.username] = out[r.username] || {})[r.snapshot_date] = { vb: Math.max(0, num(r.monthly_valid_bet)), dep: ok ? num(r.total_deposit) : 0, wd: ok ? num(r.total_withdrawal) : 0, wl: ok ? num(r.win_loss) : 0 }
       })
       setDaily(out)
+      // baseline: same number of days right before the campaign (for uplift / ROI comparison)
+      const nDays = Math.round((new Date(camp.end_date) - new Date(camp.start_date)) / 86400000) + 1
+      const bStart = new Date(new Date(camp.start_date + 'T00:00:00Z').getTime() - nDays * 86400000).toISOString().slice(0, 10)
+      const bEnd = new Date(new Date(camp.start_date + 'T00:00:00Z').getTime() - 86400000).toISOString().slice(0, 10)
+      const brows = await fetchAll(() => supabase.from('vip_daily_snapshots').select('username,snapshot_date,total_deposit,total_withdrawal,win_loss,monthly_valid_bet')
+        .gte('snapshot_date', bStart).lte('snapshot_date', bEnd).order('snapshot_date').order('username'))
+      const b = {}
+      brows.forEach(r => {
+        if (!names.has(r.username) || num(r.monthly_valid_bet) <= 0) return
+        const x = (b[r.username] = b[r.username] || { vb: 0, dep: 0, wd: 0, wl: 0, days: 0 })
+        x.vb += num(r.monthly_valid_bet); x.dep += num(r.total_deposit); x.wd += num(r.total_withdrawal); x.wl += num(r.win_loss); x.days++
+      })
+      setBase({ map: b, from: bStart, to: bEnd })
       setWlCfg(await loadWinLossSettings().catch(() => null))
       const hosts = new Set(Object.values(mm).map(m => m.host_assigned).filter(Boolean))
       setHostF(h => h ?? (hosts.has(myName) ? myName : 'ALL'))
@@ -283,6 +298,57 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
   const toggleArr = (arr, set, v) => set(arr.includes(v) ? arr.filter(x => x !== v) : [...arr, v])
   const allHosts = [...new Set((allVips || []).map(m => m.host_assigned).filter(Boolean))].sort()
 
+  // ── 📊 Summary / ROI ──
+  // Each market is its own platform → separate figures in its own currency (no FX mixing)
+  const curOf = r => String(r.m.currency || 'MYR').toUpperCase()
+  const markets = ['MYR', 'SGD', 'KHUSD'].filter(c => rowsAll.some(r => curOf(r) === c))
+  const mkt = markets.includes(roiMkt) ? roiMkt : (markets[0] || 'MYR')
+  const fx = () => 1
+  const roi = (() => {
+    const rowsM = rowsAll.filter(r => curOf(r) === mkt)
+    const passedDays = rowsAll[0]?.prog.days.filter(d => !d.future).length || 0
+    const o = { players: rowsM.length, active: 0, qualifiedPlayers: 0, credit: 0, streak: 0, vb: 0, dep: 0, wd: 0, ggr: 0, bVb: 0, bDep: 0, bGgr: 0, bActive: 0, passedDays,
+      byDay: {}, byTier: {}, byHost: {} }
+    const tiersS = sortedTiers(cfg)
+    rowsM.forEach(r => {
+      const f = fx()
+      let act = false, q = false
+      const h = r.m.host_assigned || T('(No host)', '（无负责人）')
+      const H = (o.byHost[h] = o.byHost[h] || { players: 0, qualified: 0, cost: 0, vb: 0, dep: 0, ggr: 0 })
+      H.players++
+      r.prog.days.filter(d => !d.future).forEach(d => {
+        const dd = daily[r.username]?.[d.date] || {}
+        const ggr = -num(dd.wl) * f, cost = (d.reward + d.streakBonus) * f
+        if (d.vb > 0) act = true
+        if (d.qualifies) { q = true; o.byTier[d.tier] = (o.byTier[d.tier] || 0) + 1 }
+        o.credit += d.reward * f; o.streak += d.streakBonus * f; o.vb += d.vb * f; o.dep += d.dep * f; o.wd += num(dd.wd) * f; o.ggr += ggr
+        H.cost += cost; H.vb += d.vb * f; H.dep += d.dep * f; H.ggr += ggr
+        const D = (o.byDay[d.date] = o.byDay[d.date] || { active: 0, qualified: 0, credit: 0, streak: 0, vb: 0, dep: 0, ggr: 0 })
+        if (d.vb > 0) D.active++
+        if (d.qualifies) D.qualified++
+        D.credit += d.reward * f; D.streak += d.streakBonus * f; D.vb += d.vb * f; D.dep += d.dep * f; D.ggr += ggr
+      })
+      if (act) o.active++
+      if (q) { o.qualifiedPlayers++; H.qualified++ }
+      const bb = base.map?.[r.username]
+      if (bb) {
+        // scale baseline to the same number of days that have passed in the campaign
+        const nAll = rowsAll[0]?.prog.days.length || 1, k = passedDays / nAll
+        o.bVb += bb.vb * f * k; o.bDep += bb.dep * f * k; o.bGgr += -bb.wl * f * k; if (bb.days > 0) o.bActive++
+      }
+    })
+    o.cost = o.credit + o.streak
+    o.netDep = o.dep - o.wd
+    o.roi = o.cost > 0 ? (o.ggr - o.cost) / o.cost : null
+    o.costPctTo = o.vb > 0 ? o.cost / o.vb : null
+    o.upVb = o.vb - o.bVb; o.upGgr = o.ggr - o.bGgr
+    o.incRoi = o.cost > 0 ? (o.upGgr - o.cost) / o.cost : null
+    o.tiersS = tiersS
+    return o
+  })()
+  const pct = v => (v == null ? '—' : (v * 100).toFixed(1) + '%')
+  const rmS = v => (v < 0 ? '-' : '') + sym(mkt) + fmt(Math.abs(v))
+
   const tiers = sortedTiers(cfg)
   const dates = rowsAll[0]?.prog.days.map(d => d.date) || []
   const tabBtn = k => ({ ...sec, background: tab === k ? 'var(--accent)' : 'var(--surface2)', color: tab === k ? '#fff' : 'var(--text)', fontWeight: 700 })
@@ -329,6 +395,7 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
             <button style={tabBtn('follow')} onClick={() => setTab('follow')}>📣 {T("Today's follow-up", '今日跟进')}</button>
             <button style={tabBtn('pay')} onClick={() => setTab('pay')}>💰 {T('Payout', '派发')}</button>
             <button style={tabBtn('grid')} onClick={() => setTab('grid')}>📅 {T('Daily grid', '每日明细')}</button>
+            <button style={tabBtn('summary')} onClick={() => setTab('summary')}>📊 {T('Summary & ROI', '总结与ROI')}</button>
             <button style={tabBtn('rules')} onClick={() => { setDraft(cfg); setTab('rules') }}>⚙️ {T('Rules & messages', '规则与话术')}</button>
           </div>
 
@@ -504,6 +571,83 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
               </div>
             </div>
           </>)}
+
+          {/* ── 📊 summary & ROI ── */}
+          {tab === 'summary' && (
+            <div style={{ marginTop: 12 }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 10, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 14, color: 'var(--muted)', fontWeight: 700 }}>{T('Platform:', '平台：')}</span>
+                {markets.map(c => {
+                  const n = rowsAll.filter(r => curOf(r) === c).length
+                  const lbl = c === 'SGD' ? '🇸🇬 SG (SGD)' : c === 'KHUSD' ? '🇰🇭 KH (USD)' : '🇲🇾 MY (RM)'
+                  return <button key={c} style={{ ...sec, background: mkt === c ? 'var(--accent)' : 'var(--surface2)', color: mkt === c ? '#fff' : 'var(--text)', fontWeight: 700 }} onClick={() => setRoiMkt(c)}>{lbl} · {n} {T('players', '位玩家')}</button>
+                })}
+              </div>
+              <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 10 }}>
+                {T(`${mkt === 'SGD' ? 'SG' : mkt === 'KHUSD' ? 'KH' : 'MY'} platform only, in ${mkt === 'MYR' ? 'RM' : mkt}. Based on ${roi.passedDays} settled day(s) up to ${asOf || '—'}. GGR = player net loss (house win). Baseline = the same players in the ${rowsAll[0]?.prog.days.length || 0} days before the campaign (${base.from || '—'} → ${base.to || '—'}), scaled to the days passed.`,
+                   `仅 ${mkt === 'SGD' ? 'SG' : mkt === 'KHUSD' ? 'KH' : 'MY'} 平台，以 ${mkt === 'MYR' ? 'RM' : mkt} 计。基于截至 ${asOf || '—'} 的 ${roi.passedDays} 个结算日。GGR = 玩家净输（平台赢）。对比基准 = 同一批玩家在活动前 ${rowsAll[0]?.prog.days.length || 0} 天（${base.from || '—'} → ${base.to || '—'}）的表现，按已过天数换算。`)}
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(210px,1fr))', gap: 14 }}>
+                <Kpi label={T('Total cost (credit + streak)', '总成本（Credit + 连续）')} value={rmS(roi.cost)} color="var(--accent)" sub={`${T('tier', '阶梯')} ${rmS(roi.credit)} + ${T('streak', '连续')} ${rmS(roi.streak)}`} />
+                <Kpi label={T('Turnover', '流水')} value={rmS(roi.vb)} sub={`${T('cost', '成本')} ${pct(roi.costPctTo)} ${T('of turnover', '占流水')}`} />
+                <Kpi label={T('Deposits / Net deposit', '存款 / 净存款')} value={rmS(roi.dep)} sub={`${T('withdrawal', '提款')} ${rmS(roi.wd)} · ${T('net', '净')} ${rmS(roi.netDep)}`} />
+                <Kpi label="GGR" value={rmS(roi.ggr)} color={roi.ggr >= 0 ? '#3fb950' : '#f85149'} sub={T('player net loss = house win', '玩家净输 = 平台赢')} />
+                <Kpi label="ROI" value={pct(roi.roi)} color={roi.roi == null ? 'var(--muted)' : roi.roi >= 0 ? '#3fb950' : '#f85149'} sub={T('(GGR − cost) ÷ cost', '（GGR − 成本）÷ 成本')} />
+                <Kpi label={T('Participation', '参与')} value={`${roi.qualifiedPlayers} / ${roi.players}`} sub={`${T('qualified at least once', '至少达标一次')} · ${T('active', '有投注')} ${roi.active}`} />
+              </div>
+
+              <div style={{ ...card, marginTop: 14 }}>
+                <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 8 }}>📈 {T('vs. before the campaign (same players, same number of days)', '与活动前对比（同一批玩家、相同天数）')}</div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(210px,1fr))', gap: 14 }}>
+                  <Kpi label={T('Turnover uplift', '流水增长')} value={rmS(roi.upVb)} color={roi.upVb >= 0 ? '#3fb950' : '#f85149'} sub={`${T('before', '活动前')} ${rmS(roi.bVb)} → ${T('now', '活动中')} ${rmS(roi.vb)} (${roi.bVb > 0 ? (roi.upVb >= 0 ? '+' : '') + pct(roi.upVb / roi.bVb) : '—'})`} />
+                  <Kpi label={T('GGR uplift', 'GGR 增长')} value={rmS(roi.upGgr)} color={roi.upGgr >= 0 ? '#3fb950' : '#f85149'} sub={`${T('before', '活动前')} ${rmS(roi.bGgr)} → ${T('now', '活动中')} ${rmS(roi.ggr)}`} />
+                  <Kpi label={T('Incremental ROI', '增量 ROI')} value={pct(roi.incRoi)} color={roi.incRoi == null ? 'var(--muted)' : roi.incRoi >= 0 ? '#3fb950' : '#f85149'} sub={T('(GGR uplift − cost) ÷ cost', '（GGR增长 − 成本）÷ 成本')} />
+                  <Kpi label={T('Active players', '活跃玩家')} value={`${roi.active}`} sub={`${T('before', '活动前')} ${roi.bActive}`} />
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 8 }}>{T('GGR swings a lot day to day (players can win). Turnover uplift is the steadier signal; judge ROI after the campaign ends.', 'GGR 每天波动很大（玩家可能赢）。流水增长是更稳定的指标，ROI 建议在活动结束后再判断。')}</div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,2fr) minmax(0,1fr)', gap: 14, marginTop: 14 }}>
+                <div style={{ border: '1px solid var(--border)', borderRadius: 10, overflow: 'auto' }}>
+                  <div style={{ fontWeight: 800, fontSize: 15, padding: '10px 12px' }}>📅 {T('By day', '按天')}</div>
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead><tr>{[T('Day', '日期'), T('Active', '有投注'), T('Qualified', '达标'), T('Tier credit', '阶梯奖励'), T('Streak', '连续'), T('Turnover', '流水'), T('Deposit', '存款'), 'GGR', T('Cost % TO', '成本/流水')].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
+                    <tbody>
+                      {Object.keys(roi.byDay).sort().map(d => { const x = roi.byDay[d]; const c0 = x.credit + x.streak; return (
+                        <tr key={d}>
+                          <td style={{ ...td, fontWeight: 700 }}>{d}</td><td style={td}>{x.active}</td><td style={{ ...td, color: '#3fb950', fontWeight: 700 }}>{x.qualified}</td>
+                          <td style={td}>{rmS(x.credit)}</td><td style={{ ...td, color: '#f97316' }}>{rmS(x.streak)}</td><td style={td}>{rmS(x.vb)}</td><td style={td}>{rmS(x.dep)}</td>
+                          <td style={{ ...td, color: x.ggr >= 0 ? '#3fb950' : '#f85149' }}>{rmS(x.ggr)}</td><td style={td}>{x.vb > 0 ? pct(c0 / x.vb) : '—'}</td>
+                        </tr>) })}
+                      {!Object.keys(roi.byDay).length && <tr><td colSpan={9} style={{ ...td, textAlign: 'center', color: 'var(--muted)', padding: 24 }}>{T('No settled day yet.', '还没有结算日。')}</td></tr>}
+                    </tbody>
+                  </table>
+                </div>
+                <div style={{ border: '1px solid var(--border)', borderRadius: 10, overflow: 'auto' }}>
+                  <div style={{ fontWeight: 800, fontSize: 15, padding: '10px 12px' }}>🎯 {T('Tier hits (player-days)', '各档达成次数（人·天）')}</div>
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead><tr>{[T('Tier', '档位'), T('Hits', '次数'), T('Cost', '成本')].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
+                    <tbody>
+                      {roi.tiersS.map((t0, i) => <tr key={i}><td style={td}>{fmt(t0.turnover)} → {fmt(t0.reward)}</td><td style={{ ...td, fontWeight: 700 }}>{roi.byTier[i] || 0}</td><td style={td}>{fmt((roi.byTier[i] || 0) * t0.reward)}</td></tr>)}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div style={{ border: '1px solid var(--border)', borderRadius: 10, overflow: 'auto', marginTop: 14 }}>
+                <div style={{ fontWeight: 800, fontSize: 15, padding: '10px 12px' }}>👤 {T('By host', '按负责人')}</div>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead><tr>{[T('Host', '负责人'), T('Players', '玩家'), T('Qualified', '达标'), T('Cost', '成本'), T('Turnover', '流水'), T('Deposit', '存款'), 'GGR', 'ROI'].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
+                  <tbody>
+                    {Object.entries(roi.byHost).sort((a, b) => b[1].vb - a[1].vb).map(([h, x]) => (
+                      <tr key={h}><td style={{ ...td, fontWeight: 700 }}>{h}</td><td style={td}>{x.players}</td><td style={td}>{x.qualified}</td><td style={td}>{rmS(x.cost)}</td><td style={td}>{rmS(x.vb)}</td><td style={td}>{rmS(x.dep)}</td>
+                        <td style={{ ...td, color: x.ggr >= 0 ? '#3fb950' : '#f85149' }}>{rmS(x.ggr)}</td><td style={td}>{x.cost > 0 ? pct((x.ggr - x.cost) / x.cost) : '—'}</td></tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
           {/* ── ⚙️ rules & messages ── */}
           {tab === 'rules' && (
