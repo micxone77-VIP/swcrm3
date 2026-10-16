@@ -309,7 +309,7 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
     const rowsM = rowsAll.filter(r => curOf(r) === mkt)
     const passedDays = rowsAll[0]?.prog.days.filter(d => !d.future).length || 0
     const o = { players: rowsM.length, active: 0, qualifiedPlayers: 0, credit: 0, streak: 0, vb: 0, dep: 0, wd: 0, ggr: 0, bVb: 0, bDep: 0, bGgr: 0, bActive: 0, passedDays,
-      byDay: {}, byTier: {}, byHost: {} }
+      byDay: {}, byTier: {}, byHost: {}, rewardRows: 0, paid: 0, pending: 0, streakList: [], streakPaid: 0, streakPending: 0, streakPlayers: new Set() }
     const tiersS = sortedTiers(cfg)
     rowsM.forEach(r => {
       const f = fx()
@@ -322,6 +322,13 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
         const ggr = -num(dd.wl) * f, cost = (d.reward + d.streakBonus) * f
         if (d.vb > 0) act = true
         if (d.qualifies) { q = true; o.byTier[d.tier] = (o.byTier[d.tier] || 0) + 1 }
+        const pd = (r.ch_paid || {})[d.date] || {}
+        if (d.reward > 0) { o.rewardRows++; if (pd.c) o.paid += d.reward * f; else o.pending += d.reward * f }
+        if (d.streakBonus > 0) {
+          o.streakPlayers.add(r.username)
+          if (pd.s) { o.paid += d.streakBonus * f; o.streakPaid += d.streakBonus * f } else { o.pending += d.streakBonus * f; o.streakPending += d.streakBonus * f }
+          o.streakList.push({ username: r.username, date: d.date, bonus: d.streakBonus * f, base: d.streakBase * f, paid: !!pd.s, n: o.streakList.filter(x => x.username === r.username).length + 1 })
+        }
         o.credit += d.reward * f; o.streak += d.streakBonus * f; o.vb += d.vb * f; o.dep += d.dep * f; o.wd += num(dd.wd) * f; o.ggr += ggr
         H.cost += cost; H.vb += d.vb * f; H.dep += d.dep * f; H.ggr += ggr
         const D = (o.byDay[d.date] = o.byDay[d.date] || { active: 0, qualified: 0, credit: 0, streak: 0, vb: 0, dep: 0, ggr: 0 })
@@ -340,6 +347,8 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
     })
     o.cost = o.credit + o.streak
     o.netDep = o.dep - o.wd
+    o.netPL = o.dep - o.wd - o.cost
+    o.plRoi = o.cost > 0 ? o.netPL / o.cost : null
     o.roi = o.cost > 0 ? (o.ggr - o.cost) / o.cost : null
     o.costPctTo = o.vb > 0 ? o.cost / o.vb : null
     o.upVb = o.vb - o.bVb; o.upGgr = o.ggr - o.bGgr
@@ -611,14 +620,30 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
                 {T(`${mkt === 'SGD' ? 'SG' : mkt === 'KHUSD' ? 'KH' : 'MY'} platform only, in ${mkt === 'MYR' ? 'RM' : mkt}. Based on ${roi.passedDays} settled day(s) up to ${asOf || '—'}. GGR = player net loss (house win). Baseline = the same players in the ${rowsAll[0]?.prog.days.length || 0} days before the campaign (${base.from || '—'} → ${base.to || '—'}), scaled to the days passed.`,
                    `仅 ${mkt === 'SGD' ? 'SG' : mkt === 'KHUSD' ? 'KH' : 'MY'} 平台，以 ${mkt === 'MYR' ? 'RM' : mkt} 计。基于截至 ${asOf || '—'} 的 ${roi.passedDays} 个结算日。GGR = 玩家净输（平台赢）。对比基准 = 同一批玩家在活动前 ${rowsAll[0]?.prog.days.length || 0} 天（${base.from || '—'} → ${base.to || '—'}）的表现，按已过天数换算。`)}
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(210px,1fr))', gap: 14 }}>
-                <Kpi label={T('Total cost (credit + streak)', '总成本（Credit + 连续）')} value={rmS(roi.cost)} color="var(--accent)" sub={`${T('tier', '阶梯')} ${rmS(roi.credit)} + ${T('streak', '连续')} ${rmS(roi.streak)}`} />
-                <Kpi label={T('Turnover', '流水')} value={rmS(roi.vb)} sub={`${T('cost', '成本')} ${pct(roi.costPctTo)} ${T('of turnover', '占流水')}`} />
-                <Kpi label={T('Deposits / Net deposit', '存款 / 净存款')} value={rmS(roi.dep)} sub={`${T('withdrawal', '提款')} ${rmS(roi.wd)} · ${T('net', '净')} ${rmS(roi.netDep)}`} />
-                <Kpi label="GGR" value={rmS(roi.ggr)} color={roi.ggr >= 0 ? '#3fb950' : '#f85149'} sub={T('player net loss = house win', '玩家净输 = 平台赢')} />
-                <Kpi label="ROI" value={pct(roi.roi)} color={roi.roi == null ? 'var(--muted)' : roi.roi >= 0 ? '#3fb950' : '#f85149'} sub={T('(GGR − cost) ÷ cost', '（GGR − 成本）÷ 成本')} />
-                <Kpi label={T('Participation', '参与')} value={`${roi.qualifiedPlayers} / ${roi.players}`} sub={`${T('qualified at least once', '至少达标一次')} · ${T('active', '有投注')} ${roi.active}`} />
+              <div style={{ fontWeight: 800, fontSize: 16, margin: '4px 0 8px' }}>📋 {T(`Campaign summary — ${camp.start_date} → ${camp.end_date}`, `活动总结 — ${camp.start_date} → ${camp.end_date}`)}</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(170px,1fr))', gap: 14 }}>
+                <Kpi label={T('Players', '玩家')} value={roi.players} sub={`${T('active', '有投注')} ${roi.active}`} />
+                <Kpi label={T('Qualified', '达标玩家')} value={roi.qualifiedPlayers} color="#3fb950" sub={roi.players ? pct(roi.qualifiedPlayers / roi.players) + T(' success rate', ' 成功率') : ''} />
+                <Kpi label={T('Reward rows', '奖励笔数')} value={roi.rewardRows} sub={T('player-days that hit a tier', '达标的人·天')} />
+                <Kpi label={T('Total reward', '总奖励')} value={rmS(roi.cost)} color="var(--accent)" sub={`${T('tier', '阶梯')} ${rmS(roi.credit)} + ${T('streak', '连续')} ${rmS(roi.streak)}`} />
+                <Kpi label={T('Paid', '已派发')} value={rmS(roi.paid)} color="#3fb950" />
+                <Kpi label={T('Pending', '待派发')} value={rmS(roi.pending)} color={roi.pending > 0 ? '#f85149' : undefined} />
               </div>
+
+              <div style={{ fontWeight: 800, fontSize: 16, margin: '18px 0 8px' }}>💼 {T('Campaign P&L — real platform data', '活动盈亏 — 平台真实数据')}</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(170px,1fr))', gap: 14 }}>
+                <Kpi label={T('Real deposit', '真实存款')} value={rmS(roi.dep)} color="#3fb950" />
+                <Kpi label={T('Real withdrawal', '真实提款')} value={rmS(roi.wd)} color="#f85149" />
+                <Kpi label={T('Real valid bet', '真实有效投注')} value={rmS(roi.vb)} sub={`${T('cost', '成本')} ${pct(roi.costPctTo)} ${T('of turnover', '占流水')}`} />
+                <Kpi label={T('Reward cost', '奖励成本')} value={rmS(roi.cost)} color="var(--accent)" />
+                <Kpi label={T('Net P&L', '净盈亏')} value={rmS(roi.netPL)} color={roi.netPL >= 0 ? '#3fb950' : '#f85149'} sub={T('deposit − withdrawal − cost', '存款 − 提款 − 成本')} />
+                <Kpi label="ROI" value={pct(roi.plRoi)} color={roi.plRoi == null ? 'var(--muted)' : roi.plRoi >= 0 ? '#3fb950' : '#f85149'} sub={T('Net P&L ÷ reward cost', '净盈亏 ÷ 奖励成本')} />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(170px,1fr))', gap: 14, marginTop: 14 }}>
+                <Kpi label={T('GGR (house win)', 'GGR（平台赢）')} value={rmS(roi.ggr)} color={roi.ggr >= 0 ? '#3fb950' : '#f85149'} sub={T('player net loss in the period', '期间玩家净输')} />
+                <Kpi label={T('GGR ROI', 'GGR ROI')} value={pct(roi.roi)} color={roi.roi == null ? 'var(--muted)' : roi.roi >= 0 ? '#3fb950' : '#f85149'} sub={T('(GGR − cost) ÷ cost', '（GGR − 成本）÷ 成本')} />
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--muted)', margin: '8px 0 14px' }}>{T('Net P&L and ROI use the same formula as the other campaigns (deposit − withdrawal − reward cost). GGR ROI uses the actual house win.', '净盈亏与 ROI 和其他活动用同一公式（存款 − 提款 − 奖励成本）。GGR ROI 用平台实际赢的金额。')}</div>
 
               <div style={{ ...card, marginTop: 14 }}>
                 <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 8 }}>📈 {T('vs. before the campaign (same players, same number of days)', '与活动前对比（同一批玩家、相同天数）')}</div>
@@ -670,6 +695,39 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
                   </tbody>
                 </table>
               </div>
+
+              {cfg.streak_enabled && (
+                <div style={{ marginTop: 14 }}>
+                  <div style={{ fontWeight: 800, fontSize: 16, margin: '4px 0 8px' }}>🔥 {T('Streak bonus summary', '连续奖励总结')}</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(170px,1fr))', gap: 14 }}>
+                    <Kpi label={T('Streak days target', '连续天数要求')} value={cfg.streak_days} sub={`${cfg.streak_pct}% ${T('of deposits', '存款')} · ${cfg.streak_style === 'rolling' ? T('rolling', '滚动') : T('every N days', '每N天一轮')}`} />
+                    <Kpi label={T('Players with streak', '拿到连续奖励的玩家')} value={roi.streakPlayers.size} />
+                    <Kpi label={T('Total bonuses', '连续奖励次数')} value={roi.streakList.length} />
+                    <Kpi label={T('Paid amount', '已派金额')} value={rmS(roi.streakPaid)} color="#3fb950" />
+                    <Kpi label={T('Pending amount', '待派金额')} value={rmS(roi.streakPending)} color={roi.streakPending > 0 ? '#f85149' : undefined} />
+                  </div>
+                  <div style={{ border: '1px solid var(--border)', borderRadius: 10, overflow: 'auto', marginTop: 10 }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                      <thead><tr>{['#', T('Player', '玩家'), T('Streak #', '第几次'), T('Earned on', '达成日'), T('Deposit base', '存款基数'), T('Bonus amount', '奖励金额'), T('Status', '状态')].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
+                      <tbody>
+                        {roi.streakList.sort((x, y) => x.date.localeCompare(y.date) || y.bonus - x.bonus).map((x, i) => (
+                          <tr key={x.username + x.date}>
+                            <td style={{ ...td, color: 'var(--muted)' }}>{i + 1}</td>
+                            <td style={{ ...td, fontWeight: 700 }}>{x.username}</td>
+                            <td style={{ ...td, color: '#f97316' }}>🔥 #{x.n}</td>
+                            <td style={td}>{x.date}</td>
+                            <td style={td}>{rmS(x.base)}</td>
+                            <td style={{ ...td, fontWeight: 700, color: '#3fb950' }}>{rmS(x.bonus)}</td>
+                            <td style={td}><span style={{ fontSize: 13, fontWeight: 700, padding: '3px 10px', borderRadius: 12, background: x.paid ? 'rgba(63,185,80,.15)' : 'rgba(248,81,73,.15)', color: x.paid ? '#3fb950' : '#f85149' }}>{x.paid ? T('✓ Paid', '✓ 已派') : T('Pending', '待派')}</span></td>
+                          </tr>
+                        ))}
+                        {!roi.streakList.length && <tr><td colSpan={7} style={{ ...td, textAlign: 'center', color: 'var(--muted)', padding: 20 }}>{T('No streak bonus yet.', '暂时没有连续奖励。')}</td></tr>}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 6 }}>{T(`Total streak bonus cost: ${rmS(roi.streak)} (${roi.streakList.filter(x => x.paid).length} paid · ${roi.streakList.filter(x => !x.paid).length} pending). Mark paid in 💰 Payout.`, `连续奖励总成本：${rmS(roi.streak)}（${roi.streakList.filter(x => x.paid).length} 已派 · ${roi.streakList.filter(x => !x.paid).length} 待派）。在 💰 派发 标记已派。`)}</div>
+                </div>
+              )}
             </div>
           )}
 
