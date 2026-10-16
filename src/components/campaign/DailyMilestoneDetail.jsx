@@ -47,6 +47,7 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
   const [toast, setToast] = useState('')
   const [tab, setTab] = useState('follow')
   const [hostF, setHostF] = useState(null)
+  const [platF, setPlatF] = useState('ALL')   // platform: ALL / MYR (MY) / SGD (SG) / KHUSD (KH)
   const [groupF, setGroupF] = useState('ALL')
   const [search, setSearch] = useState('')
   const [waLang, setWaLang] = useState(lang === 'zh' ? 'zh' : 'en')
@@ -132,7 +133,11 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
   }, [rowsAll, asOf])
 
   const hosts = useMemo(() => [...new Set(rowsAll.map(r => r.m.host_assigned).filter(Boolean))].sort(), [rowsAll])
-  const scoped = rowsAll.filter(r => !hostF || hostF === 'ALL' || (hostF === '__none' ? !r.m.host_assigned : (r.m.host_assigned || '') === hostF))
+  const platOf = r => String(r.m.currency || 'MYR').toUpperCase()
+  const platOk = r => platF === 'ALL' || platOf(r) === platF
+  const PLAT_LABEL = { MYR: '🇲🇾 MY', SGD: '🇸🇬 SG', KHUSD: '🇰🇭 KH' }
+  const platforms = ['MYR', 'SGD', 'KHUSD'].filter(c => rowsAll.some(r => platOf(r) === c))
+  const scoped = rowsAll.filter(platOk).filter(r => !hostF || hostF === 'ALL' || (hostF === '__none' ? !r.m.host_assigned : (r.m.host_assigned || '') === hostF))
     .filter(r => !search || r.username.toLowerCase().includes(search.toLowerCase()) || (r.m.full_name || '').toLowerCase().includes(search.toLowerCase()))
   const groupCounts = {}; scoped.forEach(r => { groupCounts[r.group] = (groupCounts[r.group] || 0) + 1 })
   const ORDER = ['streak', 'near', 'won', 'idle', 'care']
@@ -204,9 +209,9 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
   const pastDays = rowsAll[0]?.prog.days.filter(d => !d.future).map(d => d.date) || []
   const allMode = payDay === 'ALL'
   const settle = allMode ? null : (payDay || pastDays[pastDays.length - 1] || null)
-  const hostOk = r => !hostF || hostF === 'ALL' || (hostF === '__none' ? !r.m.host_assigned : r.m.host_assigned === hostF)
+  const hostOk = r => platOk(r) && (!hostF || hostF === 'ALL' || (hostF === '__none' ? !r.m.host_assigned : r.m.host_assigned === hostF))
   const payRowsFor = day => rowsAll.map(r => ({ r, d: r.prog.days.find(x => x.date === day) })).filter(x => x.d && (x.d.reward > 0 || x.d.streakBonus > 0))
-  const payRows = settle ? rowsAll.map(r => ({ r, d: r.prog.days.find(x => x.date === settle) })).filter(x => x.d && (x.d.reward > 0 || x.d.streakBonus > 0))
+  const payRows = settle ? rowsAll.map(r => ({ r, d: r.prog.days.find(x => x.date === settle) })).filter(x => x.d && (x.d.reward > 0 || x.d.streakBonus > 0) && hostOk(x.r))
     .sort((a, b) => (b.d.reward + b.d.streakBonus) - (a.d.reward + a.d.streakBonus)) : []
   async function markPaid(r, key, val) {
     const paid = { ...(r.ch_paid || {}) }
@@ -233,12 +238,20 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
     const label = cfg.reward_label || 'Credit'
     const cur = r => (String(r.m.currency || 'MYR').toUpperCase() === 'SGD' ? 'SGD' : String(r.m.currency || 'MYR').toUpperCase() === 'KHUSD' ? 'USD' : 'RM')
     const tierLines = scopedPay.filter(x => x.d.reward > 0).sort((a, b) => b.d.reward - a.d.reward)
-      .map(({ r, d }) => `${r.username} - ${cur(r)} ${fmt(d.reward)} ${label}`)
+      .map(({ r, d }) => ({ r, t: `${r.username} - ${cur(r)} ${fmt(d.reward)} ${label}` }))
     const streakLines = scopedPay.filter(x => x.d.streakBonus > 0).sort((a, b) => b.d.streakBonus - a.d.streakBonus)
-      .map(({ r, d }) => `${r.username} - ${cur(r)} ${fmt(d.streakBonus)} ${label}`)
-    const out = [camp.campaign_name.toUpperCase(), day, '']
-    out.push(...tierLines)
-    if (streakLines.length) out.push('', `🔥 ${cfg.streak_days}-DAY STREAK BONUS (${cfg.streak_pct}%)`, ...streakLines)
+      .map(({ r, d }) => ({ r, t: `${r.username} - ${cur(r)} ${fmt(d.streakBonus)} ${label}` }))
+    const out = [camp.campaign_name.toUpperCase(), day]
+    const pl = [...new Set(scopedPay.map(({ r }) => platOf(r)))].sort((a, b) => ['MYR', 'SGD', 'KHUSD'].indexOf(a) - ['MYR', 'SGD', 'KHUSD'].indexOf(b))
+    const multi = pl.length > 1
+    pl.forEach(c => {
+      const inP = l => l.r && platOf(l.r) === c
+      const tl = tierLines.filter(inP).map(l => l.t), sl = streakLines.filter(inP).map(l => l.t)
+      out.push('')
+      if (multi) out.push(`${PLAT_LABEL[c] || c}`)
+      out.push(...tl)
+      if (sl.length) out.push('', `🔥 ${cfg.streak_days}-DAY STREAK BONUS (${cfg.streak_pct}%)`, ...sl)
+    })
     if (num(cfg.turnover_multiplier) > 0) out.push('', `x${num(cfg.turnover_multiplier)} turnover`)
     return out.join('\n')
   }
@@ -477,6 +490,11 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
           {/* shared filters */}
           {tab !== 'rules' && (
             <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+              {platforms.length > 1 && <>
+                <span style={{ fontSize: 14, color: 'var(--muted)' }}>{T('Platform:', '平台：')}</span>
+                {['ALL', ...platforms].map(c => <button key={c} style={{ ...sec, padding: '6px 12px', fontWeight: 700, background: platF === c ? 'var(--accent)' : 'var(--surface2)', color: platF === c ? '#fff' : 'var(--text)' }} onClick={() => { setPlatF(c); if (c !== 'ALL') setRoiMkt(c) }}>{c === 'ALL' ? T('All', '全部') : PLAT_LABEL[c] || c} · {c === 'ALL' ? rowsAll.length : rowsAll.filter(r => platOf(r) === c).length}</button>)}
+                <span style={{ width: 14 }} />
+              </>}
               <span style={{ fontSize: 14, color: 'var(--muted)' }}>{T('Host:', '负责人：')}</span>
               {['ALL', ...hosts, '__none'].map(h => <button key={h} style={{ ...sec, padding: '6px 12px', background: hostF === h ? 'var(--accent)' : 'var(--surface2)', color: hostF === h ? '#fff' : 'var(--text)' }} onClick={() => setHostF(h)}>{h === 'ALL' ? T('All', '全部') : h === '__none' ? T('(No host)', '（无负责人）') : h}{h === myName ? T(' (me)', '（我）') : ''}</button>)}
               <input style={{ ...input, marginLeft: 8, width: 170 }} placeholder={T('Search VIP…', '搜索VIP…')} value={search} onChange={e => setSearch(e.target.value)} />
@@ -631,7 +649,7 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead><tr>{['#', 'VIP', T('Host', '负责人'), T('Turnover', '流水'), T('Tier reward', '阶梯奖励'), T('Paid', '已派'), T('Streak bonus', '连续奖励'), T('Paid', '已派'), T('Total', '合计')].map((h, i) => <th key={i} style={th}>{h}</th>)}</tr></thead>
                   <tbody>
-                    {payRows.filter(({ r }) => !hostF || hostF === 'ALL' || (hostF === '__none' ? !r.m.host_assigned : r.m.host_assigned === hostF)).map(({ r, d }, i) => {
+                    {payRows.filter(({ r }) => hostOk(r)).map(({ r, d }, i) => {
                       const p = (r.ch_paid || {})[settle] || {}
                       return (
                         <tr key={r.id}>
