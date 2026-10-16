@@ -48,6 +48,9 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
   const [groupF, setGroupF] = useState('ALL')
   const [search, setSearch] = useState('')
   const [waLang, setWaLang] = useState(lang === 'zh' ? 'zh' : 'en')
+  const [msgType, setMsgType] = useState('auto')   // global: 'auto' = by group, or force one type for everyone
+  const [rowType, setRowType] = useState({})       // per-player override { playerId: type }
+  const [unsentOnly, setUnsentOnly] = useState(false)
   const [payDay, setPayDay] = useState(null)
   const [draft, setDraft] = useState(cfg)
   const [addIds, setAddIds] = useState('')
@@ -117,17 +120,69 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
     .filter(r => !search || r.username.toLowerCase().includes(search.toLowerCase()) || (r.m.full_name || '').toLowerCase().includes(search.toLowerCase()))
   const groupCounts = {}; scoped.forEach(r => { groupCounts[r.group] = (groupCounts[r.group] || 0) + 1 })
   const ORDER = ['streak', 'near', 'won', 'idle', 'care']
-  const followRows = scoped.filter(r => groupF === 'ALL' || r.group === groupF)
+  // "sent today" tracking (local Malaysia date) — stored in campaign_players.ch_sent + written to Contact Log
+  const todayKey = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kuala_Lumpur' })
+  const sentOf = r => (r.ch_sent || {})[todayKey] || null
+  const sentCount = {}; scoped.forEach(r => { if (sentOf(r)) sentCount[r.group] = (sentCount[r.group] || 0) + 1 })
+  const sentTotal = scoped.filter(r => sentOf(r)).length
+  const followRows = scoped.filter(r => groupF === 'ALL' || r.group === groupF).filter(r => !unsentOnly || !sentOf(r))
     .sort((a, b) => ORDER.indexOf(a.group) - ORDER.indexOf(b.group) || num(b.prog.last?.vb) - num(a.prog.last?.vb))
 
+  const MSG_TYPES = ['intro', 'won', 'streak', 'near', 'idle', 'care']
+  const MSG_LABEL = k => (k === 'intro' ? T('📣 Campaign intro', '📣 活动介绍') : `${GROUPS[k].icon} ${lang === 'zh' ? GROUPS[k].zh : GROUPS[k].en}`)
+  const typeFor = r => {
+    const t0 = rowType[r.id] && rowType[r.id] !== 'auto' ? rowType[r.id] : msgType
+    return t0 !== 'auto' ? t0 : (started ? r.group : 'intro')
+  }
   const msgFor = (r, group) => fillMessage({ group, lang: waLang, cfg, campaign: camp, prog: r.prog, username: r.username, agent: myName, summary, currency: r.m.currency })
+  const typeName = k => (k === 'intro' ? 'Campaign intro 活动介绍' : `${GROUPS[k]?.en || k} ${GROUPS[k]?.zh || ''}`)
+  // Mark as sent today + write a Contact Log entry (so VIP360 / Churn Urgency / KPI count it)
+  async function markSent(r, group, via) {
+    if (sentOf(r)) return
+    const nowD = new Date(), nowIso = nowD.toISOString()
+    const text = msgFor(r, group)
+    const { data: log, error } = await supabase.from('contact_logs').insert({
+      username: r.username, vip_id: r.m.id || r.vip_id || null, tier: r.m.tier || r.tier || null,
+      channel: 'WhatsApp', direction: 'outbound', outcome: 'Contacted',
+      notes: `${camp.campaign_name} · ${typeName(group)}${via === 'manual' ? ' (marked manually)' : ''}`,
+      message_summary: text.slice(0, 500), host_name: myName || null, host_id: profile?.id || null,
+      logged_at: nowIso, log_month: nowIso.slice(0, 7), log_week: String(Math.ceil(nowD.getDate() / 7)),
+    }).select('id').single()
+    if (error) { flash(T('Contact Log failed: ', 'Contact Log 记录失败：') + error.message); return }
+    const sent = { ...(r.ch_sent || {}), [todayKey]: { type: group, at: nowIso, by: myName, via, log_id: log?.id || null } }
+    const { error: e2 } = await supabase.from('campaign_players').update({ ch_sent: sent }).eq('id', r.id)
+    if (e2) return flash(e2.message)
+    setPlayers(ps => ps.map(p => (p.id === r.id ? { ...p, ch_sent: sent } : p)))
+  }
+  async function unmarkSent(r) {
+    const cur = sentOf(r); if (!cur) return
+    if (!window.confirm(T(`Undo "sent" for ${r.username}? The Contact Log entry will be removed.`, `撤销 ${r.username} 的"已发送"？对应的 Contact Log 记录会被删除。`))) return
+    if (cur.log_id) await supabase.from('contact_logs').delete().eq('id', cur.log_id)
+    const sent = { ...(r.ch_sent || {}) }; delete sent[todayKey]
+    const { error } = await supabase.from('campaign_players').update({ ch_sent: sent }).eq('id', r.id)
+    if (error) return flash(error.message)
+    setPlayers(ps => ps.map(p => (p.id === r.id ? { ...p, ch_sent: sent } : p)))
+  }
   function openWa(r, group) {
+    if (sentOf(r) && !window.confirm(T(`Already sent to ${r.username} today. Send again?`, `今天已发给 ${r.username}，确定再发？`))) return
     const num_ = String(r.m.whatsapp || r.m.phone || r.whatsapp || '').replace(/\D/g, '')
     const text = msgFor(r, group)
-    if (!num_) { navigator.clipboard.writeText(text); return flash(T('No phone — message copied', '没有电话 — 已复制信息')) }
-    window.open(`https://wa.me/${num_}?text=${encodeURIComponent(text)}`, '_blank')
+    if (!num_) { navigator.clipboard.writeText(text); flash(T('No phone — message copied', '没有电话 — 已复制信息')) }
+    else window.open(`https://wa.me/${num_}?text=${encodeURIComponent(text)}`, '_blank')
+    markSent(r, group, num_ ? 'wa' : 'copy')
   }
-  function copyMsg(r, group) { navigator.clipboard.writeText(msgFor(r, group)); flash(T('Copied', '已复制')) }
+  function copyMsg(r, group) {
+    navigator.clipboard.writeText(msgFor(r, group))
+    flash(sentOf(r) ? T('Copied (already marked sent today)', '已复制（今天已标记发送）') : T('Copied — marked as sent ✅', '已复制 — 已标记为已发送 ✅'))
+    markSent(r, group, 'copy')
+  }
+  async function markShownSent() {
+    const todo = followRows.filter(r => !sentOf(r))
+    if (!todo.length) return
+    if (!window.confirm(T(`Mark ${todo.length} players shown as sent (e.g. after a broadcast)? Each gets a Contact Log entry.`, `将显示中的 ${todo.length} 位玩家标记为已发送（例如已用广播发出）？每位都会记录到 Contact Log。`))) return
+    for (const r of todo) await markSent(r, typeFor(r), 'manual')
+    flash(T('Done', '完成'))
+  }
 
   // ── payout (per settled day) ──
   const pastDays = rowsAll[0]?.prog.days.filter(d => !d.future).map(d => d.date) || []
@@ -283,7 +338,12 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
               <span style={{ fontSize: 12, color: 'var(--muted)' }}>{T('Host:', '负责人：')}</span>
               {['ALL', ...hosts, '__none'].map(h => <button key={h} style={{ ...sec, padding: '4px 10px', background: hostF === h ? 'var(--accent)' : 'var(--surface2)', color: hostF === h ? '#fff' : 'var(--text)' }} onClick={() => setHostF(h)}>{h === 'ALL' ? T('All', '全部') : h === '__none' ? T('(No host)', '（无负责人）') : h}{h === myName ? T(' (me)', '（我）') : ''}</button>)}
               <input style={{ ...input, marginLeft: 8, width: 170 }} placeholder={T('Search VIP…', '搜索VIP…')} value={search} onChange={e => setSearch(e.target.value)} />
-              <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--muted)' }}>{T('WhatsApp language', 'WhatsApp 语言')}</span>
+              <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--muted)' }}>{T('Message type', '信息类型')}</span>
+              <select value={msgType} onChange={e => { setMsgType(e.target.value); setRowType({}) }} style={{ ...input, padding: '4px 6px' }}>
+                <option value="auto">{T('Auto — by group', '自动 — 按分组')}</option>
+                {MSG_TYPES.map(k => <option key={k} value={k}>{MSG_LABEL(k)}</option>)}
+              </select>
+              <span style={{ fontSize: 12, color: 'var(--muted)' }}>{T('WhatsApp language', 'WhatsApp 语言')}</span>
               {['zh', 'en'].map(l => <button key={l} style={{ ...sec, padding: '4px 10px', background: waLang === l ? 'var(--accent)' : 'var(--surface2)', color: waLang === l ? '#fff' : 'var(--text)' }} onClick={() => setWaLang(l)}>{l === 'zh' ? '中文' : 'EN'}</button>)}
             </div>
           )}
@@ -292,26 +352,29 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
           {tab === 'follow' && (
             <div style={{ marginTop: 10 }}>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
-                <button style={{ ...sec, background: groupF === 'ALL' ? 'var(--accent)' : 'var(--surface2)', color: groupF === 'ALL' ? '#fff' : 'var(--text)' }} onClick={() => setGroupF('ALL')}>{T('All', '全部')} ({scoped.length})</button>
+                <button style={{ ...sec, background: groupF === 'ALL' ? 'var(--accent)' : 'var(--surface2)', color: groupF === 'ALL' ? '#fff' : 'var(--text)' }} onClick={() => setGroupF('ALL')}>{T('All', '全部')} ({sentTotal}/{scoped.length} {T('sent', '已发')})</button>
                 {ORDER.map(g => (
                   <button key={g} style={{ ...sec, borderColor: GROUPS[g].color, background: groupF === g ? GROUPS[g].color : 'var(--surface2)', color: groupF === g ? '#fff' : 'var(--text)' }} onClick={() => setGroupF(g)}>
-                    {GROUPS[g].icon} {lang === 'zh' ? GROUPS[g].zh : GROUPS[g].en} ({groupCounts[g] || 0})
+                    {GROUPS[g].icon} {lang === 'zh' ? GROUPS[g].zh : GROUPS[g].en} ({sentCount[g] || 0}/{groupCounts[g] || 0})
                   </button>
                 ))}
+                <span style={{ width: 8 }} />
+                <button style={{ ...sec, background: unsentOnly ? '#f85149' : 'var(--surface2)', color: unsentOnly ? '#fff' : 'var(--text)' }} onClick={() => setUnsentOnly(v => !v)}>⏳ {T('Not sent yet only', '只看未发送')}</button>
+                <button style={sec} onClick={markShownSent} title={T('For messages sent outside the CRM (broadcast / own phone)', '用于在CRM以外发送的信息（广播 / 自己的手机）')}>✅ {T('Mark shown as sent', '显示中的标记为已发')}</button>
               </div>
               <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>
                 {T('Group is based on yesterday. 🔥 = qualified and one more day unlocks the streak bonus · 😬 = played ≥ ', '分组依据昨天的结果。🔥 = 已达标，再1天就拿连续奖励 · 😬 = 流水 ≥ 第一档的 ')}{cfg.near_pct}%{T(' of the first tier but missed · 💙 = big loss yesterday: send care, don\'t push.', ' 但没达标 · 💙 = 昨天大输：只关怀，不催。')}
               </div>
               <div style={{ maxHeight: 520, overflow: 'auto', border: '1px solid var(--border)', borderRadius: 8 }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <thead><tr>{['#', 'VIP', T('Host', '负责人'), T('Group', '分组'), T(`Turnover ${asOf || ''}`, `${asOf || ''} 流水`), T('Reward', '奖励'), T('Missed by / next', '差多少 / 下一档'), T('Streak', '连续'), T('Total so far', '累计'), T('Message', '信息')].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
+                  <thead><tr>{['#', 'VIP', T('Host', '负责人'), T('Group', '分组'), T(`Turnover ${asOf || ''}`, `${asOf || ''} 流水`), T('Reward', '奖励'), T('Missed by / next', '差多少 / 下一档'), T('Streak', '连续'), T('Total so far', '累计'), T('Sent today', '今天已发'), T('Message', '信息')].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
                   <tbody>
                     {followRows.map((r, i) => {
                       const l = r.prog.last || {}
                       const g = GROUPS[r.group]
                       const c = sym(r.m.currency)
                       return (
-                        <tr key={r.id}>
+                        <tr key={r.id} style={{ opacity: sentOf(r) ? 0.6 : 1 }}>
                           <td style={{ ...td, color: 'var(--muted)' }}>{i + 1}</td>
                           <td style={td}><b>{r.username}</b><div style={{ fontSize: 10, color: 'var(--muted)' }}>{r.m.full_name || ''} · {r.m.tier || r.tier}{r.m.currency && r.m.currency !== 'MYR' ? ` · ${r.m.currency}` : ''}</div></td>
                           <td style={td}>{r.m.host_assigned || '—'}</td>
@@ -325,16 +388,24 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
                           <td style={td}>{r.prog.curRun > 0 ? '🔥'.repeat(Math.min(r.prog.curRun, 5)) + ` ${r.prog.curRun}` : '—'}</td>
                           <td style={{ ...td, textAlign: 'right' }}>{fmt(r.prog.cost)}</td>
                           <td style={td}>
+                            {sentOf(r)
+                              ? <span onClick={() => unmarkSent(r)} title={T('Click to undo', '点击撤销')} style={{ cursor: 'pointer', color: '#3fb950', fontWeight: 700, fontSize: 11 }}>✅ {new Date(sentOf(r).at).toLocaleTimeString('en-MY', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kuala_Lumpur' })}<div style={{ fontWeight: 400, color: 'var(--muted)' }}>{sentOf(r).by} · {sentOf(r).via === 'wa' ? 'WA' : sentOf(r).via === 'copy' ? T('copied', '复制') : T('manual', '手动')}</div></span>
+                              : <button style={{ ...sec, padding: '2px 8px', fontSize: 11 }} onClick={() => markSent(r, typeFor(r), 'manual')} title={T('Sent outside the CRM? Mark it here', '在CRM以外发送了？在这里标记')}>⏳ {T('Mark sent', '标记已发')}</button>}
+                          </td>
+                          <td style={td}>
                             <div style={{ display: 'flex', gap: 4 }}>
-                              <button style={{ ...sec, padding: '3px 8px', background: '#25D366', color: '#fff', border: 'none' }} onClick={() => openWa(r, started ? r.group : 'intro')} title={msgFor(r, started ? r.group : 'intro')}>💬 WA</button>
-                              <button style={{ ...sec, padding: '3px 8px' }} onClick={() => copyMsg(r, started ? r.group : 'intro')}>⎘</button>
-                              <button style={{ ...sec, padding: '3px 8px' }} title={T('Campaign intro message', '活动介绍信息')} onClick={() => openWa(r, 'intro')}>📣</button>
+                              <select value={rowType[r.id] || 'auto'} onChange={e => setRowType(m0 => ({ ...m0, [r.id]: e.target.value }))} style={{ ...input, padding: '2px 4px', fontSize: 11 }} title={T('Message type for this player', '这位玩家的信息类型')}>
+                                <option value="auto">{T('Auto', '自动')} ({started ? (lang === 'zh' ? GROUPS[r.group].zh : GROUPS[r.group].en) : T('Intro', '活动介绍')})</option>
+                                {MSG_TYPES.map(k => <option key={k} value={k}>{MSG_LABEL(k)}</option>)}
+                              </select>
+                              <button style={{ ...sec, padding: '3px 8px', background: '#25D366', color: '#fff', border: 'none' }} onClick={() => openWa(r, typeFor(r))} title={msgFor(r, typeFor(r))}>💬 WA</button>
+                              <button style={{ ...sec, padding: '3px 8px' }} onClick={() => copyMsg(r, typeFor(r))} title={T('Copy message', '复制信息')}>⎘</button>
                             </div>
                           </td>
                         </tr>
                       )
                     })}
-                    {!followRows.length && <tr><td colSpan={10} style={{ ...td, textAlign: 'center', padding: 24, color: 'var(--muted)' }}>{T('No players in this group.', '此分组没有玩家。')}</td></tr>}
+                    {!followRows.length && <tr><td colSpan={11} style={{ ...td, textAlign: 'center', padding: 24, color: 'var(--muted)' }}>{T('No players in this group.', '此分组没有玩家。')}</td></tr>}
                   </tbody>
                 </table>
               </div>
