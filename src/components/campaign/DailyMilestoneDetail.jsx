@@ -56,6 +56,7 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
   const [payDay, setPayDay] = useState(null)
   const [draft, setDraft] = useState(cfg)
   const [addIds, setAddIds] = useState('')
+  const [openP, setOpenP] = useState(null)          // player detail panel (row object)
   const [sel, setSel] = useState(new Set())          // selected player ids (grid tab) for bulk remove
   const [bulkOpen, setBulkOpen] = useState(false)
   const [allVips, setAllVips] = useState(null)
@@ -349,6 +350,23 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
   const pct = v => (v == null ? '—' : (v * 100).toFixed(1) + '%')
   const rmS = v => (v < 0 ? '-' : '') + sym(mkt) + fmt(Math.abs(v))
 
+  const copyName = u => { navigator.clipboard.writeText(u); flash(T(`Copied ${u}`, `已复制 ${u}`)) }
+  const nameCell = (r, sub) => (
+    <span style={{ display: 'inline-flex', flexDirection: 'column' }}>
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+        <b onClick={() => setOpenP(r)} title={T('View daily deposit / withdrawal / turnover', '查看每日存款 / 提款 / 流水')} style={{ cursor: 'pointer', color: 'var(--accent)' }}>{r.username}</b>
+        <button onClick={e => { e.stopPropagation(); copyName(r.username) }} title={T('Copy username', '复制用户名')} style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 15, padding: '0 2px' }}>⎘</button>
+      </span>
+      <span style={{ fontSize: 12, color: 'var(--muted)' }}>{sub}</span>
+    </span>
+  )
+  // per-player totals for the whole period (settled days)
+  const totalsOf = r => {
+    const t = { dep: 0, wd: 0, vb: 0, wl: 0 }
+    r.prog.days.filter(d => !d.future).forEach(d => { const x = daily[r.username]?.[d.date] || {}; t.dep += num(x.dep); t.wd += num(x.wd); t.vb += num(x.vb); t.wl += num(x.wl) })
+    return t
+  }
+
   const tiers = sortedTiers(cfg)
   const dates = rowsAll[0]?.prog.days.map(d => d.date) || []
   const tabBtn = k => ({ ...sec, background: tab === k ? 'var(--accent)' : 'var(--surface2)', color: tab === k ? '#fff' : 'var(--text)', fontWeight: 700 })
@@ -443,7 +461,7 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
                       return (
                         <tr key={r.id} style={{ opacity: sentOf(r) ? 0.6 : 1 }}>
                           <td style={{ ...td, color: 'var(--muted)' }}>{i + 1}</td>
-                          <td style={td}><b>{r.username}</b><div style={{ fontSize: 12, color: 'var(--muted)' }}>{r.m.full_name || ''} · {r.m.tier || r.tier}{r.m.currency && r.m.currency !== 'MYR' ? ` · ${r.m.currency}` : ''}</div></td>
+                          <td style={td}>{nameCell(r, `${r.m.full_name || ''} · ${r.m.tier || r.tier}${r.m.currency && r.m.currency !== 'MYR' ? ` · ${r.m.currency}` : ''}`)}</td>
                           <td style={td}>{r.m.host_assigned || '—'}</td>
                           <td style={td}><span style={{ fontSize: 13, fontWeight: 700, padding: '3px 10px', borderRadius: 12, background: g.color + '22', color: g.color }}>{g.icon} {lang === 'zh' ? g.zh : g.en}</span></td>
                           <td style={{ ...td, textAlign: 'right' }}>{l.vb ? c + fmt(l.vb) : '—'}</td>
@@ -467,6 +485,7 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
                               </select>
                               <button style={{ ...sec, padding: '6px 12px', background: '#25D366', color: '#fff', border: 'none' }} onClick={() => openWa(r, typeFor(r))} title={msgFor(r, typeFor(r))}>💬 WA</button>
                               <button style={{ ...sec, padding: '6px 12px' }} onClick={() => copyMsg(r, typeFor(r))} title={T('Copy message', '复制信息')}>⎘</button>
+                              <button style={{ ...sec, padding: '6px 10px', color: '#f85149' }} onClick={() => removePlayer(r)} title={T('Remove from campaign', '移出活动')}>🗑</button>
                             </div>
                           </td>
                         </tr>
@@ -499,7 +518,7 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
                       return (
                         <tr key={r.id}>
                           <td style={{ ...td, color: 'var(--muted)' }}>{i + 1}</td>
-                          <td style={td}><b>{r.username}</b><div style={{ fontSize: 12, color: 'var(--muted)' }}>{r.m.full_name || ''}{r.m.currency && r.m.currency !== 'MYR' ? ` · ${r.m.currency}` : ''}</div></td>
+                          <td style={td}>{nameCell(r, `${r.m.full_name || ''}${r.m.currency && r.m.currency !== 'MYR' ? ` · ${r.m.currency}` : ''}`)}</td>
                           <td style={td}>{r.m.host_assigned || '—'}</td>
                           <td style={{ ...td, textAlign: 'right' }}>{sym(r.m.currency)}{fmt(d.vb)}</td>
                           <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: '#3fb950' }}>{d.reward ? fmt(d.reward) : '—'}</td>
@@ -545,19 +564,24 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
             )}
             <div style={{ marginTop: 10, maxHeight: 'calc(100vh - 430px)', minHeight: 360, overflow: 'auto', border: '1px solid var(--border)', borderRadius: 10 }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead><tr><th style={th}><input type="checkbox" checked={scoped.length > 0 && scoped.every(r => sel.has(r.id))} onChange={e => setSel(e.target.checked ? new Set([...sel, ...scoped.map(r => r.id)]) : new Set([...sel].filter(id => !scoped.some(r => r.id === id))))} title={T('Select all shown', '全选显示中的')} /></th><th style={th}>#</th><th style={th}>VIP</th>{dates.map(d => <th key={d} style={{ ...th, textAlign: 'center' }}>{d.slice(5)}</th>)}<th style={th}>{T('Tier total', '阶梯合计')}</th><th style={th}>{T('Streak', '连续')}</th><th style={th}></th></tr></thead>
+                <thead><tr><th style={th}><input type="checkbox" checked={scoped.length > 0 && scoped.every(r => sel.has(r.id))} onChange={e => setSel(e.target.checked ? new Set([...sel, ...scoped.map(r => r.id)]) : new Set([...sel].filter(id => !scoped.some(r => r.id === id))))} title={T('Select all shown', '全选显示中的')} /></th><th style={th}>#</th><th style={th}>VIP</th>{dates.map(d => <th key={d} style={{ ...th, textAlign: 'center' }}>{d.slice(5)}</th>)}<th style={th}>{T('Deposit', '存款')}</th><th style={th}>{T('Withdrawal', '提款')}</th><th style={th}>{T('Turnover', '流水')}</th><th style={th}>{T('Tier total', '阶梯合计')}</th><th style={th}>{T('Streak', '连续')}</th><th style={th}></th></tr></thead>
                 <tbody>
                   {[...scoped].sort((a, b) => b.prog.cost - a.prog.cost).map((r, i) => (
                     <tr key={r.id} style={{ background: sel.has(r.id) ? 'rgba(248,81,73,.08)' : 'transparent' }}>
                       <td style={td}><input type="checkbox" checked={sel.has(r.id)} onChange={() => setSel(s0 => { const n = new Set(s0); n.has(r.id) ? n.delete(r.id) : n.add(r.id); return n })} /></td>
                       <td style={{ ...td, color: 'var(--muted)' }}>{i + 1}</td>
-                      <td style={td}><b>{r.username}</b><div style={{ fontSize: 12, color: 'var(--muted)' }}>{r.m.host_assigned || T('(no host)', '（无负责人）')} · {r.m.tier || r.tier}</div></td>
+                      <td style={td}>{nameCell(r, `${r.m.host_assigned || T('(no host)', '（无负责人）')} · ${r.m.tier || r.tier}`)}</td>
                       {r.prog.days.map(d => (
                         <td key={d.date} title={`${T('Turnover', '流水')} ${fmt(d.vb)} · ${T('Deposit', '存款')} ${fmt(d.dep)}`} style={{ ...td, textAlign: 'center', background: d.future ? 'transparent' : d.qualifies ? 'rgba(63,185,80,.12)' : d.vb > 0 ? 'rgba(251,191,36,.08)' : 'transparent' }}>
                           {d.future ? <span style={{ color: 'var(--muted)' }}>·</span> : d.qualifies ? <b style={{ color: '#3fb950' }}>{fmt(d.reward)}</b> : <span style={{ fontSize: 12, color: 'var(--muted)' }}>{d.vb ? fmt(d.vb / 1000) + 'k' : '—'}</span>}
                           {d.streakBonus > 0 && <div style={{ fontSize: 12, color: '#f97316' }}>🔥{fmt(d.streakBonus)}</div>}
                         </td>
                       ))}
+                      {(() => { const t = totalsOf(r); return <>
+                        <td style={{ ...td, textAlign: 'right' }}>{fmt(t.dep)}</td>
+                        <td style={{ ...td, textAlign: 'right', color: t.wd > 0 ? '#f85149' : 'var(--muted)' }}>{fmt(t.wd)}</td>
+                        <td style={{ ...td, textAlign: 'right' }}>{fmt(t.vb)}</td>
+                      </> })()}
                       <td style={{ ...td, textAlign: 'right', fontWeight: 700 }}>{fmt(r.prog.credit)}</td>
                       <td style={{ ...td, textAlign: 'right', color: '#f97316', fontWeight: 700 }}>{fmt(r.prog.streak)}</td>
                       <td style={td}><button style={{ ...sec, padding: '2px 6px', fontSize: 13 }} onClick={() => removePlayer(r)}>✕</button></td>
@@ -665,6 +689,63 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
             </div>
           )}
         </>}
+        {openP && (() => {
+          const r = rowsAll.find(x => x.id === openP.id) || openP
+          const c = sym(r.m.currency)
+          const t = totalsOf(r)
+          return (
+            <div onClick={e => e.target === e.currentTarget && setOpenP(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 1250, display: 'flex', justifyContent: 'center', alignItems: 'flex-start', padding: 30, overflow: 'auto' }}>
+              <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, padding: 22, width: '100%', maxWidth: 1100 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                  <div style={{ fontSize: 22, fontWeight: 800 }}>{r.username}</div>
+                  <button style={{ ...sec, padding: '4px 10px' }} onClick={() => copyName(r.username)}>⎘</button>
+                  <div style={{ fontSize: 14, color: 'var(--muted)' }}>{r.m.full_name || ''} · {r.m.tier || r.tier} · {r.m.host_assigned || T('(no host)', '（无负责人）')} · {r.m.currency || 'MYR'}</div>
+                  <button style={{ ...sec, marginLeft: 'auto' }} onClick={() => setOpenP(null)}>✕ {T('Close', '关闭')}</button>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 12, marginTop: 14 }}>
+                  <Kpi label={T('Deposit (period)', '存款（期间）')} value={c + fmt(t.dep)} />
+                  <Kpi label={T('Withdrawal (period)', '提款（期间）')} value={c + fmt(t.wd)} color={t.wd > 0 ? '#f85149' : undefined} />
+                  <Kpi label={T('Net deposit', '净存款')} value={c + fmt(t.dep - t.wd)} />
+                  <Kpi label={T('Turnover (period)', '流水（期间）')} value={c + fmt(t.vb)} />
+                  <Kpi label={T('Player win/loss', '玩家输赢')} value={(t.wl < 0 ? '-' : '+') + c + fmt(Math.abs(t.wl))} color={t.wl < 0 ? '#f85149' : '#3fb950'} />
+                  <Kpi label={T('Rewards earned', '已得奖励')} value={fmt(r.prog.cost)} sub={`${T('tier', '阶梯')} ${fmt(r.prog.credit)} + ${T('streak', '连续')} ${fmt(r.prog.streak)}`} color="var(--accent)" />
+                </div>
+                <div style={{ marginTop: 14, border: '1px solid var(--border)', borderRadius: 10, overflow: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead><tr>{[T('Day', '日期'), T('Deposit', '存款'), T('Withdrawal', '提款'), T('Turnover', '流水'), T('Win/Loss', '输赢'), T('Tier reward', '阶梯奖励'), T('Streak', '连续'), T('Streak bonus', '连续奖励')].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
+                    <tbody>
+                      {r.prog.days.map(d => { const x = daily[r.username]?.[d.date] || {}; return (
+                        <tr key={d.date} style={{ opacity: d.future ? 0.4 : 1 }}>
+                          <td style={{ ...td, fontWeight: 700 }}>{d.date}</td>
+                          <td style={{ ...td, textAlign: 'right' }}>{d.future ? '—' : c + fmt(x.dep)}</td>
+                          <td style={{ ...td, textAlign: 'right', color: num(x.wd) > 0 ? '#f85149' : undefined }}>{d.future ? '—' : c + fmt(x.wd)}</td>
+                          <td style={{ ...td, textAlign: 'right' }}>{d.future ? '—' : c + fmt(x.vb)}</td>
+                          <td style={{ ...td, textAlign: 'right', color: num(x.wl) < 0 ? '#f85149' : num(x.wl) > 0 ? '#3fb950' : undefined }}>{d.future ? '—' : (num(x.wl) < 0 ? '-' : '+') + c + fmt(Math.abs(num(x.wl)))}</td>
+                          <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: d.reward ? '#3fb950' : 'var(--muted)' }}>{d.future ? T('upcoming', '未到') : d.reward ? fmt(d.reward) : (d.vb > 0 && tiers[0] ? T(`needs ${fmt(tiers[0].turnover - d.vb)} more`, `差 ${fmt(tiers[0].turnover - d.vb)}`) : '—')}</td>
+                          <td style={td}>{d.run > 0 ? '🔥'.repeat(Math.min(d.run, 5)) : '—'}</td>
+                          <td style={{ ...td, textAlign: 'right', color: '#f97316', fontWeight: 700 }}>{d.streakBonus ? fmt(d.streakBonus) : '—'}</td>
+                        </tr>) })}
+                      <tr style={{ background: 'var(--surface2)' }}>
+                        <td style={{ ...td, fontWeight: 800 }}>{T('Total', '合计')}</td>
+                        <td style={{ ...td, textAlign: 'right', fontWeight: 800 }}>{c + fmt(t.dep)}</td>
+                        <td style={{ ...td, textAlign: 'right', fontWeight: 800 }}>{c + fmt(t.wd)}</td>
+                        <td style={{ ...td, textAlign: 'right', fontWeight: 800 }}>{c + fmt(t.vb)}</td>
+                        <td style={{ ...td, textAlign: 'right', fontWeight: 800 }}>{(t.wl < 0 ? '-' : '+') + c + fmt(Math.abs(t.wl))}</td>
+                        <td style={{ ...td, textAlign: 'right', fontWeight: 800, color: '#3fb950' }}>{fmt(r.prog.credit)}</td>
+                        <td style={td}></td>
+                        <td style={{ ...td, textAlign: 'right', fontWeight: 800, color: '#f97316' }}>{fmt(r.prog.streak)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 12, fontSize: 13, color: 'var(--muted)' }}>
+                  <span>{T(`Data up to ${asOf || '—'}. Win/loss is from the player's side (minus = player lost).`, `数据截至 ${asOf || '—'}。输赢以玩家角度计（负数 = 玩家输）。`)}</span>
+                  <button style={{ ...sec, color: '#f85149' }} onClick={async () => { await removePlayer(r); setOpenP(null) }}>🗑 {T('Remove from campaign', '移出活动')}</button>
+                </div>
+              </div>
+            </div>
+          )
+        })()}
         {toast && <div style={{ position: 'fixed', bottom: 24, right: 24, background: 'var(--surface)', border: '1px solid var(--accent)', padding: '10px 14px', borderRadius: 8, zIndex: 1300, fontSize: 13 }}>{toast}</div>}
       </div>
     </div>
