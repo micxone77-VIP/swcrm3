@@ -113,7 +113,7 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
   }, [rowsAll, asOf])
 
   const hosts = useMemo(() => [...new Set(rowsAll.map(r => r.m.host_assigned).filter(Boolean))].sort(), [rowsAll])
-  const scoped = rowsAll.filter(r => !hostF || hostF === 'ALL' || (r.m.host_assigned || '') === hostF)
+  const scoped = rowsAll.filter(r => !hostF || hostF === 'ALL' || (hostF === '__none' ? !r.m.host_assigned : (r.m.host_assigned || '') === hostF))
     .filter(r => !search || r.username.toLowerCase().includes(search.toLowerCase()) || (r.m.full_name || '').toLowerCase().includes(search.toLowerCase()))
   const groupCounts = {}; scoped.forEach(r => { groupCounts[r.group] = (groupCounts[r.group] || 0) + 1 })
   const ORDER = ['streak', 'near', 'won', 'idle', 'care']
@@ -281,7 +281,7 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
           {tab !== 'rules' && (
             <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap', alignItems: 'center' }}>
               <span style={{ fontSize: 12, color: 'var(--muted)' }}>{T('Host:', '负责人：')}</span>
-              {['ALL', ...hosts].map(h => <button key={h} style={{ ...sec, padding: '4px 10px', background: hostF === h ? 'var(--accent)' : 'var(--surface2)', color: hostF === h ? '#fff' : 'var(--text)' }} onClick={() => setHostF(h)}>{h === 'ALL' ? T('All', '全部') : h}{h === myName ? T(' (me)', '（我）') : ''}</button>)}
+              {['ALL', ...hosts, '__none'].map(h => <button key={h} style={{ ...sec, padding: '4px 10px', background: hostF === h ? 'var(--accent)' : 'var(--surface2)', color: hostF === h ? '#fff' : 'var(--text)' }} onClick={() => setHostF(h)}>{h === 'ALL' ? T('All', '全部') : h === '__none' ? T('(No host)', '（无负责人）') : h}{h === myName ? T(' (me)', '（我）') : ''}</button>)}
               <input style={{ ...input, marginLeft: 8, width: 170 }} placeholder={T('Search VIP…', '搜索VIP…')} value={search} onChange={e => setSearch(e.target.value)} />
               <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--muted)' }}>{T('WhatsApp language', 'WhatsApp 语言')}</span>
               {['zh', 'en'].map(l => <button key={l} style={{ ...sec, padding: '4px 10px', background: waLang === l ? 'var(--accent)' : 'var(--surface2)', color: waLang === l ? '#fff' : 'var(--text)' }} onClick={() => setWaLang(l)}>{l === 'zh' ? '中文' : 'EN'}</button>)}
@@ -356,7 +356,7 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead><tr>{['#', 'VIP', T('Host', '负责人'), T('Turnover', '流水'), T('Tier reward', '阶梯奖励'), T('Paid', '已派'), T('Streak bonus', '连续奖励'), T('Paid', '已派'), T('Total', '合计')].map((h, i) => <th key={i} style={th}>{h}</th>)}</tr></thead>
                   <tbody>
-                    {payRows.filter(({ r }) => !hostF || hostF === 'ALL' || r.m.host_assigned === hostF).map(({ r, d }, i) => {
+                    {payRows.filter(({ r }) => !hostF || hostF === 'ALL' || (hostF === '__none' ? !r.m.host_assigned : r.m.host_assigned === hostF)).map(({ r, d }, i) => {
                       const p = (r.ch_paid || {})[settle] || {}
                       return (
                         <tr key={r.id}>
