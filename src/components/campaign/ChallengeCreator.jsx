@@ -122,7 +122,7 @@ export default function ChallengeCreator({ mode = 'trust_credit', onCancel, onCr
   const [countries, setCountries] = useState(['MY'])
   const [tiers, setTiers] = useState(trust ? ['PLATINUM', 'DIAMOND', 'DIAMOND-P', 'BLACK'] : daily ? ['GOLD', 'PLATINUM', 'DIAMOND'] : ['GOLD', 'PLATINUM', 'DIAMOND', 'BLACK']) // DIAMOND-P = restricted, no rebate → not in Rebate Challenge by default
   const [segF, setSegF] = useState(trust ? ['Silent', 'Declining'] : [])
-  const [hostF, setHostF] = useState('ALL')
+  const [hostSel, setHostSel] = useState([]) // [] = all hosts; '__none' = no host
   const [affF, setAffF] = useState('ALL')
   const [minLoss, setMinLoss] = useState(trust ? '20000' : '')
   const [minTurnover, setMinTurnover] = useState(trust || daily ? '' : '10000')
@@ -184,7 +184,7 @@ export default function ChallengeCreator({ mode = 'trust_credit', onCancel, onCr
       if (countries.length && !countries.includes(countryFromPlayer(r))) return false
       if (tiers.length && !tiers.includes(String(r.tier || '').toUpperCase())) return false
       if (segF.length && !segF.includes(r.segment)) return false
-      if (hostF !== 'ALL' && (hostF === '__none' ? r.host_assigned : r.host_assigned !== hostF)) return false
+      if (hostSel.length && !hostSel.includes(r.host_assigned || '__none')) return false
       if (affF !== 'ALL' && (affF === '__direct' ? r.affiliate_login : r.affiliate_login !== affF)) return false
       if (num(minLoss) > 0 && r.sug.loss30 < num(minLoss)) return false
       if (num(minTurnover) > 0 && r.sug.avgDailyTurnover < num(minTurnover)) return false
@@ -193,7 +193,7 @@ export default function ChallengeCreator({ mode = 'trust_credit', onCancel, onCr
       if (search && !(r.username.toLowerCase().includes(search.toLowerCase()) || (r.full_name || '').toLowerCase().includes(search.toLowerCase()))) return false
       return true
     }).sort((a, b) => (b.manual - a.manual) || (trust ? b.sug.loss30 - a.sug.loss30 : b.sug.avgDailyTurnover - a.sug.avgDailyTurnover))
-  }, [members, stats, segs, busy, cfg, days, over, countries, tiers, segF, hostF, affF, minLoss, minTurnover, hideFlagged, hideBusy, manualIds, search, trust])
+  }, [members, stats, segs, busy, cfg, days, over, countries, tiers, segF, hostSel, affF, minLoss, minTurnover, hideFlagged, hideBusy, manualIds, search, trust])
 
   const pickedRows = rows.filter(r => picked.has(r.username))
   const hiddenPicked = picked.size - pickedRows.length
@@ -295,8 +295,14 @@ export default function ChallengeCreator({ mode = 'trust_credit', onCancel, onCr
           {[...Object.keys(SEGMENTS), 'No deposits'].map(k => <Chip key={k} color={SEGMENTS[k]?.color} active={segF.includes(k)} onClick={() => toggleList(segF, setSegF, k)}>{SEGMENTS[k] ? `${SEGMENTS[k].icon} ${lang === 'zh' ? SEGMENTS[k].zh : k}` : T('No deposits', '无存款')}</Chip>)}
           <span style={{ fontSize: 11, color: 'var(--muted)', alignSelf: 'center' }}>{segF.length ? '' : T('(all segments)', '（全部分群）')}</span>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '10px 14px' }}>
-          <Field label={T('Host', '负责人')}><select style={input} value={hostF} onChange={e => setHostF(e.target.value)}><option value="ALL">{T('All hosts', '全部')}</option><option value="__none">{T('(No host)', '（无负责人）')}</option>{hosts.map(h => <option key={h}>{h}</option>)}</select></Field>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10, alignItems: 'center' }}>
+          <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{T('Host:', '负责人：')}</span>
+          <Chip active={!hostSel.length} onClick={() => setHostSel([])}>{T('All hosts', '全部负责人')}</Chip>
+          {hosts.map(h => <Chip key={h} active={hostSel.includes(h)} onClick={() => toggleList(hostSel, setHostSel, h)}>{h}</Chip>)}
+          <Chip active={hostSel.includes('__none')} onClick={() => toggleList(hostSel, setHostSel, '__none')}>{T('(No host)', '（无负责人）')}</Chip>
+          <span style={{ fontSize: 11, color: 'var(--muted)' }}>{T('Pick one or more — e.g. Marcus + Angel only', '可多选 — 例如只选 Marcus + Angel 的玩家')}</span>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px 14px' }}>
           <Field label={T('Affiliate', '代理')}><select style={input} value={affF} onChange={e => setAffF(e.target.value)}><option value="ALL">{T('All', '全部')}</option><option value="__direct">{T('Direct / unknown', '直客 / 未知')}</option>{affs.map(a => <option key={a}>{a}</option>)}</select></Field>
           <Field label={T('Min 30-day net loss (RM)', '30天最低净亏损 (RM)')}><input type="number" style={input} value={minLoss} onChange={e => setMinLoss(e.target.value)} placeholder="0" /></Field>
           <Field label={T('Min avg daily turnover', '最低日均流水')}><input type="number" style={input} value={minTurnover} onChange={e => setMinTurnover(e.target.value)} placeholder="0" /></Field>

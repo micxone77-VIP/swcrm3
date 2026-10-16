@@ -51,6 +51,11 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
   const [payDay, setPayDay] = useState(null)
   const [draft, setDraft] = useState(cfg)
   const [addIds, setAddIds] = useState('')
+  const [sel, setSel] = useState(new Set())          // selected player ids (grid tab) for bulk remove
+  const [bulkOpen, setBulkOpen] = useState(false)
+  const [allVips, setAllVips] = useState(null)
+  const [bulkTiers, setBulkTiers] = useState([])
+  const [bulkHosts, setBulkHosts] = useState([])
   const flash = m => { setToast(m); setTimeout(() => setToast(''), 2200) }
 
   async function load() {
@@ -186,6 +191,42 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
     if (error) return flash(error.message)
     setPlayers(ps => ps.filter(p => p.id !== r.id))
   }
+
+  async function removeSelected() {
+    const ids = [...sel]
+    if (!ids.length) return
+    if (!window.confirm(T(`Remove ${ids.length} selected players from this campaign?`, `确定将已选的 ${ids.length} 位玩家移出此活动？`))) return
+    for (let i = 0; i < ids.length; i += 200) {
+      const { error } = await supabase.from('campaign_players').delete().in('id', ids.slice(i, i + 200))
+      if (error) return flash(error.message)
+    }
+    setPlayers(ps => ps.filter(p => !sel.has(p.id))); setSel(new Set()); flash(T(`Removed ${ids.length}`, `已移出 ${ids.length} 位`))
+  }
+  async function openBulk() {
+    setBulkOpen(o => !o)
+    if (!allVips) setAllVips(await fetchAll(() => supabase.from('vip_members').select('id,username,full_name,tier,host_assigned,phone,whatsapp,is_excluded').order('username')).catch(() => []))
+  }
+  const inCamp = new Set(players.map(p => p.username))
+  const bulkMatches = (allVips || []).filter(m => !m.is_excluded && !inCamp.has(m.username)
+    && (!bulkTiers.length || bulkTiers.includes(String(m.tier || '').toUpperCase()))
+    && (!bulkHosts.length || bulkHosts.includes(m.host_assigned || '__none')))
+  async function addBulk() {
+    if (!bulkMatches.length) return
+    if (!window.confirm(T(`Add ${bulkMatches.length} players?`, `确定加入 ${bulkMatches.length} 位玩家？`))) return
+    const now = new Date().toISOString()
+    const rows = bulkMatches.map(m => ({
+      campaign_id: camp.id, vip_id: m.id, username: m.username, tier: m.tier, player_name: m.full_name || null, whatsapp: m.whatsapp || m.phone || null,
+      total_deposit: 0, campaign_period_deposit: 0, converted: false, payout_status: 'pending', streak_payout_status: 'pending', status: 'enrolled',
+      enrollment_source: 'bulk', added_at: now, enrolled_at: now, ch_credit_status: 'none',
+    }))
+    for (let i = 0; i < rows.length; i += 200) {
+      const { error } = await supabase.from('campaign_players').upsert(rows.slice(i, i + 200), { onConflict: 'campaign_id,username' })
+      if (error) return flash(error.message)
+    }
+    flash(T(`Added ${rows.length}`, `已加入 ${rows.length} 位`)); setBulkOpen(false); load()
+  }
+  const toggleArr = (arr, set, v) => set(arr.includes(v) ? arr.filter(x => x !== v) : [...arr, v])
+  const allHosts = [...new Set((allVips || []).map(m => m.host_assigned).filter(Boolean))].sort()
 
   const tiers = sortedTiers(cfg)
   const dates = rowsAll[0]?.prog.days.map(d => d.date) || []
@@ -339,15 +380,40 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
           )}
 
           {/* ── 📅 grid ── */}
-          {tab === 'grid' && (
+          {tab === 'grid' && (<>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 10, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 12 }}>{T('Showing', '显示')} <b>{scoped.length}</b> / {players.length} · {T('selected', '已选')} <b style={{ color: '#f85149' }}>{sel.size}</b></span>
+              <button style={sec} onClick={() => setSel(new Set(scoped.map(r => r.id)))}>{T('Select all shown', '全选显示中的')}</button>
+              <button style={sec} onClick={() => setSel(new Set())}>{T('Clear', '清除')}</button>
+              <button style={{ ...sec, background: sel.size ? '#f85149' : 'var(--surface2)', color: sel.size ? '#fff' : 'var(--muted)' }} disabled={!sel.size} onClick={removeSelected}>🗑 {T(`Remove selected (${sel.size})`, `移出已选（${sel.size}）`)}</button>
+              <span style={{ fontSize: 11, color: 'var(--muted)' }}>{T('Tip: use the Host buttons above to show e.g. only Jennifer\'s players → Select all shown → Remove.', '提示：先用上面的负责人按钮只显示某位负责人的玩家 → 全选显示中的 → 移出。')}</span>
+              <button style={{ ...btn, marginLeft: 'auto' }} onClick={openBulk}>➕ {T('Bulk add by host / tier', '按负责人 / 等级批量加入')}</button>
+            </div>
+            {bulkOpen && (
+              <div style={{ ...card, marginTop: 8 }}>
+                {!allVips ? T('Loading…', '载入中…') : <>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginBottom: 6 }}>
+                    <span style={{ fontSize: 12, color: 'var(--muted)' }}>{T('Tier:', '等级：')}</span>
+                    {['BLACK', 'DIAMOND-P', 'DIAMOND', 'PLATINUM', 'GOLD', 'SILVER'].map(t0 => <button key={t0} style={{ ...sec, padding: '3px 9px', background: bulkTiers.includes(t0) ? 'var(--accent)' : 'var(--surface2)', color: bulkTiers.includes(t0) ? '#fff' : 'var(--text)' }} onClick={() => toggleArr(bulkTiers, setBulkTiers, t0)}>{t0}</button>)}
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginBottom: 8 }}>
+                    <span style={{ fontSize: 12, color: 'var(--muted)' }}>{T('Host:', '负责人：')}</span>
+                    {[...allHosts, '__none'].map(h => <button key={h} style={{ ...sec, padding: '3px 9px', background: bulkHosts.includes(h) ? 'var(--accent)' : 'var(--surface2)', color: bulkHosts.includes(h) ? '#fff' : 'var(--text)' }} onClick={() => toggleArr(bulkHosts, setBulkHosts, h)}>{h === '__none' ? T('(No host)', '（无负责人）') : h}</button>)}
+                  </div>
+                  <button style={btn} disabled={!bulkMatches.length} onClick={addBulk}>{T(`Add ${bulkMatches.length} matching players (not yet in campaign)`, `加入 ${bulkMatches.length} 位符合的玩家（尚未在活动中）`)}</button>
+                  <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 8 }}>{T('Empty = any. Excluded players are skipped.', '不选 = 全部。已排除的玩家会跳过。')}</span>
+                </>}
+              </div>
+            )}
             <div style={{ marginTop: 10, maxHeight: 560, overflow: 'auto', border: '1px solid var(--border)', borderRadius: 8 }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead><tr><th style={th}>#</th><th style={th}>VIP</th>{dates.map(d => <th key={d} style={{ ...th, textAlign: 'center' }}>{d.slice(5)}</th>)}<th style={th}>{T('Tier total', '阶梯合计')}</th><th style={th}>{T('Streak', '连续')}</th><th style={th}></th></tr></thead>
+                <thead><tr><th style={th}><input type="checkbox" checked={scoped.length > 0 && scoped.every(r => sel.has(r.id))} onChange={e => setSel(e.target.checked ? new Set([...sel, ...scoped.map(r => r.id)]) : new Set([...sel].filter(id => !scoped.some(r => r.id === id))))} title={T('Select all shown', '全选显示中的')} /></th><th style={th}>#</th><th style={th}>VIP</th>{dates.map(d => <th key={d} style={{ ...th, textAlign: 'center' }}>{d.slice(5)}</th>)}<th style={th}>{T('Tier total', '阶梯合计')}</th><th style={th}>{T('Streak', '连续')}</th><th style={th}></th></tr></thead>
                 <tbody>
                   {[...scoped].sort((a, b) => b.prog.cost - a.prog.cost).map((r, i) => (
-                    <tr key={r.id}>
+                    <tr key={r.id} style={{ background: sel.has(r.id) ? 'rgba(248,81,73,.08)' : 'transparent' }}>
+                      <td style={td}><input type="checkbox" checked={sel.has(r.id)} onChange={() => setSel(s0 => { const n = new Set(s0); n.has(r.id) ? n.delete(r.id) : n.add(r.id); return n })} /></td>
                       <td style={{ ...td, color: 'var(--muted)' }}>{i + 1}</td>
-                      <td style={td}><b>{r.username}</b><div style={{ fontSize: 10, color: 'var(--muted)' }}>{r.m.host_assigned || ''}</div></td>
+                      <td style={td}><b>{r.username}</b><div style={{ fontSize: 10, color: 'var(--muted)' }}>{r.m.host_assigned || T('(no host)', '（无负责人）')} · {r.m.tier || r.tier}</div></td>
                       {r.prog.days.map(d => (
                         <td key={d.date} title={`${T('Turnover', '流水')} ${fmt(d.vb)} · ${T('Deposit', '存款')} ${fmt(d.dep)}`} style={{ ...td, textAlign: 'center', background: d.future ? 'transparent' : d.qualifies ? 'rgba(63,185,80,.12)' : d.vb > 0 ? 'rgba(251,191,36,.08)' : 'transparent' }}>
                           {d.future ? <span style={{ color: 'var(--muted)' }}>·</span> : d.qualifies ? <b style={{ color: '#3fb950' }}>{fmt(d.reward)}</b> : <span style={{ fontSize: 10, color: 'var(--muted)' }}>{d.vb ? fmt(d.vb / 1000) + 'k' : '—'}</span>}
@@ -366,7 +432,7 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
                 <button style={btn} onClick={addPlayers}>+ {T('Add', '加入')}</button>
               </div>
             </div>
-          )}
+          </>)}
 
           {/* ── ⚙️ rules & messages ── */}
           {tab === 'rules' && (
