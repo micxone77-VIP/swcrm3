@@ -20,7 +20,7 @@ export function GuideModal({ initialKey, onClose }) {
   return (
     <div onClick={e => { e.stopPropagation(); if (e.target === e.currentTarget) onClose() }}
       style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'rgba(0,0,0,.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, width: '100%', maxWidth: 900, maxHeight: '90vh', display: 'flex', overflow: 'hidden' }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, width: '100%', maxWidth: 'min(1100px, 80vw)', maxHeight: '76vh', display: 'flex', overflow: 'hidden', zoom: 1.2 }}>
         {/* type list */}
         <div style={{ width: 230, borderRight: '1px solid var(--border)', overflowY: 'auto', padding: 10, flexShrink: 0 }}>
           <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--muted)', padding: '6px 8px' }}>{L(lang, 'CAMPAIGN TYPES', '活动类型')}</div>

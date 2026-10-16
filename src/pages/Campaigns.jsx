@@ -116,7 +116,7 @@ const s = {
   th:       { padding:'9px 14px', background:'var(--surface)', color:'var(--muted)', fontWeight:600, fontSize:11, textAlign:'left', borderBottom:'1px solid var(--border)', whiteSpace:'nowrap' },
   td:       { padding:'10px 14px', borderBottom:'1px solid var(--border)', verticalAlign:'middle' },
   overlay:  { position:'fixed', inset:0, background:'rgba(0,0,0,.6)', zIndex:1000, display:'flex', alignItems:'center', justifyContent:'center', padding:16 },
-  modal:    { background:'var(--surface)', border:'1px solid var(--border)', borderRadius:14, width:'100%', maxWidth:1200, maxHeight:'92vh', overflowY:'auto' },
+  modal:    { background:'var(--surface)', border:'1px solid var(--border)', borderRadius:14, width:'100%', maxWidth:'min(1500px, 84vw)', maxHeight:'82vh', overflowY:'auto', zoom:1.15 }, // zoom 1.15 → ~97vw × 94vh on screen, everything 15% bigger
   mhdr:     { padding:'18px 24px', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:12 },
   g2:       { display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px 16px', marginBottom:12 },
   frow:     { marginBottom:10 },
@@ -1771,7 +1771,7 @@ export default function Campaigns() {
           {L2('No campaigns yet.','暂无活动。')} <span style={{ color:'var(--accent)', cursor:'pointer' }} onClick={()=>{ setForm(blankForm); setModal('create') }}>{L2('Create one →','立即创建 →')}</span>
         </div>
       ) : (
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(320px,1fr))', gap:12 }}>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(320px,1fr))', gap:12, zoom:1.15 }}>
           {campaigns.map(camp => {
             const ct = camp.campaign_type || 'gold_bar'
             const ti = getCampaignTypeInfo(camp)
@@ -1798,7 +1798,13 @@ export default function Campaigns() {
                     {camp.campaign_code} · {fmtDate(camp.start_date)} → {fmtDate(camp.end_date)}
                   </div>
                   <div style={{ display:'flex', gap:16, fontSize:12 }}>
-                    {ct==='challenge'
+                    {ct==='challenge' && camp.challenge_config?.mode==='daily_milestone'
+                      ? (() => { const tl=[...(camp.challenge_config?.tiers||[])].sort((a,b)=>Number(a.turnover)-Number(b.turnover)); const k=v=>Number(v)>=1000?`${Math.round(Number(v)/1000)}K`:Number(v).toLocaleString(); return (
+                        <span style={{ color:'var(--muted)', lineHeight:1.6 }}>{L2('Daily turnover','每日流水')}: <strong style={{ color:'var(--text)' }}>{tl.length?`${k(tl[0].turnover)} → ${Number(tl[0].reward).toLocaleString()}`:'—'}{tl.length>1?` … ${k(tl[tl.length-1].turnover)} → ${Number(tl[tl.length-1].reward).toLocaleString()}`:''}</strong>
+                          <span style={{ color:'#facc15', marginLeft:10 }}>{L2('Tiers','档位')}: <strong>{tl.length}</strong></span>
+                          {camp.challenge_config?.streak_enabled && <span style={{ color:'#f97316', marginLeft:10 }}>🔥 <strong>{camp.challenge_config.streak_days||3}{L2('-day','天')} = {camp.challenge_config.streak_pct||0}%</strong></span>}
+                        </span>) })()
+                      : ct==='challenge'
                       ? <span style={{ color:'var(--muted)' }}>{lang==='zh'?'目标':'Goal'}: <strong style={{ color:'var(--text)' }}>{camp.challenge_config?.goal_metric==='deposit'?(lang==='zh'?'存款':'Deposit'):camp.challenge_config?.goal_metric==='both'?(lang==='zh'?'存款 + 流水':'Deposit + Turnover'):(lang==='zh'?'个人流水':'Personal turnover')}</strong>{camp.challenge_config?.streak_enabled && <span style={{ color:'#22d3ee', marginLeft:12 }}>{lang==='zh'?'连续':'Streak'}: <strong>{camp.challenge_config.streak_min_days}{L2('d','天')} ≥ RM {Number(camp.challenge_config.streak_min_daily_deposit||0).toLocaleString()}</strong></span>}</span>
                       : ct==='leaderboard'
                       ? <span style={{ color:'var(--muted)' }}>{L2('Min Turnover','最低流水')}: <strong style={{ color:'var(--text)' }}>{rmFmt(camp.min_valid_bet, campaignCurrency(camp.platform))}</strong></span>
