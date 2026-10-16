@@ -12,6 +12,8 @@ import { parseManualUserIds } from '../../lib/campaignEnrollment'
 import { defaultChallengeConfig, computeProgress, suggestForPlayer, periodDates, num, STATUS_STYLE, progressMessage, FLAG_LABEL } from '../../lib/challengeEngine'
 import { CampaignInfoButton } from './CampaignGuide'
 import { ChallengeRulesEditor, cleanChallengeConfig } from './ChallengeCreator'
+import DailyMilestoneDetail from './DailyMilestoneDetail'
+import { DAILY_MODE } from '../../lib/dailyMilestone'
 
 const rm = v => 'RM ' + Math.round(num(v)).toLocaleString('en-MY')
 const btn = { background: 'var(--accent)', color: '#fff', border: 'none', padding: '7px 14px', borderRadius: 7, fontWeight: 700, cursor: 'pointer', fontSize: 12 }
@@ -26,7 +28,11 @@ function Pill({ color, children, onClick, title }) {
   return <span title={title} onClick={onClick} style={{ display: 'inline-block', fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: `${color}22`, color, cursor: onClick ? 'pointer' : 'default', whiteSpace: 'nowrap' }}>{children}</span>
 }
 
-export default function ChallengeDetail({ campaign: initial, onClose, onChanged }) {
+export default function ChallengeDetail(props) {
+  return props.campaign?.challenge_config?.mode === DAILY_MODE ? <DailyMilestoneDetail {...props} /> : <ChallengeDetailClassic {...props} />
+}
+
+function ChallengeDetailClassic({ campaign: initial, onClose, onChanged }) {
   const { lang } = useLanguage()
   const { profile } = useAuth()
   const T = (en, zh) => L(lang, en, zh)

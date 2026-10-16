@@ -9,6 +9,8 @@ import { countryFromPlayer, CAMPAIGN_COUNTRIES } from '../../lib/campaignAudienc
 import { parseManualUserIds } from '../../lib/campaignEnrollment'
 import { defaultChallengeConfig, suggestForPlayer, periodDates, num, FLAG_LABEL } from '../../lib/challengeEngine'
 import { CampaignInfoButton } from './CampaignGuide'
+import { defaultDailyConfig } from '../../lib/dailyMilestone'
+import { DailyRulesEditor, cleanDailyConfig } from './DailyRulesEditor'
 
 const TIERS = ['BLACK', 'DIAMOND-P', 'DIAMOND', 'PLATINUM', 'GOLD', 'SILVER', 'BRONZE']
 const COUNTRY_LABEL = { MY: '🇲🇾 MY', SG: '🇸🇬 SG', KH: '🇰🇭 KH' }
@@ -99,11 +101,13 @@ export default function ChallengeCreator({ mode = 'trust_credit', onCancel, onCr
   const { lang } = useLanguage()
   const T = (en, zh) => L(lang, en, zh)
   const trust = mode === 'trust_credit'
+  const daily = mode === 'daily_milestone'
+  const initCfg = () => (daily ? defaultDailyConfig() : defaultChallengeConfig(mode))
 
   const today = new Date().toISOString().slice(0, 10)
   const plus6 = new Date(Date.now() + 6 * 86400000).toISOString().slice(0, 10)
   const [meta, setMeta] = useState({ campaign_name: '', campaign_code: '', start_date: today, end_date: plus6, status: 'active', budget_rm: '' })
-  const [cfg, setCfg] = useState(() => defaultChallengeConfig(mode))
+  const [cfg, setCfg] = useState(initCfg)
 
   // audience data
   const [members, setMembers] = useState([])
@@ -116,12 +120,12 @@ export default function ChallengeCreator({ mode = 'trust_credit', onCancel, onCr
 
   // filters
   const [countries, setCountries] = useState(['MY'])
-  const [tiers, setTiers] = useState(trust ? ['PLATINUM', 'DIAMOND', 'DIAMOND-P', 'BLACK'] : ['GOLD', 'PLATINUM', 'DIAMOND', 'BLACK']) // DIAMOND-P = restricted, no rebate → not in Rebate Challenge by default
+  const [tiers, setTiers] = useState(trust ? ['PLATINUM', 'DIAMOND', 'DIAMOND-P', 'BLACK'] : daily ? ['GOLD', 'PLATINUM', 'DIAMOND'] : ['GOLD', 'PLATINUM', 'DIAMOND', 'BLACK']) // DIAMOND-P = restricted, no rebate → not in Rebate Challenge by default
   const [segF, setSegF] = useState(trust ? ['Silent', 'Declining'] : [])
   const [hostF, setHostF] = useState('ALL')
   const [affF, setAffF] = useState('ALL')
   const [minLoss, setMinLoss] = useState(trust ? '20000' : '')
-  const [minTurnover, setMinTurnover] = useState(trust ? '' : '10000')
+  const [minTurnover, setMinTurnover] = useState(trust || daily ? '' : '10000')
   const [hideFlagged, setHideFlagged] = useState(false)
   const [hideBusy, setHideBusy] = useState(true)
   const [manual, setManual] = useState('')
@@ -131,7 +135,7 @@ export default function ChallengeCreator({ mode = 'trust_credit', onCancel, onCr
   const [picked, setPicked] = useState(new Set())
   const [over, setOver] = useState({})   // username -> { credit, targetTurnover, targetDeposit }
 
-  useEffect(() => { setCfg(defaultChallengeConfig(mode)) }, [mode])
+  useEffect(() => { setCfg(initCfg()) }, [mode]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     let cancel = false
@@ -209,7 +213,7 @@ export default function ChallengeCreator({ mode = 'trust_credit', onCancel, onCr
     setSaving(true); setMsg('')
     try {
       const code = meta.campaign_code.trim() || meta.campaign_name.trim().toUpperCase().replace(/\s+/g, '-').slice(0, 20)
-      const cleanCfg = cleanChallengeConfig(cfg)
+      const cleanCfg = daily ? cleanDailyConfig(cfg) : cleanChallengeConfig(cfg)
       const row = {
         campaign_type: 'challenge', campaign_name: meta.campaign_name.trim(), campaign_code: code,
         start_date: meta.start_date, end_date: meta.end_date, status: meta.status,
@@ -217,9 +221,9 @@ export default function ChallengeCreator({ mode = 'trust_credit', onCancel, onCr
         platform: countries.length === 1 ? countries[0] : 'BOTH', target_countries: countries, target_tier: tiers, auto_enroll_tiers: null,
         enrollment_mode: 'manual', challenge_config: cleanCfg, created_at: new Date().toISOString(),
         streak_enabled: false, requires_period_deposit: false,
-        deposit_target: cfg.goal_metric !== 'turnover' ? num(cfg.target_deposit_default) : null,
-        min_valid_bet: cfg.goal_metric !== 'deposit' ? num(cfg.target_turnover_default) : null,
-        notes: trust ? 'Trust Credit Challenge 信任金挑战' : 'Rebate Challenge 返水挑战',
+        deposit_target: !daily && cfg.goal_metric !== 'turnover' ? num(cfg.target_deposit_default) : null,
+        min_valid_bet: daily ? num((cfg.tiers || [])[0]?.turnover) || null : cfg.goal_metric !== 'deposit' ? num(cfg.target_turnover_default) : null,
+        notes: daily ? 'Daily Milestone 每日流水里程碑' : trust ? 'Trust Credit Challenge 信任金挑战' : 'Rebate Challenge 返水挑战',
       }
       const { data: camp, error } = await supabase.from('campaigns').insert(row).select().single()
       if (error) throw error
@@ -249,15 +253,17 @@ export default function ChallengeCreator({ mode = 'trust_credit', onCancel, onCr
   return (
     <div>
       {/* mode banner */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 10, background: trust ? 'rgba(244,114,182,.10)' : 'rgba(34,211,238,.10)', border: `1px solid ${trust ? '#f472b6' : '#22d3ee'}55` }}>
-        <div style={{ fontSize: 22 }}>{trust ? '💝' : '💰'}</div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 10, background: daily ? 'rgba(250,204,21,.10)' : trust ? 'rgba(244,114,182,.10)' : 'rgba(34,211,238,.10)', border: `1px solid ${daily ? '#facc15' : trust ? '#f472b6' : '#22d3ee'}55` }}>
+        <div style={{ fontSize: 22 }}>{daily ? '⚡' : trust ? '💝' : '💰'}</div>
         <div style={{ flex: 1 }}>
-          <div style={{ fontWeight: 800 }}>{trust ? T('Trust Credit Challenge', '信任金挑战') : T('Rebate Challenge', '返水挑战')}</div>
-          <div style={{ fontSize: 11, color: 'var(--muted)' }}>{trust
+          <div style={{ fontWeight: 800 }}>{daily ? T('Daily Milestone', '每日流水里程碑') : trust ? T('Trust Credit Challenge', '信任金挑战') : T('Rebate Challenge', '返水挑战')}</div>
+          <div style={{ fontSize: 11, color: 'var(--muted)' }}>{daily
+            ? T('Each day: turnover tier → Credit paid next day · N consecutive qualifying days → % of those days\' deposits. Data is yesterday\'s (T-1).', '每天：流水达到阶梯 → 隔天派 Credit · 连续N天达标 → 这几天存款的 % 。数据为昨天（T-1）。')
+            : trust
             ? T('Give credit first → personal turnover task → you approve a bonus when completed · optional daily-deposit streak bonus.', '先给信用额 → 个人流水任务 → 完成后由你审核奖金 · 可选每日存款连续奖励。')
             : T('Reach deposit / turnover target → rebate % of turnover · optional daily-deposit streak bonus.', '达成存款 / 流水目标 → 按流水返水% · 可选每日存款连续奖励。')}</div>
         </div>
-        <CampaignInfoButton typeKey={trust ? 'challenge_trust' : 'challenge_rebate'} size={20} />
+        <CampaignInfoButton typeKey={daily ? 'challenge_daily' : trust ? 'challenge_trust' : 'challenge_rebate'} size={20} />
       </div>
 
       {/* basics */}
@@ -273,7 +279,7 @@ export default function ChallengeCreator({ mode = 'trust_credit', onCancel, onCr
       {/* rules */}
       <div style={box}>
         <div style={{ fontWeight: 800, marginBottom: 10 }}>⚙️ {T('Rules', '活动规则')}</div>
-        <ChallengeRulesEditor cfg={cfg} setCfg={setCfg} days={days} />
+        {daily ? <DailyRulesEditor cfg={cfg} setCfg={setCfg} withTemplates /> : <ChallengeRulesEditor cfg={cfg} setCfg={setCfg} days={days} />}
       </div>
 
       {/* audience filters */}
@@ -325,8 +331,8 @@ export default function ChallengeCreator({ mode = 'trust_credit', onCancel, onCr
               <th style={th}>#</th><th style={th}></th><th style={th}>VIP</th><th style={th}>{T('Tier', '等级')}</th><th style={th}>{T('Host', '负责人')}</th><th style={th}>{T('Affiliate', '代理')}</th>
               <th style={th}>{T('Segment', '分群')}</th><th style={{ ...th, textAlign: 'right' }}>{T('30d net loss', '30天净亏损')}</th><th style={{ ...th, textAlign: 'right' }}>{T('Avg daily turnover', '日均流水')}</th>
               {cfg.credit_enabled && <th style={th}>{T('Credit', '信用额')}</th>}
-              {cfg.goal_metric !== 'deposit' && <th style={th}>{T('Turnover target', '流水目标')}</th>}
-              {cfg.goal_metric !== 'turnover' && <th style={th}>{T('Deposit target', '存款目标')}</th>}
+              {!daily && cfg.goal_metric !== 'deposit' && <th style={th}>{T('Turnover target', '流水目标')}</th>}
+              {!daily && cfg.goal_metric !== 'turnover' && <th style={th}>{T('Deposit target', '存款目标')}</th>}
               <th style={th}>{T('Notes', '备注')}</th>
             </tr></thead>
             <tbody>
@@ -347,8 +353,8 @@ export default function ChallengeCreator({ mode = 'trust_credit', onCancel, onCr
                       <td style={{ ...td, textAlign: 'right', color: r.sug.loss30 > 0 ? '#f87171' : 'var(--muted)' }}>{r.sug.loss30 > 0 ? rm(r.sug.loss30) : '—'}</td>
                       <td style={{ ...td, textAlign: 'right' }}>{r.sug.avgDailyTurnover > 0 ? rm(r.sug.avgDailyTurnover) : '—'}</td>
                       {cfg.credit_enabled && <td style={td}><input type="number" style={small} value={r.credit} onChange={e => setOv(r.username, 'credit', e.target.value)} /></td>}
-                      {cfg.goal_metric !== 'deposit' && <td style={td}><input type="number" style={{ ...small, width: 110 }} value={r.targetTurnover} onChange={e => setOv(r.username, 'targetTurnover', e.target.value)} /></td>}
-                      {cfg.goal_metric !== 'turnover' && <td style={td}><input type="number" style={small} value={r.targetDeposit} onChange={e => setOv(r.username, 'targetDeposit', e.target.value)} /></td>}
+                      {!daily && cfg.goal_metric !== 'deposit' && <td style={td}><input type="number" style={{ ...small, width: 110 }} value={r.targetTurnover} onChange={e => setOv(r.username, 'targetTurnover', e.target.value)} /></td>}
+                      {!daily && cfg.goal_metric !== 'turnover' && <td style={td}><input type="number" style={small} value={r.targetDeposit} onChange={e => setOv(r.username, 'targetDeposit', e.target.value)} /></td>}
                       <td style={{ ...td, fontSize: 11 }}>
                         {r.sug.flags.map(f => <div key={f} style={{ color: '#fbbf24' }}>⚠️ {lang === 'zh' ? FLAG_LABEL[f].zh : FLAG_LABEL[f].en}</div>)}
                         {r.busyIn.length > 0 && <div style={{ color: 'var(--muted)' }}>📣 {T('In', '已参加')}: {r.busyIn.join(', ')}</div>}

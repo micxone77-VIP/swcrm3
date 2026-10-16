@@ -51,6 +51,7 @@ function getCampaignTypeInfo(campaignOrForm) {
     return { label:'🎁 Tiered Deposit Reward', color:'#b9f2ff', desc:'Different fixed Credit reward at each deposit level', zh:'🎁 分级存款奖励', descZh:'每个存款级别不同的固定 Credit 奖励' }
   }
   if (type === 'challenge') {
+    if (campaignOrForm?.challenge_config?.mode === 'daily_milestone') return { label:'⚡ Daily Milestone', color:'#facc15', desc:'Daily turnover tiers → Credit next day + streak %', zh:'⚡ 每日流水里程碑', descZh:'每日流水阶梯 → 隔天派 Credit + 连续奖励 %' }
     return campaignOrForm?.challenge_config?.mode === 'rebate'
       ? { label:'💰 Rebate Challenge', color:'#22d3ee', desc:'Target → rebate % of turnover + streak', zh:'💰 返水挑战', descZh:'达标 → 按流水返水 % + 连续奖励' }
       : { label:'💝 Trust Credit Challenge', color:'#f472b6', desc:'Credit first → personal turnover task → reviewed bonus + streak', zh:'💝 信任金挑战', descZh:'先给信用额 → 个人流水任务 → 审核奖金 + 连续奖励' }

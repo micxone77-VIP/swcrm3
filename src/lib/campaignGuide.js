@@ -69,6 +69,14 @@ export const CAMPAIGN_GUIDE = {
     purpose: { en: 'An investment to rebuild trust with valuable players after a bad run, giving them a clear task and a reason to stay with SureWin.', zh: '一种投资：在玩家经历低潮后重建信任，给他们明确任务与留在SureWin的理由。' },
     audience: { en: 'Valuable VIPs with a high recent net loss who are Silent or Declining. Avoid players showing escalation signs (many deposits per day, sudden spike); the CRM flags them with ⚠️ for you to decide.', zh: '近期净亏损高、处于沉默或下滑状态的高价值VIP。避开有失控迹象的玩家（一天多次存款、存款突然暴增），系统会以 ⚠️ 标记供你判断。' },
   },
+  challenge_daily: {
+    icon: '⚡', color: '#facc15',
+    name: { en: 'Daily Milestone', zh: '每日流水里程碑' },
+    logic: { en: 'Every day is settled on its own. The day\'s turnover decides the reward tier (e.g. 30K → 158, 70K → 388 … 800K → 3,888 Credit) and it is paid the next day. Streak: N consecutive qualifying days → X% of the deposits on those days (rolling or every N days). Data is T-1 (yesterday).', zh: '每天独立结算。当天流水决定奖励档次（如 30K → 158、70K → 388 … 800K → 3,888 Credit），隔天派发。连续奖励：连续N天达标 → 这几天存款的 X%（滚动或每N天一轮）。数据为昨天（T-1）。' },
+    howTo: { en: '1) Pick Daily Milestone. 2) Set the turnover tiers and streak rule. 3) Select audience and create. 4) Before start: send the 📣 intro message. 5) Every morning open the campaign: 💰 Payout tab → pay yesterday\'s rewards (export for BO, mark paid). 6) 📣 Today\'s follow-up → message each group (🔥 one day to streak, 😬 almost, 🎉 won, 💤 not active; 💙 big loss = care only).', zh: '1) 选择每日流水里程碑。2) 设定流水阶梯与连续规则。3) 选择受众并创建。4) 开始前：发送 📣 活动介绍。5) 每天早上打开活动：💰 派发 → 派发昨天的奖励（导出给BO、标记已派）。6) 📣 今日跟进 → 按分组发信息（🔥 差1天连续、😬 差一点、🎉 已达标、💤 没参与；💙 大输只关怀）。' },
+    purpose: { en: 'Builds a daily play habit with small, frequent wins and a reason to come back tomorrow (streak).', zh: '用小而频繁的奖励培养每日投注习惯，并用连续奖励给玩家明天回来的理由。' },
+    audience: { en: 'Active Gold / Platinum / Diamond players with steady daily turnover. Check DIAMOND-P restrictions.', zh: '每日流水稳定的活跃黄金 / 白金 / 钻石玩家。注意 DIAMOND-P 限制。' },
+  },
   challenge_rebate: {
     icon: '💰', color: '#22d3ee',
     name: { en: 'Rebate Challenge', zh: '返水挑战' },
@@ -79,14 +87,14 @@ export const CAMPAIGN_GUIDE = {
   },
 }
 
-export const GUIDE_ORDER = ['challenge_trust', 'challenge_rebate', 'dual_tier', 'tiered_deposit_reward', 'tiered_reward', 'pct_reward', 'fixed_reward', 'gold_bar', 'leaderboard']
+export const GUIDE_ORDER = ['challenge_daily', 'challenge_trust', 'challenge_rebate', 'dual_tier', 'tiered_deposit_reward', 'tiered_reward', 'pct_reward', 'fixed_reward', 'gold_bar', 'leaderboard']
 
 // Map a campaign row (or creator type key) to its guide key
 export function guideKeyFor(campaignOrType) {
   if (!campaignOrType) return null
   if (typeof campaignOrType === 'string') return CAMPAIGN_GUIDE[campaignOrType] ? campaignOrType : null
   const c = campaignOrType
-  if (c.campaign_type === 'challenge') return c.challenge_config?.mode === 'rebate' ? 'challenge_rebate' : 'challenge_trust'
+  if (c.campaign_type === 'challenge') return c.challenge_config?.mode === 'rebate' ? 'challenge_rebate' : c.challenge_config?.mode === 'daily_milestone' ? 'challenge_daily' : 'challenge_trust'
   if (c.campaign_type === 'fixed_reward' && c.is_multi_level) return 'tiered_deposit_reward'
   return CAMPAIGN_GUIDE[c.campaign_type] ? c.campaign_type : null
 }
