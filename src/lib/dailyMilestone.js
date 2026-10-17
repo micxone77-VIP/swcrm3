@@ -107,31 +107,32 @@ export const GROUPS = {
 
 const fmt = v => Math.round(num(v)).toLocaleString('en-MY')
 
-// Built-in message texts. Variables in {braces} — see VARS below.
+// Built-in message texts — Malaysian style, peer-to-peer ("bro"), relaxed. Variables in {braces} — see VARS below.
+// Edit per campaign in ⚙️ Rules & messages (the editor starts from these texts).
 export const DEFAULT_TEMPLATES = {
   intro: {
-    zh: '您好 {username}！我是SureWin VIP部门的{agent} 😊\n\n⚡ {campaign}（{start} – {end}）现已开始！\n每天流水达标即可领取 VIP 专属 Credit，隔天派发：\n{tier_list}\n\n🔥 连续 {streak_n} 天达标，再加送这 {streak_n} 天总存款的 {streak_pct}%！\n\n每天都是新的一轮，祝您好运 🍀',
-    en: 'Hi {username}! This is {agent} from SureWin VIP 😊\n\n⚡ {campaign} ({start} – {end}) is now LIVE!\nHit a daily turnover milestone and claim exclusive VIP Credit — paid the next day:\n{tier_list}\n\n🔥 Qualify {streak_n} days in a row for an extra {streak_pct}% of your deposits on those days!\n\nEvery day is a new round — good luck 🍀',
+    zh: "哈咯 {username}～我是sureWin VIP部门的 {agent} 😄\n\n跟你讲个好东西 ⚡ {campaign} 开跑了（{start} – {end}）\n每天流水到就有 VIP Credit，隔天我直接帮你派：\n{tier_list}\n\n🔥 连续 {streak_n} 天都有到的话，再多送你这 {streak_n} 天存款的 {streak_pct}%！\n\n每天重新算的，有空就来玩一下，祝你旺 🍀",
+    en: "Yo {username}! I'm {agent} from sureWin VIP department 😄\n\nGot something nice for you bro — ⚡ {campaign} is on from {start} to {end}!\nHit the daily turnover and you get VIP Credit, I bank in for you the next day:\n{tier_list}\n\n🔥 Hit it {streak_n} days in a row, you get extra {streak_pct}% of your deposits on those days!\n\nEvery day fresh start one, jom try. Good luck bro 🍀",
   },
   won: {
-    zh: '恭喜 {username}！🎉\n昨天（{asof}）您的流水 {cur}{y_turnover}，达标领取 {y_reward} Credit，今天已为您派发 ✅\n\n今天流水达到 {cur}{next_target} 可以领 {next_reward} Credit 💪\n活动还剩 {days_left} 天，继续加油！',
-    en: 'Congrats {username}! 🎉\nYesterday ({asof}) your turnover was {cur}{y_turnover} — you earned {y_reward} Credit, paid today ✅\n\nReach {cur}{next_target} turnover today to claim {next_reward} Credit 💪\n{days_left} day(s) left — keep it going!',
+    zh: "哈咯 {username}，我是sureWin VIP部门的 {agent}～\n\n哇你可以哦 🎉 昨天（{asof}）流水 {cur}{y_turnover}，{y_reward} Credit 我今天已经帮你派进去了 ✅\n\n今天冲到 {cur}{next_target} 就有 {next_reward} Credit 💪\n还有 {days_left} 天，继续旺下去！",
+    en: "Yo {username}! {agent} here from sureWin VIP department~\n\nWah steady bro 🎉 Yesterday ({asof}) your turnover {cur}{y_turnover} — {y_reward} Credit I already banked in today ✅\n\nToday hit {cur}{next_target} can get {next_reward} Credit 💪\nStill got {days_left} day(s), keep going bro!",
   },
   streak: {
-    zh: '{username} 您已连续 {streak} 天达标 🔥🔥\n昨天的 {y_reward} Credit 今天已派发 ✅\n\n今天只要再达标（流水 {cur}{first_target}），就能额外拿到连续奖励约 {cur}{streak_est}！千万别断掉 💪',
-    en: '{username}, you have qualified {streak} days in a row 🔥🔥\nYesterday\'s {y_reward} Credit has been paid today ✅\n\nQualify once more today ({cur}{first_target} turnover) and unlock an extra streak bonus of about {cur}{streak_est}! Don\'t break the streak 💪',
+    zh: "哈咯 {username}，我是sureWin VIP部门的 {agent}～\n\n你很稳哦，已经连续 {streak} 天了 🔥🔥\n昨天的 {y_reward} Credit 今天派了 ✅\n\n今天只要再到 {cur}{first_target}，连续奖励大概 {cur}{streak_est} 就是你的了！别断掉啊 💪",
+    en: "Yo {username}! {agent} here from sureWin VIP department~\n\nBro, {streak} days in a row already, power lah 🔥🔥\nYesterday's {y_reward} Credit banked in today ✅\n\nToday hit {cur}{first_target} one more time and the streak bonus, around {cur}{streak_est}, is yours! Don't break it ah 💪",
   },
   near: {
-    zh: '{username} 好可惜 😢\n昨天（{asof}）您的流水 {cur}{y_turnover}，只差 {cur}{missed_by} 就能领 {miss_reward} Credit！\n\n昨天共有 {winners} 位VIP领取奖励，最高 {top_reward} Credit。\n今天是新的一轮，流水达到 {cur}{first_target} 就能拿 💪',
-    en: 'So close, {username} 😢\nYesterday ({asof}) your turnover was {cur}{y_turnover} — only {cur}{missed_by} away from {miss_reward} Credit!\n\n{winners} VIPs claimed rewards yesterday, up to {top_reward} Credit.\nToday is a new round — reach {cur}{first_target} turnover to claim 💪',
+    zh: "哈咯 {username}，我是sureWin VIP部门的 {agent}～\n\n昨天好可惜啊 😅 流水 {cur}{y_turnover}，就差 {cur}{missed_by} 而已，{miss_reward} Credit 就到手了！\n\n昨天 {winners} 个VIP有拿到，最高 {top_reward} Credit。\n今天重新来，流水到 {cur}{first_target} 就有了 💪",
+    en: "Yo {username}! {agent} here from sureWin VIP department~\n\nAiyo, so close yesterday bro 😅 Your turnover {cur}{y_turnover}, short only {cur}{missed_by} to get {miss_reward} Credit!\n\n{winners} VIPs got rewards yesterday, highest {top_reward} Credit.\nToday new round — hit {cur}{first_target} and it's yours 💪",
   },
   idle: {
-    zh: '您好 {username}！⚡ {campaign} 进行中，还剩 {days_left} 天！\n昨天有 {winners} 位VIP领取了奖励，最高 {top_reward} Credit 🎁\n每天流水达到 {cur}{first_target} 就可以领取，今天轮到您！',
-    en: 'Hi {username}! ⚡ {campaign} is running — {days_left} day(s) left!\n{winners} VIPs claimed rewards yesterday, up to {top_reward} Credit 🎁\nHit {cur}{first_target} turnover in a day to claim — today could be yours!',
+    zh: "哈咯 {username}，我是sureWin VIP部门的 {agent}，最近好吗～\n\n⚡ {campaign} 还在跑，剩 {days_left} 天哦\n昨天 {winners} 个VIP拿了奖励，最高 {top_reward} Credit 🎁\n一天流水到 {cur}{first_target} 就有，有空来玩一下 😄",
+    en: "Hey {username}! {agent} here from sureWin VIP department, how's it going bro~\n\n⚡ {campaign} still running, {days_left} day(s) left!\n{winners} VIPs grabbed rewards yesterday, up to {top_reward} Credit 🎁\nJust hit {cur}{first_target} turnover in a day can claim — free come try ya 😄",
   },
   care: {
-    zh: '您好 {username}，我是{agent}。看到您昨天手气不太顺，想关心一下您 🙏 有任何需要随时找我，好好休息～',
-    en: 'Hi {username}, this is {agent}. Saw yesterday was a tough day — just checking in 🙏 Let me know if you need anything, take care!',
+    zh: "{username}，我是sureWin VIP部门的 {agent}。看你昨天手气不太顺，来问候一下 🙏 好好休息，不用急。有什么事随时找我～",
+    en: "Hey {username}, {agent} here from sureWin VIP department. Saw yesterday not so ong for you bro, just checking on you 🙏 Rest well ya, no rush. Anything just WhatsApp me~",
   },
 }
 

@@ -362,11 +362,11 @@ function WhatsAppModal({ player, agentName, waNumbers = [], onClose }) {
 
   const templates = {
     en: isReady
-      ? `Hi *${player.username}*! 👋 This is ${agentName} from SureWin VIP Department.\n\nCongratulations! 🎉 Your monthly turnover of *${turnover}* has qualified you for *${nextLabelEn}* upgrade!\n\nWe would like to arrange your upgrade — please let us know when you're available! 💎`
-      : `Hi *${player.username}*! 👋 This is ${agentName} from SureWin VIP Department.\n\nYour current monthly turnover is *${turnover}*. You are just *${gapLabel}* away from reaching *${nextLabelEn}* tier! 🎯\n\nKeep it up, feel free to reach out anytime! 💎`,
+      ? `Hi *${player.username}*! 👋 This is ${agentName} from sureWin VIP Department.\n\nCongratulations! 🎉 Your monthly turnover of *${turnover}* has qualified you for *${nextLabelEn}* upgrade!\n\nWe would like to arrange your upgrade — please let us know when you're available! 💎`
+      : `Hi *${player.username}*! 👋 This is ${agentName} from sureWin VIP Department.\n\nYour current monthly turnover is *${turnover}*. You are just *${gapLabel}* away from reaching *${nextLabelEn}* tier! 🎯\n\nKeep it up, feel free to reach out anytime! 💎`,
     cn: isReady
-      ? `您好 *${player.username}*！👋 我是SureWin VIP部门的${agentName}。\n\n恭喜您！🎉 您本月有效流水 *${turnover}* 已达到晋升 *${nextLabel}* 的要求！\n\n我们将为您安排升级，请告知您方便的时间。💎`
-      : `您好 *${player.username}*！👋 我是SureWin VIP部门的${agentName}。\n\n您本月有效流水为 *${turnover}*，距离晋升 *${nextLabel}* 还差 *${gapLabel}*！🎯\n\n继续加油，有任何需要请随时联系！💎`,
+      ? `您好 *${player.username}*！👋 我是sureWin VIP部门的${agentName}。\n\n恭喜您！🎉 您本月有效流水 *${turnover}* 已达到晋升 *${nextLabel}* 的要求！\n\n我们将为您安排升级，请告知您方便的时间。💎`
+      : `您好 *${player.username}*！👋 我是sureWin VIP部门的${agentName}。\n\n您本月有效流水为 *${turnover}*，距离晋升 *${nextLabel}* 还差 *${gapLabel}*！🎯\n\n继续加油，有任何需要请随时联系！💎`,
   }
 
   const message = templates[lang]
@@ -529,10 +529,10 @@ function ChallengeModal({ player, challenge, agentName, waNumbers = [], onClose,
   const waTemplates = {
     en: achieved
       ? `Hi *${player.username}*! 🎉 Congratulations! You've completed our special upgrade challenge!\n\nYour valid bet has increased by *${progressFmt}*, meeting the *${targetFmt}* target! 🏆\n\nYou are now eligible for your *${nextTier}* upgrade! We will arrange it shortly. Thank you for your loyalty! 💎`
-      : `Hi *${player.username}*! 👋 This is ${agentName} from SureWin VIP Department.\n\nWe have a special offer just for you! 🎯\n\nComplete *${targetFmt}* in valid bet by *${deadlineFmt}*, and you will be eligible for an upgrade to *${nextTier}*!\n\n${challenge ? `📊 Your progress so far: *${progressFmt}* / ${targetFmt} (${chProgress.toFixed(0)}%)\n` : ''}Feel free to reach out anytime! 💎`,
+      : `Hi *${player.username}*! 👋 This is ${agentName} from sureWin VIP Department.\n\nWe have a special offer just for you! 🎯\n\nComplete *${targetFmt}* in valid bet by *${deadlineFmt}*, and you will be eligible for an upgrade to *${nextTier}*!\n\n${challenge ? `📊 Your progress so far: *${progressFmt}* / ${targetFmt} (${chProgress.toFixed(0)}%)\n` : ''}Feel free to reach out anytime! 💎`,
     cn: achieved
       ? `您好 *${player.username}*！🎉 恭喜您完成了我们的特别升级挑战！\n\n您的有效流水增加了 *${progressFmt}*，达成了 *${targetFmt}* 的目标！🏆\n\n您现在有资格晋升到 *${nextTier}*！我们将尽快为您安排。感谢您的支持！💎`
-      : `您好 *${player.username}*！👋 我是SureWin VIP部门的${agentName}。\n\n我们为您提供一个特别升级优惠！🎯\n\n在 *${deadlineFmt}* 之前完成 *${targetFmt}* 的有效投注，即可获得晋升到 *${nextTier}* 的资格！\n\n${challenge ? `📊 您的当前进度：*${progressFmt}* / ${targetFmt} (${chProgress.toFixed(0)}%)\n` : ''}有任何需要请随时联系！💎`,
+      : `您好 *${player.username}*！👋 我是sureWin VIP部门的${agentName}。\n\n我们为您提供一个特别升级优惠！🎯\n\n在 *${deadlineFmt}* 之前完成 *${targetFmt}* 的有效投注，即可获得晋升到 *${nextTier}* 的资格！\n\n${challenge ? `📊 您的当前进度：*${progressFmt}* / ${targetFmt} (${chProgress.toFixed(0)}%)\n` : ''}有任何需要请随时联系！💎`,
   }
   const message = waTemplates[lang]
 

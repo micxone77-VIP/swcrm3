@@ -163,14 +163,14 @@ export function progressMessage({ lang, username, campaignName, p, cfg, hostName
   const metric = cfg.goal_metric || 'turnover'
   const left = p.remainingDays
   if (lang === 'zh') {
-    const lines = [`您好 ${username}！我是SureWin VIP部门的${hostName || ''}。`, '', `🎯 ${campaignName} 挑战进度：`]
+    const lines = [`您好 ${username}！我是sureWin VIP部门的${hostName || ''}。`, '', `🎯 ${campaignName} 挑战进度：`]
     if (metric !== 'deposit') lines.push(`• 流水：${rm(p.turnover)} / ${rm(p.targetTurnover)}（${Math.round(p.toPct * 100)}%）`)
     if (metric !== 'turnover') lines.push(`• 存款：${rm(p.deposit)} / ${rm(p.targetDeposit)}（${Math.round(p.depPct * 100)}%）`)
     if (cfg.streak_enabled) lines.push(`• 连续奖励：已有 ${p.qualifiedDays} / ${p.minDays} 天每日存款 ≥ ${rm(cfg.streak_min_daily_deposit)}`)
     lines.push('', p.completed ? '✅ 恭喜您已完成任务！奖励将在活动结束后为您处理。' : left > 0 ? `⏳ 还剩 ${left} 天，加油！` : '活动已结束，感谢您的参与！')
     return lines.join('\n')
   }
-  const lines = [`Hi ${username}! This is ${hostName || 'your host'} from SureWin VIP.`, '', `🎯 Your ${campaignName} challenge progress:`]
+  const lines = [`Hi ${username}! This is ${hostName || 'your host'} from sureWin VIP.`, '', `🎯 Your ${campaignName} challenge progress:`]
   if (metric !== 'deposit') lines.push(`• Turnover: ${rm(p.turnover)} / ${rm(p.targetTurnover)} (${Math.round(p.toPct * 100)}%)`)
   if (metric !== 'turnover') lines.push(`• Deposit: ${rm(p.deposit)} / ${rm(p.targetDeposit)} (${Math.round(p.depPct * 100)}%)`)
   if (cfg.streak_enabled) lines.push(`• Streak bonus: ${p.qualifiedDays} / ${p.minDays} days with deposit ≥ ${rm(cfg.streak_min_daily_deposit)}`)

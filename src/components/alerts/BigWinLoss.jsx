@@ -64,12 +64,12 @@ export default function BigWinLoss() {
     const raw = (r.phone && r.phone.replace(/\D/g, '').length >= 10) ? r.phone : (r.whatsapp && r.whatsapp.replace(/\D/g, '').length >= 10) ? r.whatsapp : ''
     const num = raw.replace(/\D/g, '')
     if (!num) return null
-    const host = myName || 'SureWin VIP'
+    const host = myName || 'sureWin VIP'
     const msg = kind === 'loss'
-      ? L2(`Hi ${r.username}, this is ${host} from SureWin VIP. Just checking in on you — hope everything is okay. If there is anything I can help with, just let me know anytime 🙏`,
-           `您好 ${r.username}，我是SureWin VIP部门的${host}。想关心一下您，希望一切都好。如果有什么需要帮忙的，随时告诉我 🙏`)
-      : L2(`Hi ${r.username}, this is ${host} from SureWin VIP. Congratulations on your great win yesterday! 🎉 If you need anything, I'm here for you.`,
-           `您好 ${r.username}，我是SureWin VIP部门的${host}。恭喜您昨天大赢！🎉 有任何需要随时找我。`)
+      ? L2(`Hi ${r.username}, this is ${host} from sureWin VIP. Just checking in on you — hope everything is okay. If there is anything I can help with, just let me know anytime 🙏`,
+           `您好 ${r.username}，我是sureWin VIP部门的${host}。想关心一下您，希望一切都好。如果有什么需要帮忙的，随时告诉我 🙏`)
+      : L2(`Hi ${r.username}, this is ${host} from sureWin VIP. Congratulations on your great win yesterday! 🎉 If you need anything, I'm here for you.`,
+           `您好 ${r.username}，我是sureWin VIP部门的${host}。恭喜您昨天大赢！🎉 有任何需要随时找我。`)
     return `https://wa.me/${num}?text=${encodeURIComponent(msg)}`
   }
 

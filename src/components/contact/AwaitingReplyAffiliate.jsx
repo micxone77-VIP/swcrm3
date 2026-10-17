@@ -112,13 +112,13 @@ export default function AwaitingReplyAffiliate({ onBack, myName, viewMode }) {
   const statusLabel = (s, lg = lang) => (s === 'unreachable' ? (lg === 'zh' ? '联系不上' : 'Unable to reach') : (lg === 'zh' ? '未回复' : 'No reply'))
 
   function buildMessage(aff, list) {
-    const host = profile?.full_name || myName || 'SureWin VIP'
+    const host = profile?.full_name || myName || 'sureWin VIP'
     if (msgLang === 'zh') {
       const lines = list.map((r, i) => `${i + 1}. ${r.username}（${r.tier || '-'}）— ${statusLabel(r.status, 'zh')} ${r.daysNoReply} 天（联系 ${r.attempts} 次），最后存款：${r.lastDeposit ? `${dShort(r.lastDeposit, 'zh')}（${r.daysSinceDeposit} 天前）` : '无记录'}`)
-      return [`${aff.startsWith('(') ? '' : aff + ' '}您好！我是SureWin VIP部门的${host}。`, '', `以下 ${list.length} 位玩家我们一直联系不上 / 没有回复，麻烦您那边帮忙联系一下：`, '', ...lines, '', '谢谢！🙏'].join('\n')
+      return [`${aff.startsWith('(') ? '' : aff + ' '}您好！我是sureWin VIP部门的${host}。`, '', `以下 ${list.length} 位玩家我们一直联系不上 / 没有回复，麻烦您那边帮忙联系一下：`, '', ...lines, '', '谢谢！🙏'].join('\n')
     }
     const lines = list.map((r, i) => `${i + 1}. ${r.username} (${r.tier || '-'}) — ${statusLabel(r.status, 'en').toLowerCase()} for ${r.daysNoReply} days (${r.attempts} attempt${r.attempts === 1 ? '' : 's'}), last deposit: ${r.lastDeposit ? `${dShort(r.lastDeposit, 'en')} (${r.daysSinceDeposit} days ago)` : 'none'}`)
-    return [`Hi ${aff.startsWith('(') ? '' : aff}, this is ${host} from SureWin VIP.`, '', `We have not been able to reach the ${list.length} player${list.length === 1 ? '' : 's'} below. Could you help contact them from your side?`, '', ...lines, '', 'Thank you! 🙏'].join('\n')
+    return [`Hi ${aff.startsWith('(') ? '' : aff}, this is ${host} from sureWin VIP.`, '', `We have not been able to reach the ${list.length} player${list.length === 1 ? '' : 's'} below. Could you help contact them from your side?`, '', ...lines, '', 'Thank you! 🙏'].join('\n')
   }
 
   async function copyMessage(aff, list) {

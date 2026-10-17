@@ -9,7 +9,7 @@ export default function WaSenderModal({ vip, waNumbers, myName, onClose }) {
   const rawWa = (vip.whatsapp || vip.phone || '').replace(/[\s\-()]/g, '')
   const waNumber = rawWa.startsWith('+') ? rawWa.slice(1) : rawWa
   function openWA() {
-    const text = `Hi ${vip.username}, this is ${myName || 'your VIP host'} from SureWin.`
+    const text = `Hi ${vip.username}, this is ${myName || 'your VIP host'} from sureWin.`
     window.open(`https://wa.me/${waNumber}?text=${encodeURIComponent(text)}`, '_blank')
     onClose()
   }

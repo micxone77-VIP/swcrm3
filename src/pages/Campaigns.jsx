@@ -216,19 +216,19 @@ function applyPayoutTemplate(tpl, username, campaignName, rewardFormatted, agent
 // agent = host_assigned name; turnoverRequired = reward × multiplier (null if no requirement)
 const WA_MSGS = {
   en: (u, c, r, agent, turnoverRequired) => {
-    const intro = agent ? `Hi ${u}! 🎉 I'm ${agent} from SureWin VIP Team.` : `Hi ${u}! 🎉`
+    const intro = agent ? `Hi ${u}! 🎉 I'm ${agent} from sureWin VIP Team.` : `Hi ${u}! 🎉`
     const body = `\nYour "${c}" reward of ${r} Credit has been credited to your account. Please check your balance!`
     const turnover = turnoverRequired ? `\n\n⚠️ Please note: A ${turnoverRequired} turnover is required before you can make a withdrawal.` : ''
     return intro + body + turnover
   },
   my: (u, c, r, agent, turnoverRequired) => {
-    const intro = agent ? `Hi ${u}! 🎉 Saya ${agent} dari Pasukan SureWin VIP.` : `Hi ${u}! 🎉`
+    const intro = agent ? `Hi ${u}! 🎉 Saya ${agent} dari Pasukan sureWin VIP.` : `Hi ${u}! 🎉`
     const body = `\nHadiah kempen "${c}" sebanyak ${r} Kredit telah dikreditkan ke akaun anda. Sila semak baki anda!`
     const turnover = turnoverRequired ? `\n\n⚠️ Harap maklum: Turnover sebanyak ${turnoverRequired} diperlukan sebelum pengeluaran boleh dibuat.` : ''
     return intro + body + turnover
   },
   cn: (u, c, r, agent, turnoverRequired) => {
-    const intro = agent ? `你好 ${u}！🎉我是SureWin VIP部门的${agent}` : `你好 ${u}！🎉`
+    const intro = agent ? `你好 ${u}！🎉我是sureWin VIP部门的${agent}` : `你好 ${u}！🎉`
     const body = `\n你的"${c}"奖励 ${r} 积分已成功存入你的账户，请查看余额！`
     const turnover = turnoverRequired ? `\n\n⚠️ 温馨提示：领取奖励后需完成 ${turnoverRequired} 的流水要求，方可申请提款。` : ''
     return intro + body + turnover
@@ -2348,7 +2348,7 @@ export default function Campaigns() {
                     </div>
                     <div>
                       <div style={{ fontSize:11, color:'var(--muted)', marginBottom:4, fontWeight:600 }}>🇨🇳 中文</div>
-                      <textarea style={{ ...s.fta, width:'100%' }} rows={6} value={editCampForm.whatsapp_template_zh||''} onChange={e=>setEditCampForm(f=>({...f,whatsapp_template_zh:e.target.value}))} placeholder={"e.g. 您好 {username}，我是SureWin VIP 部门的 {agent}。\n\n您参与了 {campaign} 活动，还需 {gap} 即可达标！"} />
+                      <textarea style={{ ...s.fta, width:'100%' }} rows={6} value={editCampForm.whatsapp_template_zh||''} onChange={e=>setEditCampForm(f=>({...f,whatsapp_template_zh:e.target.value}))} placeholder={"e.g. 您好 {username}，我是sureWin VIP 部门的 {agent}。\n\n您参与了 {campaign} 活动，还需 {gap} 即可达标！"} />
                     </div>
                   </div>
                 </div>
@@ -2360,9 +2360,9 @@ export default function Campaigns() {
                     {L2('Edit the message sent when a player qualifies for payout. Leave blank to use the default. Variables:','编辑玩家符合派彩条件时发送的讯息。留空则使用默认讯息。变量：')} <code style={{ background:'var(--surface2)', padding:'1px 4px', borderRadius:3 }}>{'{username}'}</code> <code style={{ background:'var(--surface2)', padding:'1px 4px', borderRadius:3 }}>{'{campaign}'}</code> <code style={{ background:'var(--surface2)', padding:'1px 4px', borderRadius:3 }}>{'{agent}'}</code> <code style={{ background:'var(--surface2)', padding:'1px 4px', borderRadius:3 }}>{'{reward}'}</code> <code style={{ background:'var(--surface2)', padding:'1px 4px', borderRadius:3 }}>{'{turnover}'}</code>
                   </div>
                   {[
-                    ['en', '🇬🇧 English', 'payout_template_en', `Hi {username}! 🎉 I'm {agent} from SureWin VIP Team.\nYour "{campaign}" reward of {reward} Credit has been credited to your account. Please check your balance!\n\n⚠️ A {turnover} turnover is required before withdrawal.`],
-                    ['my', '🇲🇾 Malay', 'payout_template_my', `Hi {username}! 🎉 Saya {agent} dari Pasukan SureWin VIP.\nHadiah kempen "{campaign}" sebanyak {reward} Kredit telah dikreditkan ke akaun anda. Sila semak baki anda!\n\n⚠️ Turnover sebanyak {turnover} diperlukan sebelum pengeluaran boleh dibuat.`],
-                    ['cn', '🇨🇳 中文', 'payout_template_cn', `你好 {username}！🎉我是SureWin VIP部门的{agent}\n你的"{campaign}"奖励 {reward} 积分已成功存入你的账户，请查看余额！\n\n⚠️ 温馨提示：领取奖励后需完成 {turnover} 的流水要求，方可申请提款。`],
+                    ['en', '🇬🇧 English', 'payout_template_en', `Hi {username}! 🎉 I'm {agent} from sureWin VIP Team.\nYour "{campaign}" reward of {reward} Credit has been credited to your account. Please check your balance!\n\n⚠️ A {turnover} turnover is required before withdrawal.`],
+                    ['my', '🇲🇾 Malay', 'payout_template_my', `Hi {username}! 🎉 Saya {agent} dari Pasukan sureWin VIP.\nHadiah kempen "{campaign}" sebanyak {reward} Kredit telah dikreditkan ke akaun anda. Sila semak baki anda!\n\n⚠️ Turnover sebanyak {turnover} diperlukan sebelum pengeluaran boleh dibuat.`],
+                    ['cn', '🇨🇳 中文', 'payout_template_cn', `你好 {username}！🎉我是sureWin VIP部门的{agent}\n你的"{campaign}"奖励 {reward} 积分已成功存入你的账户，请查看余额！\n\n⚠️ 温馨提示：领取奖励后需完成 {turnover} 的流水要求，方可申请提款。`],
                   ].map(([lang, label, field, placeholder]) => {
                     const tpl = editCampForm[field] ?? ''
                     const sampleAgent = 'Marcus'
