@@ -13,6 +13,7 @@ import { num } from '../../lib/challengeEngine'
 import { loadWinLossSettings } from '../../lib/bigWinLoss'
 import { defaultDailyConfig, computeDaily, GROUPS, fillMessage, sortedTiers } from '../../lib/dailyMilestone'
 import { DailyRulesEditor, cleanDailyConfig } from './DailyRulesEditor'
+import CampaignImpact from './CampaignImpact'
 
 const fmt = v => Math.round(num(v)).toLocaleString('en-MY')
 const sym = c => (c === 'SGD' ? 'SGD ' : c === 'KHUSD' ? 'USD ' : 'RM ')
@@ -484,6 +485,7 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
             <button style={tabBtn('pay')} onClick={() => setTab('pay')}>💰 {T('Payout', '派发')}</button>
             <button style={tabBtn('grid')} onClick={() => setTab('grid')}>📅 {T('Daily grid', '每日明细')}</button>
             <button style={tabBtn('summary')} onClick={() => setTab('summary')}>📊 {T('Summary & ROI', '总结与ROI')}</button>
+            <button style={tabBtn('impact')} onClick={() => setTab('impact')}>📈 {T('Impact (before / after)', '成效（活动前 / 后）')}</button>
             <button style={tabBtn('rules')} onClick={() => { setDraft(cfg); setTab('rules') }}>⚙️ {T('Rules & messages', '规则与话术')}</button>
           </div>
 
@@ -732,6 +734,14 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
               </div>
             </div>
           </>)}
+
+          {/* ── 📈 impact: before / during / after vs comparison group ── */}
+          {tab === 'impact' && (
+            <div style={{ marginTop: 12 }}>
+              <CampaignImpact campaign={camp} big defaultCur={platF !== 'ALL' ? platF : roiMkt}
+                costByCur={rowsAll.reduce((o, r) => { const c = curOf(r); o[c] = (o[c] || 0) + (Number(r.prog?.cost) || 0); return o }, {})} />
+            </div>
+          )}
 
           {/* ── 📊 summary & ROI ── */}
           {tab === 'summary' && (

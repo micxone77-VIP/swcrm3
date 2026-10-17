@@ -10,6 +10,8 @@ import { buildCampaignUpdate, buildLevelUpsert, normalizeCampaignForEdit, normal
 import { buildMultiLevelPlayerMetrics, buildPayoutRows, buildCampaignSummary, calculateCampaignROI } from '../lib/campaignMetrics'
 import * as XLSX from 'xlsx'
 import ChallengeDetail from '../components/campaign/ChallengeDetail'
+import CampaignImpact from '../components/campaign/CampaignImpact'
+import CampaignScorecard from '../components/campaign/CampaignScorecard'
 import { CampaignInfoButton } from '../components/campaign/CampaignGuide'
 import { ListCount } from '../components/ui'
 
@@ -275,6 +277,7 @@ export default function Campaigns() {
   const prLabel = (l) => (lang === 'zh' ? (PR_ZH[l] || l) : l)
   const ctLabel = (k) => (lang === 'zh' ? CT_LABEL_ZH[k] : CT_LABEL[k]) || k
   const STATUS_LABEL = { draft:L2('Draft','草稿'), upcoming:L2('Upcoming','即将开始'), active:L2('Active','进行中'), paused:L2('Paused','暂停'), ended:L2('Ended','已结束') }
+  const [showScore, setShowScore] = useState(false) // 📈 Campaign Scorecard (did each campaign work?)
   const [challengeCamp, setChallengeCamp] = useState(null) // Challenge campaigns open their own detail page
   const navigate    = useNavigate()
 
@@ -1748,6 +1751,7 @@ export default function Campaigns() {
           <div style={s.sub}>{t('campaigns.subtitle')}</div>
         </div>
         <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
+          <button onClick={()=>setShowScore(true)} title={L2('Before / during / after for every campaign','每个活动的活动前 / 中 / 后')} style={{ padding:'8px 14px', borderRadius:8, border:'1px solid var(--accent)', background:'var(--accent)', color:'#fff', fontWeight:700, fontSize:13, cursor:'pointer' }}>📈 {L2('Campaign Scorecard','活动成效')}</button>
           <select style={{ ...s.smInput, padding:'7px 12px' }} value={filterType} onChange={e=>setFilterType(e.target.value)}>
             <option value="ALL">{L2('All Types','全部类型')}</option>
             {Object.entries(CAMPAIGN_TYPES).map(([k,v])=><option key={k} value={k}>{tLabel(v)}</option>)}
@@ -2519,6 +2523,7 @@ export default function Campaigns() {
                 ['register', L2('📋 All Players','📋 所有玩家')],
                 ...(campType==='leaderboard' ? [['leaderboard',L2('[TOP] Leaderboard','[TOP] 排行榜')]] : []),
                 ['summary', L2('📊 Summary','📊 汇总')],
+                ['impact', L2('📈 Impact (before / after)','📈 成效（活动前 / 后）')],
               ].map(([id,label])=>(
                 <button key={id} onClick={()=>setActiveTab(id)} style={{ background:'none', border:'none', cursor:'pointer', padding:'10px 16px', fontSize:13, fontWeight:600, color:activeTab===id?'var(--accent)':'var(--muted)', borderBottom:activeTab===id?'2px solid var(--accent)':'2px solid transparent', transition:'color .15s' }}>{label}</button>
               ))}
@@ -3947,6 +3952,13 @@ export default function Campaigns() {
               </div>
               )
             })()}
+            {activeTab === 'impact' && selected && (
+              <div style={{ padding:24 }}>
+                <CampaignImpact campaign={selected} costByCur={{ [campCurrency]: Number(totalReward) || 0 }} defaultCur={campCurrency} />
+                {selected.platform === 'BOTH' && <div style={{ fontSize:11, color:'var(--muted)', marginTop:10 }}>{L2('MY + SG campaign: the whole reward cost is counted on the MY side.','MY + SG 活动：全部奖励成本计在 MY。')}</div>}
+              </div>
+            )}
+
             {activeTab === 'summary' && (
               <div style={{ padding:24 }}>
                 <div style={{ fontSize:13, fontWeight:700, marginBottom:8 }}>💰 {L2('Campaign Summary','活动汇总')} — {fmtDate(selected.start_date)} → {fmtDate(selected.end_date)}</div>
@@ -4167,6 +4179,13 @@ export default function Campaigns() {
       )}
 
       {challengeCamp && <ChallengeDetail campaign={challengeCamp} onClose={() => setChallengeCamp(null)} onChanged={loadCampaigns} />}
+      {showScore && <CampaignScorecard campaigns={campaigns} onClose={() => setShowScore(false)} onOpen={camp => {
+        setShowScore(false)
+        if ((camp.campaign_type || '') === 'challenge') { setChallengeCamp(camp); return }
+        setSelected(camp); setActiveTab('impact'); setModal('detail'); setChaseFilter(''); setHostFilter('all')
+        const today = new Date().toISOString().slice(0,10)
+        setEntryDate(camp.start_date && camp.end_date && today >= camp.start_date && today <= camp.end_date ? today : (camp.start_date || today))
+      }} />}
     </div>
   )
 }
