@@ -21,7 +21,7 @@ export function classifyBonus(desc) {
   if (/angpow\s*rain|红包雨/.test(d)) return 'AngPow Rain'
   if (/check\s*-?\s*in|stamp|签到/.test(d)) return 'Check-in'
   if (/festival|daily deposit|campaign|power\s*play|rush|challenge|milestone|promo|event|tournament|lucky|活动/.test(d)) return 'Campaign'
-  if (/\d[\d,]*\s*game\s*credit/.test(d)) return 'Manual AngPow'
+  if (/\d[\d,]*\s*game\s*credit|special|adjust|manual|vip\s*angpow/.test(d)) return 'Manual AngPow'
   return 'Other'
 }
 
@@ -34,25 +34,20 @@ export function cleanBonusName(desc) {
 
 const TS = '(\\d{4}-\\d{2}-\\d{2}[ T]\\d{1,2}:\\d{2}(?::\\d{2})?)'
 const NUM = '(-?[\\d,]+(?:\\.\\d+)?)'
-const LINE_RE = new RegExp(`^\\s*(\\d{5,})\\s+${TS}\\s+(?:${TS}\\s+)?(\\S+)\\s+(.+?)\\s+(\\S+)\\s+${NUM}\\s+${NUM}\\s+${NUM}\\s+${NUM}\\s*$`)
 
 // Returns { rows, bad } — rows: parsed objects (not yet checked against DB)
+// Works with BO rows copied on one line (tab separated) OR split over several lines
+// (BO puts the Remark on its own line). The header row is ignored.
+const REC_RE = new RegExp(`(?:^|\\s)(\\d{8,})\\s+${TS}\\s+(?:${TS}\\s+)?([A-Za-z][\\w-]*)\\s+(.+?)\\s+(\\S+)\\s+${NUM}\\s+${NUM}\\s+${NUM}\\s+${NUM}(?=\\s+\\d{8,}\\s+\\d{4}-\\d{2}-\\d{2}|\\s*$)`, 'g')
 export function parseBonusPaste(text) {
   const rows = [], bad = []
-  String(text || '').split(/\r?\n/).forEach((raw, i) => {
-    const line = raw.replace(/ /g, ' ').trim()
-    if (!line) return
-    let f = line.split('\t').map(x => x.trim())
-    let rec = null
-    if (f.length >= 10 && /^\d{5,}$/.test(f[0])) {
-      rec = { id: f[0], ts: f[1], type: f[3], desc: f[4], user: f[5], amount: f[6], x: f[7], before: f[8], after: f[9] }
-    } else {
-      const m = line.match(LINE_RE)
-      if (m) rec = { id: m[1], ts: m[2], type: m[4], desc: m[5], user: m[6], amount: m[7], x: m[8], before: m[9], after: m[10] }
-    }
-    if (!rec) { if (/\d{5,}/.test(line)) bad.push(i + 1); return }
-    const ts = rec.ts.replace('T', ' ')
-    const [d, t = '00:00:00'] = ts.split(' ')
+  const flat = String(text || '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim()
+  const starts = [...flat.matchAll(/(?:^|\s)(\d{8,})\s+\d{4}-\d{2}-\d{2}/g)].map(m => m[1])
+  const got = new Set()
+  for (const m of flat.matchAll(REC_RE)) {
+    const rec = { id: m[1], ts: m[2], type: m[4], desc: m[5], user: m[6], amount: m[7], x: m[8], before: m[9], after: m[10] }
+    got.add(rec.id)
+    const [d, t = '00:00:00'] = rec.ts.replace('T', ' ').split(' ')
     const tt = t.split(':').map(x => x.padStart(2, '0'))
     while (tt.length < 3) tt.push('00')
     const locked = (rec.desc.match(/locked:\s*([\d,.]+)/i) || [])[1]
@@ -62,7 +57,8 @@ export function parseBonusPaste(text) {
       description: rec.desc, bonus_name: cleanBonusName(rec.desc), category: classifyBonus(rec.desc),
       amount: n(rec.amount) || 0, balance_before: n(rec.before), balance_after: n(rec.after), locked_amount: locked ? n(locked) : null,
     })
-  })
+  }
+  starts.forEach(id => { if (!got.has(id)) bad.push(id) })   // transaction IDs that could not be read
   return { rows, bad }
 }
 

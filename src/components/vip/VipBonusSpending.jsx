@@ -119,7 +119,7 @@ export default function VipBonusSpending({ username, vipId, currency = 'MYR', on
               💾 {busy ? L2('Saving…', '保存中…') : L2(`Save ${preview.list.filter(p => p.status === 'new').length} new`, `保存 ${preview.list.filter(p => p.status === 'new').length} 条新记录`)}
             </button>}
             {preview && <span style={{ fontSize: 12, color: 'var(--muted)' }}>
-              {L2(`${preview.list.length} row(s) read`, `读取 ${preview.list.length} 行`)}{preview.bad.length ? L2(` · could not read line ${preview.bad.join(', ')}`, ` · 无法读取第 ${preview.bad.join(', ')} 行`) : ''}
+              {L2(`${preview.list.length} row(s) read`, `读取 ${preview.list.length} 行`)}{preview.bad.length ? L2(` · ⚠️ could not read txn ${preview.bad.join(', ')}`, ` · ⚠️ 无法读取交易 ${preview.bad.join(', ')}`) : ''}
             </span>}
           </div>
           {preview && preview.list.length > 0 && (
