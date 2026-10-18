@@ -14,6 +14,7 @@ import { loadWinLossSettings } from '../../lib/bigWinLoss'
 import { defaultDailyConfig, computeDaily, GROUPS, fillMessage, sortedTiers } from '../../lib/dailyMilestone'
 import { DailyRulesEditor, cleanDailyConfig } from './DailyRulesEditor'
 import CampaignImpact from './CampaignImpact'
+import CampaignMedia from './CampaignMedia'
 
 const fmt = v => Math.round(num(v)).toLocaleString('en-MY')
 const sym = c => (c === 'SGD' ? 'SGD ' : c === 'KHUSD' ? 'USD ' : 'RM ')
@@ -486,6 +487,7 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
             <button style={tabBtn('grid')} onClick={() => setTab('grid')}>📅 {T('Daily grid', '每日明细')}</button>
             <button style={tabBtn('summary')} onClick={() => setTab('summary')}>📊 {T('Summary & ROI', '总结与ROI')}</button>
             <button style={tabBtn('impact')} onClick={() => setTab('impact')}>📈 {T('Impact (before / after)', '成效（活动前 / 后）')}</button>
+            <button style={tabBtn('media')} onClick={() => setTab('media')}>🖼️ {T('Flyers', '海报')}</button>
             <button style={tabBtn('rules')} onClick={() => { setDraft(cfg); setTab('rules') }}>⚙️ {T('Rules & messages', '规则与话术')}</button>
           </div>
 
@@ -511,6 +513,8 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
           )}
 
           {/* ── 📣 follow-up ── */}
+          {tab === 'media' && <div style={{ marginTop: 12 }}><CampaignMedia campaign={camp} /></div>}
+          {tab === 'follow' && <CampaignMedia campaign={camp} compact />}
           {tab === 'follow' && (
             <div style={{ marginTop: 10 }}>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>

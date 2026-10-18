@@ -11,6 +11,7 @@ import { buildMultiLevelPlayerMetrics, buildPayoutRows, buildCampaignSummary, ca
 import * as XLSX from 'xlsx'
 import ChallengeDetail from '../components/campaign/ChallengeDetail'
 import CampaignImpact from '../components/campaign/CampaignImpact'
+import CampaignMedia from '../components/campaign/CampaignMedia'
 import CampaignScorecard from '../components/campaign/CampaignScorecard'
 import { CampaignInfoButton } from '../components/campaign/CampaignGuide'
 import { ListCount } from '../components/ui'
@@ -2524,10 +2525,14 @@ export default function Campaigns() {
                 ...(campType==='leaderboard' ? [['leaderboard',L2('[TOP] Leaderboard','[TOP] 排行榜')]] : []),
                 ['summary', L2('📊 Summary','📊 汇总')],
                 ['impact', L2('📈 Impact (before / after)','📈 成效（活动前 / 后）')],
+                ['media', L2('🖼️ Flyers','🖼️ 海报')],
               ].map(([id,label])=>(
                 <button key={id} onClick={()=>setActiveTab(id)} style={{ background:'none', border:'none', cursor:'pointer', padding:'10px 16px', fontSize:13, fontWeight:600, color:activeTab===id?'var(--accent)':'var(--muted)', borderBottom:activeTab===id?'2px solid var(--accent)':'2px solid transparent', transition:'color .15s' }}>{label}</button>
               ))}
             </div>
+
+            {activeTab === 'media' && selected && <div style={{ padding:24 }}><CampaignMedia campaign={selected} /></div>}
+            {activeTab === 'chase' && selected && <div style={{ padding:'0 24px' }}><CampaignMedia campaign={selected} compact /></div>}
 
             {/* ── CHASE LIST ── */}
             {activeTab === 'chase' && (
