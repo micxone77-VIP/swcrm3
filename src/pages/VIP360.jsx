@@ -105,6 +105,7 @@ const [gamingAILoading, setGamingAILoading] = useState(false)
 const [vipExpenses, setVipExpenses] = useState([])
 const [bonusTotals, setBonusTotals] = useState({})   // BO bonuses per currency (vip_bonus_txns)
 const onBonusTotals = useCallback(t => setBonusTotals(t), [])
+const [spendCopied, setSpendCopied] = useState(false)
 const [expensesLoading, setExpensesLoading] = useState(false)
 const [expensesFor, setExpensesFor] = useState(null) // username the expenses were loaded for (stops re-fetch loop when a VIP has 0 records)
 
@@ -1349,6 +1350,27 @@ return (
 <div>
   <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
     <SectionLabel>{L2('Department Spending on', '部门开支 —')} {vip.username}</SectionLabel>
+    {/* 📋 copy a plain-text summary for Telegram submissions */}
+    {!expensesLoading && (vipExpenses.length > 0 || Object.keys(bonusTotals).length > 0) && (
+      <button
+        onClick={() => {
+          const curs = [...new Set([...Object.keys(totals), ...Object.keys(bonusTotals)])]
+          const lines = ['Previous Bonus & Service :']
+          curs.forEach(cur => {
+            lines.push(`All-in spending (${cur})`, money2((totals[cur] || 0) + (bonusTotals[cur] || 0), cur), `💼 Expenses ${money2(totals[cur] || 0, cur)} + 🎁 Bonuses ${money2(bonusTotals[cur] || 0, cur)}`)
+          })
+          const rows = [...vipExpenses].sort((x, y) => String(x.month || x.created_at || '').localeCompare(String(y.month || y.created_at || '')))
+          if (rows.length) {
+            lines.push('')
+            rows.forEach(e => lines.push(`${e.month || String(e.created_at || '').slice(0, 7)} ${e.item_name || e.category || 'Expense'} - ${money2(e.amount, e.currency || 'MYR')} ${e.expense_type === 'offline' ? 'Offline' : 'Online'}`))
+          }
+          navigator.clipboard.writeText(lines.join('\n')).then(() => { setSpendCopied(true); setTimeout(() => setSpendCopied(false), 2000) })
+        }}
+        title={L2('Copy summary for Telegram', '复制摘要（Telegram）')}
+        style={{ padding:'7px 14px', borderRadius:8, fontSize:13, fontWeight:700, cursor:'pointer', border:'1px solid var(--accent)', background: spendCopied ? '#3fb950' : 'var(--accent)', color:'#fff' }}>
+        {spendCopied ? L2('✅ Copied', '✅ 已复制') : L2('📋 Copy summary', '📋 复制摘要')}
+      </button>
+    )}
   </div>
   {/* All-in = Dept expenses + BO bonuses */}
   {!expensesLoading && Object.keys(bonusTotals).length > 0 && (
