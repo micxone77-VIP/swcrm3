@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { fetchAll } from '../lib/depositProfile'
 import { parseManualUserIds } from '../lib/campaignEnrollment'
 import { CAMPAIGN_COUNTRIES, buildFilteredCampaignAudience } from '../lib/campaignAudience'
 import { CAMPAIGN_CREATOR_TYPES, buildCampaignInsert, buildTieredLevels } from '../lib/campaignCreatorModel'
@@ -34,7 +35,7 @@ export default function CampaignsUnifiedCreator(){
  const bothCount=audience.filter(p=>p.enrollment_source==='both').length
  const missingCount=ids.filter(id=>!players.some(p=>String(p.username||'').trim().toLowerCase()===id.toLowerCase()&&p.is_excluded!==true)).length
  useEffect(()=>{const hideLegacyCreate=()=>document.querySelectorAll('button').forEach(b=>{if(b.dataset.unifiedCampaignCreate==='true')return;const text=(b.textContent||'').trim();if(text==='＋ New Campaign'||text==='+ New Campaign')b.style.display='none'});hideLegacyCreate();const obs=new MutationObserver(hideLegacyCreate);obs.observe(document.body,{childList:true,subtree:true});return()=>obs.disconnect()},[])
- useEffect(()=>{if(open){setMessage('');supabase.from('vip_members').select('id,username,full_name,tier,currency,phone,whatsapp,is_excluded').then(({data,error})=>{if(error)setMessage(error.message);else setPlayers(data||[])});supabase.from('player_gaming_labels').select('username,player_type,player_type_icon').order('snapshot_month',{ascending:false}).then(({data})=>{if(!data)return;const map={};data.forEach(r=>{if(!map[r.username])map[r.username]=r});setGamingLabels(map)})}},[open])
+ useEffect(()=>{if(open){setMessage('');fetchAll(()=>supabase.from('vip_members_all').select('id,username,full_name,tier,currency,phone,whatsapp,is_excluded').order('username')).then(data=>setPlayers(data||[]),error=>setMessage(error.message));supabase.from('player_gaming_labels').select('username,player_type,player_type_icon').order('snapshot_month',{ascending:false}).then(({data})=>{if(!data)return;const map={};data.forEach(r=>{if(!map[r.username])map[r.username]=r});setGamingLabels(map)})}},[open])
  function toggleList(key,value){setForm(f=>({...f,[key]:f[key].includes(value)?f[key].filter(x=>x!==value):[...f[key],value]}))}
  function setType(type){setForm(f=>({...f,campaign_type:type,reward_tiers:type==='tiered_reward'?defaultTierPct():f.reward_tiers,dual_tiers:type==='dual_tier'?defaultDual():f.dual_tiers,leaderboard_metric:type==='leaderboard'?(f.leaderboard_metric||'turnover'):'turnover'}))}
  function updateLevel(i,key,value){setForm(f=>{const levels=[...f.levels];levels[i]={...levels[i],[key]:value};return {...f,levels}})}

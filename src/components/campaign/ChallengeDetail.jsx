@@ -8,6 +8,7 @@ import { useAuth } from '../../hooks/useAuth'
 import { useLanguage } from '../../contexts/LanguageContext'
 import { L } from '../../lib/campaignGuide'
 import { fetchAll } from '../../lib/depositProfile'
+import { fetchMembersFor, findMembersByNames, fetchDailyFor } from '../../lib/allPlayers'
 import { parseManualUserIds } from '../../lib/campaignEnrollment'
 import { defaultChallengeConfig, computeProgress, suggestForPlayer, periodDates, num, STATUS_STYLE, progressMessage, FLAG_LABEL } from '../../lib/challengeEngine'
 import { CampaignInfoButton } from './CampaignGuide'
@@ -71,7 +72,7 @@ function ChallengeDetailClassic({ campaign: initial, onClose, onChanged }) {
       const ps = await fetchAll(() => supabase.from('campaign_players').select('*').eq('campaign_id', camp.id).order('username'))
       setPlayers(ps)
       const names = new Set(ps.map(p => p.username))
-      const mem = await fetchAll(() => supabase.from('vip_members').select('id,username,full_name,tier,host_assigned,affiliate_login,phone,whatsapp,currency').order('username'))
+      const mem = await fetchMembersFor([...names], 'id,username,full_name,tier,host_assigned,affiliate_login,phone,whatsapp,currency')
       const mm = {}; mem.forEach(m => { if (names.has(m.username)) mm[m.username] = m }); setMembers(mm)
 
       const toMap = rows => {
@@ -86,11 +87,12 @@ function ChallengeDetailClassic({ campaign: initial, onClose, onChanged }) {
         return out
       }
       const sel = 'username,snapshot_date,total_deposit,total_withdrawal,win_loss,monthly_valid_bet'
-      const rows = await fetchAll(() => supabase.from('vip_daily_snapshots').select(sel).gte('snapshot_date', camp.start_date).lte('snapshot_date', camp.end_date).order('snapshot_date').order('username'))
+      const rows = await fetchDailyFor([...names], sel, camp.start_date, camp.end_date)
       setDaily(toMap(rows))
       if (latest > camp.end_date) {
         const fEnd = new Date(new Date(camp.end_date + 'T00:00:00Z').getTime() + num(cfg.followup_days || 30) * 86400000).toISOString().slice(0, 10)
-        const frows = await fetchAll(() => supabase.from('vip_daily_snapshots').select(sel).gt('snapshot_date', camp.end_date).lte('snapshot_date', fEnd).order('snapshot_date').order('username'))
+        const fStart = new Date(new Date(camp.end_date + 'T00:00:00Z').getTime() + 86400000).toISOString().slice(0, 10)
+        const frows = await fetchDailyFor([...names], sel, fStart, fEnd)
         setFollow(toMap(frows))
       } else setFollow({})
     } catch (e) { console.error('ChallengeDetail load', e); setErr(e.message || String(e)) }
@@ -160,7 +162,7 @@ function ChallengeDetailClassic({ campaign: initial, onClose, onChanged }) {
     setBusy(true)
     try {
       const lower = ids.map(x => x.toLowerCase())
-      const mem = await fetchAll(() => supabase.from('vip_members').select('id,username,full_name,tier,phone,whatsapp,is_excluded').order('username'))
+      const mem = await findMembersByNames(ids, 'id,username,full_name,tier,phone,whatsapp,is_excluded')   // any tier incl. Silver / Bronze
       const found = mem.filter(m => lower.includes(m.username.toLowerCase()) && !m.is_excluded)
       const st = await fetchAll(() => supabase.from('v_vip_recent_stats').select('*').order('username'))
       const sm = {}; st.forEach(r => { sm[r.username] = r })

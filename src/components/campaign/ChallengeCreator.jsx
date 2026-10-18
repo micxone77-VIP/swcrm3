@@ -142,7 +142,7 @@ export default function ChallengeCreator({ mode = 'trust_credit', onCancel, onCr
     ;(async () => {
       try {
         const [mem, st, pr, act] = await Promise.all([
-          fetchAll(() => supabase.from('vip_members').select('id,username,full_name,tier,currency,phone,whatsapp,host_assigned,affiliate_login,is_excluded').order('username')),
+          fetchAll(() => supabase.from('vip_members_all').select('id,username,full_name,tier,currency,phone,whatsapp,host_assigned,affiliate_login,is_excluded').order('username')),
           fetchAll(() => supabase.from('v_vip_recent_stats').select('*').order('username')),
           fetchAll(() => supabase.from('v_vip_deposit_profile').select('login,segment').order('login')),
           supabase.from('campaigns').select('id,campaign_name').eq('status', 'active'),

@@ -8,6 +8,7 @@ import { useAuth } from '../../hooks/useAuth'
 import { useLanguage } from '../../contexts/LanguageContext'
 import { L } from '../../lib/campaignGuide'
 import { fetchAll } from '../../lib/depositProfile'
+import { fetchMembersFor, findMembersByNames, fetchDailyFor, MEMBERS_ALL } from '../../lib/allPlayers'
 import { parseManualUserIds } from '../../lib/campaignEnrollment'
 import { num } from '../../lib/challengeEngine'
 import { loadWinLossSettings } from '../../lib/bigWinLoss'
@@ -76,10 +77,9 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
       const ps = await fetchAll(() => supabase.from('campaign_players').select('*').eq('campaign_id', camp.id).order('username'))
       setPlayers(ps)
       const names = new Set(ps.map(p => p.username))
-      const mem = await fetchAll(() => supabase.from('vip_members').select('id,username,full_name,tier,host_assigned,affiliate_login,phone,whatsapp,currency').order('username'))
+      const mem = await fetchMembersFor([...names], 'id,username,full_name,tier,host_assigned,affiliate_login,phone,whatsapp,currency')
       const mm = {}; mem.forEach(m => { if (names.has(m.username)) mm[m.username] = m }); setMembers(mm)
-      const rows = await fetchAll(() => supabase.from('vip_daily_snapshots').select('username,snapshot_date,total_deposit,total_withdrawal,win_loss,monthly_valid_bet')
-        .gte('snapshot_date', camp.start_date).lte('snapshot_date', camp.end_date).order('snapshot_date').order('username'))
+      const rows = await fetchDailyFor([...names], 'username,snapshot_date,total_deposit,total_withdrawal,win_loss,monthly_valid_bet', camp.start_date, camp.end_date)
       const out = {}
       rows.forEach(r => {
         if (!names.has(r.username)) return
@@ -91,8 +91,7 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
       const nDays = Math.round((new Date(camp.end_date) - new Date(camp.start_date)) / 86400000) + 1
       const bStart = new Date(new Date(camp.start_date + 'T00:00:00Z').getTime() - nDays * 86400000).toISOString().slice(0, 10)
       const bEnd = new Date(new Date(camp.start_date + 'T00:00:00Z').getTime() - 86400000).toISOString().slice(0, 10)
-      const brows = await fetchAll(() => supabase.from('vip_daily_snapshots').select('username,snapshot_date,total_deposit,total_withdrawal,win_loss,monthly_valid_bet')
-        .gte('snapshot_date', bStart).lte('snapshot_date', bEnd).order('snapshot_date').order('username'))
+      const brows = await fetchDailyFor([...names], 'username,snapshot_date,total_deposit,total_withdrawal,win_loss,monthly_valid_bet', bStart, bEnd)
       const b = {}
       brows.forEach(r => {
         if (!names.has(r.username) || num(r.monthly_valid_bet) <= 0) return
@@ -305,10 +304,11 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
     setCamp(c => ({ ...c, challenge_config: clean })); onChanged && onChanged(); flash(T('Saved', '已保存'))
   }
   async function addPlayers() {
-    const ids = parseManualUserIds(addIds).map(x => x.toLowerCase())
-    if (!ids.length) return
-    const all = await fetchAll(() => supabase.from('vip_members').select('id,username,full_name,tier,phone,whatsapp').order('username'))
-    const found = all.filter(m => ids.includes(m.username.toLowerCase()) && !players.some(p => p.username === m.username))
+    const raw = parseManualUserIds(addIds)
+    if (!raw.length) return
+    // any tier incl. Silver / Bronze
+    const all = await findMembersByNames(raw, 'id,username,full_name,tier,phone,whatsapp')
+    const found = all.filter(m => !players.some(p => p.username === m.username))
     if (!found.length) return flash(T('No new players found', '没有可加入的新玩家'))
     const now = new Date().toISOString()
     const { error } = await supabase.from('campaign_players').upsert(found.map(m => ({
@@ -338,7 +338,7 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
   }
   async function openBulk() {
     setBulkOpen(o => !o)
-    if (!allVips) setAllVips(await fetchAll(() => supabase.from('vip_members').select('id,username,full_name,tier,host_assigned,phone,whatsapp,is_excluded').order('username')).catch(() => []))
+    if (!allVips) setAllVips(await fetchAll(() => supabase.from(MEMBERS_ALL).select('id,username,full_name,tier,host_assigned,phone,whatsapp,is_excluded').order('username')).catch(() => []))
   }
   const inCamp = new Set(players.map(p => p.username))
   const bulkMatches = (allVips || []).filter(m => !m.is_excluded && !inCamp.has(m.username)

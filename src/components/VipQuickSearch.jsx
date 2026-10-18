@@ -36,13 +36,13 @@ export default function VipQuickSearch() {
     if (query.trim().length < 2) { setResults([]); setOpen(false); return }
     const timer = setTimeout(async () => {
       setLoading(true)
-      const { data } = await supabase
-        .from('vip_members')
-        .select('id, username, tier, host_assigned, days_inactive, churn_risk, activity_status')
-        .ilike('username', `%${query.trim()}%`)
-        .eq('is_excluded', false)
-        .limit(8)
-      setResults(data || [])
+      const sel = 'id, username, tier, host_assigned, days_inactive, churn_risk, activity_status'
+      // VIPs first, then Silver / Bronze (vip_members_all)
+      const [{ data }, { data: pot }] = await Promise.all([
+        supabase.from('vip_members').select(sel).ilike('username', `%${query.trim()}%`).eq('is_excluded', false).limit(8),
+        supabase.from('vip_members_all').select(sel).in('tier', ['SILVER', 'BRONZE']).ilike('username', `%${query.trim()}%`).eq('is_excluded', false).limit(4),
+      ])
+      setResults([...(data || []), ...(pot || [])])
       setOpen(true)
       setLoading(false)
     }, 250)

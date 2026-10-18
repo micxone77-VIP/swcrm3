@@ -11,6 +11,7 @@ import { buildMultiLevelPlayerMetrics, buildPayoutRows, buildCampaignSummary, ca
 import * as XLSX from 'xlsx'
 import ChallengeDetail from '../components/campaign/ChallengeDetail'
 import CampaignImpact from '../components/campaign/CampaignImpact'
+import { fetchDailyFor, MEMBERS_ALL } from '../lib/allPlayers'
 import CampaignMedia from '../components/campaign/CampaignMedia'
 import CampaignScorecard from '../components/campaign/CampaignScorecard'
 import { CampaignInfoButton } from '../components/campaign/CampaignGuide'
@@ -468,7 +469,7 @@ export default function Campaigns() {
     let hostMap = {}
     if (usernames.length > 0) {
       const { data: hostRows } = await supabase
-        .from('vip_members')
+        .from(MEMBERS_ALL)
         .select('username, host_assigned')
         .in('username', usernames)
       ;(hostRows || []).forEach(r => { if (r.host_assigned) hostMap[r.username] = r.host_assigned })
@@ -513,7 +514,7 @@ export default function Campaigns() {
     if (!vipSearch.trim()) { setVipResults([]); return }
     const t = setTimeout(async () => {
       const [{ data: vips }, { data: pots }] = await Promise.all([
-        supabase.from('vip_members').select('id,username,full_name,tier,phone,whatsapp').or(`username.ilike.%${vipSearch}%,full_name.ilike.%${vipSearch}%`).eq('is_excluded',false).limit(5),
+        supabase.from(MEMBERS_ALL).select('id,username,full_name,tier,phone,whatsapp').or(`username.ilike.%${vipSearch}%,full_name.ilike.%${vipSearch}%`).eq('is_excluded',false).limit(5),
         supabase.from('potential_players').select('id,username,tier,monthly_valid_bet').ilike('username',`%${vipSearch}%`).eq('is_graduated',false).limit(3),
       ])
       setVipResults([
@@ -993,7 +994,7 @@ export default function Campaigns() {
       const myName = profile?.full_name || profile?.username || (profile?.email ? profile.email.split('@')[0] : 'Host')
       const channelMap = { wa_sent:'WhatsApp', daily:'WhatsApp', responded:'WhatsApp', no_response:'WhatsApp', promised:'WhatsApp', deposited:'WhatsApp', reward:'WhatsApp', inactive:'WhatsApp', other:'Other' }
       const noteText = contactNote.trim() || `Campaign chase: ${selected?.campaign_name || ''}`
-      const { data: vipRow } = await supabase.from('vip_members').select('id').eq('username', player.username).maybeSingle()
+      const { data: vipRow } = await supabase.from(MEMBERS_ALL).select('id').eq('username', player.username).maybeSingle()
       await Promise.all([
         supabase.from('contact_logs').insert({
           vip_id: vipRow?.id || null,
@@ -1010,7 +1011,7 @@ export default function Campaigns() {
           log_month: now.slice(0, 7),
           log_week: String(Math.ceil(new Date().getDate() / 7)),
         }),
-        supabase.from('vip_members').update({ last_contacted: now, last_contact_date: now.slice(0, 10) }).eq('username', player.username),
+        supabase.from(MEMBERS_ALL).update({ last_contacted: now, last_contact_date: now.slice(0, 10) }).eq('username', player.username),
       ])
     }
     setContactLog(null)
@@ -1194,18 +1195,10 @@ export default function Campaigns() {
 
     setDailyLoading(true)
     const usernameSet = new Set(players.map(p => p.username))
-    let all = [], from = 0
-    const PAGE = 1000
-    while (true) {
-      const { data, error } = await supabase.from('vip_daily_snapshots')
-        .select('username, snapshot_date, total_deposit, monthly_valid_bet')
-        .gte('snapshot_date', startDate).lte('snapshot_date', endDate)
-        .range(from, from + PAGE - 1)
-      if (error) { alert(L2('Failed to load snapshot data: ','加载快照数据失败：') + error.message); setDailyLoading(false); return }
-      all = all.concat((data || []).filter(r => usernameSet.has(r.username)))
-      if (!data || data.length < PAGE) break
-      from += PAGE
-    }
+    // all tiers incl. Silver / Bronze (chunked by username)
+    let all = []
+    try { all = await fetchDailyFor([...usernameSet], 'username, snapshot_date, total_deposit, monthly_valid_bet', startDate, endDate) }
+    catch (error) { alert(L2('Failed to load snapshot data: ','加载快照数据失败：') + error.message); setDailyLoading(false); return }
 
     // Aggregate per player: sum deposit + turnover across all days in range
     // Only count rows with genuine activity (monthly_valid_bet > 0)
@@ -1497,18 +1490,10 @@ export default function Campaigns() {
     // Filtered by date range only (campaigns run days-to-weeks, so this stays
     // small) then joined client-side — avoids .in('username', largeArray),
     // which silently fails past a certain array size on this project.
-    let all = [], from = 0
-    const PAGE = 1000
-    while (true) {
-      const { data, error } = await supabase.from('vip_daily_snapshots')
-        .select('username, snapshot_date, total_deposit, total_withdrawal, monthly_valid_bet')
-        .gte('snapshot_date', startDate).lte('snapshot_date', endDate)
-        .range(from, from + PAGE - 1)
-      if (error) { console.error('loadRealFinancials error', error); break }
-      all = all.concat((data || []).filter(r => usernameSet.has(r.username)))
-      if (!data || data.length < PAGE) break
-      from += PAGE
-    }
+    // all tiers incl. Silver / Bronze (chunked by username, 150 per request)
+    let all = []
+    try { all = await fetchDailyFor([...usernameSet], 'username, snapshot_date, total_deposit, total_withdrawal, monthly_valid_bet', startDate, endDate) }
+    catch (error) { console.error('loadRealFinancials error', error) }
     // Only trust deposit/withdrawal on days with genuine activity — the
     // platform's raw export carries stale non-zero values on inactive days,
     // only monthly_valid_bet reliably zeroes out. Same rule used everywhere

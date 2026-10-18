@@ -41,8 +41,8 @@ export default function CampaignsMixedWrapper() {
       const ids = parseManualUserIds(manualIds)
       if (!selected || (!tiers.length && !ids.length)) { setPreview({ tier:0, manual:0, duplicate:0, missing:0 }); return }
       const [{ data: tierPlayers }, { data: manualPlayers }] = await Promise.all([
-        tiers.length ? supabase.from('vip_members').select('username,tier').in('tier', tiers).eq('is_excluded', false) : Promise.resolve({ data:[] }),
-        ids.length ? supabase.from('vip_members').select('username,tier').in('username', ids).eq('is_excluded', false) : Promise.resolve({ data:[] }),
+        tiers.length ? supabase.from('vip_members_all').select('username,tier').in('tier', tiers).eq('is_excluded', false) : Promise.resolve({ data:[] }),
+        ids.length ? supabase.from('vip_members_all').select('username,tier').in('username', ids).eq('is_excluded', false) : Promise.resolve({ data:[] }),
       ])
       if (cancelled) return
       const tierNames = new Set((tierPlayers || []).map(p => String(p.username).toLowerCase()))
@@ -63,7 +63,7 @@ export default function CampaignsMixedWrapper() {
       const { error: campaignError } = await supabase.from('campaigns').update({ target_tier:tiers.length?tiers:null, auto_enroll_tiers:tiers.length?tiers:null, enrollment_mode:mode }).eq('id', selected.id)
       if (campaignError) throw campaignError
       if (ids.length) {
-        const { data:vips, error:vipError } = await supabase.from('vip_members').select('id,username,full_name,tier,phone,whatsapp').in('username',ids).eq('is_excluded',false)
+        const { data:vips, error:vipError } = await supabase.from('vip_members_all').select('id,username,full_name,tier,phone,whatsapp').in('username',ids).eq('is_excluded',false)
         if (vipError) throw vipError
         const rows = (vips||[]).map(v => ({ campaign_id:selected.id,vip_id:v.id,username:v.username,tier:v.tier,player_name:v.full_name||null,whatsapp:v.whatsapp||v.phone||null,total_deposit:0,campaign_period_deposit:0,converted:false,payout_status:'pending',status:'enrolled',enrollment_source:'manual',added_at:new Date().toISOString(),enrolled_at:new Date().toISOString() }))
         if (rows.length) {

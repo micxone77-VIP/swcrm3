@@ -2,6 +2,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import * as XLSX from 'xlsx'
 import { supabase } from '../lib/supabase'
+import { fetchAll } from '../lib/depositProfile'
 import { useAuth } from '../hooks/useAuth'
 import { useLanguage } from '../contexts/LanguageContext'
 
@@ -171,10 +172,11 @@ async function processRawData(rows, month, thresholds, onProgress) {
 
   // Pre-fetch current tiers for all VIP usernames in CSV (for tier change detection)
   const allCsvUsernames = vipRows.map(r => r['login']?.trim()).filter(Boolean)
-  const { data: currentVipData } = await supabase
-    .from('vip_members')
-    .select('username, tier')
-    .in('username', allCsvUsernames)
+  const currentVipData = []
+  for (let i = 0; i < allCsvUsernames.length; i += 150) {
+    const { data } = await supabase.from('vip_members_all').select('username, tier').in('username', allCsvUsernames.slice(i, i + 150))
+    currentVipData.push(...(data || []))
+  }
   const currentTierMap = {}
   ;(currentVipData || []).forEach(v => { currentTierMap[v.username] = v.tier })
 
@@ -231,7 +233,7 @@ async function processRawData(rows, month, thresholds, onProgress) {
         ...(cleanPhone(r['phone']) ? { phone: cleanPhone(r['phone']) } : {}),
       }
       const { error } = await supabase
-        .from('vip_members')
+        .from('vip_members_all')
         .upsert(upsertPayload, { onConflict: 'username' })
       if (error) errors.push(`VIP ${username}: ${error.message}`)
       else if (isNew) vipCreated++
@@ -395,7 +397,64 @@ async function processRawData(rows, month, thresholds, onProgress) {
     onProgress(PL(`Processing Bronze/Silver… ${Math.min(i + POT_BATCH, potentialRows.length)}/${potentialRows.length}`, `正在处理铜/银级… ${Math.min(i + POT_BATCH, potentialRows.length)}/${potentialRows.length}`))
   }
 
-  return { vipUpdated, vipCreated, vipReset, tierChanged, tierChangeLogs, autoGraduated, potCreated, potUpdated, flagged, errors }
+  // --- Silver / Bronze → vip_members_all (batched). They are full player records for
+  // VIP360 + campaigns, but the vip_members VIEW (VIP list, KPIs, queues) only shows Gold and up.
+  onProgress(PL('Syncing Silver/Bronze players…', '正在同步银/铜级玩家…'))
+  let potSynced = 0
+  {
+    const { data: vipNow } = await supabase.from('vip_members').select('username, tier')
+    const vipTierNow = {}; (vipNow || []).forEach(v => { vipTierNow[String(v.username).toLowerCase()] = v.tier })
+    const seenPot = new Set(), downLogs = []
+    const potPayload = []
+    potentialRows.forEach(r => {
+      const username = r['login']?.trim()
+      if (!username || seenPot.has(username.toLowerCase())) return
+      seenPot.add(username.toLowerCase())
+      const tier = String(r['Member Group'] || '').toUpperCase().trim()
+      const old = vipTierNow[username.toLowerCase()]
+      if (old && old !== tier) downLogs.push({ username, old_tier: old, new_tier: tier, changed_at: new Date().toISOString(), import_month: month, source: 'csv_import' })
+      const phone = cleanPhone(r['phone'])
+      potPayload.push({
+        username,
+        vip_id:            String(r['id'] || r['ID'] || '').trim() || username,
+        tier,
+        currency:          r['currency'] || r['Currency'] || 'MYR',
+        registration_date: toDate(r['Registration date']),
+        total_deposit:     toNum(r['Total Deposit']),
+        total_withdrawal:  toNum(r['Total Withdrawal']),
+        monthly_valid_bet: toNum(r['Valid Bet']),
+        win_loss:          toNum(r['Win/Loss']),
+        deposit_count:     toInt(r['#Dep']),
+        wd_count:          toInt(r['#Wd']),
+        bet_count:         toInt(r['#Bet']),
+        bonus_count:       toInt(r['Total Bonus Count']),
+        bonus_amount:      toNum(r['Total Bonus']),
+        has_promo:         toInt(r['Total Bonus Count']) > 0,
+        total_rebate:      toNum(r['Total Rebate']),
+        total_reward:      toNum(r['Total Reward']),
+        valid_bet_month:   month,
+        updated_at:        new Date().toISOString(),
+        _phone:            phone || null,
+      })
+    })
+    // two groups so an empty CSV phone never wipes a phone a host typed in
+    const withPhone = potPayload.filter(x => x._phone).map(({ _phone, ...x }) => ({ ...x, phone: _phone }))
+    const noPhone = potPayload.filter(x => !x._phone).map(({ _phone, ...x }) => x)
+    for (const group of [withPhone, noPhone]) {
+      for (let i = 0; i < group.length; i += 500) {
+        const { error } = await supabase.from('vip_members_all').upsert(group.slice(i, i + 500), { onConflict: 'username' })
+        if (error) errors.push(`Silver/Bronze batch: ${error.message}`)
+        else potSynced += Math.min(500, group.length - i)
+        onProgress(PL(`Syncing Silver/Bronze players… ${potSynced}/${potPayload.length}`, `正在同步银/铜级玩家… ${potSynced}/${potPayload.length}`))
+      }
+    }
+    if (downLogs.length) {
+      for (let i = 0; i < downLogs.length; i += 50) await supabase.from('tier_change_logs').insert(downLogs.slice(i, i + 50))
+      tierChanged += downLogs.length
+    }
+  }
+
+  return { vipUpdated, vipCreated, vipReset, tierChanged, tierChangeLogs, autoGraduated, potCreated, potUpdated, flagged, potSynced, errors }
 }
 
 // ─── IMPORT 2: New single-Excel Tier Sync ───────────────────────────────────
@@ -785,6 +844,7 @@ function ResultBox({ result }) {
         {result.tierChanged    != null && result.tierChanged > 0 && <span style={{ ...s.stat, color: '#f59e0b', borderColor: '#f59e0b44' }}>⚡ {L2('Tier changes:','等级变更：')} {result.tierChanged}</span>}
         {result.autoGraduated != null && result.autoGraduated > 0 && <span style={{ ...s.stat, color: '#3fb950', borderColor: '#3fb95044' }}>🎓 {L2('Auto-graduated:','自动升级：')} {result.autoGraduated}</span>}
         {result.potCreated   != null && <span style={s.stat}>{L2('New potentials:','新潜力玩家：')} {result.potCreated}</span>}
+        {result.potSynced    != null && <span style={s.stat}>🥈🥉 {L2('Silver/Bronze synced:','银/铜级已同步：')} {result.potSynced}</span>}
         {result.potUpdated   != null && <span style={s.stat}>{L2('Potentials refreshed:','潜力玩家已刷新：')} {result.potUpdated}</span>}
         {result.flagged      != null && <span style={s.stat}>{L2('Upgrade flagged:','标记升级：')} {result.flagged}</span>}
         {result.updated      != null && <span style={s.stat}>{L2('Updated:','已更新：')} {result.updated}</span>}
@@ -1157,6 +1217,37 @@ export default function CSVImport() {
       }
       onProgress(L2(`Saving daily snapshot… ${saved}/${vips.length}`, `正在保存每日快照… ${saved}/${vips.length}`))
     }
+    // Silver / Bronze → vip_daily_snapshots_all (full daily row, same rules as VIPs)
+    try {
+      const pots = await fetchAll(() => supabase.from('vip_members_all')
+        .select('username, tier, total_deposit, total_withdrawal, monthly_valid_bet, win_loss, bet_count, deposit_count, bonus_count, bonus_amount, total_rebate, has_promo, currency, host_assigned, valid_bet_month')
+        .in('tier', ['SILVER', 'BRONZE']).eq('is_excluded', false).order('username'))
+      let potSaved = 0
+      for (let i = 0; i < pots.length; i += 500) {
+        const batch = pots.slice(i, i + 500).map(v => {
+          const sameMonth = (v.valid_bet_month || '') === snapshotMonth
+          return {
+            username: v.username, snapshot_date: dateStr, tier: v.tier,
+            total_deposit:     sameMonth ? (v.total_deposit     || 0) : 0,
+            total_withdrawal:  sameMonth ? (v.total_withdrawal  || 0) : 0,
+            monthly_valid_bet: sameMonth ? (v.monthly_valid_bet || 0) : 0,
+            win_loss:          sameMonth ? (v.win_loss          || 0) : 0,
+            bet_count:         sameMonth ? (v.bet_count         || 0) : 0,
+            deposit_count:     sameMonth ? (v.deposit_count     || 0) : 0,
+            bonus_count:       sameMonth ? (v.bonus_count       || 0) : 0,
+            bonus_amount:      sameMonth ? (v.bonus_amount      || 0) : 0,
+            total_rebate:      sameMonth ? (v.total_rebate      || 0) : 0,
+            has_promo:         sameMonth ? (v.has_promo         || false) : false,
+            currency: v.currency || 'MYR', host_assigned: v.host_assigned || null,
+          }
+        })
+        const { error } = await supabase.from('vip_daily_snapshots_all').upsert(batch, { onConflict: 'username,snapshot_date' })
+        if (error) errors.push(`Silver/Bronze daily: ${error.message}`)
+        else potSaved += batch.length
+        onProgress(L2(`Saving Silver/Bronze daily snapshot… ${potSaved}/${pots.length}`, `正在保存银/铜级每日快照… ${potSaved}/${pots.length}`))
+      }
+    } catch (e) { errors.push(`Silver/Bronze daily: ${e.message || e}`) }
+
     if (errors.length > 0) {
       onProgress(L2(`⚠ Daily snapshot finished with errors: ${saved} saved, ${errors.length} batch error(s)`, `⚠ 每日快照完成但有错误：已保存 ${saved}，${errors.length} 个批次错误`))
     } else {

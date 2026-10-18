@@ -125,13 +125,16 @@ export default function AllVIPs() {
 
   const TIER_ORDER = { BLACK:0, 'DIAMOND-P':0.5, DIAMOND:1, PLATINUM:2, GOLD:3, SILVER:4, BRONZE:5 }
 
+  const potTier = tier === 'SILVER' || tier === 'BRONZE' ? tier : null   // Silver / Bronze → read vip_members_all
   const load = useCallback(async () => {
     setLoading(true); setError(null)
     try {
+      const SEL = 'id,username,full_name,tier,region,currency,days_inactive,churn_risk,host_assigned,last_deposit_date,total_deposit,win_loss,activity_status,last_contacted,last_contact_date,vip_score,is_excluded,birthday,phone,whatsapp,tng_verify_status,tng_verified_name,affiliate_login,affiliate_updated_at'
       const [vipRes, hostRes] = await Promise.all([
-        supabase.from('vip_members')
-          .select('id,username,full_name,tier,region,currency,days_inactive,churn_risk,host_assigned,last_deposit_date,total_deposit,win_loss,activity_status,last_contacted,last_contact_date,vip_score,is_excluded,birthday,phone,whatsapp,tng_verify_status,tng_verified_name,affiliate_login,affiliate_updated_at')
-          .neq('is_excluded', true),
+        // Silver / Bronze are not in the VIP list view — read them from vip_members_all when that tier is picked
+        potTier
+          ? fetchAll(() => supabase.from('vip_members_all').select(SEL).eq('tier', potTier).neq('is_excluded', true).order('username')).then(data => ({ data, error: null }), error => ({ data: null, error }))
+          : supabase.from('vip_members').select(SEL).neq('is_excluded', true),
         supabase.from('profiles').select('full_name').in('role',['admin','host']).order('full_name'),
       ])
       if (vipRes.error) throw vipRes.error
@@ -159,7 +162,7 @@ export default function AllVIPs() {
         })
     } catch(e) { setError(e.message || String(e)) }
     setLoading(false)
-  }, [])
+  }, [potTier])
 
   useEffect(() => { load() }, [load])
 

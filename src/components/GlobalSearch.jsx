@@ -42,14 +42,13 @@ export default function GlobalSearch({ open, onClose }) {
     const timer = setTimeout(async () => {
       setLoading(true)
       const q = query.trim()
-      const { data } = await supabase
-        .from('vip_members')
-        .select('id,username,full_name,tier,host_assigned,days_inactive,churn_risk,total_deposit,currency')
-        .or(`username.ilike.%${q}%,full_name.ilike.%${q}%`)
-        .eq('is_excluded', false)
-        .order('total_deposit', { ascending: false })
-        .limit(10)
-      setResults(data || [])
+      const sel = 'id,username,full_name,tier,host_assigned,days_inactive,churn_risk,total_deposit,currency'
+      // VIPs first, then Silver / Bronze (vip_members_all)
+      const [{ data }, { data: pot }] = await Promise.all([
+        supabase.from('vip_members').select(sel).or(`username.ilike.%${q}%,full_name.ilike.%${q}%`).eq('is_excluded', false).order('total_deposit', { ascending: false }).limit(10),
+        supabase.from('vip_members_all').select(sel).in('tier', ['SILVER', 'BRONZE']).ilike('username', `%${q}%`).eq('is_excluded', false).order('total_deposit', { ascending: false }).limit(5),
+      ])
+      setResults([...(data || []), ...(pot || [])])
       setLoading(false)
     }, 200)
     return () => clearTimeout(timer)

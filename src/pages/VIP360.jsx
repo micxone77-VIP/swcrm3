@@ -133,9 +133,9 @@ const thisMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0
 // Step 1: Resolve VIP — by UUID (path param) or by username (query param from ExpenseTracker link)
 let vipRes
 if (id) {
-  vipRes = await supabase.from('vip_members').select('*').eq('id', id).single()
+  vipRes = await supabase.from('vip_members_all').select('*').eq('id', id).single()
 } else if (playerQuery) {
-  vipRes = await supabase.from('vip_members').select('*').eq('username', playerQuery).maybeSingle()
+  vipRes = await supabase.from('vip_members_all').select('*').eq('username', playerQuery).maybeSingle()
   if (!vipRes.error && !vipRes.data) {
     // Not a VIP → maybe a Silver / Bronze player
     const { data: pot } = await supabase.from('potential_players').select('*').ilike('username', playerQuery).limit(1).maybeSingle()
@@ -155,7 +155,7 @@ supabase.from('vip_monthly_totals')
 .eq('vip_id', resolvedId)
 .order('snapshot_month', { ascending: false })
 .limit(24),
-supabase.from('vip_daily_snapshots')
+supabase.from('vip_daily_snapshots_all')
 .select('snapshot_date,total_deposit,total_withdrawal,monthly_valid_bet,win_loss')
 .eq('vip_id', resolvedId)
 .order('snapshot_date', { ascending: false })
@@ -207,7 +207,7 @@ const [y, m] = calMonth.split('-').map(Number)
 const start = `${calMonth}-01`
 const daysInMonth = new Date(y, m, 0).getDate()
 const end = `${calMonth}-${String(daysInMonth).padStart(2,'0')}`
-supabase.from('vip_daily_snapshots')
+supabase.from('vip_daily_snapshots_all')
 .select('snapshot_date,total_deposit,total_withdrawal,monthly_valid_bet,bet_count')
 .eq('vip_id', id)
 .gte('snapshot_date', start)
@@ -319,7 +319,7 @@ notes: logNote || null, message_summary: logNote || null,
 host_name: profile?.full_name || null, host_id: profile?.id || null,
 logged_at: nowStr, log_month: nowStr.slice(0, 7), log_week: String(Math.ceil(new Date().getDate() / 7)),
 })
-await supabase.from('vip_members').update({ last_contacted: nowStr, last_contact_date: nowStr.slice(0,10) }).eq('id', id)
+await supabase.from('vip_members_all').update({ last_contacted: nowStr, last_contact_date: nowStr.slice(0,10) }).eq('id', id)
 setLogSaving(false)
 if (err) { toast(L2('Error: ', '错误：') + err.message, 'error'); return }
 toast(t('vip360.contactLogged'), 'success')
@@ -334,7 +334,7 @@ const ALLOWED = ['full_name','birthday','host_assigned','tier','activity_status'
 const clean = Object.fromEntries(
   ALLOWED.map(k => [k, editForm[k] === '' ? null : (editForm[k] ?? null)])
 )
-const { error: err } = await supabase.from('vip_members').update(clean).eq('id', id)
+const { error: err } = await supabase.from('vip_members_all').update(clean).eq('id', id)
 setEditSaving(false)
 if (err) { toast(L2('Error: ', '错误：') + err.message, 'error'); return }
 toast(t('vip360.savedMsg'), 'success')

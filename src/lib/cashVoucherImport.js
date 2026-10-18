@@ -67,7 +67,7 @@ export async function importCashVoucherCsv(text, { userId, onProgress } = {}) {
   const get = (r, k) => (idx[k] >= 0 ? String(r[idx[k]] ?? '').trim() : '')
 
   say('Loading VIPs…')
-  const members = await fetchAll(() => supabase.from('vip_members').select('id, username, full_name, currency, phone, address').order('username'))
+  const members = await fetchAll(() => supabase.from('vip_members_all').select('id, username, full_name, currency, phone, address').order('username'))
   const mem = {}; members.forEach(m => { mem[String(m.username).toLowerCase()] = m })
 
   const parsed = [], unknown = [], bad = []
@@ -157,7 +157,7 @@ export async function importCashVoucherCsv(text, { userId, onProgress } = {}) {
     if (!String(m.address || '').trim() && p._addr && p._addr.length > 8) upd.address = p._addr
     if ((!String(m.full_name || '').trim() || m.full_name === '(Name)') && p.full_name) upd.full_name = p.full_name
     if (Object.keys(upd).length) {
-      const { error } = await supabase.from('vip_members').update(upd).eq('id', m.id)
+      const { error } = await supabase.from('vip_members_all').update(upd).eq('id', m.id)
       if (!error) profilesFilled++
     }
   }
