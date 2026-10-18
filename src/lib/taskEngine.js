@@ -208,7 +208,19 @@ export function localizeTaskTitle(title, lang = 'en') { return lang === 'zh' ? a
 export function localizeTaskNotes(notes, lang = 'en') { return lang === 'zh' ? applyRules(NOTES_RULES, notes) : notes }
 
 // ─── Main entry point ─────────────────────────────────────────────────────────
+// ─── 0. Expire auto tasks from past months (they were never closed and only pile up) ──
+// Follow-up tasks also auto-close when a contact is logged (DB trigger trg_close_tasks_on_contact).
+async function expireOldAutoTasks() {
+  const now = new Date(Date.now() + 8 * 3600e3)   // Malaysia time
+  const monthStart = `${now.toISOString().slice(0, 7)}-01T00:00:00+08:00`
+  const { error } = await supabase.from('tasks')
+    .update({ status: 'Cancelled', updated_at: new Date().toISOString() })
+    .like('source', 'auto_%').in('status', ['Open', 'In Progress', 'Snoozed']).lt('created_at', monthStart)
+  if (error) console.warn('[taskEngine] expire', error.message)
+}
+
 export async function generateAutoTasks() {
+  await expireOldAutoTasks()
   const results = await Promise.allSettled([
     genBirthdayTasks(),
     genChurnRiskTasks(),

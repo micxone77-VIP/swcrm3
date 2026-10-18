@@ -255,13 +255,30 @@ export default function ContactLog() {
   // symbol (see loadLogs' vip_members join), only the summed stat is scoped.
   const [bonusCurrency, setBonusCurrency] = useUrlParam('cur', 'MYR')
 
-  // Compute today/positive-outcome stats from the currently loaded page.
-  useEffect(() => {
-    const today = new Date().toISOString().slice(0,10)
-    const todayCount    = logs.filter(l => l.logged_at?.slice(0,10) === today).length
-    const positiveCount = logs.filter(l => ['Contacted','Replied','Deposited','Reactivated'].includes(l.outcome)).length
-    setStats(prev => ({ ...prev, today: todayCount, positive: positiveCount }))
-  }, [logs])
+  // Today / reply-rate stats across ALL logs matching the filters (not just the 50 on this page).
+  // Reply rate = Replied + Deposited + Reactivated ÷ all logs — same definition as Daily Targets.
+  useEffect(() => { loadOutcomeStats() }, [viewMode, hostF, tierF, dateFrom, dateTo, search, profile, logs.length])
+  async function loadOutcomeStats() {
+    const base = () => {
+      let q = supabase.from('contact_logs').select('id', { count: 'exact', head: true })
+      if (viewMode === 'mine' && profile) {
+        const myName = profile.full_name || profile.username || (profile.email ? profile.email.split('@')[0] : null)
+        if (myName) q = q.eq('host_name', myName)
+      }
+      if (hostF !== 'ALL') q = q.eq('host_name', hostF)
+      if (tierF !== 'ALL') q = q.eq('tier', tierF)
+      if (search.trim())   q = q.ilike('username', `%${search}%`)
+      if (dateFrom)        q = q.gte('logged_at', dateFrom)
+      if (dateTo)          q = q.lte('logged_at', dateTo + 'T23:59:59')
+      return q
+    }
+    const myt = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)   // today in Malaysia time
+    const [{ count: replied }, { count: today }] = await Promise.all([
+      base().in('outcome', ['Replied', 'Deposited', 'Reactivated']),
+      base().gte('logged_at', `${myt}T00:00:00+08:00`),
+    ])
+    setStats(prev => ({ ...prev, positive: replied || 0, today: today || 0 }))
+  }
   // Total Bonus Given must reflect every matching log across all pages, in one
   // currency at a time — not just the 50 rows on the current page.
   useEffect(() => { loadBonusTotal() }, [viewMode, hostF, tierF, affF, dateFrom, dateTo, search, bonusCurrency, profile])
@@ -604,7 +621,7 @@ export default function ContactLog() {
       <div style={{ display:'flex', gap:12, marginBottom:20, flexWrap:'wrap', alignItems:'center' }}>
         <StatCard label={viewMode==='mine'?L2('My Total Logs', '我的记录总数'):L2('Total Logs', '记录总数')} value={stats.total} color="var(--accent)" />
         <StatCard label={L2('Today', '今天')} value={stats.today} color="#3fb950" />
-        <StatCard label={L2('Positive Outcomes', '正面结果')} value={stats.positive}
+        <StatCard label={L2('Reply rate (replied / deposited / reactivated)', '回复率（回复 / 存款 / 召回）')} value={stats.positive}
           sub={stats.total ? Math.round(stats.positive/stats.total*100)+'%' : '-'} color="#3fb950" />
         <StatCard label={L2(`Total Bonus Given (${CURRENCY_SYMBOL[bonusCurrency]})`, `发放奖金总额 (${CURRENCY_SYMBOL[bonusCurrency]})`)} value={formatMoney(stats.bonusTotal, bonusCurrency)} color="#ffd700" />
         <div style={{ display:'flex', background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, overflow:'hidden', alignSelf:'center' }}>
