@@ -6,6 +6,7 @@ import { useAuth } from '../hooks/useAuth'
 import { formatMoney, fmtDate } from '../lib/format'
 import CashVoucherClaims from '../components/vip/CashVoucherClaims'
 import VipBonusSpending from '../components/vip/VipBonusSpending'
+import PotentialProfile from '../components/vip/PotentialProfile'
 import { money2 } from '../lib/vipBonus'
 import { TIER_CONFIG, STATUS_CONFIG, RISK_CONFIG, CONTACT_TYPE, CONTACT_OUTCOME, enumLabel } from '../lib/enums'
 import {
@@ -62,6 +63,7 @@ const L2 = (en, zh) => (lang === 'zh' ? zh : en)
 const ago = d => timeAgo(d, lang)
 
 const [vip, setVip] = useState(null)
+const [potential, setPotential] = useState(null)   // Silver / Bronze player (potential_players) when not in the VIP list
 const [monthly, setMonthly] = useState([])
 const [daily, setDaily] = useState([])
 const [contacts, setContacts] = useState([])
@@ -123,7 +125,7 @@ const [profileSaving, setProfileSaving] = useState(false)
 const profileLoadedFor = useRef(null)
 
 const load = useCallback(async () => {
-setLoading(true); setError(null)
+setLoading(true); setError(null); setPotential(null)
 try {
 const now = new Date()
 const thisMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`
@@ -133,7 +135,13 @@ let vipRes
 if (id) {
   vipRes = await supabase.from('vip_members').select('*').eq('id', id).single()
 } else if (playerQuery) {
-  vipRes = await supabase.from('vip_members').select('*').eq('username', playerQuery).single()
+  vipRes = await supabase.from('vip_members').select('*').eq('username', playerQuery).maybeSingle()
+  if (!vipRes.error && !vipRes.data) {
+    // Not a VIP → maybe a Silver / Bronze player
+    const { data: pot } = await supabase.from('potential_players').select('*').ilike('username', playerQuery).limit(1).maybeSingle()
+    if (pot) { setPotential(pot); setLoading(false); return }
+    throw new Error('VIP not found')
+  }
 } else {
   throw new Error('No VIP identifier provided')
 }
@@ -410,6 +418,7 @@ const TABS = [
 ]
 
 if (loading) return <div style={{ padding: 32 }}><LoadingState message={t('vip360.loadingMsg')} /></div>
+if (potential) return <PotentialProfile p={potential} />
 if (error || !vip) return <div style={{ padding: 32 }}><ErrorState message={error || t('vip360.vipNotFound')} onRetry={load} /></div>
 
 const tierCfg = TIER_CONFIG[(vip.tier||'').toUpperCase()] || TIER_CONFIG.SILVER

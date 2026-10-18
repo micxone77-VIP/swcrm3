@@ -10,6 +10,7 @@ import {
   LoadingState, ErrorState, EmptyState, Pagination, Badge, ListCount,
 } from '../components/ui'
 import { TierBadge, StatusBadge, RiskBadge } from '../components/ui'
+import { PotentialSearch } from '../components/vip/PotentialProfile'
 import { formatMoney } from '../lib/format'
 import { enumLabel } from '../lib/enums'
 
@@ -423,6 +424,9 @@ export default function AllVIPs() {
           </Btn>
         )}
       </div>
+
+      {/* Silver / Bronze players matching the search (not in VIP list) */}
+      {search.trim().length >= 3 && <PotentialSearch query={search} />}
 
       {/* Table */}
       {loading ? <LoadingState /> : error ? <ErrorState message={error} onRetry={load} /> : (
