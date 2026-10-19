@@ -16,6 +16,7 @@ import { defaultDailyConfig, computeDaily, GROUPS, fillMessage, sortedTiers } fr
 import { DailyRulesEditor, cleanDailyConfig } from './DailyRulesEditor'
 import CampaignImpact from './CampaignImpact'
 import CampaignMedia from './CampaignMedia'
+import { deleteCampaignCascade, confirmCampaignDelete } from '../../lib/campaignDelete'
 
 const fmt = v => Math.round(num(v)).toLocaleString('en-MY')
 const sym = c => (c === 'SGD' ? 'SGD ' : c === 'KHUSD' ? 'USD ' : 'RM ')
@@ -885,6 +886,14 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
                 <span style={{ fontSize: 12, color: 'var(--muted)' }}>{T('Campaign status:', '活动状态：')}</span>
                 {['draft', 'active', 'paused', 'ended'].map(s => <button key={s} style={{ ...sec, background: camp.status === s ? 'var(--accent)' : 'var(--surface2)', color: camp.status === s ? '#fff' : 'var(--text)' }}
                   onClick={async () => { const { error } = await supabase.from('campaigns').update({ status: s }).eq('id', camp.id); if (error) return flash(error.message); setCamp(c => ({ ...c, status: s })); onChanged && onChanged() }}>{s}</button>)}
+                {profile?.role === 'admin' && (
+                  <button style={{ ...sec, marginLeft: 'auto', borderColor: '#f85149', color: '#f85149' }}
+                    onClick={async () => {
+                      if (!confirmCampaignDelete(camp, lang)) return
+                      try { await deleteCampaignCascade(camp.id); onChanged && onChanged(); onClose() }
+                      catch (e) { flash(T('Delete failed: ', '删除失败：') + (e.message || e)) }
+                    }}>🗑 {T('Delete campaign', '删除活动')}</button>
+                )}
               </div>
             </div>
           )}

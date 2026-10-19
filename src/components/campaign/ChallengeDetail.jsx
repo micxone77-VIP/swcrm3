@@ -9,6 +9,7 @@ import { useLanguage } from '../../contexts/LanguageContext'
 import { L } from '../../lib/campaignGuide'
 import { fetchAll } from '../../lib/depositProfile'
 import { fetchMembersFor, findMembersByNames, fetchDailyFor } from '../../lib/allPlayers'
+import { deleteCampaignCascade, confirmCampaignDelete } from '../../lib/campaignDelete'
 import { parseManualUserIds } from '../../lib/campaignEnrollment'
 import { defaultChallengeConfig, computeProgress, suggestForPlayer, periodDates, num, STATUS_STYLE, progressMessage, FLAG_LABEL } from '../../lib/challengeEngine'
 import { CampaignInfoButton } from './CampaignGuide'
@@ -230,6 +231,14 @@ function ChallengeDetailClassic({ campaign: initial, onClose, onChanged }) {
               <select value={camp.status} onChange={e => saveStatus(e.target.value)} style={{ ...input, color: statusColor, fontWeight: 700 }}>
                 {['draft', 'active', 'paused', 'ended'].map(s => <option key={s} value={s}>{s}</option>)}
               </select>
+              {profile?.role === 'admin' && (
+                <button style={{ ...input, cursor: 'pointer', borderColor: '#f85149', color: '#f85149', fontWeight: 700 }}
+                  onClick={async () => {
+                    if (!confirmCampaignDelete(camp, lang)) return
+                    try { await deleteCampaignCascade(camp.id); onChanged && onChanged(); onClose() }
+                    catch (e) { window.alert(e.message || String(e)) }
+                  }}>🗑 {T('Delete', '删除')}</button>
+              )}
             </div>
             <div style={{ fontSize: 20, fontWeight: 800, marginTop: 6 }}>{camp.campaign_name}</div>
             <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
