@@ -456,7 +456,7 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
             </div>
             <div style={{ fontSize: 15, marginTop: 6 }}>
               {tiers.map(t => <span key={t.turnover} style={{ marginRight: 10 }}>{fmt(t.turnover)} → <b>{fmt(t.reward)}</b></span>)}
-              {cfg.streak_enabled && <span style={{ color: '#f97316' }}>🔥 {cfg.streak_days}{T('-day streak', '天连续')} = {cfg.streak_pct}% {T('of deposits', '存款')} ({cfg.streak_style === 'rolling' ? T('rolling', '滚动') : T('every block', '每轮')}{num(cfg.streak_cap) > 0 ? `, cap ${fmt(cfg.streak_cap)}` : ''})</span>}
+              {cfg.streak_enabled && <span style={{ color: '#f97316' }}>🔥 {cfg.streak_days}{T('-day streak', '天连续')} = {cfg.streak_pct}% {T('of deposits', '存款')} ({cfg.streak_style === 'rolling' ? T('rolling', '滚动') : T(`resets every ${cfg.streak_days} days`, `每${cfg.streak_days}天重新计算`)}{num(cfg.streak_cap) > 0 ? `, cap ${fmt(cfg.streak_cap)}` : ''})</span>}
             </div>
           </div>
           <button style={sec} onClick={load}>{T('🔄 Refresh', '🔄 刷新')}</button>
