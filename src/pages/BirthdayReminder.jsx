@@ -180,7 +180,7 @@ export default function BirthdayReminder() {
     if (error) { alert(L2('Save failed: ', '保存失败：') + error.message); return }
     // Sync last_contacted on vip_members
     const _now = new Date().toISOString()
-    await supabase.from('vip_members').update({ last_contacted: _now, last_contact_date: _now.slice(0,10) }).eq('id', vip.id)
+    await supabase.from('vip_members').update({ last_contacted: _now }).eq('id', vip.id)
     setContactModal(null)
     setContactForm({ channel:'WhatsApp', outcome:'Contacted', notes:'' })
   }

@@ -1011,7 +1011,7 @@ export default function Campaigns() {
           log_month: now.slice(0, 7),
           log_week: String(Math.ceil(new Date().getDate() / 7)),
         }),
-        supabase.from(MEMBERS_ALL).update({ last_contacted: now, last_contact_date: now.slice(0, 10) }).eq('username', player.username),
+        supabase.from(MEMBERS_ALL).update({ last_contacted: now }).eq('username', player.username),
       ])
     }
     setContactLog(null)

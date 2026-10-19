@@ -181,7 +181,7 @@ export default function Today() {
     if (err) { toast(L2('Failed to log contact: ', '记录联系失败：') + err.message, 'error'); return }
     // Sync last_contacted on vip_members
     const _now = new Date().toISOString()
-    await supabase.from('vip_members').update({ last_contacted: _now, last_contact_date: _now.slice(0,10) }).eq('id', logTarget.id)
+    await supabase.from('vip_members').update({ last_contacted: _now }).eq('id', logTarget.id)
     toast(L2(`Logged: ${logTarget.username} — ${logOutcome}`, `已记录：${logTarget.username} — ${OUTCOME_ZH[logOutcome] || logOutcome}`), 'success')
     setLogTarget(null); setLogNote(''); setLogOutcome('Replied'); setLogWaNumber(''); setLogChannel('WhatsApp')
     refresh()

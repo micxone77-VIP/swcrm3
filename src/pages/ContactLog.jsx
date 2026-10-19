@@ -566,7 +566,7 @@ export default function ContactLog() {
     // (backfilled logs: the DB trigger only moves last_contacted forward, never back)
     if (vipId && !logForm.contact_at) {
       const _now = new Date().toISOString()
-      supabase.from('vip_members_all').update({ last_contacted: _now, last_contact_date: _now.slice(0,10) }).eq('id', vipId).then(() => {})
+      supabase.from('vip_members_all').update({ last_contacted: _now }).eq('id', vipId).then(() => {})
     }
     setLogForm({ contact_type:'WhatsApp', outcome:'Contacted', bonus_offered:'', bonus_type:'', notes:'', wa_number_used:'', contact_at:'' })
     setSelectedVip(null); setVipSearch(''); setVipResults([])

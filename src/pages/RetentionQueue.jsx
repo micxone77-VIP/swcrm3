@@ -53,7 +53,7 @@ export default function RetentionQueue(){
         if(reactError)throw reactError
       }
       // Sync last_contacted on vip_members
-      await supabase.from('vip_members').update({ last_contacted: nowIso, last_contact_date: nowIso.slice(0,10) }).eq('id', logVip.id)
+      await supabase.from('vip_members').update({ last_contacted: nowIso }).eq('id', logVip.id)
       setLogVip(null);setLogNotes('');setLogRecoveryAmount('');setLogRecoveryCurrency('MYR')
       await loadQueue()
     }catch(e){console.error(e);setLogError(e?.message||L2('Unable to save contact log','无法保存联系记录'))}finally{setLogSaving(false)}

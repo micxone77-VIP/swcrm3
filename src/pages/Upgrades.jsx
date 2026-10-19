@@ -748,7 +748,7 @@ function ContactLogForm({ player, onClose }) {
     if (error) { alert(L2('Save failed: ', '保存失败：') + error.message); setSaving(false); return }
     // Sync last_contacted on vip_members
     const _now = new Date().toISOString()
-    await supabase.from('vip_members').update({ last_contacted: _now, last_contact_date: _now.slice(0,10) }).eq('username', player.username)
+    await supabase.from('vip_members').update({ last_contacted: _now }).eq('username', player.username)
     setSaving(false)
     onClose()
   }
