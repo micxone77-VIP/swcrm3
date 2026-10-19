@@ -13,6 +13,14 @@ import AwaitingReplyAffiliate from '../components/contact/AwaitingReplyAffiliate
 
 const CONTACT_TYPES    = ['WhatsApp','Call','Telegram','In-person','Other']
 const CONTACT_OUTCOMES = ['Contacted','No Reply','Replied','Deposited','Reactivated']
+// Contact date/time (backfill). Inputs are Malaysia time (UTC+8), stored as UTC.
+const toMytInput = iso => (iso ? new Date(new Date(iso).getTime() + 8 * 3600e3).toISOString().slice(0, 16) : '')
+const fromMytInput = v => (v ? new Date(`${v}:00+08:00`).toISOString() : null)
+const nowMytInput = () => toMytInput(new Date().toISOString())
+const BACKFILL_DAYS = 60
+const minMytInput = () => toMytInput(new Date(Date.now() - BACKFILL_DAYS * 86400e3).toISOString())
+const logPeriod = iso => { const d = new Date(new Date(iso).getTime() + 8 * 3600e3); return { log_month: d.toISOString().slice(0, 7), log_week: String(Math.ceil(d.getUTCDate() / 7)) } }
+const isBackfilled = l => l.entered_at && l.logged_at && (new Date(l.entered_at) - new Date(l.logged_at)) > 2 * 3600e3
 const TIERS             = ['ALL','BLACK','DIAMOND-P','DIAMOND','PLATINUM','GOLD','SILVER','BRONZE']
 const PAGE_SIZE        = 50
 
@@ -425,7 +433,7 @@ export default function ContactLog() {
   const [submitting,   setSubmitting]  = useState(false)
   const [logForm, setLogForm] = useState({
     contact_type:'WhatsApp', outcome:'Contacted',
-    bonus_offered:'', bonus_type:'', notes:'', wa_number_used:'',
+    bonus_offered:'', bonus_type:'', notes:'', wa_number_used:'', contact_at:'',   // contact_at '' = now
   })
   const vipSearchRef = useRef(null)
 
@@ -517,6 +525,8 @@ export default function ContactLog() {
     const tier     = manualMode ? manualTier : selectedVip?.tier
     const vipId    = manualMode ? null : selectedVip?.id
     if (!username || !logForm.notes.trim()) return
+    const when = logForm.contact_at ? fromMytInput(logForm.contact_at) : new Date().toISOString()
+    if (new Date(when) > new Date(Date.now() + 5 * 60e3)) return alert(L2('Contact time cannot be in the future.', '联系时间不能是未来时间。'))
     setSubmitting(true)
     const myName = profile?.full_name || profile?.username || (profile?.email ? profile.email.split('@')[0] : 'Host')
     const { data: inserted, error: insertError } = await supabase.from('contact_logs').insert({
@@ -532,9 +542,9 @@ export default function ContactLog() {
       notes:           logForm.notes,
       message_summary: logForm.notes,
       direction:       'outbound',
-      logged_at:       new Date().toISOString(),
-      log_month:       new Date().toISOString().slice(0,7),
-      log_week:        String(Math.ceil(new Date().getDate()/7)),
+      logged_at:       when,
+      ...logPeriod(when),
+      entered_at:      new Date().toISOString(),
       wa_number_used:  logForm.wa_number_used || null,
     }).select('id').single()
     if (insertError) { console.error(insertError); alert(L2('Error: ', '错误：') + insertError.message) }
@@ -553,11 +563,12 @@ export default function ContactLog() {
         .catch(e => console.error('Auto-tag failed (log was still saved):', e))
     }
     // Sync last_contacted on vip_members (fire-and-forget, log already saved)
-    if (vipId) {
+    // (backfilled logs: the DB trigger only moves last_contacted forward, never back)
+    if (vipId && !logForm.contact_at) {
       const _now = new Date().toISOString()
-      supabase.from('vip_members').update({ last_contacted: _now, last_contact_date: _now.slice(0,10) }).eq('id', vipId).then(() => {})
+      supabase.from('vip_members_all').update({ last_contacted: _now, last_contact_date: _now.slice(0,10) }).eq('id', vipId).then(() => {})
     }
-    setLogForm({ contact_type:'WhatsApp', outcome:'Contacted', bonus_offered:'', bonus_type:'', notes:'', wa_number_used:'' })
+    setLogForm({ contact_type:'WhatsApp', outcome:'Contacted', bonus_offered:'', bonus_type:'', notes:'', wa_number_used:'', contact_at:'' })
     setSelectedVip(null); setVipSearch(''); setVipResults([])
     setManualMode(false); setManualUsername(''); setManualTier('GOLD')
     setShowForm(false); setSubmitting(false)
@@ -574,7 +585,10 @@ export default function ContactLog() {
     if (!editDraft || editSaving) return
     setEditSaving(true)
     const d = editDraft
+    const when = d.contact_at && d.contact_at !== d.orig_at ? fromMytInput(d.contact_at) : null
+    if (when && new Date(when) > new Date(Date.now() + 5 * 60e3)) { setEditSaving(false); window.alert(L2('Contact time cannot be in the future.', '联系时间不能是未来时间。')); return }
     const { error } = await supabase.from('contact_logs').update({
+      ...(when ? { logged_at: when, ...logPeriod(when) } : {}),
       notes: d.notes, message_summary: d.notes, outcome: d.outcome, channel: d.channel,
       wa_number_used: d.wa_number_used || null, vip_response: d.vip_response || null,
       bonus_offered: d.bonus_offered === '' || d.bonus_offered === null ? null : Number(d.bonus_offered) || 0,
@@ -743,6 +757,21 @@ export default function ContactLog() {
                   onChange={e => setLogForm({...logForm, bonus_type:e.target.value})}
                   placeholder={L2('e.g. Reload, Birthday, Cashback', '例如：充值、生日、返水')} />
               </div>
+            </div>
+            <div style={{ marginBottom:12, display:'flex', gap:10, alignItems:'flex-end', flexWrap:'wrap' }}>
+              <div>
+                <div style={s.flbl}>{L2('🕒 Contact date & time (Malaysia)', '🕒 联系日期时间（马来西亚）')}</div>
+                <input type="datetime-local" style={{ ...s.finput, marginTop:4, width:230 }} value={logForm.contact_at || nowMytInput()}
+                  min={minMytInput()} max={nowMytInput()}
+                  onChange={e => setLogForm({...logForm, contact_at: e.target.value === nowMytInput() ? '' : e.target.value})} />
+              </div>
+              {['Now', 'Yesterday', '2 days ago'].map((lbl, i) => (
+                <button key={lbl} type="button" onClick={() => setLogForm({...logForm, contact_at: i === 0 ? '' : toMytInput(new Date(Date.now() - i * 86400e3).toISOString())})}
+                  style={{ padding:'7px 12px', borderRadius:7, border:'1px solid var(--border)', background: (i === 0 ? !logForm.contact_at : logForm.contact_at && logForm.contact_at.slice(0,10) === toMytInput(new Date(Date.now() - i * 86400e3).toISOString()).slice(0,10)) ? 'var(--accent)' : 'var(--surface2)', color:'var(--text)', fontSize:12, cursor:'pointer' }}>
+                  {L2(lbl, ['现在', '昨天', '前天'][i])}
+                </button>
+              ))}
+              {logForm.contact_at && <span style={{ fontSize:12, color:'#d29922' }}>⏪ {L2('Backfill — will be saved on this date', '补录 — 将记录在这个日期')}</span>}
             </div>
             {logForm.contact_type === 'WhatsApp' && waNumbers.length > 0 && (
               <div style={{ marginBottom:12 }}>
@@ -914,10 +943,13 @@ export default function ContactLog() {
                     <td style={{ ...s.td, fontSize:12, color:log.host_name===myName?'var(--accent)':'var(--muted)', fontWeight:log.host_name===myName?600:400 }}>
                       {log.host_name===myName ? L2('Me', '我') : log.host_name}
                     </td>
-                    <td style={{ ...s.td, fontSize:11, color:'var(--muted)', whiteSpace:'nowrap' }}>{timeAgo(log.logged_at, lang)}</td>
+                    <td style={{ ...s.td, fontSize:11, color:'var(--muted)', whiteSpace:'nowrap' }} title={log.logged_at ? new Date(log.logged_at).toLocaleString('en-MY', { timeZone:'Asia/Kuala_Lumpur' }) : ''}>
+                      {timeAgo(log.logged_at, lang)}
+                      {isBackfilled(log) && <div style={{ color:'#d29922', fontSize:10 }} title={L2(`Entered ${new Date(log.entered_at).toLocaleString('en-MY', { timeZone:'Asia/Kuala_Lumpur' })}`, `录入于 ${new Date(log.entered_at).toLocaleString('zh-CN', { timeZone:'Asia/Kuala_Lumpur' })}`)}>⏪ {L2('backfilled', '补录')}</div>}
+                    </td>
                     <td style={{ ...s.td, fontSize:11 }} onClick={e => e.stopPropagation()}>
                       <div style={{ display:'flex', gap:4 }}>
-                        <button onClick={() => setEditDraft({ id: log.id, username: log.username, tier: log.tier, host_name: log.host_name, logged_at: log.logged_at, outcome: log.outcome || 'Contacted', channel: log.channel || 'WhatsApp', wa_number_used: log.wa_number_used || '', notes: log.notes || '', vip_response: log.vip_response || '', bonus_offered: log.bonus_offered ?? '', currency: log.vip_members?.currency })}
+                        <button onClick={() => setEditDraft({ id: log.id, username: log.username, tier: log.tier, host_name: log.host_name, logged_at: log.logged_at, outcome: log.outcome || 'Contacted', channel: log.channel || 'WhatsApp', wa_number_used: log.wa_number_used || '', contact_at: toMytInput(log.logged_at), orig_at: toMytInput(log.logged_at), notes: log.notes || '', vip_response: log.vip_response || '', bonus_offered: log.bonus_offered ?? '', currency: log.vip_members?.currency })}
                           style={{ background:'rgba(99,102,241,0.12)', border:'1px solid rgba(99,102,241,0.4)', color:'#a5b4fc', padding:'2px 8px', borderRadius:5, fontSize:11, cursor:'pointer', fontWeight:600 }}>{L2('✏ Edit', '✏ 编辑')}</button>
                         <button onClick={() => deleteLog(log.id)}
                           style={{ background:'none', border:'1px solid rgba(248,81,73,.3)', color:'#f85149', padding:'2px 8px', borderRadius:5, fontSize:11, cursor:'pointer' }}>{L2('Del', '删除')}</button>
@@ -972,6 +1004,11 @@ export default function ContactLog() {
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14, marginBottom: 16 }}>
+                <div>
+                  <div style={lbl}>🕒 {L2('Contact date & time (Malaysia)', '联系日期时间（马来西亚）')}</div>
+                  <input type="datetime-local" value={d.contact_at} max={nowMytInput()} onChange={e => set('contact_at', e.target.value)} style={inp} />
+                  {d.contact_at !== d.orig_at && <div style={{ fontSize: 12, color: '#d29922', marginTop: 4 }}>⏪ {L2(`Was ${String(d.orig_at).replace('T', ' ')}`, `原本 ${String(d.orig_at).replace('T', ' ')}`)}</div>}
+                </div>
                 <div>
                   <div style={lbl}>{L2('Channel', '渠道')}</div>
                   <select value={d.channel} onChange={e => set('channel', e.target.value)} style={inp}>
