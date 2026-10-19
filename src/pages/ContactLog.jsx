@@ -414,6 +414,8 @@ export default function ContactLog() {
   const [editingNote, setEditingNote]         = useState('')
   const [editingOutcome, setEditingOutcome]   = useState('Contacted')
   const [editingWaNumber, setEditingWaNumber] = useState('')
+  const [editDraft, setEditDraft]             = useState(null)   // ✏ Edit opens a big popup instead of the tiny inline row
+  const [editSaving, setEditSaving]           = useState(false)
   const [vipSearch,    setVipSearch]   = useState('')
   const [vipResults,   setVipResults]  = useState([])
   const [selectedVip,  setSelectedVip] = useState(null)
@@ -565,6 +567,21 @@ export default function ContactLog() {
   async function deleteLog(logId) {
     if (!window.confirm(L2('Delete this contact log?', '确定删除这条联系记录？'))) return
     await supabase.from('contact_logs').delete().eq('id', logId)
+    loadLogs()
+  }
+
+  async function saveEditDraft() {
+    if (!editDraft || editSaving) return
+    setEditSaving(true)
+    const d = editDraft
+    const { error } = await supabase.from('contact_logs').update({
+      notes: d.notes, message_summary: d.notes, outcome: d.outcome, channel: d.channel,
+      wa_number_used: d.wa_number_used || null, vip_response: d.vip_response || null,
+      bonus_offered: d.bonus_offered === '' || d.bonus_offered === null ? null : Number(d.bonus_offered) || 0,
+    }).eq('id', d.id)
+    setEditSaving(false)
+    if (error) { window.alert(L2(`Save failed: ${error.message}`, `保存失败：${error.message}`)); return }
+    setEditDraft(null)
     loadLogs()
   }
 
@@ -821,7 +838,7 @@ export default function ContactLog() {
                 </td></tr>
               ) : logs.map((log, i) => {
                 const tier = log.vip_members?.tier || log.tier
-                const isEditingThis = editingLogId === log.id
+                const isEditingThis = false && editingLogId === log.id   // editing now happens in the popup (editDraft)
                 return (
                   <tr key={log.id} style={{ cursor:'pointer', borderLeft: log.host_name===myName ? '3px solid var(--accent)' : '3px solid transparent', background: log.host_name===myName ? 'rgba(99,102,241,0.04)' : 'transparent' }}
                     onMouseEnter={e => e.currentTarget.style.background='var(--surface2)'}
@@ -900,7 +917,7 @@ export default function ContactLog() {
                     <td style={{ ...s.td, fontSize:11, color:'var(--muted)', whiteSpace:'nowrap' }}>{timeAgo(log.logged_at, lang)}</td>
                     <td style={{ ...s.td, fontSize:11 }} onClick={e => e.stopPropagation()}>
                       <div style={{ display:'flex', gap:4 }}>
-                        <button onClick={() => { setEditingLogId(log.id); setEditingNote(log.notes||''); setEditingOutcome(log.outcome||'Contacted'); setEditingWaNumber(log.wa_number_used||'') }}
+                        <button onClick={() => setEditDraft({ id: log.id, username: log.username, tier: log.tier, host_name: log.host_name, logged_at: log.logged_at, outcome: log.outcome || 'Contacted', channel: log.channel || 'WhatsApp', wa_number_used: log.wa_number_used || '', notes: log.notes || '', vip_response: log.vip_response || '', bonus_offered: log.bonus_offered ?? '', currency: log.vip_members?.currency })}
                           style={{ background:'rgba(99,102,241,0.12)', border:'1px solid rgba(99,102,241,0.4)', color:'#a5b4fc', padding:'2px 8px', borderRadius:5, fontSize:11, cursor:'pointer', fontWeight:600 }}>{L2('✏ Edit', '✏ 编辑')}</button>
                         <button onClick={() => deleteLog(log.id)}
                           style={{ background:'none', border:'1px solid rgba(248,81,73,.3)', color:'#f85149', padding:'2px 8px', borderRadius:5, fontSize:11, cursor:'pointer' }}>{L2('Del', '删除')}</button>
@@ -926,6 +943,73 @@ export default function ContactLog() {
           </div>
         )}
       </div>
+
+      {/* ✏ Edit popup — big, readable form */}
+      {editDraft && (() => {
+        const d = editDraft
+        const set = (k, v) => setEditDraft(x => ({ ...x, [k]: v }))
+        const lbl = { fontSize: 13, fontWeight: 700, color: 'var(--muted)', marginBottom: 6 }
+        const inp = { width: '100%', boxSizing: 'border-box', background: 'var(--surface2)', border: '1px solid var(--border)', color: 'var(--text)', padding: '10px 12px', borderRadius: 8, fontSize: 15, outline: 'none', fontFamily: 'inherit' }
+        return (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.65)', zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
+            onClick={() => !editSaving && setEditDraft(null)}
+            onKeyDown={e => { if (e.key === 'Escape') setEditDraft(null); if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) saveEditDraft() }}>
+            <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, width: 'min(860px, 96vw)', maxHeight: '92vh', overflowY: 'auto', padding: 26, boxShadow: '0 20px 60px rgba(0,0,0,.5)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 18 }}>
+                <div>
+                  <div style={{ fontSize: 22, fontWeight: 800 }}>✏ {L2('Edit contact', '编辑联系记录')} — {d.username}</div>
+                  <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 4 }}>{[d.tier, d.host_name, d.logged_at && new Date(d.logged_at).toLocaleString(lang === 'zh' ? 'zh-CN' : 'en-MY', { timeZone: 'Asia/Kuala_Lumpur' })].filter(Boolean).join(' · ')}</div>
+                </div>
+                <button onClick={() => setEditDraft(null)} style={{ background: 'none', border: '1px solid var(--border)', color: 'var(--muted)', borderRadius: 8, padding: '6px 12px', cursor: 'pointer', fontSize: 15 }}>✕</button>
+              </div>
+
+              <div style={lbl}>{L2('Outcome', '结果')}</div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
+                {CONTACT_OUTCOMES.map(o => {
+                  const on = d.outcome === o, c = OUTCOME_COLOR[o] || 'var(--accent)'
+                  return <button key={o} onClick={() => set('outcome', o)} style={{ padding: '9px 16px', borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: 'pointer', border: `1px solid ${on ? c : 'var(--border)'}`, background: on ? c + '26' : 'var(--surface2)', color: on ? c : 'var(--text)' }}>{L2(o, OUTCOME_ZH[o])}</button>
+                })}
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14, marginBottom: 16 }}>
+                <div>
+                  <div style={lbl}>{L2('Channel', '渠道')}</div>
+                  <select value={d.channel} onChange={e => set('channel', e.target.value)} style={inp}>
+                    {[...new Set([...CONTACT_TYPES, d.channel].filter(Boolean))].map(t => <option key={t} value={t}>{L2(t, CHANNEL_ZH[t] || t)}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <div style={lbl}>📱 {L2('WhatsApp number used', '使用的 WhatsApp 号码')}</div>
+                  <select value={d.wa_number_used} onChange={e => set('wa_number_used', e.target.value)} style={inp}>
+                    <option value="">{L2('(none)', '（无）')}</option>
+                    {allWaNumbers.map(n => <option key={n.id} value={n.codename}>{n.codename} — {n.number}{n.telco ? ' (' + n.telco + ')' : ''}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <div style={lbl}>🎁 {L2('Bonus offered', '提供的奖励')}{d.currency ? ` (${d.currency})` : ''}</div>
+                  <input type="number" min="0" value={d.bonus_offered} onChange={e => set('bonus_offered', e.target.value)} style={inp} placeholder="0" />
+                </div>
+              </div>
+
+              <div style={lbl}>📝 {L2('Notes', '备注')}</div>
+              <textarea autoFocus value={d.notes} onChange={e => set('notes', e.target.value)} rows={8}
+                style={{ ...inp, minHeight: 190, resize: 'vertical', lineHeight: 1.55, marginBottom: 16 }} placeholder={L2('What happened in this contact…', '这次联系的情况…')} />
+
+              <div style={lbl}>💬 {L2('VIP response (optional)', 'VIP 回复（可选）')}</div>
+              <textarea value={d.vip_response} onChange={e => set('vip_response', e.target.value)} rows={3}
+                style={{ ...inp, minHeight: 80, resize: 'vertical', lineHeight: 1.55 }} placeholder={L2('What the VIP said…', 'VIP 说了什么…')} />
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 20, gap: 10, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 12, color: 'var(--muted)' }}>{L2('Ctrl + Enter to save · Esc to close', 'Ctrl + Enter 保存 · Esc 关闭')}</span>
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <button onClick={() => setEditDraft(null)} style={{ padding: '10px 18px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)', fontSize: 14, cursor: 'pointer' }}>{L2('Cancel', '取消')}</button>
+                  <button onClick={saveEditDraft} disabled={editSaving} style={{ padding: '10px 22px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#fff', fontSize: 15, fontWeight: 800, cursor: 'pointer' }}>{editSaving ? L2('Saving…', '保存中…') : L2('💾 Save', '💾 保存')}</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Notes popup modal */}
       {notePopup && (
