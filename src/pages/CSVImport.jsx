@@ -159,6 +159,13 @@ function mergeRows(myRows, sgRows) {
 
 // ─── IMPORT PROCESSORS ─────────────────────────────────────────────────────
 
+// Today's figures for a player who is NOT in today's CSV (no activity today)
+const ZERO_DAY = {
+  monthly_valid_bet: 0, win_loss: 0, total_deposit: 0, total_withdrawal: 0,
+  deposit_count: 0, dep_count: 0, wd_count: 0, bet_count: 0,
+  bonus_count: 0, bonus_amount: 0, total_rebate: 0, has_promo: false,
+}
+
 async function processRawData(rows, month, thresholds, onProgress) {
   const vipRows       = rows.filter(r => VIP_TIERS.includes(normalizeTier(r['Member Group'])))
   const potentialRows = rows.filter(r => POTENTIAL_TIERS.includes(r['Member Group']?.toUpperCase().trim()))
@@ -308,12 +315,10 @@ async function processRawData(rows, month, thresholds, onProgress) {
     const ids = batch.map(v => v.id)
     const { error } = await supabase
       .from('vip_members')
-      .update({
-        monthly_valid_bet: 0,
-        win_loss:          0,
-        valid_bet_month:   month,
-        updated_at:        new Date().toISOString(),
-      })
+      // Not in today's CSV = no activity today → zero ALL of today's figures.
+      // (Before, only turnover/win-loss were reset and yesterday's deposit was carried forward,
+      // which created fake repeat deposits in the daily snapshot.)
+      .update({ ...ZERO_DAY, valid_bet_month: month, updated_at: new Date().toISOString() })
       .in('id', ids)
     if (!error) vipReset += batch.length
   }
@@ -452,6 +457,17 @@ async function processRawData(rows, month, thresholds, onProgress) {
       for (let i = 0; i < downLogs.length; i += 50) await supabase.from('tier_change_logs').insert(downLogs.slice(i, i + 50))
       tierChanged += downLogs.length
     }
+    // Silver / Bronze NOT in today's CSV → zero today's figures (same reason as the VIP reset above)
+    try {
+      const stale = await fetchAll(() => supabase.from('vip_members_all').select('id, username')
+        .in('tier', ['SILVER', 'BRONZE'])
+        .or('monthly_valid_bet.gt.0,total_deposit.gt.0,total_withdrawal.gt.0,deposit_count.gt.0')
+        .order('username'))
+      const ids = stale.filter(v => !seenPot.has(String(v.username).toLowerCase())).map(v => v.id)
+      for (let i = 0; i < ids.length; i += 200) {
+        await supabase.from('vip_members_all').update(ZERO_DAY).in('id', ids.slice(i, i + 200))
+      }
+    } catch (e) { errors.push(`Silver/Bronze reset: ${e.message || e}`) }
   }
 
   return { vipUpdated, vipCreated, vipReset, tierChanged, tierChangeLogs, autoGraduated, potCreated, potUpdated, flagged, potSynced, errors }
