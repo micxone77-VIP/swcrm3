@@ -4,7 +4,7 @@
 //   window = max(campaign length, 7 days). Players: t=true → in this campaign; t=false → comparison group
 //   (same currency + tier, not in this campaign, not in another campaign running at the same time).
 // Method: difference-in-differences per player-day
-//   effect = (campaign players' change) − (comparison group's change)
+//   effect = campaign players' actual − (their own 'before' level × comparison group's % change)
 //   so a platform-wide good/bad week does not count as campaign effect.
 import { supabase } from './supabase'
 
@@ -51,20 +51,29 @@ export function summarizeImpact(data, cur, cost = null) {
   // per day (whole group)
   const perDay = (g, p, k) => (days[p] ? tot[g][p][k] / days[p] : null)
 
+  // Effect uses the comparison group's % change (not ringgit per player): campaign players are often
+  // much bigger players (Diamond/Platinum) than the comparison group (mostly Gold), so subtracting
+  // RM-per-player changes would be unfair. Expected = campaign players' own "before" level × the
+  // comparison group's growth ratio. GGR (can be negative / swings) scales with the comparison
+  // group's TURNOVER ratio instead of its GGR ratio.
   function effect(p) {
     if (!days.before || !days[p] || !nT) return null
+    const ratio = key => {
+      if (!nC) return 1
+      const cB = ppd('C', 'before', key), cX = ppd('C', p, key)
+      return cB > 0 ? cX / cB : 1
+    }
     const out = {}
     IMPACT_METRICS.forEach(({ key }) => {
       const tB = ppd('T', 'before', key), tX = ppd('T', p, key)
+      const r = ratio(key === 'ggr' ? 'vb' : key)
+      const expected = tB * r * nT * days[p]                     // what they would have done without the campaign
+      const actual = tX * nT * days[p]
+      const incremental = actual - expected
       const cB = nC ? ppd('C', 'before', key) : null, cX = nC ? ppd('C', p, key) : null
-      const tChg = tX - tB
-      const cChg = cB === null ? 0 : cX - cB
-      const effPPD = tChg - cChg
-      const incremental = effPPD * nT * days[p]                 // extra amount over the period
-      const expected = (tB + cChg) * nT * days[p]                // what they would have done without the campaign
       out[key] = {
-        tPct: tB ? (tChg / Math.abs(tB)) * 100 : null,
-        cPct: cB ? (cChg / Math.abs(cB)) * 100 : null,
+        tPct: tB ? ((tX - tB) / Math.abs(tB)) * 100 : null,
+        cPct: cB ? ((cX - cB) / Math.abs(cB)) * 100 : null,
         incremental, expected,
         liftPct: expected ? (incremental / Math.abs(expected)) * 100 : null,
       }

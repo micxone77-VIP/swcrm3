@@ -175,8 +175,7 @@ export default function CampaignImpact({ campaign, costByCur = null, defaultCur 
         </table>
       </div>
       <div style={{ fontSize: 12 * fs, color: 'var(--muted)', marginBottom: 18, lineHeight: 1.6 }}>
-        {L2('Effect = campaign players\' change minus the comparison group\'s change (same currency + tier, not enrolled, not in another campaign at the same time), scaled to the number of campaign players. This removes platform-wide good/bad days. Before and after = the same number of days as the campaign (minimum 7). Deposit, withdrawal and GGR only count days the player bet.',
-          '效果 = 活动玩家的变化 − 对照组的变化（同币种 + 同等级、未参加、同期未参加其他活动），按活动人数换算。这样可排除全平台整体好/坏的日子。活动前和活动后 = 与活动相同天数（至少 7 天）。存款、提款和GGR只计算玩家有投注的日子。')}
+        {L2('Effect = what campaign players actually did minus what they would have done without the campaign: their own "before" level × the comparison group\'s % change over the same days (comparison group = same currency + tier at enrolment, not enrolled, not in another campaign at the same time, with platform history). Using % keeps it fair when campaign players are bigger players than the comparison group. GGR follows the comparison group\'s turnover change. Before and after = the same number of days as the campaign (minimum 7). Deposit, withdrawal and GGR only count days the player bet.', '效果 = 活动玩家实际表现 − 没有活动时的预期：玩家自己「活动前」的水平 × 对照组同期的百分比变化（对照组 = 同币种 + 报名时同等级、未参加、同期未参加其他活动、并有平台历史数据）。用百分比比较，避免活动玩家比对照组玩得更大造成不公平。GGR 按对照组的流水变化推算。活动前和活动后 = 与活动相同天数（至少 7 天）。存款、提款和GGR只计算玩家有投注的日子。')}
       </div>
 
       {/* Player split */}
