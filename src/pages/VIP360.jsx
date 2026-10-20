@@ -954,16 +954,15 @@ const firstDow = new Date(y, m - 1, 1).getDay() // 0=Sun
 const byDay = {}
 calData.forEach(r => { byDay[r.snapshot_date] = r })
 
-// FIX: total_deposit is a cumulative MTD value in vip_daily_snapshots.
-// Calculate daily deposit deltas by subtracting the previous day's cumulative.
-// This prevents the same MTD value from appearing as separate deposits on each day.
-const dailyDeposit = {}
-let runningDep = 0
-// calData is already ordered ascending (snapshot_date ASC) from the query
+// CSV uploads are DAILY, so each vip_daily_snapshots row already holds that day's own
+// deposit (not a running month total — subtracting the previous day hid most deposit days).
+// Same rule as everywhere else: deposit/withdrawal only count on days the player bet
+// (inactive days can carry stale non-zero values from the platform export).
+const dailyDeposit = {}, dailyWd = {}
 calData.forEach(row => {
-  const curr = Number(row.total_deposit || 0)
-  dailyDeposit[row.snapshot_date] = Math.max(0, curr - runningDep)
-  runningDep = curr
+  const active = Number(row.monthly_valid_bet || 0) > 0
+  dailyDeposit[row.snapshot_date] = active ? Number(row.total_deposit || 0) : 0
+  dailyWd[row.snapshot_date] = active ? Number(row.total_withdrawal || 0) : 0
 })
 
 let depositDays = 0, turnoverOnlyDays = 0, absentDays = 0
@@ -977,7 +976,7 @@ const dep = dailyDeposit[key] || 0
 const bet = Number(row.monthly_valid_bet || 0)
 // FIX: use monthly_valid_bet (per-day valid bet) not bet_count (cumulative)
 const mvb = Number(row.monthly_valid_bet || 0)
-const wd = Number(row.total_withdrawal || 0)
+const wd = dailyWd[key] || 0
 totalDeposit += dep; totalBet += bet
 if (wd > 0) { totalWithdrawal += wd; withdrawalDays++ }
 if (dep > 0) depositDays++
