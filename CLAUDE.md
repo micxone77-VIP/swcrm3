@@ -39,6 +39,7 @@ Owner: **Marcus** (VIP Department, sureWin, Kuala Lumpur). Admin of this CRM. No
 
 ## Business rules (VIP)
 - Inactivity: 3 days no deposit = at risk, 7 = churn, 15 = dormant/urgent.
+- One status for every page (since 2026-10-21): `compute_vip_status()` → `refresh_days_inactive()` writes `vip_members_all.activity_status` (Active / Resting / At Risk / Churn / Dormant / Unknown), `churn_risk` (LOW = Active+Resting, MEDIUM = At Risk, HIGH = rest) and `days_inactive` (from latest data date). Real deposit day = deposit > 0 AND valid bet > 0. Resting = bet within 2 days, no deposit. Numbers from `crm_rules`. Audit + fix plan: `docs/claude/audit-2026-10-21.md`.
 - Unreachable = 3 "Contacted" logs with no reply after.
 - Big-loss gift: tracked net loss ≥ 100k; very big losers (~1M) get something new (e.g. latest iPhone Pro Max).
 - Upgrade targets (monthly valid bet): Gold→Platinum 2M, Platinum→Diamond 6M, Gold straight to Diamond 8M (same numbers used for SGD).

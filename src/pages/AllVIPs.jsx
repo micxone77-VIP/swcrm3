@@ -16,7 +16,7 @@ import { enumLabel } from '../lib/enums'
 
 const PAGE_SIZE = 50
 const TIERS    = ['ALL','BLACK','DIAMOND-P','DIAMOND','PLATINUM','GOLD','SILVER','BRONZE']
-const STATUSES = ['ALL','Active','Watch','At Risk','Dormant']
+const STATUSES = ['ALL','Active','Resting','At Risk','Churn','Dormant']
 const REGIONS  = [{ value:'ALL',label:'🌏 All',zh:'🌏 全部' },{ value:'Malaysia',label:'🇲🇾 Malaysia',zh:'🇲🇾 马来西亚' },{ value:'Singapore',label:'🇸🇬 Singapore',zh:'🇸🇬 新加坡' },{ value:'Cambodia',label:'🇰🇭 Cambodia',zh:'🇰🇭 柬埔寨' }]
 
 function daysAgoLabel(date, lang = 'en') {

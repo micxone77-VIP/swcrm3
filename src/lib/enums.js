@@ -7,8 +7,10 @@ export const VIP_TIER = ['BLACK', 'DIAMOND-P', 'DIAMOND', 'PLATINUM', 'GOLD', 'S
 
 export const VIP_STATUS = {
   ACTIVE:   'Active',
-  WATCH:    'Watch',
+  RESTING:  'Resting',   // betting, no deposit (balance play)
+  WATCH:    'Watch',     // legacy, no longer assigned
   AT_RISK:  'At Risk',
+  CHURN:    'Churn',
   DORMANT:  'Dormant',
   UNKNOWN:  'Unknown',
 }
@@ -74,7 +76,7 @@ export const USER_ROLE = {
 // Tier display config
 // Display-only Chinese labels for stored enum values (never compare against these)
 export const ENUM_ZH = {
-  Active: '活跃', Watch: '观察', 'At Risk': '有风险', Dormant: '休眠', Unknown: '未知', Inactive: '不活跃',
+  Active: '活跃', Resting: '休息中', Watch: '观察', 'At Risk': '有风险', Churn: '流失', Dormant: '休眠', Unknown: '未知', Inactive: '不活跃',
   Normal: '正常', Critical: '严重', High: '高', Medium: '中', Low: '低', Urgent: '紧急',
   HIGH: '高', MEDIUM: '中', LOW: '低',
   Open: '待处理', 'In Progress': '进行中', Completed: '已完成', Snoozed: '已延后', Cancelled: '已取消', Overdue: '已逾期',
@@ -102,8 +104,10 @@ export const TIER_CONFIG = {
 
 export const STATUS_CONFIG = {
   Active:   { color: '#22C55E', bg: 'rgba(34,197,94,.12)',  zh: '活跃'   },
+  Resting:  { color: '#38BDF8', bg: 'rgba(56,189,248,.12)', zh: '休息中' },
   Watch:    { color: '#F59E0B', bg: 'rgba(245,158,11,.12)', zh: '观察'   },
-  'At Risk':{ color: '#EF4444', bg: 'rgba(239,68,68,.12)',  zh: '有风险' },
+  'At Risk':{ color: '#F59E0B', bg: 'rgba(245,158,11,.12)', zh: '有风险' },
+  Churn:    { color: '#F97316', bg: 'rgba(249,115,22,.12)', zh: '流失'   },
   Dormant:  { color: '#EF4444', bg: 'rgba(239,68,68,.12)',  zh: '休眠'   },
   Unknown:  { color: '#91A0B2', bg: 'rgba(145,160,178,.1)', zh: '未知'   },
 }
