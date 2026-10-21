@@ -334,6 +334,9 @@ const mytMonth = ts => new Date(new Date(ts).getTime() + MYT_MS).toISOString().s
 const daysAgo = ts => Math.floor((Date.now() - new Date(ts).getTime()) / 864e5)
 const informAgo = (ts, L2) => { const d = daysAgo(ts); return d <= 0 ? L2('Today', '今天') : d === 1 ? L2('Yesterday', '昨天') : L2(`${d}d ago`, `${d}天前`) }
 const informColor = ts => { const d = daysAgo(ts); return d <= 7 ? '#3fb950' : d <= 30 ? '#fbbf24' : 'var(--muted)' }
+const platOf = v => { const c = String(v?.currency || 'MYR').toUpperCase(); return c === 'SGD' ? 'SG' : c === 'KHUSD' ? 'KH' : 'MY' }
+const PLAT_STYLE = { MY: { bg: 'rgba(56,139,253,.15)', fg: '#58a6ff' }, SG: { bg: 'rgba(248,81,73,.15)', fg: '#ff7b72' }, KH: { bg: 'rgba(63,185,80,.15)', fg: '#3fb950' } }
+const PlatTag = ({ v }) => { const p = platOf(v); const st = PLAT_STYLE[p]; return <span style={{ fontSize: 10, fontWeight: 800, padding: '1px 6px', borderRadius: 4, background: st.bg, color: st.fg, marginRight: 6, letterSpacing: .5 }}>{p}</span> }
 const fmtMytDateTime = ts => new Date(ts).toLocaleString('en-GB', { timeZone: 'Asia/Kuala_Lumpur', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 
 // ── WhatsApp Template Modal ───────────────────────────────────────────────────
@@ -894,6 +897,8 @@ function VIPCandidatesTab({ hostFilter = 'ALL' }) {
   const [challengeModal, setChallengeModal] = useState(null)
   const [informMap, setInformMap] = useState({})
   const [informF, setInformF]     = useUrlParam('vInform', 'ALL')
+  const [platF, setPlatF]         = useUrlParam('vPlat', 'ALL')
+  const platOk = v => platF === 'ALL' || platOf(v) === platF
 
   const reloadInform = useCallback(async () => {
     const { data } = await supabase.from('contact_logs').select('username, logged_at, host_name')
@@ -1010,7 +1015,9 @@ function VIPCandidatesTab({ hostFilter = 'ALL' }) {
     load()
   }, [selectedMonth, availableMonths])
 
+  const scoped = vips.filter(platOk)
   const filtered = vips.filter(v => {
+    if (!platOk(v)) return false
     if (tierF !== 'ALL' && v.tier !== tierF) return false
     if (search && !v.username.toLowerCase().includes(search.toLowerCase())) return false
     if (hostFilter === 'UNASSIGNED' && v.host_assigned) return false
@@ -1028,7 +1035,7 @@ function VIPCandidatesTab({ hostFilter = 'ALL' }) {
     return true
   })
 
-  const qualified = vips.filter(v => v.upgrade !== null).length
+  const qualified = scoped.filter(v => v.upgrade !== null).length
 
   const handleConfirm = async (player, newTier) => {
     await supabase.from('vip_members').update({ tier: newTier, updated_at: new Date().toISOString() }).eq('id', player.id)
@@ -1043,16 +1050,32 @@ function VIPCandidatesTab({ hostFilter = 'ALL' }) {
       {/* Stats */}
       <div style={s.statGrid}>
         {[
-          { label: L2('Gold members', '黄金会员'),      val: vips.filter(v => v.tier === 'GOLD').length,      color: TIER_COLOR.GOLD },
-          { label: L2('Platinum members', '白金会员'),  val: vips.filter(v => v.tier === 'PLATINUM').length,  color: TIER_COLOR.PLATINUM },
+          { label: L2('Gold members', '黄金会员'),      val: scoped.filter(v => v.tier === 'GOLD').length,      color: TIER_COLOR.GOLD },
+          { label: L2('Platinum members', '白金会员'),  val: scoped.filter(v => v.tier === 'PLATINUM').length,  color: TIER_COLOR.PLATINUM },
           { label: L2('Qualify for upgrade', '符合升级'), val: qualified, color: '#10b981' },
-          { label: L2('Skip-tier upgrades', '跳级升级'),  val: vips.filter(v => v.upgrade && TIER_ORDER.indexOf(v.upgrade.tier) - TIER_ORDER.indexOf(v.tier) > 1).length, color: '#f59e0b' },
+          { label: L2('Skip-tier upgrades', '跳级升级'),  val: scoped.filter(v => v.upgrade && TIER_ORDER.indexOf(v.upgrade.tier) - TIER_ORDER.indexOf(v.tier) > 1).length, color: '#f59e0b' },
         ].map((st, i) => (
           <div key={i} style={s.statCard(st.color)}>
             <div style={{ ...s.statNum, color: st.color }}>{st.val}</div>
             <div style={s.statLabel}>{st.label}</div>
           </div>
         ))}
+      </div>
+
+      {/* Platform */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+        <span style={{ fontSize: 12, color: 'var(--muted)', marginRight: 4 }}>{L2('Platform:', '平台：')}</span>
+        {[['ALL', L2('All', '全部')], ['MY', '🇲🇾 MY'], ['SG', '🇸🇬 SG'], ...(vips.some(v => platOf(v) === 'KH') ? [['KH', '🇰🇭 KH']] : [])].map(([k, label]) => {
+          const n = k === 'ALL' ? vips.length : vips.filter(v => platOf(v) === k).length
+          const on = platF === k
+          return (
+            <button key={k} onClick={() => setPlatF(k)}
+              style={{ padding: '5px 14px', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                border: `1px solid ${on ? 'var(--accent)' : 'var(--border)'}`, background: on ? 'var(--accent)' : 'transparent', color: on ? '#fff' : 'var(--text)' }}>
+              {label} · {n}
+            </button>
+          )
+        })}
       </div>
 
       {/* Filters */}
@@ -1116,6 +1139,7 @@ function VIPCandidatesTab({ hostFilter = 'ALL' }) {
                       <td style={{ ...s.td, color:'var(--muted)', fontSize:12, width:36 }}>{rowIdx + 1}</td>
                       <td style={s.td}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                          <PlatTag v={v} />
                           <strong>{v.username}</strong>
                           <CopyBtn text={v.username} />
                         </div>
@@ -1125,7 +1149,7 @@ function VIPCandidatesTab({ hostFilter = 'ALL' }) {
                       <td style={s.td}>
                         {v.prev_valid_bet !== null
                           ? <span style={{ fontSize: 12, color: v.monthly_valid_bet >= v.prev_valid_bet ? '#3fb950' : '#f85149' }}>
-                              {fmt(v.prev_valid_bet)}
+                              {fmt(v.prev_valid_bet, v.currency)}
                               <span style={{ fontSize: 10, marginLeft: 4 }}>
                                 {v.monthly_valid_bet >= v.prev_valid_bet ? '↑' : '↓'}
                               </span>
@@ -1173,7 +1197,7 @@ function VIPCandidatesTab({ hostFilter = 'ALL' }) {
                           ? <span style={{ fontSize: 12, color: '#4ade80', fontWeight: 600 }}>{L2('✓ Ready', '✓ 可升级')}</span>
                           : nextTarget
                             ? <span style={{ fontSize: 12, color: 'var(--muted)' }}>
-                                {fmt(nextTarget.threshold - v.monthly_valid_bet)}
+                                {fmt(nextTarget.threshold - v.monthly_valid_bet, v.currency)}
                                 <span style={{ fontSize: 10, color: 'var(--muted)', marginLeft: 4 }}>{L2(`to ${nextTarget.tier}`, `距${TIER_ZH[nextTarget.tier] || nextTarget.tier}`)}</span>
                               </span>
                             : '—'
@@ -1256,7 +1280,7 @@ function VIPCandidatesTab({ hostFilter = 'ALL' }) {
             <div style={s.modalTitle}>{L2('Log Contact', '记录联系')} — {contactModal.username}</div>
             <div style={s.modalSub}>
               <span style={{ ...s.tierBadge(contactModal.tier), marginRight: 8 }}>{contactModal.tier}</span>
-              Valid Bet: {fmt(contactModal.monthly_valid_bet)} · Last Deposit: {fmtDate(contactModal.last_deposit_date, uiLang)}
+              Valid Bet: {fmt(contactModal.monthly_valid_bet, contactModal.currency)} · Last Deposit: {fmtDate(contactModal.last_deposit_date, uiLang)}
             </div>
             <ContactLogForm player={contactModal} onClose={() => setContactModal(null)} />
           </div>
