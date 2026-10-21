@@ -222,17 +222,26 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
     if (error) return flash(error.message)
     setPlayers(ps => ps.map(p => (p.id === r.id ? { ...p, ch_paid: paid } : p)))
   }
+  const [payBusy, setPayBusy] = useState(false)
   async function markAllPaid() {
-    for (const { r, d } of payRows) {
+    if (payBusy) return
+    const todo = payRows.filter(({ r, d }) => { const cur = (r.ch_paid || {})[settle] || {}; return (d.reward > 0 && !cur.c) || (d.streakBonus > 0 && !cur.s) })
+    if (!todo.length) return flash(T('Everyone shown is already marked paid', '显示中的玩家都已标记派发'))
+    setPayBusy(true)
+    const upd = {}
+    let err = ''
+    for (const { r, d } of todo) {
       const cur = (r.ch_paid || {})[settle] || {}
-      if ((d.reward > 0 && !cur.c) || (d.streakBonus > 0 && !cur.s)) {
-        const paid = { ...(r.ch_paid || {}), [settle]: { ...cur, c: d.reward > 0 ? true : cur.c, s: d.streakBonus > 0 ? true : cur.s, at: new Date().toISOString(), by: myName } }
-        const { error } = await supabase.from('campaign_players').update({ ch_paid: paid }).eq('id', r.id)
-        if (error) return flash(error.message)
-        r.ch_paid = paid
-      }
+      const paid = { ...(r.ch_paid || {}), [settle]: { ...cur, c: d.reward > 0 ? true : cur.c, s: d.streakBonus > 0 ? true : cur.s, at: new Date().toISOString(), by: myName } }
+      const { error } = await supabase.from('campaign_players').update({ ch_paid: paid }).eq('id', r.id)
+      if (error) { err = error.message; break }
+      upd[r.id] = paid
     }
-    setPlayers(ps => [...ps]); flash(T('All marked paid', '已全部标记派发'))
+    // write the new ch_paid into players state so the ticks show straight away
+    setPlayers(ps => ps.map(p => (upd[p.id] ? { ...p, ch_paid: upd[p.id] } : p)))
+    setPayBusy(false)
+    const n = Object.keys(upd).length
+    flash(err ? T(`Marked ${n}, then failed: ${err}`, `已标记 ${n} 位，之后失败：${err}`) : T(`✅ ${n} marked paid`, `✅ 已标记 ${n} 位派发`))
   }
   // Text payout list (same style as other campaigns) — copy & paste to BO / group chat
   function payoutText(day = settle) {
@@ -592,7 +601,7 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
                 {pastDays.map(d => <button key={d} style={{ ...sec, padding: '6px 12px', background: settle === d ? 'var(--accent)' : 'var(--surface2)', color: settle === d ? '#fff' : 'var(--text)' }} onClick={() => setPayDay(d)}>{d.slice(5)}</button>)}
                 {!pastDays.length && <span style={{ fontSize: 12, color: 'var(--muted)' }}>{T('No settled day yet.', '还没有结算日。')}</span>}
                 <span style={{ marginLeft: 'auto' }} />
-                {payRows.length > 0 && <><button style={{ ...sec, borderColor: 'var(--accent)' }} onClick={copyPayout} title={T('Copy the payout list as text', '复制派发名单文字')}>📋 {T('Copy payout list', '复制派发名单')}</button><button style={sec} onClick={exportPay}>⬇ {T('Export for BO', '导出给BO')}</button><button style={btn} onClick={markAllPaid}>✅ {T('Mark all paid', '全部标记已派发')}</button></>}
+                {payRows.length > 0 && <><button style={{ ...sec, borderColor: 'var(--accent)' }} onClick={copyPayout} title={T('Copy the payout list as text', '复制派发名单文字')}>📋 {T('Copy payout list', '复制派发名单')}</button><button style={sec} onClick={exportPay}>⬇ {T('Export for BO', '导出给BO')}</button><button style={{ ...btn, opacity: payBusy ? 0.6 : 1 }} disabled={payBusy} onClick={markAllPaid}>{payBusy ? T('Saving…', '保存中…') : <>✅ {T('Mark all paid', '全部标记已派发')}</>}</button></>}
               </div>
               {allMode ? (<>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, flexWrap: 'wrap' }}>
