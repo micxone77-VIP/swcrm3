@@ -46,31 +46,6 @@ async function genBirthdayTasks() {
   return (data || []).length
 }
 
-// ─── 2. HIGH / CRITICAL churn risk ───────────────────────────────────────────
-async function genChurnRiskTasks() {
-  const month = MONTH()
-  const { data } = await supabase
-    .from('vip_members')
-    .select('id, username, full_name, tier, churn_risk')
-    .in('churn_risk', ['HIGH', 'CRITICAL'])
-    .neq('is_excluded', true)
-
-  await Promise.all((data || []).map(v => upsertTask({
-    title: `⚠️ At-risk follow-up — ${v.username} (${v.churn_risk})`,
-    task_type: 'Follow Up',
-    vip_id: v.id,
-    vip_username: v.username,
-    vip_tier: v.tier,
-    priority: v.churn_risk === 'CRITICAL' ? 'Urgent' : 'High',
-    status: 'Open',
-    due_date: new Date().toISOString(),
-    source: 'auto_churn_risk',
-    source_key: `churn_risk:${v.username}:${month}`,
-    notes: `${v.username} is ${v.churn_risk} churn risk this month. Reach out urgently to retain them.`,
-  })))
-  return (data || []).length
-}
-
 // ─── 3. Churn snapshot saved (called externally from RetentionWorkspace) ──────
 export async function genChurnSnapshotTask(month = MONTH()) {
   await upsertTask({
@@ -184,13 +159,32 @@ export const TASK_STATUS_ZH = { Open: '待办', 'In Progress': '进行中', Comp
 
 const TITLE_RULES = [
   [/^🎂 Birthday greeting — (.+)$/, m => `🎂 生日祝福 — ${m[1]}`],
+  [/^📞 (P\d) (Active|Resting|At Risk|Churn|Dormant|Unknown) — (.+)$/, m => `📞 ${m[1]} ${STATUS_ZH[m[2]] || m[2]} — ${m[3]}`],
   [/^⚠️ At-risk follow-up — (.+)$/, m => `⚠️ 风险跟进 — ${m[1]}`],
   [/^📊 Review monthly churn snapshot — (.+)$/, m => `📊 审阅月度流失快照 — ${m[1]}`],
   [/^⬆️ Upgrade ready — (.+)$/, m => `⬆️ 可升级 — ${m[1]}`],
   [/^📢 Campaign ending soon — (.+)$/, m => `📢 活动即将结束 — ${m[1]}`],
   [/^🏆 Log monthly KPIs — (.+)$/, m => `🏆 录入月度KPI — ${m[1]}`],
 ]
+// Daily host task notes (generate_daily_tasks) are ' · ' separated parts
+const STATUS_ZH = { Active: '活跃', Resting: '休息中', 'At Risk': '有风险', Churn: '流失', Dormant: '休眠', Unknown: '未知' }
+const DAILY_PART_RULES = [
+  [/^(\d+) days since last real deposit$/, m => `${m[1]}天未真实存款`],
+  [/^last bet (.+)$/, m => `最后投注 ${m[1]}`],
+  [/^never contacted$/, () => '从未联系'],
+  [/^last contact (\d+)d ago$/, m => `${m[1]}天前联系`],
+  [/^big 3-day loss → care call$/, () => '3天大额亏损 → 关怀电话'],
+  [/^unreachable \(3 no-replies\) → try another channel$/, () => '联系不上（3次未回复）→ 换渠道'],
+  [/^score (.+)$/, m => `分数 ${m[1]}`],
+  [/^Missed: not done on (.+)$/, m => `未完成：${m[1]} 未处理`],
+]
+const localizeDailyParts = text => text.split(' · ').map(part => {
+  for (const [re, fn] of DAILY_PART_RULES) { const m = part.match(re); if (m) return fn(m) }
+  return part
+}).join(' · ')
+
 const NOTES_RULES = [
+  [/^\d+ days since last real deposit( · .*)?$/, m => localizeDailyParts(m[0])],
   [/^Today is (.+)'s birthday\. Send a greeting message\.$/, m => `今天是 ${m[1]} 的生日，请发送祝福信息。`],
   [/^(.+) is (\S+) churn risk this month\. Reach out urgently to retain them\.$/, m => `${m[1]} 本月流失风险为 ${m[2]}，请尽快联系挽留。`],
   [/^Monthly churn snapshot for (.+) has been saved\. Review churned players and plan reactivation strategy\.$/, m => `${m[1]} 月度流失快照已保存。请审阅流失玩家并制定召回策略。`],
@@ -221,9 +215,11 @@ async function expireOldAutoTasks() {
 
 export async function generateAutoTasks() {
   await expireOldAutoTasks()
+  // Churn follow-ups now come from the database: generate_daily_tasks() makes each host's daily list
+  // after every import (source 'auto_daily'), so genChurnRiskTasks is no longer run here.
   const results = await Promise.allSettled([
     genBirthdayTasks(),
-    genChurnRiskTasks(),
+    Promise.resolve(0),
     genUpgradeTasks(),
     genCampaignDeadlineTasks(),
     genKpiReminderTask(),
