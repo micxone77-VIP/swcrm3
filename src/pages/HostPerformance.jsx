@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { formatMoney } from '../lib/format'
 import { useLanguage } from '../contexts/LanguageContext'
+import RecallByLayer from '../components/RecallByLayer'
 
 /* ─── Tier config ─── */
 const TIERS = ['GOLD', 'PLATINUM', 'DIAMOND']
@@ -428,6 +429,9 @@ export default function HostPerformance() {
           📥 {L2('Export Excel','导出 Excel')}
         </button>
       </div>
+
+      {/* ─── Recall rate by host and layer (fix 5) ─── */}
+      <RecallByLayer />
 
       {/* ─── Filters ─── */}
       <div style={{ ...sectionStyle, display: 'flex', gap: 20, flexWrap: 'wrap', alignItems: 'flex-end' }}>
