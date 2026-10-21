@@ -9,7 +9,7 @@ import {
   LoadingState, ErrorState, FilterPills, Badge, Modal,
   Select, Textarea, useToast,
 } from '../components/ui'
-import { TierBadge, RiskBadge, ListCount } from '../components/ui'
+import { TierBadge, RiskBadge, ListCount, LastBet } from '../components/ui'
 import { formatMoney } from '../lib/format'
 import VipQuickSearch from '../components/VipQuickSearch'
 import BigWinLossBanner from '../components/alerts/BigWinLossBanner'
@@ -428,6 +428,7 @@ export default function Today() {
                         {v.last_deposit_date
                           ? <><div style={{ color:'var(--text)', fontWeight:600 }}>{new Date(v.last_deposit_date).toLocaleDateString(lang === 'zh' ? 'zh-CN' : 'en-MY',{day:'2-digit',month:'short',year:'numeric'})}</div><div style={{ fontSize:11, color:'var(--muted)' }}>{timeAgo(v.last_deposit_date, lang)}</div></>
                           : <span style={{ color:'var(--muted)' }}>—</span>}
+                        <LastBet date={v.last_bet_date} status={v.activity_status} />
                       </td>
                       <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)' }}>
                         <RiskBadge risk={v.churn_risk} />

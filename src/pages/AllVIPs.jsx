@@ -9,7 +9,7 @@ import {
   PageHeader, Card, Btn, Input, Select, FilterPills,
   LoadingState, ErrorState, EmptyState, Pagination, Badge, ListCount,
 } from '../components/ui'
-import { TierBadge, StatusBadge, RiskBadge } from '../components/ui'
+import { TierBadge, StatusBadge, RiskBadge, LastBet } from '../components/ui'
 import { PotentialSearch } from '../components/vip/PotentialProfile'
 import { formatMoney } from '../lib/format'
 import { enumLabel } from '../lib/enums'
@@ -48,7 +48,7 @@ function downloadCSV(rows, filename) {
     'Username','Full Name','Tier','Status','Region','Currency','Host',
     'Phone','WhatsApp',
     'Total Deposit','Win/Loss','Days Inactive',
-    'Last Deposit Date','Last Contacted','Last Contact Date',
+    'Last Deposit Date','Last Bet Date','Last Contacted','Last Contact Date',
     'Churn Risk','VIP Score','Birthday',
     'TNG Verify Status','TNG Verified Name',
     'Affiliate','Deposit Segment',
@@ -69,6 +69,7 @@ function downloadCSV(rows, filename) {
       escCSV(r.win_loss ?? 0),
       escCSV(r.days_inactive ?? 0),
       escCSV(r.last_deposit_date),
+      escCSV(r.last_bet_date),
       escCSV(r.last_contacted),
       escCSV(r.last_contact_date),
       escCSV(r.churn_risk),
@@ -129,7 +130,7 @@ export default function AllVIPs() {
   const load = useCallback(async () => {
     setLoading(true); setError(null)
     try {
-      const SEL = 'id,username,full_name,tier,region,currency,days_inactive,churn_risk,host_assigned,last_deposit_date,total_deposit,win_loss,activity_status,last_contacted,last_contact_date,vip_score,is_excluded,birthday,phone,whatsapp,tng_verify_status,tng_verified_name,affiliate_login,affiliate_updated_at'
+      const SEL = 'id,username,full_name,tier,region,currency,days_inactive,churn_risk,host_assigned,last_deposit_date,last_bet_date,total_deposit,win_loss,activity_status,last_contacted,last_contact_date,vip_score,is_excluded,birthday,phone,whatsapp,tng_verify_status,tng_verified_name,affiliate_login,affiliate_updated_at'
       const [vipRes, hostRes] = await Promise.all([
         // Silver / Bronze are not in the VIP list view — read them from vip_members_all when that tier is picked
         potTier
@@ -540,6 +541,7 @@ export default function AllVIPs() {
                       </td>
                       <td style={{ padding:'9px 12px', borderBottom:'1px solid var(--border)', color: ci.dd !== null && ci.dd >= QUIET_DAYS ? '#d29922' : 'var(--muted)', fontSize:12, whiteSpace:'nowrap' }}>
                         {daysAgoLabel(v.last_deposit_date, lang)}
+                        <LastBet date={v.last_bet_date} status={v.activity_status} />
                       </td>
                       <td style={{ padding:'9px 12px', borderBottom:'1px solid var(--border)', fontSize:12 }} onClick={e => e.stopPropagation()}>
                         {v.host_assigned ? (

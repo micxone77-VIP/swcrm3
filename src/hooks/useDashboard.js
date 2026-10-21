@@ -18,7 +18,7 @@ export function useDashboard({ host = 'All' } = {}) {
       const monthStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`
       const [vipRes, logRes] = await Promise.all([
         supabase.from('vip_members')
-          .select('id,username,full_name,tier,region,currency,days_inactive,churn_risk,host_assigned,phone,whatsapp,last_deposit_date,total_deposit,birthday,last_contacted,last_contact_date,activity_status,created_at,registration_date,is_excluded')
+          .select('id,username,full_name,tier,region,currency,days_inactive,churn_risk,host_assigned,phone,whatsapp,last_deposit_date,last_bet_date,total_deposit,birthday,last_contacted,last_contact_date,activity_status,created_at,registration_date,is_excluded')
           .neq('is_excluded', true),
         supabase.from('contact_logs')
           .select('username,outcome')
@@ -35,10 +35,13 @@ export function useDashboard({ host = 'All' } = {}) {
   useEffect(() => { load() }, [load])
 
   const now = new Date()
+  // days_inactive is set by the database (days since last real deposit, from latest data date)
   const getDays = v => {
+    if (v.days_inactive != null) return v.days_inactive
     if (v.last_deposit_date) return Math.floor((now - new Date(v.last_deposit_date)) / 86400000)
-    return v.days_inactive ?? null
+    return null
   }
+  const isResting = v => v.activity_status === 'Resting'
 
   const contactedTodaySet = new Set(todayLogs.map(l => l.username))
 
@@ -81,9 +84,9 @@ export function useDashboard({ host = 'All' } = {}) {
     .forEach(v => addQ(v, '🔴 Critical risk', '#EF4444', 9))
   hostVips.filter(v => (v.churn_risk||'').toUpperCase() === 'HIGH' && !contactedTodaySet.has(v.username))
     .forEach(v => addQ(v, '⚠️ High risk', '#F59E0B', 8))
-  hostVips.filter(v => getDays(v) === 1 && !contactedTodaySet.has(v.username))
+  hostVips.filter(v => getDays(v) === 1 && !isResting(v) && !contactedTodaySet.has(v.username))
     .forEach(v => addQ(v, '🔴 Lost yesterday', '#EF4444', 7))
-  hostVips.filter(v => { const d=getDays(v); return d>=2&&d<=3&&!contactedTodaySet.has(v.username) })
+  hostVips.filter(v => { const d=getDays(v); return d>=2&&d<=3&&!isResting(v)&&!contactedTodaySet.has(v.username) })
     .forEach(v => addQ(v, '⚡ 2-3 day gap', '#F59E0B', 6))
   followUp.filter(v => !contactedTodaySet.has(v.username))
     .forEach(v => addQ(v, '📅 Follow-up due', '#3B82F6', 5))

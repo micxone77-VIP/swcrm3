@@ -62,6 +62,21 @@ export function TierBadge({ tier }) {
   )
 }
 
+// Last bet date + 😴 Resting tag — shows whether a VIP with no recent deposit is still playing
+export function LastBet({ date, status }) {
+  const { lang } = useLanguage()
+  const L2 = (en, zh) => (lang === 'zh' ? zh : en)
+  if (!date && status !== 'Resting') return null
+  const d = date ? new Date(date).toLocaleDateString(lang === 'zh' ? 'zh-CN' : 'en-MY', { day: 'numeric', month: 'short' }) : '—'
+  const rest = STATUS_CONFIG.Resting
+  return (
+    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2, whiteSpace: 'nowrap' }}>
+      🎲 {L2('Last bet', '最后投注')} {d}
+      {status === 'Resting' && <span style={{ marginLeft: 6, padding: '1px 7px', borderRadius: 20, fontWeight: 700, color: rest.color, background: rest.bg }}>😴 {L2('Resting', '休息中')}</span>}
+    </div>
+  )
+}
+
 export function StatusBadge({ status }) {
   const { lang } = useLanguage()
   if (!status) return null

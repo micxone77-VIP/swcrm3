@@ -6,7 +6,7 @@ import {
   PageHeader, Card, KpiCard, Btn, FilterPills,
   LoadingState, ErrorState, EmptyState,
 } from '../components/ui'
-import { TierBadge, RiskBadge, ListCount } from '../components/ui'
+import { TierBadge, RiskBadge, ListCount, LastBet } from '../components/ui'
 import { formatMoney } from '../lib/format'
 import { useLanguage } from '../contexts/LanguageContext'
 import { useAuth } from '../hooks/useAuth'
@@ -50,7 +50,7 @@ export default function AtRisk() {
     (async () => {
       const [vipRes, hostRes] = await Promise.all([
         supabase.from('vip_members')
-          .select('id,username,full_name,tier,churn_risk,activity_status,days_inactive,last_deposit_date,total_deposit,win_loss,currency,last_contacted,last_contact_date,host_assigned,region,is_excluded')
+          .select('id,username,full_name,tier,churn_risk,activity_status,days_inactive,last_deposit_date,last_bet_date,total_deposit,win_loss,currency,last_contacted,last_contact_date,host_assigned,region,is_excluded')
           .neq('is_excluded', true)
           .in('churn_risk', ['HIGH','MEDIUM','CRITICAL']),
         supabase.from('profiles').select('full_name').in('role',['admin','host']).order('full_name'),
@@ -64,8 +64,10 @@ export default function AtRisk() {
 
   const now = new Date()
   const getDays = v => {
+    // days_inactive is set by the database (days since last real deposit, from latest data date)
+    if (v.days_inactive != null) return v.days_inactive
     if (v.last_deposit_date) return Math.floor((now - new Date(v.last_deposit_date)) / 86400000)
-    return v.days_inactive ?? null
+    return null
   }
 
   const riskNorm = r => (r||'').toUpperCase()
@@ -157,6 +159,7 @@ export default function AtRisk() {
                       </td>
                       <td style={{ padding:'10px 14px', borderBottom:'1px solid var(--border)', color:'var(--muted)', fontSize:12 }}>
                         {days != null ? L2(`${days}d`, `${days}天`) : '—'}
+                        <LastBet date={v.last_bet_date} status={v.activity_status} />
                       </td>
                       <td style={{ padding:'10px 14px', borderBottom:'1px solid var(--border)', color:'var(--muted)', fontSize:12 }}>
                         {daysAgoLabel(v.last_contacted || v.last_contact_date, lang)}

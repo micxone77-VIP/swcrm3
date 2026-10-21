@@ -5,6 +5,8 @@ import { TIER_COLOR, TIER_BG } from '../lib/constants'
 import { formatMoney } from '../lib/format'
 import { useUrlParam } from '../hooks/useUrlParam'
 import { useLanguage } from '../contexts/LanguageContext'
+import { LastBet } from '../components/ui'
+import { enumLabel } from '../lib/enums'
 
 const s = {
   page:    { padding:'24px 28px', minHeight:'100vh' },
@@ -61,6 +63,7 @@ export default function BossView() {
       { count: totalVIPs },
       { count: activeVIPs },
       { count: dormantVIPs },
+      { count: restingVIPs },
       { count: highRisk },
       { count: todayContacts },
       { count: weekContacts },
@@ -72,6 +75,7 @@ export default function BossView() {
       supabase.from('vip_members').select('id',{count:'exact'}).eq('is_excluded',false),
       supabase.from('vip_members').select('id',{count:'exact'}).eq('activity_status','Active').eq('is_excluded',false),
       supabase.from('vip_members').select('id',{count:'exact'}).eq('activity_status','Dormant').eq('is_excluded',false),
+      supabase.from('vip_members').select('id',{count:'exact'}).eq('activity_status','Resting').eq('is_excluded',false),
       supabase.from('vip_members').select('id',{count:'exact'}).eq('churn_risk','HIGH').eq('is_excluded',false),
       supabase.from('contact_logs').select('id',{count:'exact'}).gte('logged_at', todayStr+'T00:00:00'),
       supabase.from('contact_logs').select('id',{count:'exact'}).gte('logged_at', weekAgo.toISOString()),
@@ -110,7 +114,7 @@ export default function BossView() {
       const usernames = monthTotals.map(t => t.username)
       const { data: extras } = await supabase
         .from('vip_members')
-        .select('id, username, vip_score, activity_status, host_assigned, days_inactive, is_excluded')
+        .select('id, username, vip_score, activity_status, last_bet_date, host_assigned, days_inactive, is_excluded')
         .in('username', usernames)
       const extraMap = {}
       ;(extras || []).forEach(e => { extraMap[e.username] = e })
@@ -154,7 +158,7 @@ export default function BossView() {
     }).sort((a,b) => b.contacts - a.contacts)
 
     setData({
-      totalVIPs, activeVIPs, dormantVIPs, highRisk,
+      totalVIPs, activeVIPs, dormantVIPs, restingVIPs, highRisk,
       todayContacts, weekContacts, monthContacts,
       tierCounts, hostLeaderboard, topVIPs: topVIPs||[],
       recentLogs: recentLogs||[],
@@ -257,6 +261,7 @@ export default function BossView() {
           <div style={s.cardBody}>
             {[
               { label: t('bossView.health.active'),   value: d.activeVIPs,  color:'#3fb950', pct: d.retentionRate },
+              { label: L2('😴 Resting', '😴 休息中'), value: d.restingVIPs, color:'#38BDF8', pct: d.totalVIPs?Math.round(d.restingVIPs/d.totalVIPs*100):0 },
               { label: t('bossView.health.dormant'),  value: d.dormantVIPs, color:'#8b949e', pct: d.totalVIPs?Math.round(d.dormantVIPs/d.totalVIPs*100):0 },
               { label: t('bossView.health.highRisk'), value: d.highRisk,    color:'#f85149', pct: d.totalVIPs?Math.round(d.highRisk/d.totalVIPs*100):0 },
             ].map(({ label, value, color, pct }) => (
@@ -349,7 +354,7 @@ export default function BossView() {
                     </td>
                     <td style={{ ...s.td, fontWeight:700, color:'#3fb950' }}>{formatMoney(v.total_deposit, v.currency)}</td>
                     <td style={{ ...s.td, fontWeight:700, color:scoreColor }}>{score||'—'}</td>
-                    <td style={{ ...s.td, fontSize:12 }}>{VZ(v.activity_status)||'—'}</td>
+                    <td style={{ ...s.td, fontSize:12 }}>{enumLabel(v.activity_status, lang)||'—'}<LastBet date={v.last_bet_date} status={v.activity_status} /></td>
                     <td style={{ ...s.td, fontSize:12, color:'var(--muted)' }}>{v.host_assigned||'—'}</td>
                   </tr>
                 )
