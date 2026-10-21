@@ -71,11 +71,14 @@ function ReactivateModal({ vip, month, onClose, onSaved }) {
   </div></div>
 }
 
-function ChurnWaModal({ player, agentName, onClose }) {
+function ChurnWaModal({ player, agentName, onClose, onLogged }) {
   const [lang, setLang] = useState('en')
   const { lang: uiLang } = useLanguage()
   const L2 = (en, zh) => (uiLang === 'zh' ? zh : en)
   const [copied, setCopied] = useState(false)
+  const [logId, setLogId] = useState(null)
+  const [logBusy, setLogBusy] = useState(false)
+  const [logErr, setLogErr] = useState('')
   const rawNumber = (player.whatsapp && player.whatsapp.replace(/\D/g,'').length >= 10)
     ? player.whatsapp : (player.phone && player.phone.replace(/\D/g,'').length >= 10)
     ? player.phone : ''
@@ -85,18 +88,54 @@ function ChurnWaModal({ player, agentName, onClose }) {
   const daysSince = player.days_since_deposit ?? player.days_inactive ?? 0
   const templates = {
     en: {
-      reactivate: `Hi *${player.username}*! 👋\n\nThis is ${agentName} from the VIP team. We noticed you haven't been active recently${daysSince ? ` (${daysSince} days)` : ''} and we miss having you with us!\n\nAs a valued *${player.tier}* member, we want to make sure you're getting the best experience. Is there anything we can help with or any special offer we can arrange for your return?\n\nWe're here for you! 🎰✨`,
-      decline: `Hi *${player.username}*! 👋\n\nThis is ${agentName} from the VIP team. We noticed your recent activity has been lower than usual and wanted to check in on you.\n\nAs our valued *${player.tier}* member, your satisfaction is our priority. We have some exclusive offers available just for you — would you like to hear about them?\n\nFeel free to reach out anytime! 💎`,
+      reactivate: `Hi bro *${player.username}*! 👋 I'm ${agentName} from sureWin VIP department.\n\nLong time no see you around${daysSince ? ` (${daysSince} days liao)` : ''} 😅 everything ok ah?\n\nIf got anything I can help, or you want me check any promo for you, just tell me ya. Waiting for you to come back play bro 💎`,
+      decline: `Hi bro *${player.username}*! 👋 I'm ${agentName} from sureWin VIP department.\n\nSee you less active lately, just want to check on you 😊 all good?\n\nGot some VIP offers I can arrange for you — want me share with you? Anything just WhatsApp me ya 💎`,
     },
     cn: {
-      reactivate: `你好 *${player.username}*！👋\n\n我是 ${agentName}，来自VIP团队。我们注意到您${daysSince ? `已有 ${daysSince} 天` : '最近'}没有活动，非常想念您！\n\n作为我们尊贵的 *${player.tier}* 会员，我们希望确保您获得最佳体验。有什么我们可以帮助您的，或者有什么特别优惠可以为您的回归安排吗？\n\n我们随时为您服务！🎰✨`,
-      decline: `你好 *${player.username}*！👋\n\n我是 ${agentName}，来自VIP团队。我们注意到您最近的活动有所减少，特来关心您。\n\n作为我们尊贵的 *${player.tier}* 会员，您的满意是我们的首要任务。我们有一些专属优惠，您是否有兴趣了解？\n\n随时欢迎联系我们！💎`,
+      reactivate: `嗨 *${player.username}*！👋 我是sureWin VIP部门的${agentName}。\n\n${daysSince ? `已经${daysSince}天` : '好久'}没看到你啦 😅 最近还好吗？\n\n有什么需要帮忙的，或者想我帮你看看有什么优惠，随时跟我说哦。等你回来玩 💎`,
+      decline: `嗨 *${player.username}*！👋 我是sureWin VIP部门的${agentName}。\n\n看你最近比较少玩，来关心一下你 😊 一切都好吗？\n\n我这边有一些VIP优惠可以帮你安排，要不要我跟你分享？有什么随时WhatsApp我哦 💎`,
     }
   }
   const msgType = hasDecline ? 'decline' : 'reactivate'
   const message = templates[lang][msgType]
   const waLink = waNumber ? `https://wa.me/${waNumber}?text=${encodeURIComponent(message)}` : null
-  function handleCopy() { navigator.clipboard.writeText(message); setCopied(true); setTimeout(() => setCopied(false), 2000) }
+
+  // One Contact Log per popup open — written on the first Copy or WhatsApp click
+  async function logSend(via) {
+    if (logId || logBusy) return
+    setLogBusy(true); setLogErr('')
+    const { data: { user } } = await supabase.auth.getUser()
+    const myt = new Date(Date.now() + 8 * 3600 * 1000)
+    const summary = `💬 ${hasDecline ? 'Decline check-in' : 'Churn follow-up'} sent (${via === 'wa' ? 'WhatsApp button' : 'copied, manual WhatsApp'}, ${lang === 'cn' ? '中文' : 'EN'})`
+      + (daysSince ? `: ${daysSince}d inactive` : '')
+    const { data, error } = await supabase.from('contact_logs').insert({
+      vip_id:          player.id || null,
+      username:        player.username,
+      tier:            player.tier || null,
+      channel:         'WhatsApp',
+      outcome:         'Contacted',
+      direction:       'outbound',
+      notes:           summary,
+      message_summary: summary,
+      host_name:       agentName,
+      host_id:         user?.id || null,
+      logged_at:       new Date().toISOString(),
+      log_month:       myt.toISOString().slice(0, 7),
+      log_week:        String(Math.ceil(myt.getUTCDate() / 7)),
+    }).select('id').single()
+    setLogBusy(false)
+    if (error) { setLogErr(error.message); return }
+    setLogId(data.id)
+    onLogged && onLogged()
+  }
+  async function undoLog() {
+    if (!logId) return
+    const { data, error } = await supabase.from('contact_logs').delete().eq('id', logId).select('id')
+    if (error || !data?.length) { setLogErr(error?.message || 'not allowed to delete'); return }
+    setLogId(null)
+    onLogged && onLogged()
+  }
+  function handleCopy() { navigator.clipboard.writeText(message).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); logSend('copy') }) }
   return <div style={s.modal} onClick={onClose}><div style={{...s.mBox, width:520}} onClick={e=>e.stopPropagation()}>
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:16}}>
       <div><div style={{fontSize:16,fontWeight:700}}>💬 WhatsApp — {player.username}</div>
@@ -111,7 +150,17 @@ function ChurnWaModal({ player, agentName, onClose }) {
     <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
       <button style={s.btnSm} onClick={onClose}>{L2('Close','关闭')}</button>
       <button style={{...s.btn('#6366f1'),padding:'8px 16px'}} onClick={handleCopy}>{copied?L2('✅ Copied!','✅ 已复制！'):L2('📋 Copy','📋 复制')}</button>
-      {waLink?<a href={waLink} target="_blank" rel="noopener noreferrer" style={{...s.btn('#25D366'),padding:'8px 16px',textDecoration:'none',display:'inline-block'}}>{L2('💬 Open WhatsApp','💬 打开WhatsApp')}</a>:<button style={{...s.btn('#555'),padding:'8px 16px'}} disabled>{L2('No WA Number','无WA号码')}</button>}
+      {waLink?<a href={waLink} target="_blank" rel="noopener noreferrer" onClick={()=>logSend('wa')} style={{...s.btn('#25D366'),padding:'8px 16px',textDecoration:'none',display:'inline-block'}}>{L2('💬 Open WhatsApp','💬 打开WhatsApp')}</a>:<button style={{...s.btn('#555'),padding:'8px 16px'}} disabled>{L2('No WA Number','无WA号码')}</button>}
+    </div>
+    <div style={{marginTop:10,fontSize:12,textAlign:'center'}}>
+      {logBusy
+        ? <span style={{color:'var(--muted)'}}>{L2('Logging…','记录中…')}</span>
+        : logId
+          ? <span style={{color:'#3fb950'}}>{L2('✅ Logged to Contact Log','✅ 已记录到联系记录')}
+              <button onClick={undoLog} style={{marginLeft:8,background:'none',border:'none',color:'var(--muted)',textDecoration:'underline',cursor:'pointer',fontSize:12}}>{L2('Undo','撤销')}</button></span>
+          : logErr
+            ? <span style={{color:'#f85149'}}>{L2('Log failed: ','记录失败：')}{logErr}</span>
+            : <span style={{color:'var(--muted)'}}>{L2('Copy or WhatsApp will auto-log this to Contact Log','复制或打开WhatsApp会自动记录到联系记录')}</span>}
     </div>
   </div></div>
 }
@@ -343,6 +392,6 @@ export default function ChurnAlerts() {
       })()}
     </div>
     {reactivateModal&&<ReactivateModal vip={reactivateModal} month={monthStr} onClose={()=>setReactivateModal(null)} onSaved={loadAll}/>}
-    {churnWaModal&&<ChurnWaModal player={churnWaModal} agentName={myName||'Agent'} onClose={()=>setChurnWaModal(null)}/>}
+    {churnWaModal&&<ChurnWaModal player={churnWaModal} agentName={myName||'Agent'} onClose={()=>setChurnWaModal(null)} onLogged={async()=>{const cl=await fetchAll(()=>supabase.from('contact_logs').select('username').eq('log_month',monthStr).order('username'));setContactedSet(new Set(cl.map(l=>String(l.username||'').toLowerCase())))}}/>}
   </div>
 }
