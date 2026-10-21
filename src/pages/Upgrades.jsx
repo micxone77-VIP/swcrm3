@@ -328,12 +328,32 @@ function ConfirmUpgradeModal({ player, isPotential, onClose, onConfirm }) {
 }
 
 
+// ── Upgrade-reminder helpers (contact_logs.topic = 'upgrade') ────────────────
+const MYT_MS = 8 * 3600 * 1000
+const mytMonth = ts => new Date(new Date(ts).getTime() + MYT_MS).toISOString().slice(0, 7)
+const daysAgo = ts => Math.floor((Date.now() - new Date(ts).getTime()) / 864e5)
+const informAgo = (ts, L2) => { const d = daysAgo(ts); return d <= 0 ? L2('Today', '今天') : d === 1 ? L2('Yesterday', '昨天') : L2(`${d}d ago`, `${d}天前`) }
+const informColor = ts => { const d = daysAgo(ts); return d <= 7 ? '#3fb950' : d <= 30 ? '#fbbf24' : 'var(--muted)' }
+const fmtMytDateTime = ts => new Date(ts).toLocaleString('en-GB', { timeZone: 'Asia/Kuala_Lumpur', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+
 // ── WhatsApp Template Modal ───────────────────────────────────────────────────
-function WhatsAppModal({ player, agentName, waNumbers = [], onClose }) {
+function WhatsAppModal({ player, agentName, waNumbers = [], onClose, onLogged }) {
   const [lang, setLang]     = useState('en')
   const [L2] = useL2()
   const [copied, setCopied] = useState(false)
   const [sender, setSender] = useState(waNumbers[0]?.codename || '')
+  const [logId, setLogId]       = useState(null)
+  const [logBusy, setLogBusy]   = useState(false)
+  const [logErr, setLogErr]     = useState('')
+  const [lastInfo, setLastInfo] = useState(undefined)
+
+  useEffect(() => {
+    let off = false
+    supabase.from('contact_logs').select('logged_at, host_name').eq('topic', 'upgrade').eq('username', player.username)
+      .order('logged_at', { ascending: false }).limit(1)
+      .then(({ data }) => { if (!off) setLastInfo(data?.[0] || null) })
+    return () => { off = true }
+  }, [player.username])
 
   // Normalize stored whatsapp/phone number — strip spaces, dashes, leading +
   const rawWa = (player.whatsapp || player.phone || '').replace(/[\s\-()]/g, '')
@@ -356,31 +376,72 @@ function WhatsAppModal({ player, agentName, waNumbers = [], onClose }) {
     : null
   const isReady = (player.upgrade != null) || player.gap_to_next === 0
 
-  const nextLabel = nextTier || '下一级别'
+  const nextLabel = nextTier ? (TIER_ZH[nextTier] || nextTier) : '下一级别'
   const nextLabelEn = nextTier || 'next tier'
   const gapLabel = gap || '—'
 
   const templates = {
     en: isReady
-      ? `Hi *${player.username}*! 👋 This is ${agentName} from sureWin VIP Department.\n\nCongratulations! 🎉 Your monthly turnover of *${turnover}* has qualified you for *${nextLabelEn}* upgrade!\n\nWe would like to arrange your upgrade — please let us know when you're available! 💎`
-      : `Hi *${player.username}*! 👋 This is ${agentName} from sureWin VIP Department.\n\nYour current monthly turnover is *${turnover}*. You are just *${gapLabel}* away from reaching *${nextLabelEn}* tier! 🎯\n\nKeep it up, feel free to reach out anytime! 💎`,
+      ? `Hi bro *${player.username}*! 👋 I'm ${agentName} from sureWin VIP department.\n\nGood news bro 🎉 this month your turnover *${turnover}* already qualify for *${nextLabelEn}*!\n\nI'll arrange the upgrade for you — let me know when you're free ya 💎`
+      : `Hi bro *${player.username}*! 👋 I'm ${agentName} from sureWin VIP department.\n\nJust a heads up ah — this month your turnover is *${turnover}* already. Left only *${gapLabel}* more to reach *${nextLabelEn}*! 🎯\n\nPush a bit more bro, once you hit it I settle the upgrade for you. Anything just PM me ya 💎`,
     cn: isReady
-      ? `您好 *${player.username}*！👋 我是sureWin VIP部门的${agentName}。\n\n恭喜您！🎉 您本月有效流水 *${turnover}* 已达到晋升 *${nextLabel}* 的要求！\n\n我们将为您安排升级，请告知您方便的时间。💎`
-      : `您好 *${player.username}*！👋 我是sureWin VIP部门的${agentName}。\n\n您本月有效流水为 *${turnover}*，距离晋升 *${nextLabel}* 还差 *${gapLabel}*！🎯\n\n继续加油，有任何需要请随时联系！💎`,
+      ? `嗨 *${player.username}*！👋 我是sureWin VIP部门的${agentName}。\n\n好消息🎉 这个月你的流水 *${turnover}* 已经达到 *${nextLabel}* 的标准了！\n\n我帮你安排升级，你方便的时候跟我说一声哦 💎`
+      : `嗨 *${player.username}*！👋 我是sureWin VIP部门的${agentName}。\n\n跟你报告一下～这个月你的流水已经 *${turnover}* 了，只差 *${gapLabel}* 就可以升 *${nextLabel}* 啦！🎯\n\n再冲一下，达标了我马上帮你安排升级。有什么随时找我哦 💎`,
   }
 
   const message = templates[lang]
+
+  // One Contact Log per modal open — written on the first Copy or WhatsApp click
+  const logSend = async (via) => {
+    if (logId || logBusy) return
+    setLogBusy(true); setLogErr('')
+    const { data: { user } } = await supabase.auth.getUser()
+    const myt = new Date(Date.now() + MYT_MS)
+    const summary = `⬆ Upgrade reminder sent (${via === 'wa' ? 'WhatsApp button' : 'copied, manual WhatsApp'}, ${lang === 'cn' ? '中文' : 'EN'}): turnover ${turnover} this month, `
+      + (isReady ? `qualified for ${nextLabelEn}` : `gap ${gapLabel} to ${nextLabelEn}`)
+    const { data, error } = await supabase.from('contact_logs').insert({
+      vip_id:          player.id || null,
+      username:        player.username,
+      tier:            player.tier || null,
+      channel:         'WhatsApp',
+      outcome:         'Contacted',
+      direction:       'outbound',
+      topic:           'upgrade',
+      notes:           summary,
+      message_summary: summary,
+      wa_number_used:  sender || null,
+      host_name:       agentName,
+      host_id:         user?.id || null,
+      logged_at:       new Date().toISOString(),
+      log_month:       myt.toISOString().slice(0, 7),
+      log_week:        String(Math.ceil(myt.getUTCDate() / 7)),
+    }).select('id').single()
+    setLogBusy(false)
+    if (error) { setLogErr(error.message); return }
+    setLogId(data.id)
+    onLogged && onLogged()
+  }
+
+  const undoLog = async () => {
+    if (!logId) return
+    const { data, error } = await supabase.from('contact_logs').delete().eq('id', logId).select('id')
+    if (error || !data?.length) { setLogErr(error?.message || 'not allowed to delete'); return }
+    setLogId(null)
+    onLogged && onLogged()
+  }
 
   const handleCopy = () => {
     navigator.clipboard.writeText(message).then(() => {
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
+      logSend('copy')
     })
   }
 
   const handleWhatsApp = () => {
     const base = waNumber ? `https://wa.me/${waNumber}` : 'https://wa.me/'
     window.open(`${base}?text=${encodeURIComponent(message)}`, '_blank')
+    logSend('wa')
   }
 
   return (
@@ -398,6 +459,16 @@ function WhatsAppModal({ player, agentName, waNumbers = [], onClose }) {
               {nextTier && <span style={{ marginLeft: 8 }}>· {L2('Next', '下一级')}: {L2(nextTier, TIER_ZH[nextTier] || nextTier)}</span>}
             </div>
           </div>
+        </div>
+
+        {/* Last informed about upgrade */}
+        <div style={{ fontSize: 12, margin: '8px 0 12px', padding: '7px 10px', borderRadius: 8, background: 'var(--surface2)', border: '1px solid var(--border)' }}>
+          {lastInfo === undefined
+            ? <span style={{ color: 'var(--muted)' }}>{L2('Checking last reminder…', '查询上次通知…')}</span>
+            : lastInfo
+              ? <>🕒 {L2('Last informed about upgrade:', '上次通知升级：')} <strong style={{ color: informColor(lastInfo.logged_at) }}>{fmtMytDateTime(lastInfo.logged_at)}</strong>
+                  <span style={{ color: 'var(--muted)' }}> · {informAgo(lastInfo.logged_at, L2)}{lastInfo.host_name ? ` · ${L2('by', '由')} ${lastInfo.host_name}` : ''}</span></>
+              : <span style={{ color: 'var(--muted)' }}>🕒 {L2('Never informed about upgrade yet', '还没有通知过升级')}</span>}
         </div>
 
         {/* Lang toggle */}
@@ -475,6 +546,17 @@ function WhatsAppModal({ player, agentName, waNumbers = [], onClose }) {
             {L2('💬 Open WhatsApp', '💬 打开WhatsApp')}
           </button>
           <button style={s.outlineBtn('var(--muted)')} onClick={onClose}>{L2('Close', '关闭')}</button>
+        </div>
+
+        <div style={{ marginTop: 10, fontSize: 12, textAlign: 'center' }}>
+          {logBusy
+            ? <span style={{ color: 'var(--muted)' }}>{L2('Logging…', '记录中…')}</span>
+            : logId
+              ? <span style={{ color: '#3fb950' }}>{L2('✅ Logged to Contact Log', '✅ 已记录到联系记录')}
+                  <button onClick={undoLog} style={{ marginLeft: 8, background: 'none', border: 'none', color: 'var(--muted)', textDecoration: 'underline', cursor: 'pointer', fontSize: 12 }}>{L2('Undo', '撤销')}</button></span>
+              : logErr
+                ? <span style={{ color: '#f85149' }}>{L2('Log failed: ', '记录失败：')}{logErr}</span>
+                : <span style={{ color: 'var(--muted)' }}>{L2('Copy or WhatsApp will auto-log this to Contact Log', '复制或打开WhatsApp会自动记录到联系记录')}</span>}
         </div>
 
         {waNumbers.length > 0 && (
@@ -810,6 +892,17 @@ function VIPCandidatesTab({ hostFilter = 'ALL' }) {
   const [waNumbers, setWaNumbers]         = useState([])
   const [challengeMap, setChallengeMap]   = useState({})
   const [challengeModal, setChallengeModal] = useState(null)
+  const [informMap, setInformMap] = useState({})
+  const [informF, setInformF]     = useUrlParam('vInform', 'ALL')
+
+  const reloadInform = useCallback(async () => {
+    const { data } = await supabase.from('contact_logs').select('username, logged_at, host_name')
+      .eq('topic', 'upgrade').order('logged_at', { ascending: false }).limit(5000)
+    const m = {}
+    ;(data || []).forEach(r => { if (!m[r.username]) m[r.username] = r })
+    setInformMap(m)
+  }, [])
+  useEffect(() => { reloadInform() }, [reloadInform])
 
   useEffect(() => {
     if (!myName) return
@@ -922,6 +1015,13 @@ function VIPCandidatesTab({ hostFilter = 'ALL' }) {
     if (search && !v.username.toLowerCase().includes(search.toLowerCase())) return false
     if (hostFilter === 'UNASSIGNED' && v.host_assigned) return false
     if (hostFilter !== 'ALL' && hostFilter !== 'UNASSIGNED' && v.host_assigned !== hostFilter) return false
+    if (informF !== 'ALL') {
+      const inf = informMap[v.username]
+      const thisMonth = new Date(Date.now() + MYT_MS).toISOString().slice(0, 7)
+      const informedThisMonth = !!inf && mytMonth(inf.logged_at) === thisMonth
+      if (informF === 'NOT_MONTH' && informedThisMonth) return false
+      if (informF === 'MONTH' && !informedThisMonth) return false
+    }
     if (upgradeF === 'QUALIFIES') return v.upgrade !== null
     if (upgradeF === 'SKIP') return v.upgrade && TIER_ORDER.indexOf(v.upgrade.tier) - TIER_ORDER.indexOf(v.tier) > 1
     if (upgradeF !== 'ALL') return v.upgrade?.tier === upgradeF
@@ -970,6 +1070,11 @@ function VIPCandidatesTab({ hostFilter = 'ALL' }) {
           <option value="PLATINUM">{L2('→ Platinum', '→ 白金')}</option>
           <option value="DIAMOND">{L2('→ Diamond', '→ 钻石')}</option>
         </select>
+        <select value={informF} onChange={e => setInformF(e.target.value)} style={s.select}>
+          <option value="ALL">{L2('📣 Informed: any', '📣 通知：全部')}</option>
+          <option value="NOT_MONTH">{L2('🔕 Not informed this month', '🔕 本月未通知')}</option>
+          <option value="MONTH">{L2('✅ Informed this month', '✅ 本月已通知')}</option>
+        </select>
         <select value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} style={{ ...s.select, color: 'var(--accent)', fontWeight: 700 }}>
           {availableMonths.map(m => (
             <option key={m} value={m}>{m}</option>
@@ -985,14 +1090,14 @@ function VIPCandidatesTab({ hostFilter = 'ALL' }) {
           <table style={s.table}>
             <thead>
               <tr>
-                {['#', t('common.username', 'Username'), t('upgrades.colCurrentTier', 'Current Tier'), t('upgrades.colValidBet', 'Valid Bet'), t('upgrades.colLastMonthTurnover'), t('upgrades.colProgress', 'Progress'), t('upgrades.colUpgradesTo', 'Upgrades To'), t('upgrades.colGap', 'Gap'), t('upgrades.colLastDeposit', 'Last Deposit'), t('upgrades.colHost', 'Host'), 'Phone / WA', ''].map(h => (
+                {['#', t('common.username', 'Username'), t('upgrades.colCurrentTier', 'Current Tier'), t('upgrades.colValidBet', 'Valid Bet'), t('upgrades.colLastMonthTurnover'), t('upgrades.colProgress', 'Progress'), t('upgrades.colUpgradesTo', 'Upgrades To'), t('upgrades.colGap', 'Gap'), t('upgrades.colLastDeposit', 'Last Deposit'), t('upgrades.colHost', 'Host'), L2('Last informed', '上次通知'), 'Phone / WA', ''].map(h => (
                   <th key={h} style={s.th}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0
-                ? <tr><td colSpan={12}><div style={s.empty}>{L2('No members match this filter', '没有符合筛选的会员')}</div></td></tr>
+                ? <tr><td colSpan={13}><div style={s.empty}>{L2('No members match this filter', '没有符合筛选的会员')}</div></td></tr>
                 : filtered.map((v, rowIdx) => {
                   const pct = v.upgrade ? Math.min(100, (v.monthly_valid_bet / v.upgrade.threshold) * 100) : 0
                   const isSkip = v.upgrade && TIER_ORDER.indexOf(v.upgrade.tier) - TIER_ORDER.indexOf(v.tier) > 1
@@ -1076,6 +1181,12 @@ function VIPCandidatesTab({ hostFilter = 'ALL' }) {
                       </td>
                       <td style={s.td}>{fmtDate(v.last_deposit_date, uiLang)}</td>
                       <td style={{ ...s.td, fontSize: 12, color: 'var(--muted)' }}>{v.host_assigned || '—'}</td>
+                      <td style={{ ...s.td, fontSize: 12, whiteSpace: 'nowrap' }} title={informMap[v.username] ? fmtMytDateTime(informMap[v.username].logged_at) : ''}>
+                        {informMap[v.username]
+                          ? <><span style={{ color: informColor(informMap[v.username].logged_at), fontWeight: 600 }}>{informAgo(informMap[v.username].logged_at, L2)}</span>
+                              {informMap[v.username].host_name && <span style={{ fontSize: 10, color: 'var(--muted)', marginLeft: 4 }}>· {informMap[v.username].host_name}</span>}</>
+                          : <span style={{ color: 'var(--muted)' }}>{L2('Never', '从未')}</span>}
+                      </td>
                       <td style={s.td} onClick={e => e.stopPropagation()}>
                         {(v.phone || v.whatsapp)
                           ? <div style={{ display: 'flex', alignItems: 'center', gap: 2, whiteSpace: 'nowrap' }}>
@@ -1158,6 +1269,7 @@ function VIPCandidatesTab({ hostFilter = 'ALL' }) {
           agentName={myName || 'Agent'}
           waNumbers={waNumbers}
           onClose={() => setWaModal(null)}
+          onLogged={reloadInform}
         />
       )}
 
