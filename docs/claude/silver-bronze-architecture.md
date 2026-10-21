@@ -24,6 +24,7 @@ Decision (Marcus): Silver and Bronze players are full player records (VIP360, co
 - CSV uploads are DAILY: each daily row = that day's own figures (not cumulative). VIP360 Deposit Calendar was fixed to use daily values (2026-10-20).
 - Until 2026-10-20 the import carried yesterday's deposit forward for players not in today's CSV → fake repeat deposits. That's why deposit/withdrawal/GGR only count on days with valid bet > 0.
 - Fixed 2026-10-20: players not in today's CSV get ALL daily figures zeroed (ZERO_DAY in CSVImport). **Pending:** after a few days of clean data, relax the rule so deposits count on no-bet days from that date onward (real example: jaslyn 18 Oct SGD 35,000 deposit, 0 bets). ~0.5% of deposits affected.
+- Fixed 2026-10-21: `last_deposit_date` / `days_inactive` (refresh_days_inactive, trigger sync_member_deposit_date, Churn Priority tab) only count deposit days with valid bet > 0. Before, 240 VIPs had dates from carried-forward deposits (e.g. travis78 showed 18 Oct, real 5 Oct). Old values kept in `_ldd_backup_20261021` (RLS on, no policies); drop it once confirmed.
 
 ## Campaign Impact (campaign_impact RPC + src/lib/campaignImpact.js)
 - Comparison group = same currency + tier AT ENROLMENT (campaign_players.tier), not enrolled, not in an overlapping campaign, and with daily data in the "before" window (stops Silver/Bronze with no history faking growth).
