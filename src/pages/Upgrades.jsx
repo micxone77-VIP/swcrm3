@@ -6,6 +6,7 @@ import { formatMoney } from '../lib/format'
 import { useLanguage } from '../contexts/LanguageContext'
 import { useUrlParam, useUrlParamNumber } from '../hooks/useUrlParam'
 import { TIER_COLOR, TIER_BG } from '../lib/constants'
+import { ContactFollowUp } from '../components/WaSenderModal'
 
 // ── Tier config ───────────────────────────────────────────────────────────────
 const TIER_ORDER = ['BRONZE', 'SILVER', 'GOLD', 'PLATINUM', 'DIAMOND', 'BLACK']
@@ -555,8 +556,7 @@ function WhatsAppModal({ player, agentName, waNumbers = [], onClose, onLogged })
           {logBusy
             ? <span style={{ color: 'var(--muted)' }}>{L2('Logging…', '记录中…')}</span>
             : logId
-              ? <span style={{ color: '#3fb950' }}>{L2('✅ Logged to Contact Log', '✅ 已记录到联系记录')}
-                  <button onClick={undoLog} style={{ marginLeft: 8, background: 'none', border: 'none', color: 'var(--muted)', textDecoration: 'underline', cursor: 'pointer', fontSize: 12 }}>{L2('Undo', '撤销')}</button></span>
+              ? <div style={{ textAlign: 'left' }}><ContactFollowUp logId={logId} onUndo={undoLog} onSaved={() => onLogged && onLogged()} /></div>
               : logErr
                 ? <span style={{ color: '#f85149' }}>{L2('Log failed: ', '记录失败：')}{logErr}</span>
                 : <span style={{ color: 'var(--muted)' }}>{L2('Copy or WhatsApp will auto-log this to Contact Log', '复制或打开WhatsApp会自动记录到联系记录')}</span>}

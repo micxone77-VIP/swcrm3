@@ -159,6 +159,7 @@ export const TASK_STATUS_ZH = { Open: '待办', 'In Progress': '进行中', Comp
 
 const TITLE_RULES = [
   [/^🎂 Birthday greeting — (.+)$/, m => `🎂 生日祝福 — ${m[1]}`],
+  [/^📅 Follow-up — (.+)$/, m => `📅 跟进 — ${m[1]}`],
   [/^📞 (P\d) (Active|Resting|At Risk|Churn|Dormant|Unknown) — (.+)$/, m => `📞 ${m[1]} ${STATUS_ZH[m[2]] || m[2]} — ${m[3]}`],
   [/^⚠️ At-risk follow-up — (.+)$/, m => `⚠️ 风险跟进 — ${m[1]}`],
   [/^📊 Review monthly churn snapshot — (.+)$/, m => `📊 审阅月度流失快照 — ${m[1]}`],
@@ -173,6 +174,10 @@ const DAILY_PART_RULES = [
   [/^last bet (.+)$/, m => `最后投注 ${m[1]}`],
   [/^never contacted$/, () => '从未联系'],
   [/^last contact (\d+)d ago$/, m => `${m[1]}天前联系`],
+  [/^last contact (.+)$/, m => `上次联系 ${m[1]}`],
+  [/^Follow-up set for (.+)$/, m => `设定跟进 ${m[1]}`],
+  [/^they replied$/, () => '已回复'],
+  [/^no reply yet$/, () => '还没回复'],
   [/^big 3-day loss → care call$/, () => '3天大额亏损 → 关怀电话'],
   [/^unreachable \(3 no-replies\) → try another channel$/, () => '联系不上（3次未回复）→ 换渠道'],
   [/^score (.+)$/, m => `分数 ${m[1]}`],
@@ -184,6 +189,7 @@ const localizeDailyParts = text => text.split(' · ').map(part => {
 }).join(' · ')
 
 const NOTES_RULES = [
+  [/^Follow-up set for .+$/, m => localizeDailyParts(m[0])],
   [/^\d+ days since last real deposit( · .*)?$/, m => localizeDailyParts(m[0])],
   [/^Today is (.+)'s birthday\. Send a greeting message\.$/, m => `今天是 ${m[1]} 的生日，请发送祝福信息。`],
   [/^(.+) is (\S+) churn risk this month\. Reach out urgently to retain them\.$/, m => `${m[1]} 本月流失风险为 ${m[2]}，请尽快联系挽留。`],

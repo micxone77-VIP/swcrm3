@@ -50,7 +50,7 @@ export default function AtRisk() {
     (async () => {
       const [vipRes, hostRes] = await Promise.all([
         supabase.from('vip_members')
-          .select('id,username,full_name,tier,churn_risk,activity_status,days_inactive,last_deposit_date,last_bet_date,total_deposit,win_loss,currency,last_contacted,last_contact_date,host_assigned,region,is_excluded')
+          .select('id,username,full_name,tier,phone,whatsapp,churn_risk,activity_status,days_inactive,last_deposit_date,last_bet_date,total_deposit,win_loss,currency,last_contacted,last_contact_date,host_assigned,region,is_excluded')
           .neq('is_excluded', true)
           .in('churn_risk', ['HIGH','MEDIUM','CRITICAL']),
         supabase.from('profiles').select('full_name').in('role',['admin','host']).order('full_name'),

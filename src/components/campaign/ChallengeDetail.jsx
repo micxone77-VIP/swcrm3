@@ -16,6 +16,7 @@ import { CampaignInfoButton } from './CampaignGuide'
 import { ChallengeRulesEditor, cleanChallengeConfig } from './ChallengeCreator'
 import DailyMilestoneDetail from './DailyMilestoneDetail'
 import { DAILY_MODE } from '../../lib/dailyMilestone'
+import { WaButton } from '../../components/WaSenderModal'
 
 const rm = v => 'RM ' + Math.round(num(v)).toLocaleString('en-MY')
 const btn = { background: 'var(--accent)', color: '#fff', border: 'none', padding: '7px 14px', borderRadius: 7, fontWeight: 700, cursor: 'pointer', fontSize: 12 }
@@ -390,8 +391,7 @@ function ChallengeDetailClassic({ campaign: initial, onClose, onChanged }) {
                       </td>}
                       {asOf > camp.end_date && <td style={td}><b>{rm(p.followDeposit)}</b><div style={{ fontSize: 10, color: 'var(--muted)' }}>{T(`${p.followDays} deposit days`, `${p.followDays} 天有存款`)}</div></td>}
                       <td style={{ ...td, whiteSpace: 'nowrap' }}>
-                        {waNum ? <a href={`https://wa.me/${waNum}?text=${encodeURIComponent(msg)}`} target="_blank" rel="noopener noreferrer" title={T('Send progress on WhatsApp', '用WhatsApp发送进度')}
-                          style={{ display: 'inline-flex', width: 26, height: 26, borderRadius: 13, background: '#25D366', color: '#fff', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, textDecoration: 'none' }}>W</a> : null}
+                        {waNum ? <WaButton vip={{ ...r, phone: waNum }} templates={{ en: msg, cn: msg }} topic="campaign" logLabel="Challenge progress" title={T('Send progress on WhatsApp', '用WhatsApp发送进度')} style={{ display: 'inline-flex', width: 26, height: 26, borderRadius: 13, background: '#25D366', color: '#fff', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, textDecoration: 'none' }}>W</WaButton> : null}
                         <button title={T('Copy progress message', '复制进度信息')} onClick={() => { navigator.clipboard.writeText(msg).then(() => flash(T('Message copied', '信息已复制'))).catch(() => {}) }} style={{ ...sec, padding: '3px 7px', marginLeft: 4 }}>📋</button>
                         <button title={T('Remove', '移除')} onClick={() => removePlayer(r)} style={{ ...sec, padding: '3px 7px', marginLeft: 4, color: '#f87171' }}>✕</button>
                       </td>

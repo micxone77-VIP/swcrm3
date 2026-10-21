@@ -9,6 +9,7 @@ import { useUrlParam, useUrlParamBool } from '../hooks/useUrlParam'
 import DepositSegments from '../components/vip/DepositSegments'
 import AffiliateSummary from '../components/vip/AffiliateSummary'
 import { ListCount } from '../components/ui'
+import { WaButton } from '../components/WaSenderModal'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 // fmt() is defined inside the component so it can use the selected currency state
@@ -860,7 +861,6 @@ export default function Analytics() {
                             : (r.whatsapp && r.whatsapp.replace(/\D/g,'').length >= 10) ? r.whatsapp
                             : ''
                           const waNumber = rawNumber.replace(/\D/g, '')
-                          const greeting = encodeURIComponent(`Hi ${r.username}, this is ${myName} from the VIP department.`)
                           return (
                             <tr key={r.username} style={{ borderBottom:'1px solid var(--border)' }}
                               onMouseEnter={e => e.currentTarget.style.background='var(--surface2)'}
@@ -876,8 +876,7 @@ export default function Analytics() {
                               <td style={{ padding:'10px 16px', textAlign:'right', fontWeight:700, color:'#f85149' }}>{r.declinePct}%</td>
                               <td style={{ padding:'10px 16px', textAlign:'center' }}>
                                 {waNumber ? (
-                                  <a href={`https://wa.me/${waNumber}?text=${greeting}`} target="_blank" rel="noopener noreferrer"
-                                    style={{ display:'inline-flex', width:26, height:26, borderRadius:13, background:'#25D366', color:'#fff', alignItems:'center', justifyContent:'center', fontSize:13, fontWeight:700, textDecoration:'none' }}>W</a>
+                                  <WaButton vip={{ ...r, phone: waNumber }} purpose="decline" style={{ display:'inline-flex', width:26, height:26, borderRadius:13, background:'#25D366', color:'#fff', alignItems:'center', justifyContent:'center', fontSize:13, fontWeight:700, textDecoration:'none' }}>W</WaButton>
                                 ) : <span style={{ color:'var(--muted)' }}>—</span>}
                               </td>
                             </tr>

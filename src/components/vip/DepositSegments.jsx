@@ -5,6 +5,7 @@ import { supabase } from '../../lib/supabase'
 import { TIER_COLOR, TIER_BG } from '../../lib/constants'
 import { SEGMENTS, STYLES, fmtHour, fmtRM, fetchAll, dayNameZh } from '../../lib/depositProfile'
 import { useLanguage } from '../../contexts/LanguageContext'
+import { WaButton } from '../../components/WaSenderModal'
 
 const sel = { background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 10px', fontSize: 12, color: 'var(--text)' }
 const th = { textAlign: 'left', padding: '10px 12px', color: 'var(--muted)', fontWeight: 600, whiteSpace: 'nowrap', cursor: 'pointer', userSelect: 'none' }
@@ -203,7 +204,6 @@ export default function DepositSegments({ myName = 'VIP Team' }) {
               const rawNumber = (m.phone && m.phone.replace(/\D/g, '').length >= 10) ? m.phone
                 : (m.whatsapp && m.whatsapp.replace(/\D/g, '').length >= 10) ? m.whatsapp : ''
               const waNumber = rawNumber.replace(/\D/g, '')
-              const greeting = encodeURIComponent(`Hi ${r.login}, this is ${myName} from the VIP department.`)
               return (
                 <tr key={r.login} style={{ borderBottom: '1px solid var(--border)', background: ci.needsChase ? 'rgba(248,81,73,.08)' : 'transparent', boxShadow: ci.needsChase ? 'inset 3px 0 0 #f85149' : 'none' }}
                   title={ci.needsChase ? L2('Needs chase: no deposit for 3–30 days and not contacted since the last deposit', '需跟进：3–30天未存款，且最后存款后未联系') : undefined}
@@ -242,8 +242,7 @@ export default function DepositSegments({ myName = 'VIP Team' }) {
                   <td style={td}>{L2(r.peak_day_name, dayNameZh(r.peak_day_name))} {fmtHour(r.peak_hour, lang)}</td>
                   <td style={{ ...td, textAlign: 'center' }}>
                     {waNumber ? (
-                      <a href={`https://wa.me/${waNumber}?text=${greeting}`} target="_blank" rel="noopener noreferrer"
-                        style={{ display: 'inline-flex', width: 26, height: 26, borderRadius: 13, background: '#25D366', color: '#fff', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, textDecoration: 'none' }}>W</a>
+                      <WaButton vip={{ ...r, username: r.login, phone: waNumber }} purpose="decline" style={{ display: 'inline-flex', width: 26, height: 26, borderRadius: 13, background: '#25D366', color: '#fff', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, textDecoration: 'none' }}>W</WaButton>
                     ) : <span style={{ color: 'var(--muted)' }}>—</span>}
                   </td>
                 </tr>

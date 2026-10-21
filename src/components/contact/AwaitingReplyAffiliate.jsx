@@ -9,6 +9,7 @@ import { useAuth } from '../../hooks/useAuth'
 import { useLanguage } from '../../contexts/LanguageContext'
 import { fetchAll } from '../../lib/depositProfile'
 import { TIER_COLOR, TIER_BG } from '../../lib/constants'
+import { WaButton } from '../../components/WaSenderModal'
 
 const UNANSWERED = ['Contacted', 'No Reply']
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
@@ -192,7 +193,6 @@ export default function AwaitingReplyAffiliate({ onBack, myName, viewMode }) {
           {list.map((r, rowIdx) => {
             const raw = (r.phone && r.phone.replace(/\D/g, '').length >= 10) ? r.phone : (r.whatsapp && r.whatsapp.replace(/\D/g, '').length >= 10) ? r.whatsapp : ''
             const wa = raw.replace(/\D/g, '')
-            const greet = encodeURIComponent(`Hi ${r.username}, just following up — wanted to check if you saw my earlier message. This is ${r.host || myName || 'the VIP team'}.`)
             return (
               <tr key={r.username}>
                 <td style={{ ...st.td, color: 'var(--muted)', fontSize: 12, width: 36 }}>{rowIdx + 1}</td>
@@ -207,7 +207,7 @@ export default function AwaitingReplyAffiliate({ onBack, myName, viewMode }) {
                 <td style={st.td}>{r.lastDeposit ? <>{dShort(r.lastDeposit, lang)} <span style={{ color: 'var(--muted)' }}>({L2(`${r.daysSinceDeposit}d ago`, `${r.daysSinceDeposit}天前`)})</span></> : '—'}</td>
                 <td style={{ ...st.td, color: 'var(--muted)' }}>{r.host || '—'}</td>
                 <td style={{ ...st.td, color: 'var(--muted)', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.note}>{r.note || '—'}</td>
-                <td style={st.td}>{wa ? <a href={`https://wa.me/${wa}?text=${greet}`} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-flex', width: 24, height: 24, borderRadius: 12, background: '#25D366', color: '#fff', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, textDecoration: 'none' }}>W</a> : '—'}</td>
+                <td style={st.td}>{wa ? <WaButton vip={{ ...r, phone: wa }} templates={{ en: `Hi bro *${r.username}*! 👋 I'm ${myName || 'Agent'} from sureWin VIP department.\n\nJust following up ya — not sure you saw my earlier message 😊 Anything I can help, just reply me bro 💎`, cn: `嗨 *${r.username}*！👋 我是sureWin VIP部门的${myName || 'Agent'}。\n\n跟进一下哦～不知道你有没有看到我之前的信息 😊 有什么需要帮忙的随时回复我 💎` }} logLabel="Follow-up (awaiting reply)" style={{ display: 'inline-flex', width: 24, height: 24, borderRadius: 12, background: '#25D366', color: '#fff', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, textDecoration: 'none' }}>W</WaButton> : '—'}</td>
               </tr>
             )
           })}

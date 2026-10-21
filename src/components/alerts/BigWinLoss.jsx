@@ -6,6 +6,7 @@ import { useLanguage } from '../../contexts/LanguageContext'
 import { formatMoney } from '../../lib/format'
 import { TIER_COLOR, TIER_BG } from '../../lib/constants'
 import { loadBigWinLoss, saveWinLossSettings, WINLOSS_TIERS } from '../../lib/bigWinLoss'
+import { WaButton } from '../WaSenderModal'
 
 const th = { textAlign: 'left', padding: '8px 10px', color: 'var(--muted)', fontWeight: 600, fontSize: 11, whiteSpace: 'nowrap', borderBottom: '1px solid var(--border)' }
 const td = { padding: '9px 10px', borderBottom: '1px solid var(--border)', fontSize: 13, whiteSpace: 'nowrap' }
@@ -60,17 +61,26 @@ export default function BigWinLoss() {
   const myCount = data.losses.filter(mine).length + data.wins.filter(mine).length
   const allCount = data.losses.length + data.wins.length
 
-  const waLink = (r, kind) => {
+  // Care / congrats message for the shared WA popup (auto-logs the contact)
+  const waInfo = (r, kind) => {
     const raw = (r.phone && r.phone.replace(/\D/g, '').length >= 10) ? r.phone : (r.whatsapp && r.whatsapp.replace(/\D/g, '').length >= 10) ? r.whatsapp : ''
-    const num = raw.replace(/\D/g, '')
-    if (!num) return null
-    const host = myName || 'sureWin VIP'
-    const msg = kind === 'loss'
-      ? L2(`Hi ${r.username}, this is ${host} from sureWin VIP. Just checking in on you — hope everything is okay. If there is anything I can help with, just let me know anytime 🙏`,
-           `您好 ${r.username}，我是sureWin VIP部门的${host}。想关心一下您，希望一切都好。如果有什么需要帮忙的，随时告诉我 🙏`)
-      : L2(`Hi ${r.username}, this is ${host} from sureWin VIP. Congratulations on your great win yesterday! 🎉 If you need anything, I'm here for you.`,
-           `您好 ${r.username}，我是sureWin VIP部门的${host}。恭喜您昨天大赢！🎉 有任何需要随时找我。`)
-    return `https://wa.me/${num}?text=${encodeURIComponent(msg)}`
+    if (!raw.replace(/\D/g, '')) return null
+    const host = myName || 'Agent'
+    const intro = `Hi bro *${r.username}*! 👋 I'm ${host} from sureWin VIP department.`
+    const introCn = `嗨 *${r.username}*！👋 我是sureWin VIP部门的${host}。`
+    return kind === 'loss'
+      ? { en: `${intro}
+
+Just checking on you bro, hope everything ok 🙏 Anything I can help, just tell me anytime ya.`,
+          cn: `${introCn}
+
+来关心一下你，希望一切都好 🙏 有什么需要帮忙的随时跟我说哦。`, label: 'Big loss care' }
+      : { en: `${intro}
+
+Congrats bro on your big win yesterday! 🎉 Need anything, I'm here ya 💎`,
+          cn: `${introCn}
+
+恭喜你昨天大赢！🎉 有什么需要随时找我 💎`, label: 'Big win congrats' }
   }
 
   const money = (v, cur) => formatMoney(Math.abs(Number(v) || 0), cur)
@@ -89,7 +99,7 @@ export default function BigWinLoss() {
         </tr></thead>
         <tbody>
           {list.map((r, i) => {
-            const wa = waLink(r, kind)
+            const wa = waInfo(r, kind)
             const dc = daysAgo(r.lastContact)
             return (
               <tr key={r.username} style={{ cursor: 'pointer' }} onClick={() => r.id && navigate(`/vips/${r.id}`)}
@@ -115,7 +125,7 @@ export default function BigWinLoss() {
                   {kind === 'win' && r.withdrew && <div style={{ color: '#d29922', fontWeight: 700 }}>💸 {L2('Withdrew yesterday', '昨日已提款')}</div>}
                 </td>
                 <td style={td} onClick={e => e.stopPropagation()}>
-                  {wa && <a href={wa} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-flex', width: 26, height: 26, borderRadius: 13, background: '#25D366', color: '#fff', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, textDecoration: 'none', marginRight: 6 }}>W</a>}
+                  {wa && <WaButton vip={r} templates={wa} logLabel={wa.label} style={{ display: 'inline-flex', width: 26, height: 26, borderRadius: 13, background: '#25D366', color: '#fff', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, textDecoration: 'none', marginRight: 6 }}>W</WaButton>}
                   <button style={btn} onClick={() => r.id && navigate(`/vips/${r.id}`)}>{L2('Open', '打开')}</button>
                 </td>
               </tr>

@@ -58,7 +58,7 @@ export default function FollowUp() {
     setLoading(true); setLoadError('')
     const now = new Date(); const todayStr = now.toISOString().split('T')[0]
     const [vipRes, logRes] = await Promise.all([
-      supabase.from('vip_members').select('id,username,full_name,tier,churn_risk,host_assigned,last_contacted,last_contact_date,total_deposit,currency,days_inactive,last_deposit_date,activity_status,is_excluded').neq('is_excluded', true),
+      supabase.from('vip_members').select('id,username,full_name,tier,phone,whatsapp,churn_risk,host_assigned,last_contacted,last_contact_date,total_deposit,currency,days_inactive,last_deposit_date,activity_status,is_excluded').neq('is_excluded', true),
       supabase.from('contact_logs').select('username').gte('logged_at', todayStr + 'T00:00:00').lte('logged_at', todayStr + 'T23:59:59'),
     ])
     if (vipRes.error || logRes.error) {
