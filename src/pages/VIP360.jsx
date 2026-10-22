@@ -18,6 +18,7 @@ import { TierBadge, StatusBadge, RiskBadge } from '../components/ui'
 import { callAI } from '../lib/aiApi'
 import { useLanguage } from '../contexts/LanguageContext'
 import DepositProfileCard from '../components/vip/DepositProfileCard'
+import ProviderActivityCard from '../components/vip/ProviderActivityCard'
 
 const TIERS = ['BRONZE','SILVER','GOLD','PLATINUM','DIAMOND','DIAMOND-P','BLACK']
 const PERIODS = [
@@ -686,6 +687,7 @@ const ptColor = gl ? (PLAYER_TYPE_COLOR[gl.player_type] || 'var(--muted)') : 'va
 
 return (
 <div>
+  <ProviderActivityCard username={vip.username} currency={vip.currency} />
   {gamingLoading ? (
     <LoadingState message={L2('Loading gaming data…', '载入游戏数据中…')} />
   ) : gaming.length === 0 ? (
