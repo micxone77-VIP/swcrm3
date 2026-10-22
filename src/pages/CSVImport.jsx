@@ -268,11 +268,12 @@ async function processRawData(rows, month, thresholds, onProgress) {
     if (u) csvVipMap[u.toLowerCase()] = r['Member Group']?.toUpperCase()
   })
 
-  // Fetch all non-graduated potentials
-  const { data: activePotentials } = await supabase
+  // Fetch all non-graduated potentials (paged: ~22k rows, a single select stops at 1000)
+  const activePotentials = await fetchAll(() => supabase
     .from('potential_players')
     .select('id, username, tier')
     .eq('is_graduated', false)
+    .order('id'))
 
   const toGraduate = (activePotentials || []).filter(p => {
     const csvTier = csvVipMap[p.username?.toLowerCase()]
@@ -1275,12 +1276,22 @@ export default function CSVImport() {
   // Save current potential_players (Bronze/Silver) state as a daily snapshot —
   // same reasoning as saveDailySnapshot for VIPs: CSV uploads are daily, so
   // potential_players.monthly_valid_bet is also just the last uploaded day's number.
-  const savePotentialDailySnapshot = async (dateStr, onProgress) => {
+  // Only potentials this import updated (= in this day's CSV): the others still hold an older
+  // day's monthly_valid_bet, because potentials are not zeroed like VIPs. Paged: ~1,400 a day,
+  // and a single select stops at PostgREST's 1000-row cap.
+  const savePotentialDailySnapshot = async (dateStr, onProgress, importStartedAt) => {
     onProgress(L2(`Saving potential players daily snapshot for ${dateStr}…`, `正在保存 ${dateStr} 潜力玩家每日快照…`))
-    const { data: pots, error: fetchErr } = await supabase
-      .from('potential_players')
-      .select('username, tier, monthly_valid_bet')
-      .eq('is_graduated', false)
+    let pots = null, fetchErr = null
+    try {
+      pots = await fetchAll(() => supabase
+        .from('potential_players')
+        .select('username, tier, monthly_valid_bet')
+        .eq('is_graduated', false)
+        .gte('updated_at', importStartedAt)
+        .order('username'))
+    } catch (e) {
+      fetchErr = e
+    }
 
     if (fetchErr) {
       onProgress(L2(`⚠ Potential daily snapshot: failed to fetch — ${fetchErr.message}`, `⚠ 潜力玩家每日快照：获取失败 — ${fetchErr.message}`))
@@ -1432,6 +1443,7 @@ export default function CSVImport() {
       const thresholds = await fetchThresholds()
       setRawProgress(L2('Starting import…','开始导入…'))
 
+      const importStartedAt = new Date().toISOString()
       const result = await processRawData(mergedRows, importMonth, thresholds, setRawProgress)
 
       // Save to raw_imports history
@@ -1446,7 +1458,7 @@ export default function CSVImport() {
       // Save daily snapshot (for calendar heatmap) — uses the selected snapshot date,
       // so missed days can be backdated instead of always saving as "today"
       const dailySnapResult = await saveDailySnapshot(snapshotDate, setRawProgress)
-      const potDailySnapResult = await savePotentialDailySnapshot(snapshotDate, setRawProgress)
+      const potDailySnapResult = await savePotentialDailySnapshot(snapshotDate, setRawProgress, importStartedAt)
       const reactivationResult = await autoDetectReactivations(snapshotDate, setRawProgress)
 
       // Recalculate days_inactive / activity_status / churn_risk immediately after upload
