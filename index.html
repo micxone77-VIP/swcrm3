@@ -208,6 +208,11 @@
       html[data-text="xl"] [style*="font-size:44px"]{font-size:59px!important}
       html[data-text="xl"] [style*="font-size: 48px"]{font-size:64.5px!important}
       html[data-text="xl"] [style*="font-size:48px"]{font-size:64.5px!important}
+
+      /* Table headers stay visible while scrolling (all pages). The page scrolls inside <main>. */
+      main thead th, [role="dialog"] thead th { position: sticky; top: 0; z-index: 3; background-color: var(--surface); box-shadow: inset 0 -1px 0 var(--border); }
+      /* A table inside a sideways-scrolling box: that box would block the sticky header, so it scrolls up/down too (max one screen) */
+      main div[style*="overflow"]:has(> table) { max-height: calc(100vh - 96px); overflow: auto !important; }
     </style>
     <script>
       // Apply saved text size before the app renders (default: large)
