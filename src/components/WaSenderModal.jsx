@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useLanguage } from '../contexts/LanguageContext'
 import { useAuth } from '../hooks/useAuth'
+import ProfileCard from './vip/ProfileCard'
 
 const MYT_MS = 8 * 3600 * 1000
 const mytNow = () => new Date(Date.now() + MYT_MS)
@@ -233,6 +234,7 @@ export default function WaSenderModal({ vip, waNumbers, myName, onClose, onLogge
         </div>
 
         <ContactHistory username={vip.username} excludeLogId={logId} refreshKey={histKey} onChanged={() => { setHistKey(k => k + 1); onLogged && onLogged() }} />
+        <div style={{ marginTop: 8 }}><ProfileCard username={vip.username} compact /></div>
 
         <div style={{ display: 'flex', gap: 6, margin: '10px 0', alignItems: 'center' }}>
           {[['en', 'EN'], ['cn', '中文']].map(([k, label]) => (

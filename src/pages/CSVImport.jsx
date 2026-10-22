@@ -1461,9 +1461,9 @@ export default function CSVImport() {
       const potDailySnapResult = await savePotentialDailySnapshot(snapshotDate, setRawProgress, importStartedAt)
       const reactivationResult = await autoDetectReactivations(snapshotDate, setRawProgress)
 
-      // Recalculate days_inactive / activity_status / churn_risk immediately after upload
-      setRawProgress(L2('Recalculating days inactive…','正在重新计算不活跃天数…'))
-      await supabase.rpc('refresh_days_inactive')
+      // Status, days inactive and host task lists are recalculated by the database job refresh_if_new_data()
+      // (pg_cron, every 10 min, no API time limit). Calling refresh_days_inactive from here hit the 8 s API timeout.
+      setRawProgress(L2('Upload saved — player status and task lists update automatically within 10 minutes','已保存 — 玩家状态和任务会在10分钟内自动更新'))
 
       setHistoryRefresh(n => n + 1) // also refresh the missing-days indicator
 

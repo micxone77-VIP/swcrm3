@@ -18,6 +18,7 @@ import { TierBadge, StatusBadge, RiskBadge } from '../components/ui'
 import { callAI } from '../lib/aiApi'
 import { useLanguage } from '../contexts/LanguageContext'
 import DepositProfileCard from '../components/vip/DepositProfileCard'
+import ProfileCard from '../components/vip/ProfileCard'
 import ProviderActivityCard from '../components/vip/ProviderActivityCard'
 
 const TIERS = ['BRONZE','SILVER','GOLD','PLATINUM','DIAMOND','DIAMOND-P','BLACK']
@@ -494,6 +495,9 @@ onMouseLeave={e => e.currentTarget.style.opacity=.6}
 )}
 </div>
 </div>
+
+{/* ── Player profile card (manual + auto from data) ── */}
+<ProfileCard username={vip.username} />
 
 {/* ── Financial Summary ── */}
 <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:14, marginTop:20 }}>
