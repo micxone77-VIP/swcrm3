@@ -47,6 +47,6 @@ Owner: **Marcus** (VIP Department, sureWin, Kuala Lumpur). Admin of this CRM. No
 
 ## Pending / open
 - ON HOLD until Marcus says "relax the deposit rule": count deposits on no-bet days for dates after the CSV fix (2026-10-20). Example: jaslyn 18 Oct SGD 35,000, 0 bets.
-- Unanswered: which of Mia, Marcus01, vip, Test Admin (auto) are real hosts (to hide the rest from host lists).
+- Accounts (2026-10-22, Marcus): Marcus, Angel, Jennifer = admin (hosts stay admin: Angel does CSV imports; host role would need page list + wider contact_logs read first). Mia, vip, Marcus01 = readonly with 31 view pages (no users/import/wa-numbers). Test Admin (auto) = disabled (readonly, is_active false, banned in auth). App does not check `profiles.is_active`; disable = ban in auth.users.
 - Offered, not accepted: automatic Transfer P&L; VIP360 contact-edit popup; Expenses edit form as a popup (currently opens at the top of the page).
 - Untracked leftovers in the repo root (`patch-*.cjs`, `Claude outputs/`, `.fuse_hidden*`) are old patch scripts, safe to ignore, don't commit them.
