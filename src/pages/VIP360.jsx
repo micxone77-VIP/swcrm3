@@ -19,6 +19,7 @@ import { callAI } from '../lib/aiApi'
 import { useLanguage } from '../contexts/LanguageContext'
 import DepositProfileCard from '../components/vip/DepositProfileCard'
 import ProfileCard from '../components/vip/ProfileCard'
+import { autoText } from '../lib/profileAutoText'
 import ProviderActivityCard from '../components/vip/ProviderActivityCard'
 
 const TIERS = ['BRONZE','SILVER','GOLD','PLATINUM','DIAMOND','DIAMOND-P','BLACK']
@@ -118,11 +119,12 @@ const [vipProfile, setVipProfile] = useState(null)
 const [profileForm, setProfileForm] = useState({
   preferred_games: [], interests: [], personality_tags: [],
   deposit_pattern: '', deposit_trigger: '',
-  preferred_contact_time: '', preferred_contact_channel: 'whatsapp',
-  host_notes: '', relationship_level: 'neutral',
+  preferred_contact_time: '', preferred_contact_channel: '',
+  host_notes: '', relationship_level: '',
   vip_since: '', birthday_month: '', birthday_day: '',
 })
 const [profileLoading, setProfileLoading] = useState(false)
+const [profileAuto, setProfileAuto] = useState(null)   // get_vip_profile_auto(): values worked out from data
 const [profileSaving, setProfileSaving] = useState(false)
 const profileLoadedFor = useRef(null)
 
@@ -247,6 +249,8 @@ if (tab !== 'profile' || !vip?.username) return
 if (profileLoadedFor.current === vip.username) return
 profileLoadedFor.current = vip.username
 setProfileLoading(true)
+setProfileAuto(null)
+supabase.rpc('get_vip_profile_auto', { p_username: vip.username }).then(({ data }) => setProfileAuto(data || null))
 supabase.from('vip_profiles')
   .select('*').eq('username', vip.username).maybeSingle()
   .then(({ data }) => {
@@ -259,9 +263,9 @@ supabase.from('vip_profiles')
         deposit_pattern:          data.deposit_pattern || '',
         deposit_trigger:          data.deposit_trigger || '',
         preferred_contact_time:   data.preferred_contact_time || '',
-        preferred_contact_channel: data.preferred_contact_channel || 'whatsapp',
+        preferred_contact_channel: data.preferred_contact_channel || '',
         host_notes:               data.host_notes || '',
-        relationship_level:       data.relationship_level || 'neutral',
+        relationship_level:       data.relationship_level || '',
         vip_since:                data.vip_since || '',
         birthday_month:           data.birthday_month ? String(data.birthday_month) : '',
         birthday_day:             data.birthday_day  ? String(data.birthday_day)  : '',
@@ -382,9 +386,9 @@ const payload = {
   deposit_pattern:           profileForm.deposit_pattern || '',
   deposit_trigger:           profileForm.deposit_trigger || '',
   preferred_contact_time:    profileForm.preferred_contact_time || '',
-  preferred_contact_channel: profileForm.preferred_contact_channel || 'whatsapp',
+  preferred_contact_channel: profileForm.preferred_contact_channel || null,
   host_notes:                profileForm.host_notes || '',
-  relationship_level:        profileForm.relationship_level || 'neutral',
+  relationship_level:        profileForm.relationship_level || null,
   vip_since:                 profileForm.vip_since || null,
   birthday_month:            profileForm.birthday_month ? parseInt(profileForm.birthday_month) : null,
   birthday_day:              profileForm.birthday_day  ? parseInt(profileForm.birthday_day)  : null,
@@ -1164,20 +1168,25 @@ const CHANNEL_OPTIONS = [
 ]
 const MONTHS = lang === 'zh' ? ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'] : ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
-function ChipRow({ options, selected, onToggle }) {
+// Manual picks win; with no manual pick the auto picks are lit and marked 🤖.
+// Clicking a chip while showing auto picks starts the manual list from the auto picks.
+function ChipRow({ options, selected, onToggle, autoSel = [], autoWhy = {} }) {
+  const useAuto = !(selected||[]).length && autoSel.length > 0
+  const shown = useAuto ? autoSel : (selected||[])
   return (
     <div style={{ display:'flex', flexWrap:'wrap', gap:7 }}>
       {options.map(o => {
-        const active = (selected||[]).includes(o.val)
+        const active = shown.includes(o.val)
         return (
-          <button key={o.val} onClick={() => onToggle(o.val)} style={{
+          <button key={o.val} title={useAuto && active ? autoText(autoWhy[o.val], lang) : undefined}
+            onClick={() => onToggle(o.val, useAuto ? autoSel : null)} style={{
             fontSize:12, fontWeight:active?700:500, padding:'5px 12px', borderRadius:20,
             border: active ? '1.5px solid var(--brand)' : '1px solid var(--border)',
             background: active ? 'rgba(255,107,0,.12)' : 'var(--surface2)',
             color: active ? 'var(--brand)' : 'var(--text)',
             cursor:'pointer', transition:'all .15s',
           }}>
-            {o.label}
+            {o.label}{useAuto && active ? ' 🤖' : ''}
           </button>
         )
       })}
@@ -1185,9 +1194,24 @@ function ChipRow({ options, selected, onToggle }) {
   )
 }
 
+const A = profileAuto || {}
+const autoPers = (A.personality_tags || []).map(x => x.tag)
+const autoPersWhy = Object.fromEntries((A.personality_tags || []).map(x => [x.tag, x.why]))
+const relShown = profileForm.relationship_level || A.relationship_level || 'neutral'
+const relIsAuto = !profileForm.relationship_level && !!A.relationship_level
+const chanShown = profileForm.preferred_contact_channel || A.preferred_contact_channel || 'whatsapp'
+const chanIsAuto = !profileForm.preferred_contact_channel && !!A.preferred_contact_channel
+const toggleAuto = (field, val, startFrom) => {
+  if (startFrom) setProfileForm(f => ({ ...f, [field]: startFrom.includes(val) ? startFrom.filter(x => x !== val) : [...startFrom, val] }))
+  else toggleTag(field, val)
+}
+const AutoHint = ({ text, show = true }) => (show && text
+  ? <div style={{ fontSize:11, color:'var(--muted)', marginTop:5 }}>🤖 {L2('Auto from data', '系统自动')}: <span style={{ color:'var(--text)' }}>{autoText(text, lang)}</span></div>
+  : null)
+
 if (profileLoading) return <div style={{ padding:32, textAlign:'center', color:'var(--muted)' }}>{L2('Loading profile…', '载入档案中…')}</div>
 
-const relOpt = RELATIONSHIP_OPTIONS.find(r => r.val === profileForm.relationship_level) || RELATIONSHIP_OPTIONS[2]
+const relOpt = RELATIONSHIP_OPTIONS.find(r => r.val === relShown) || RELATIONSHIP_OPTIONS[2]
 
 return (
 <div style={{ maxWidth:760 }}>
@@ -1199,14 +1223,15 @@ return (
       <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
         {RELATIONSHIP_OPTIONS.map(o => (
           <button key={o.val} onClick={() => setProfileForm(f=>({...f,relationship_level:o.val}))} style={{
-            fontSize:12, fontWeight:profileForm.relationship_level===o.val?700:500,
+            fontSize:12, fontWeight:relShown===o.val?700:500,
             padding:'5px 12px', borderRadius:20, cursor:'pointer', transition:'all .15s',
-            border: profileForm.relationship_level===o.val ? `1.5px solid ${o.color}` : '1px solid var(--border)',
-            background: profileForm.relationship_level===o.val ? `${o.color}22` : 'var(--surface)',
-            color: profileForm.relationship_level===o.val ? o.color : 'var(--text)',
-          }}>{o.label}</button>
+            border: relShown===o.val ? `1.5px solid ${o.color}` : '1px solid var(--border)',
+            background: relShown===o.val ? `${o.color}22` : 'var(--surface)',
+            color: relShown===o.val ? o.color : 'var(--text)',
+          }}>{o.label}{relIsAuto && relShown===o.val ? ' 🤖' : ''}</button>
         ))}
       </div>
+      <AutoHint text={A.relationship_why} show={relIsAuto} />
     </div>
 
     {/* Contact Preference */}
@@ -1215,12 +1240,12 @@ return (
       <div style={{ display:'flex', gap:7, flexWrap:'wrap', marginBottom:10 }}>
         {CHANNEL_OPTIONS.map(o => (
           <button key={o.val} onClick={() => setProfileForm(f=>({...f,preferred_contact_channel:o.val}))} style={{
-            fontSize:12, fontWeight:profileForm.preferred_contact_channel===o.val?700:500,
+            fontSize:12, fontWeight:chanShown===o.val?700:500,
             padding:'5px 12px', borderRadius:20, cursor:'pointer',
-            border: profileForm.preferred_contact_channel===o.val ? '1.5px solid var(--brand)' : '1px solid var(--border)',
-            background: profileForm.preferred_contact_channel===o.val ? 'rgba(255,107,0,.12)' : 'var(--surface)',
-            color: profileForm.preferred_contact_channel===o.val ? 'var(--brand)' : 'var(--text)',
-          }}>{o.label}</button>
+            border: chanShown===o.val ? '1.5px solid var(--brand)' : '1px solid var(--border)',
+            background: chanShown===o.val ? 'rgba(255,107,0,.12)' : 'var(--surface)',
+            color: chanShown===o.val ? 'var(--brand)' : 'var(--text)',
+          }}>{o.label}{chanIsAuto && chanShown===o.val ? ' 🤖' : ''}</button>
         ))}
       </div>
       <input
@@ -1229,6 +1254,7 @@ return (
         placeholder={L2('Best time (e.g. Weekday evenings 8–10pm)', '最佳时间（例如：平日晚上8–10点）')}
         style={{ width:'100%', fontSize:12, padding:'6px 10px', borderRadius:6, border:'1px solid var(--border)', background:'var(--surface)', color:'var(--text)', boxSizing:'border-box' }}
       />
+      <AutoHint text={A.preferred_contact_time && L2(`usually deposits ${A.preferred_contact_time}`, `常存款时间 ${autoText(A.preferred_contact_time, lang)}`)} show={!profileForm.preferred_contact_time} />
     </div>
   </div>
 
@@ -1238,8 +1264,11 @@ return (
     <ChipRow
       options={GAME_OPTIONS}
       selected={profileForm.preferred_games}
-      onToggle={val => toggleTag('preferred_games', val)}
+      autoSel={A.preferred_games || []}
+      onToggle={(val, from) => toggleAuto('preferred_games', val, from)}
     />
+    {!(profileForm.preferred_games||[]).length && (A.preferred_games||[]).length > 0 && A.games_month &&
+      <div style={{ fontSize:11, color:'var(--muted)', marginTop:6 }}>🤖 {L2(`From the ${A.games_month} provider report. Fishing / poker / e-sports / arcade: pick by hand.`, `来自 ${A.games_month} 供应商报表。捕鱼 / 扑克 / 电竞 / 街机请手动选。`)}</div>}
   </div>
 
   {/* Deposit Behaviour */}
@@ -1255,6 +1284,7 @@ return (
           rows={3}
           style={{ width:'100%', fontSize:12, padding:'7px 10px', borderRadius:6, border:'1px solid var(--border)', background:'var(--surface)', color:'var(--text)', resize:'vertical', boxSizing:'border-box' }}
         />
+        <AutoHint text={A.deposit_pattern} show={!profileForm.deposit_pattern} />
       </div>
       <div>
         <label style={{ fontSize:11, color:'var(--muted)', display:'block', marginBottom:4 }}>{L2('What Triggers Deposit', '存款触发因素')}</label>
@@ -1265,6 +1295,7 @@ return (
           rows={3}
           style={{ width:'100%', fontSize:12, padding:'7px 10px', borderRadius:6, border:'1px solid var(--border)', background:'var(--surface)', color:'var(--text)', resize:'vertical', boxSizing:'border-box' }}
         />
+        <AutoHint text={A.deposit_trigger} show={!profileForm.deposit_trigger} />
       </div>
     </div>
   </div>
@@ -1285,8 +1316,12 @@ return (
     <ChipRow
       options={PERSONALITY_OPTIONS}
       selected={profileForm.personality_tags}
-      onToggle={val => toggleTag('personality_tags', val)}
+      autoSel={autoPers}
+      autoWhy={autoPersWhy}
+      onToggle={(val, from) => toggleAuto('personality_tags', val, from)}
     />
+    {!(profileForm.personality_tags||[]).length && autoPers.length > 0 &&
+      <div style={{ fontSize:11, color:'var(--muted)', marginTop:6 }}>🤖 {L2('Lit from data (hover a tag to see why). VIP conscious, social and competitive: pick by hand.', '根据数据点亮（鼠标停在标签上看原因）。VIP意识、爱聊天、好胜请手动选。')}</div>}
   </div>
 
   {/* VIP Since & Birthday */}
@@ -1299,6 +1334,7 @@ return (
         onChange={e => setProfileForm(f=>({...f,vip_since:e.target.value}))}
         style={{ fontSize:13, padding:'6px 10px', borderRadius:6, border:'1px solid var(--border)', background:'var(--surface)', color:'var(--text)', width:'100%', boxSizing:'border-box' }}
       />
+      <AutoHint text={A.vip_since && `${A.vip_since} (${A.vip_since_source})`} show={!profileForm.vip_since} />
     </div>
     <div style={{ background:'var(--surface2)', borderRadius:10, padding:'14px 16px' }}>
       <SectionLabel>{L2('Birthday (for campaigns)', '生日（用于活动）')}</SectionLabel>
@@ -1320,6 +1356,9 @@ return (
           {Array.from({length:31},(_,i)=>i+1).map(d => <option key={d} value={String(d)}>{d}</option>)}
         </select>
       </div>
+      <AutoHint text={A.birthday_month && L2(`${MONTHS[A.birthday_month-1]} ${A.birthday_day} (player record)`, `${MONTHS[A.birthday_month-1]}${A.birthday_day}日（玩家资料）`)} show={!profileForm.birthday_month} />
+      {profileAuto && !profileForm.birthday_month && !A.birthday_month &&
+        <div style={{ fontSize:11, color:'#d29922', marginTop:5 }}>{L2('No birthday on record — please fill in', '没有生日资料，请手动填')}</div>}
     </div>
   </div>
 
