@@ -1,1 +1,0 @@
-Legacy source is the existing Campaigns.jsx implementation.

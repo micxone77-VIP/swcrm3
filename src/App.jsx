@@ -1,45 +1,47 @@
 // src/App.jsx — V3 routing with permKey-based access control
+import { lazy } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider }      from './hooks/useAuth'
 import { LanguageProvider }  from './contexts/LanguageContext'
 import Layout                from './components/Layout'
 import RequireRole           from './components/RequireRole'
 import Login                 from './pages/Login'
-import Today                 from './pages/Today'
-import MyTasks               from './pages/MyTasks'
-import Alerts                from './pages/Alerts'
-import AllVIPs               from './pages/AllVIPs'
-import VIP360                from './pages/VIP360'
-import AtRisk                from './pages/AtRisk'
-import FollowUp              from './pages/FollowUp'
-import BirthdayReminder      from './pages/BirthdayReminder'
-import CampaignsCountryTieredFixed from './pages/CampaignsCountryTieredFixed'
-import Upgrades              from './pages/Upgrades'
-import TransferTracker       from './pages/TransferTracker'
-import BudgetStrategy        from './pages/BudgetStrategy'
-import Analytics             from './pages/Analytics'
-import KPIProgress           from './pages/KPIProgress'
-import PeriodReport          from './pages/PeriodReport'
-import TierAnalytics         from './pages/TierAnalytics'
-import PlayerProfiling       from './pages/PlayerProfiling'
-import AskData               from './pages/AskData'
-import ManageUsers           from './pages/ManageUsers'
-import CSVImport             from './pages/CSVImport'
-import ExportPage            from './pages/ExportPage'
-import ExpenseTracker        from './pages/ExpenseTracker'
-import BossView              from './pages/BossView'
-import ContactLog            from './pages/ContactLog'
-import DailyTargets          from './pages/DailyTargets'
-import ChurnAlerts           from './pages/ChurnAlerts'
-import RetentionWorkspace    from './pages/RetentionWorkspace'
-import RetentionAnalytics    from './pages/RetentionAnalytics'
-import RetentionQueue        from './pages/RetentionQueue'
-import MonthlyReportExport   from './pages/MonthlyReportExport'
-import HostPerformance       from './pages/HostPerformance'
-import ActiveTracker         from './pages/ActiveTracker'
-import WeeklyOutcome         from './pages/WeeklyOutcome'
-import LuckySpinAdmin        from './pages/LuckySpinAdmin'
-import WANumbers             from './pages/WANumbers'
+// Pages load only when opened (keeps the first download small); Layout shows a loading line meanwhile.
+const Today = lazy(() => import('./pages/Today'))
+const MyTasks = lazy(() => import('./pages/MyTasks'))
+const Alerts = lazy(() => import('./pages/Alerts'))
+const AllVIPs = lazy(() => import('./pages/AllVIPs'))
+const VIP360 = lazy(() => import('./pages/VIP360'))
+const AtRisk = lazy(() => import('./pages/AtRisk'))
+const FollowUp = lazy(() => import('./pages/FollowUp'))
+const BirthdayReminder = lazy(() => import('./pages/BirthdayReminder'))
+const CampaignsCountryTiered = lazy(() => import('./pages/CampaignsCountryTiered'))
+const Upgrades = lazy(() => import('./pages/Upgrades'))
+const TransferTracker = lazy(() => import('./pages/TransferTracker'))
+const BudgetStrategy = lazy(() => import('./pages/BudgetStrategy'))
+const Analytics = lazy(() => import('./pages/Analytics'))
+const KPIProgress = lazy(() => import('./pages/KPIProgress'))
+const PeriodReport = lazy(() => import('./pages/PeriodReport'))
+const TierAnalytics = lazy(() => import('./pages/TierAnalytics'))
+const PlayerProfiling = lazy(() => import('./pages/PlayerProfiling'))
+const AskData = lazy(() => import('./pages/AskData'))
+const ManageUsers = lazy(() => import('./pages/ManageUsers'))
+const CSVImport = lazy(() => import('./pages/CSVImport'))
+const ExportPage = lazy(() => import('./pages/ExportPage'))
+const ExpenseTracker = lazy(() => import('./pages/ExpenseTracker'))
+const BossView = lazy(() => import('./pages/BossView'))
+const ContactLog = lazy(() => import('./pages/ContactLog'))
+const DailyTargets = lazy(() => import('./pages/DailyTargets'))
+const ChurnAlerts = lazy(() => import('./pages/ChurnAlerts'))
+const RetentionWorkspace = lazy(() => import('./pages/RetentionWorkspace'))
+const RetentionAnalytics = lazy(() => import('./pages/RetentionAnalytics'))
+const RetentionQueue = lazy(() => import('./pages/RetentionQueue'))
+const MonthlyReportExport = lazy(() => import('./pages/MonthlyReportExport'))
+const HostPerformance = lazy(() => import('./pages/HostPerformance'))
+const ActiveTracker = lazy(() => import('./pages/ActiveTracker'))
+const WeeklyOutcome = lazy(() => import('./pages/WeeklyOutcome'))
+const LuckySpinAdmin = lazy(() => import('./pages/LuckySpinAdmin'))
+const WANumbers = lazy(() => import('./pages/WANumbers'))
 import './pages/RetentionAnalytics.css'
 
 export default function App() {
@@ -75,7 +77,7 @@ export default function App() {
       <Route path="retention-analytics" element={<RequireRole permKey="retention-analytics"><RetentionAnalytics /></RequireRole>} />
 
       {/* Campaigns */}
-      <Route path="campaigns"        element={<RequireRole permKey="campaigns"><CampaignsCountryTieredFixed /></RequireRole>} />
+      <Route path="campaigns"        element={<RequireRole permKey="campaigns"><CampaignsCountryTiered /></RequireRole>} />
       <Route path="lucky-spin-admin" element={<RequireRole permKey="lucky-spin"><LuckySpinAdmin /></RequireRole>} />
       <Route path="budget"           element={<RequireRole permKey="budget"><BudgetStrategy /></RequireRole>} />
 

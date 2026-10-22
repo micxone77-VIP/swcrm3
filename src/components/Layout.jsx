@@ -1,3 +1,4 @@
+import { Suspense } from 'react'
 import { Navigate, Outlet } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import Sidebar from './Sidebar'
@@ -29,8 +30,14 @@ export default function Layout() {
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
       <Sidebar />
       <main style={{ flex: 1, overflowY: 'auto', background: 'var(--bg)' }}>
-        <Outlet />
+        <Suspense fallback={<PageLoading />}><Outlet /></Suspense>
       </main>
     </div>
   )
+}
+
+// Shown while a page's code downloads (pages are lazy-loaded in App.jsx)
+function PageLoading() {
+  const { lang } = useLanguage()
+  return <div style={{ padding: 32, color: 'var(--muted)', fontSize: 13 }}>{lang === 'zh' ? '加载中…' : 'Loading…'}</div>
 }
