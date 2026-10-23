@@ -19,6 +19,7 @@ import { callAI } from '../lib/aiApi'
 import { useLanguage } from '../contexts/LanguageContext'
 import DepositProfileCard from '../components/vip/DepositProfileCard'
 import ProfileCard from '../components/vip/ProfileCard'
+import InteractionTimeline from '../components/vip/InteractionTimeline'
 import { autoText } from '../lib/profileAutoText'
 import ProviderActivityCard from '../components/vip/ProviderActivityCard'
 
@@ -121,6 +122,7 @@ const [profileForm, setProfileForm] = useState({
   deposit_pattern: '', deposit_trigger: '',
   preferred_contact_time: '', preferred_contact_channel: '',
   host_notes: '', relationship_level: '',
+  family_tags: [], family_notes: '',
   vip_since: '', birthday_month: '', birthday_day: '',
 })
 const [profileLoading, setProfileLoading] = useState(false)
@@ -265,6 +267,8 @@ supabase.from('vip_profiles')
         preferred_contact_time:   data.preferred_contact_time || '',
         preferred_contact_channel: data.preferred_contact_channel || '',
         host_notes:               data.host_notes || '',
+        family_tags:              data.family_tags || [],
+        family_notes:             data.family_notes || '',
         relationship_level:       data.relationship_level || '',
         vip_since:                data.vip_since || '',
         birthday_month:           data.birthday_month ? String(data.birthday_month) : '',
@@ -388,6 +392,8 @@ const payload = {
   preferred_contact_time:    profileForm.preferred_contact_time || '',
   preferred_contact_channel: profileForm.preferred_contact_channel || null,
   host_notes:                profileForm.host_notes || '',
+  family_tags:               profileForm.family_tags || [],
+  family_notes:              profileForm.family_notes || '',
   relationship_level:        profileForm.relationship_level || null,
   vip_since:                 profileForm.vip_since || null,
   birthday_month:            profileForm.birthday_month ? parseInt(profileForm.birthday_month) : null,
@@ -1127,6 +1133,13 @@ const GAME_OPTIONS = [
   { val:'arcade',       label:L2('🕹 Arcade', '🕹 街机') },
   { val:'mixed',        label:L2('🎲 Mixed / All', '🎲 混合 / 全部') },
 ]
+const FAMILY_OPTIONS = [
+  { val:'single',          label:L2('🙋 Single', '🙋 单身') },
+  { val:'married',         label:L2('💍 Married', '💍 已婚') },
+  { val:'has_kids',        label:L2('👶 Has kids', '👶 有小孩') },
+  { val:'with_parents',    label:L2('🏠 Lives with parents', '🏠 和父母同住') },
+  { val:'family_first',    label:L2('❤️ Family comes first', '❤️ 很顾家') },
+]
 const INTEREST_OPTIONS = [
   { val:'gadgets_3c',   label:L2('📱 Gadgets / 3C', '📱 电子产品 / 3C') },
   { val:'travel',       label:L2('✈️ Travel', '✈️ 旅行') },
@@ -1215,6 +1228,9 @@ const relOpt = RELATIONSHIP_OPTIONS.find(r => r.val === relShown) || RELATIONSHI
 
 return (
 <div style={{ maxWidth:760 }}>
+  {/* Last 10 interactions */}
+  <InteractionTimeline username={vip.username} currency={vip.currency} />
+
   {/* Relationship & Quick Info */}
   <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16, marginBottom:20 }}>
     {/* Relationship Level */}
@@ -1307,6 +1323,23 @@ return (
       options={INTEREST_OPTIONS}
       selected={profileForm.interests}
       onToggle={val => toggleTag('interests', val)}
+    />
+  </div>
+
+  {/* Family */}
+  <div style={{ background:'var(--surface2)', borderRadius:10, padding:'14px 16px', marginBottom:14 }}>
+    <SectionLabel>{L2('Family', '家人')}</SectionLabel>
+    <ChipRow
+      options={FAMILY_OPTIONS}
+      selected={profileForm.family_tags}
+      onToggle={val => toggleTag('family_tags', val)}
+    />
+    <textarea
+      value={profileForm.family_notes}
+      onChange={e => setProfileForm(f=>({...f,family_notes:e.target.value}))}
+      placeholder={L2('Spouse / kids names and ages, anniversaries, family birthdays… (no IC or bank numbers)', '配偶 / 小孩名字和年龄、纪念日、家人生日…（不要写 IC 或银行号码）')}
+      rows={2}
+      style={{ width:'100%', marginTop:10, fontSize:12, padding:'7px 10px', borderRadius:6, border:'1px solid var(--border)', background:'var(--surface)', color:'var(--text)', resize:'vertical', boxSizing:'border-box' }}
     />
   </div>
 
