@@ -118,6 +118,18 @@ async function checkAlerts(myName) {
         link: '/alerts?tab=winloss',
       })
     }
+    // big withdrawal / deposit spike (deposit drop is a weekly list on the Alerts page, not a bell item)
+    const hasMineM = myName && (mine(wl.withdrawals).length + mine(wl.spikes).length) > 0
+    const WD = hasMineM ? mine(wl.withdrawals) : wl.withdrawals, SP = hasMineM ? mine(wl.spikes) : wl.spikes
+    if (WD.length + SP.length > 0) {
+      alerts.push({
+        key: 'money_moves', icon: '💸', severity: WD.length ? 'high' : 'low',
+        title: `${WD.length} big withdrawal · ${SP.length} deposit spike yesterday`, titleZh: `昨日 ${WD.length} 位大额提款 · ${SP.length} 位存款暴增`,
+        desc: `${hasMineM ? 'Your VIPs' : 'All VIPs'} · data ${wl.dataDate || '-'} — contact big withdrawals today`,
+        descZh: `${hasMineM ? '我的VIP' : '全部VIP'} · 数据 ${wl.dataDate || '-'} — 大额提款的今天就联系`,
+        link: '/alerts?tab=winloss',
+      })
+    }
   } catch (e) { console.error('big win/loss check failed', e) }
 
   return alerts

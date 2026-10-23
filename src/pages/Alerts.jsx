@@ -30,7 +30,7 @@ export default function Alerts() {
   const [wlCount, setWlCount] = useState(null)
   const { profile } = useAuth()
   const myName = profile?.full_name || ''
-  useEffect(() => { loadBigWinLoss().then(r => setWlCount(r.losses.length + r.wins.length)).catch(() => {}) }, [])
+  useEffect(() => { loadBigWinLoss().then(r => setWlCount(r.losses.length + r.wins.length + r.withdrawals.length + r.spikes.length)).catch(() => {}) }, [])
 
   useEffect(() => {
     (async () => {
@@ -68,7 +68,7 @@ export default function Alerts() {
     { key: 'critical', label: t('alerts.tabCritical'),  count: critical.length },
     { key: 'high',     label: t('alerts.tabHigh'),      count: highRisk.length },
     { key: 'contact',  label: t('alerts.tabNoContact'), count: noContact.length },
-    { key: 'winloss',  label: lang === 'zh' ? '💰 昨日大赢/大输' : '💰 Big Win/Loss', count: wlCount ?? undefined },
+    { key: 'winloss',  label: lang === 'zh' ? '💰 大赢大输 / 资金异动' : '💰 Big Win/Loss & Money', count: wlCount ?? undefined },
   ]
 
   const displayMap = { critical, high: highRisk, contact: noContact }
