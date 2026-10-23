@@ -16,6 +16,7 @@ const NAV_GROUPS = [
   ] },
   { key: 'vip', label: 'VIP Operations', zh: 'VIP运营', icon: '👑', items: [
     { to: '/vips',           label: 'All VIPs', zh: '全部VIP',       icon: '👥', permKey: 'vips'           },
+    { to: '/segments',       label: 'Player Segments', zh: '玩家分层', icon: '🧭', permKey: 'segments'     },
     { to: '/at-risk',        label: 'Active Risk', zh: '活跃风险',    icon: '⚠️', permKey: 'at-risk'        },
     { to: '/active-tracker', label: 'Active Tracker', zh: '活跃追踪', icon: '📡', permKey: 'active-tracker' },
     { to: '/follow-up',      label: 'Follow Up', zh: '跟进',      icon: '📞', permKey: 'follow-up'      },

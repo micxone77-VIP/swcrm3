@@ -11,6 +11,7 @@ const Today = lazy(() => import('./pages/Today'))
 const MyTasks = lazy(() => import('./pages/MyTasks'))
 const Alerts = lazy(() => import('./pages/Alerts'))
 const AllVIPs = lazy(() => import('./pages/AllVIPs'))
+const Segments = lazy(() => import('./pages/Segments'))
 const VIP360 = lazy(() => import('./pages/VIP360'))
 const AtRisk = lazy(() => import('./pages/AtRisk'))
 const FollowUp = lazy(() => import('./pages/FollowUp'))
@@ -59,6 +60,7 @@ export default function App() {
 
       {/* VIP Operations */}
       <Route path="vips"          element={<RequireRole permKey="vips"><AllVIPs /></RequireRole>} />
+      <Route path="segments"      element={<RequireRole permKey="segments"><Segments /></RequireRole>} />
       <Route path="vips/:id"      element={<RequireRole permKey="vips"><VIP360 /></RequireRole>} />
       <Route path="vip360"        element={<RequireRole permKey="vips"><VIP360 /></RequireRole>} />{/* /vip360?player=<username>&tab=<tab> */}
       <Route path="at-risk"       element={<RequireRole permKey="at-risk"><AtRisk /></RequireRole>} />
