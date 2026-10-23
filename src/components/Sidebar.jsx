@@ -47,6 +47,7 @@ const NAV_GROUPS = [
   { key: 'performance', label: 'Performance', zh: '绩效', icon: '🏆', items: [
     { to: '/kpi',             label: 'KPI', zh: 'KPI',              icon: '🏆', permKey: 'kpi'              },
     { to: '/host-performance',label: 'Host Performance', zh: '负责人绩效', icon: '📋', permKey: 'host-performance' },
+    { to: '/manager-kpi',     label: 'Manager KPI Board', zh: '经理 KPI 看板', icon: '📊', permKey: 'manager-kpi' },
     { to: '/ask',             label: 'Ask Data', zh: '数据问答',         icon: '💬', permKey: 'ask'              },
   ] },
   { key: 'system', label: 'System', zh: '系统', icon: '⚙️', items: [
