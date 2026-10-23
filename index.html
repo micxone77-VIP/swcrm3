@@ -218,6 +218,21 @@
       // Apply saved text size before the app renders (default: large)
       try { document.documentElement.setAttribute('data-text', localStorage.getItem('crm_text_size') || 'large') } catch (e) { document.documentElement.setAttribute('data-text', 'large') }
     </script>
+    <script>
+      // During a Cloudflare deploy the browser can get the new page before its program files are ready, which leaves
+      // a blank screen. If a script / module file fails to load, reload once; a second failure is left alone (no loop).
+      (function () {
+        var K = 'crm-asset-reload'
+        window.addEventListener('error', function (e) {
+          var t = e.target
+          if (!t || !(t.tagName === 'SCRIPT' || (t.tagName === 'LINK' && /modulepreload|stylesheet/.test(t.rel || '')))) return
+          if (t.tagName === 'LINK' && /fonts\.googleapis/.test(t.href || '')) return
+          try { if (sessionStorage.getItem(K)) return; sessionStorage.setItem(K, '1') } catch (_) { return }
+          location.reload()
+        }, true)
+        window.addEventListener('load', function () { setTimeout(function () { try { sessionStorage.removeItem(K) } catch (_) {} }, 15000) })
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>
