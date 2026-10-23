@@ -26,9 +26,12 @@ export default function ExecOverview() {
   const [kpi, setKpi] = useState(null)
   const [seg, setSeg] = useState(null)
   const [alerts, setAlerts] = useState(null)
+  const [mood, setMood] = useState({ rated: 0, pts: 0, neg: 0 })
 
   useEffect(() => {
     supabase.rpc('get_manager_kpi', { p_month: month }).then(({ data }) => setKpi(data || []))
+    supabase.rpc('get_sentiment_kpi', { p_month: month }).then(({ data }) =>
+      setMood((data || []).reduce((t, r) => ({ rated: t.rated + r.rated, pts: t.pts + r.positive * 100 + r.neutral * 50, neg: t.neg + r.negative }), { rated: 0, pts: 0, neg: 0 })))
     fetchAll(() => supabase.from('v_vip_segments').select('id,username,tier,currency,host_assigned,lifecycle,value_band,dep_90d,days_inactive').order('username')).then(setSeg, () => setSeg([]))
     loadBigWinLoss().then(setAlerts, () => setAlerts({ losses: [], wins: [], withdrawals: [], spikes: [], drops: [] }))
   }, [month])
@@ -88,6 +91,8 @@ export default function ExecOverview() {
           <Big label={L2('ARPU (GGR)', 'ARPU（人均 GGR）')} value={<span style={{ fontSize: 17 }}>{money('ggr')}</span>} sub={L2('house win per active depositor', '平台每人赢的钱')} />
           <Big label={L2('Daily tasks done', '每日任务完成')} value={P(t.tasks_done, (t.tasks_done || 0) + (t.tasks_missed || 0))} sub={L2(`${t.tasks_done || 0} done · ${t.tasks_missed || 0} missed`, `完成 ${t.tasks_done || 0} · 未完成 ${t.tasks_missed || 0}`)}
             color={pct(t.tasks_done, (t.tasks_done || 0) + (t.tasks_missed || 0)) < 50 ? '#f85149' : '#3fb950'} />
+          <Big label={L2('Sentiment score', '情感评分')} value={mood.rated ? Math.round(mood.pts / mood.rated) : '—'}
+            sub={mood.rated ? L2(`0–100 · ${mood.rated} rated · 😠 ${mood.neg}`, `0–100 · ${mood.rated} 次评分 · 😠 ${mood.neg}`) : L2('No mood tagged yet', '还没有情绪评分')} />
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: 14, marginBottom: 14 }}>

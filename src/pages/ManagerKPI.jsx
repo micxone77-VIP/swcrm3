@@ -23,6 +23,7 @@ export default function ManagerKPI() {
   const [month, setMonth] = useState(months[0])
   const [mkt, setMkt] = useState('ALL')
   const [rows, setRows] = useState(null)
+  const [mood, setMood] = useState({})   // host → { rated, positive, neutral, negative, score } (get_sentiment_kpi)
   const [err, setErr] = useState('')
 
   useEffect(() => {
@@ -33,8 +34,21 @@ export default function ManagerKPI() {
       if (error) setErr(error.message)
       setRows(data || [])
     })
+    supabase.rpc('get_sentiment_kpi', { p_month: month }).then(({ data }) => {
+      if (!off) setMood(Object.fromEntries((data || []).map(r => [r.host, r])))
+    })
     return () => { off = true }
   }, [month])
+  // team sentiment = weighted over all rated replies
+  const teamMood = Object.values(mood).reduce((t, r) => ({ rated: t.rated + r.rated, pts: t.pts + r.positive * 100 + r.neutral * 50 }), { rated: 0, pts: 0 })
+  const moodOf = h => (h === '__team' ? (teamMood.rated ? { score: Math.round(teamMood.pts / teamMood.rated), rated: teamMood.rated } : null) : mood[h] || null)
+  const MoodCell = ({ h }) => {
+    const m = moodOf(h)
+    if (!m || !m.rated) return <span style={{ color: 'var(--muted)' }}>—</span>
+    const s = Number(m.score)
+    return <div><b style={{ fontSize: 15, color: s >= 70 ? '#3fb950' : s >= 40 ? '#d29922' : '#f85149' }}>{s}</b>
+      <div style={{ fontSize: 11, color: 'var(--muted)' }}>{m.positive != null ? `😊${m.positive} 😐${m.neutral} 😠${m.negative}` : L2(`${m.rated} rated`, `${m.rated} 次评分`)}</div></div>
+  }
 
   // group into hosts; money kept per currency
   const hosts = useMemo(() => {
@@ -78,7 +92,8 @@ export default function ManagerKPI() {
     { label: L2('Retention', '留存率'), value: pct(t.retained, t.prev_depositors) == null ? '—' : `${pct(t.retained, t.prev_depositors)}%`, sub: L2(`${t.retained ?? 0} of ${t.prev_depositors ?? 0} kept depositing`, `${t.prev_depositors ?? 0} 人中 ${t.retained ?? 0} 人继续存款`) },
     { label: L2('Recall rate', '召回率'), value: pct(t.recalled, t.recall_contacted) == null ? '—' : `${pct(t.recalled, t.recall_contacted)}%`, sub: L2(`${t.recalled ?? 0} of ${t.recall_contacted ?? 0} came back`, `${t.recall_contacted ?? 0} 人中 ${t.recalled ?? 0} 人回来`) },
     { label: L2('Daily tasks done', '每日任务完成'), value: pct(t.tasks_done, (t.tasks_done || 0) + (t.tasks_missed || 0)) == null ? '—' : `${pct(t.tasks_done, (t.tasks_done || 0) + (t.tasks_missed || 0))}%`, sub: L2(`${t.tasks_done ?? 0} done · ${t.tasks_missed ?? 0} missed · ${t.tasks_open ?? 0} open`, `完成 ${t.tasks_done ?? 0} · 未完成 ${t.tasks_missed ?? 0} · 待办 ${t.tasks_open ?? 0}`) },
-    { label: L2('Sentiment score', '情感评分'), value: '—', sub: L2('Coming with mood tags / Crisp', '等情绪标记 / Crisp 上线') },
+    { label: L2('Sentiment score', '情感评分'), value: teamMood.rated ? Math.round(teamMood.pts / teamMood.rated) : '—',
+      sub: teamMood.rated ? L2(`0–100 · from ${teamMood.rated} rated replies`, `0–100 · 来自 ${teamMood.rated} 次回复评分`) : L2('No mood tagged yet — tag 😊😐😠 when a VIP replies', '还没有情绪评分 — VIP 回复时点 😊😐😠') },
   ]
 
   return (
@@ -132,7 +147,7 @@ export default function ManagerKPI() {
                   <td style={td}><Money money={h.money} field="dep" /></td>
                   <td style={td}><Money money={h.money} field="ggr" /></td>
                   <td style={td}>{(h.tasks_done || 0) + (h.tasks_missed || 0) + (h.tasks_open || 0) ? <div><b style={{ color: '#3fb950' }}>{h.tasks_done || 0}</b> / <span style={{ color: '#f85149' }}>{h.tasks_missed || 0}</span> / <span style={{ color: 'var(--muted)' }}>{h.tasks_open || 0}</span><div style={{ fontSize: 11, color: 'var(--muted)' }}>{L2('done / missed / open', '完成 / 未完成 / 待办')}</div></div> : <span style={{ color: 'var(--muted)' }}>—</span>}</td>
-                  <td style={{ ...td, color: 'var(--muted)' }}>—</td>
+                  <td style={td}><MoodCell h={h.host} /></td>
                 </tr>
               ))}
             </tbody>
@@ -145,7 +160,8 @@ export default function ManagerKPI() {
           • {L2('Retention: assigned VIPs with a real deposit (with bets) last month who also made one this month.', '留存率：名下上个月有真实存款（有投注）的 VIP，这个月也有存款的比例。')}<br />
           • {L2('Recall: players contacted while At Risk / Resting / Churn / Dormant who deposited on the contact day or the next day.', '召回率：联系时是有风险 / 休息中 / 流失 / 休眠的玩家，联系当天或第二天有存款。')}<br />
           • {L2('ARPU: this month\'s real deposits (or GGR = house win) ÷ active depositors, per currency. MYR and SGD are never added together.', 'ARPU：本月真实存款（或 GGR = 平台赢的钱）÷ 有存款人数，按币种分开，MYR 和 SGD 不相加。')}<br />
-          • {L2('Daily tasks: tasks from the daily list / follow-up dates created this month.', '每日任务：本月每日名单和跟进日自动产生的任务。')}
+          • {L2('Daily tasks: tasks from the daily list / follow-up dates created this month.', '每日任务：本月每日名单和跟进日自动产生的任务。')}<br />
+          • {L2('Sentiment: mood the manager tagged when a VIP replied (WA popup / call log): 😊 = 100, 😐 = 50, 😠 = 0, averaged. Untagged replies are left out.', '情感评分：VIP 回复时经理点的情绪（WA 弹窗 / 记录通话）：😊 = 100、😐 = 50、😠 = 0，取平均。没点的不算。')}
         </div>
       </>}
     </div>

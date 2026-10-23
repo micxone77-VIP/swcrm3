@@ -36,7 +36,12 @@ export default function InteractionTimeline({ username, currency = 'MYR', limit 
   }, [username, n])
 
   const when = ts => new Date(ts).toLocaleString(lang === 'zh' ? 'zh-CN' : 'en-MY', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kuala_Lumpur' })
-  const titleOf = r => (r.kind === 'contact' ? r.title.split(' · ').map(x => enumLabel(x, lang)).join(' · ') : r.title)
+  // contact titles are "Channel · Outcome" plus an optional mood emoji (😊 😐 😠)
+  const titleOf = r => {
+    if (r.kind !== 'contact') return r.title
+    const m = String(r.title).match(/^(.*?)(\s[😊😐😠])?$/u)
+    return m[1].split(' · ').map(x => enumLabel(x, lang)).join(' · ') + (m[2] || '')
+  }
   const detailOf = r => {
     if (r.kind === 'campaign_join') return lang === 'zh' ? (CAMPAIGN_TYPE_ZH[r.detail] || r.detail) : r.detail
     if (r.kind === 'campaign_paid') return L2('reward paid', '已派奖')

@@ -4,7 +4,7 @@
 import { useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useLanguage } from '../../contexts/LanguageContext'
-import { insertContactLog } from '../WaSenderModal'
+import { insertContactLog, MoodPicker } from '../WaSenderModal'
 
 const mytDateStr = (addDays = 0) => { const d = new Date(Date.now() + 8 * 3600 * 1000); d.setUTCDate(d.getUTCDate() + addDays); return d.toISOString().slice(0, 10) }
 const OUTCOMES = {
@@ -18,6 +18,7 @@ export default function CallLogModal({ task, hostName, onClose, onDone }) {
   const L2 = (en, zh) => (lang === 'zh' ? zh : en)
   const [res, setRes] = useState('answered')
   const [note, setNote] = useState('')
+  const [mood, setMood] = useState(null)
   const [follow, setFollow] = useState(mytDateStr(2))
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
@@ -32,7 +33,7 @@ export default function CallLogModal({ task, hostName, onClose, onDone }) {
       vip: { id: task.vip_id, username: task.vip_username, tier: task.vip_tier }, hostName, summary, channel: 'Call',
     })
     if (ins.error) { setBusy(false); setErr(ins.error); return }
-    await supabase.from('contact_logs').update({ outcome: o.outcome, follow_up_needed: !!follow, follow_up_date: follow || null }).eq('id', ins.id)
+    await supabase.from('contact_logs').update({ outcome: o.outcome, emotion_tag: res === 'answered' ? mood : null, follow_up_needed: !!follow, follow_up_date: follow || null }).eq('id', ins.id)
     await supabase.from('tasks').update({
       status: 'Completed', completed_at: new Date().toISOString(), updated_at: new Date().toISOString(),
       notes: `${task.notes ? task.notes + ' · ' : ''}Call logged: ${o.en.toLowerCase()}`,
@@ -52,6 +53,7 @@ export default function CallLogModal({ task, hostName, onClose, onDone }) {
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
           {Object.entries(OUTCOMES).map(([k, o]) => <button key={k} style={chip(res === k)} onClick={() => pick(k)}>{o.icon} {L2(o.en, o.zh)}</button>)}
         </div>
+        {res === 'answered' && <MoodPicker value={mood} onChange={setMood} />}
         <textarea rows={3} style={{ ...input, resize: 'vertical', marginBottom: 10 }} value={note} onChange={e => setNote(e.target.value)}
           placeholder={L2('What did they say? (no IC or bank numbers)', '他说了什么？（不要写 IC 或银行号码）')} />
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, marginBottom: 14 }}>

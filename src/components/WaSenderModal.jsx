@@ -96,11 +96,30 @@ export function ContactHistory({ username, excludeLogId, refreshKey = 0, onChang
   )
 }
 
+// Player's mood in the reply → contact_logs.emotion_tag (sentiment score on the KPI board). Shared with the call log.
+export const MOODS = [
+  { v: 'positive', icon: '😊', en: 'Happy', zh: '开心' },
+  { v: 'neutral', icon: '😐', en: 'Neutral', zh: '一般' },
+  { v: 'dissatisfied', icon: '😠', en: 'Unhappy', zh: '不满' },
+]
+export function MoodPicker({ value, onChange }) {
+  const { lang } = useLanguage()
+  const L2 = (en, zh) => (lang === 'zh' ? zh : en)
+  const chip = on => ({ ...st.chip, ...(on ? st.chipOn : null) })
+  return (
+    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginBottom: 8 }}>
+      <span style={{ color: 'var(--muted)' }}>{L2('Mood?', '情绪？')}</span>
+      {MOODS.map(m => <button key={m.v} type="button" style={chip(value === m.v)} onClick={() => onChange(value === m.v ? null : m.v)}>{m.icon} {L2(m.en, m.zh)}</button>)}
+    </div>
+  )
+}
+
 // After a contact is logged: Replied / No reply yet + next follow-up date (saved on that log)
 export function ContactFollowUp({ logId, unreachable = false, onUndo, onSaved }) {
   const { lang } = useLanguage()
   const L2 = (en, zh) => (lang === 'zh' ? zh : en)
   const [outcome, setOutcome] = useState('none')        // 'replied' | 'none'
+  const [mood, setMood] = useState(null)                // emotion_tag after a reply: positive | neutral | dissatisfied
   const [date, setDate] = useState(mytDateStr(unreachable ? 3 : 1))
   const [saved, setSaved] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -109,7 +128,7 @@ export function ContactFollowUp({ logId, unreachable = false, onUndo, onSaved })
   async function save() {
     setBusy(true); setErr('')
     const { error } = await supabase.from('contact_logs')
-      .update({ outcome: outcome === 'replied' ? 'Replied' : 'Contacted', follow_up_needed: !!date, follow_up_date: date || null }).eq('id', logId)
+      .update({ outcome: outcome === 'replied' ? 'Replied' : 'Contacted', emotion_tag: outcome === 'replied' ? mood : null, follow_up_needed: !!date, follow_up_date: date || null }).eq('id', logId)
     setBusy(false)
     if (error) { setErr(error.message); return }
     setSaved(true); onSaved && onSaved()
@@ -126,6 +145,7 @@ export function ContactFollowUp({ logId, unreachable = false, onUndo, onSaved })
         <button style={chip(outcome === 'replied')} onClick={() => pick('replied')}>💬 {L2('Replied', '已回复')}</button>
         <button style={chip(outcome === 'none')} onClick={() => pick('none')}>🔕 {L2('No reply yet', '还没回复')}</button>
       </div>
+      {outcome === 'replied' && <MoodPicker value={mood} onChange={m => { setMood(m); setSaved(false) }} />}
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
         <span style={{ color: 'var(--muted)' }}>{L2('Follow up on', '下次跟进')}</span>
         <input type="date" value={date} min={mytDateStr(0)} onChange={e => { setDate(e.target.value); setSaved(false) }} style={st.dateInput} />
