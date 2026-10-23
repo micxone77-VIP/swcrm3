@@ -27,7 +27,7 @@ export function defaultDailyConfig() {
     streak_cap: 0,             // 0 = no cap
     near_pct: 50,              // "almost" = turnover ≥ this % of the first tier
     turnover_multiplier: 3,    // reward turnover requirement shown on the payout list (x3 turnover)
-    wa_templates: {},          // { intro|won|near|streak|idle|care : { en, zh } } — empty → built-in text
+    wa_templates: {},          // { intro|won|near|streak|idle|care|ended : { en, zh } } — empty → built-in text
   }
 }
 
@@ -130,13 +130,18 @@ export const DEFAULT_TEMPLATES = {
     zh: "哈咯 {username}，我是sureWin VIP部门的 {agent}，最近好吗～\n\n⚡ {campaign} 还在跑，剩 {days_left} 天哦\n昨天 {winners} 个VIP拿了奖励，最高 {top_reward} Credit 🎁\n一天流水到 {cur}{first_target} 就有，有空来玩一下 😄",
     en: "Hey {username}! {agent} here from sureWin VIP department, how's it going bro~\n\n⚡ {campaign} still running, {days_left} day(s) left!\n{winners} VIPs grabbed rewards yesterday, up to {top_reward} Credit 🎁\nJust hit {cur}{first_target} turnover in a day can claim — free come try ya 😄",
   },
+  // after the last day is settled: thank-you + more campaigns coming. {final_line} / {total_line} are empty when not earned.
+  ended: {
+    zh: "哈咯 {username}，我是sureWin VIP部门的 {agent}～\n\n⚡ {campaign}（{start} – {end}）已经圆满结束啦 🏁\n{final_line}\n{total_line}\n\n谢谢你这段时间一路的支持，有你一起玩真的很开心 🙏\n我们很快会有新的活动，到时第一时间通知你！\n\n祝你天天好运，越玩越旺，赢多多 🍀💰",
+    en: "Yo {username}! I'm {agent} from sureWin VIP department~\n\n⚡ {campaign} ({start} – {end}) has officially ended 🏁\n{final_line}\n{total_line}\n\nThanks a lot for being with us the whole way bro, really appreciate it 🙏\nMore campaigns coming soon — I'll let you know first!\n\nWish you good luck always and win more more bro 🍀💰",
+  },
   care: {
     zh: "{username}，我是sureWin VIP部门的 {agent}。看你昨天手气不太顺，来问候一下 🙏 好好休息，不用急。有什么事随时找我～",
     en: "Hey {username}, {agent} here from sureWin VIP department. Saw yesterday not so ong for you bro, just checking on you 🙏 Rest well ya, no rush. Anything just WhatsApp me~",
   },
 }
 
-export const VARS = ['{cur}', '{username}', '{agent}', '{campaign}', '{start}', '{end}', '{asof}', '{days_left}', '{y_turnover}', '{y_reward}', '{next_target}', '{next_reward}', '{missed_by}', '{miss_reward}', '{first_target}', '{streak}', '{streak_n}', '{streak_pct}', '{streak_est}', '{winners}', '{top_reward}', '{tier_list}']
+export const VARS = ['{cur}', '{username}', '{agent}', '{campaign}', '{start}', '{end}', '{asof}', '{days_left}', '{y_turnover}', '{y_reward}', '{next_target}', '{next_reward}', '{missed_by}', '{miss_reward}', '{first_target}', '{streak}', '{streak_n}', '{streak_pct}', '{streak_est}', '{winners}', '{top_reward}', '{tier_list}', '{total_reward}', '{final_line}', '{total_line}']
 
 export function fillMessage({ group, lang, cfg, campaign, prog, username, agent, summary, currency }) {
   const custom = cfg.wa_templates?.[group]?.[lang]
@@ -155,5 +160,14 @@ export function fillMessage({ group, lang, cfg, campaign, prog, username, agent,
   }
   // for "near": missed_by should be to the FIRST tier
   if (group === 'near') v.missed_by = fmt(Math.max(0, num((tiers[0] || {}).turnover) - num(last.vb)))
-  return tpl.replace(/\{(\w+)\}/g, (m, k) => (v[k] !== undefined ? String(v[k]) : m))
+  // campaign-ended lines: only when the player actually earned something
+  const label = cfg.reward_label || 'Credit'
+  const zh = lang === 'zh'
+  v.total_reward = fmt(prog?.credit)
+  v.final_line = last.qualifies && num(last.reward) > 0
+    ? (zh ? `最后一天的 ${fmt(last.reward)} ${label} 今天已经帮你派进去了 ✅` : `Your last day's ${fmt(last.reward)} ${label} already banked in today ✅`) : ''
+  const streakPart = num(prog?.streak) > 0 ? (zh ? ` + ${cur}${fmt(prog.streak)} 连续奖励` : ` + ${cur}${fmt(prog.streak)} streak bonus`) : ''
+  v.total_line = num(prog?.credit) > 0 || num(prog?.streak) > 0
+    ? (zh ? `这次活动你一共拿了 ${fmt(prog.credit)} ${label}${streakPart} 🎉` : `This campaign you got total ${fmt(prog.credit)} ${label}${streakPart} 🎉`) : ''
+  return tpl.replace(/\{(\w+)\}/g, (m, k) => (v[k] !== undefined ? String(v[k]) : m)).replace(/\n{3,}/g, '\n\n')
 }

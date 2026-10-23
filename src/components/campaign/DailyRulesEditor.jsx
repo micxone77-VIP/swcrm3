@@ -17,8 +17,8 @@ export function cleanDailyConfig(cfg) {
   }
 }
 
-const TPL_KEYS = ['intro', 'won', 'streak', 'near', 'idle', 'care']
-const TPL_LABEL = { intro: { icon: '📣', en: 'Campaign intro', zh: '活动介绍' }, ...GROUPS }
+const TPL_KEYS = ['intro', 'won', 'streak', 'near', 'idle', 'care', 'ended']
+const TPL_LABEL = { intro: { icon: '📣', en: 'Campaign intro', zh: '活动介绍' }, ...GROUPS, ended: { icon: '🏁', en: 'Campaign ended', zh: '活动结束' } }
 
 export function DailyRulesEditor({ cfg, setCfg, withTemplates = false }) {
   const { lang } = useLanguage()

@@ -109,6 +109,7 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
   useEffect(() => { load() }, [camp.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const started = asOf && asOf >= camp.start_date
+  const ended = asOf && asOf >= camp.end_date   // last day settled → auto message = campaign ended
   const rowsAll = useMemo(() => players.map(p => {
     const m = members[p.username] || {}
     const prog = computeDaily({ campaign: camp, cfg, dailyMap: daily[p.username] || {}, asOf })
@@ -151,14 +152,14 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
   const followRows = scoped.filter(r => groupF === 'ALL' || r.group === groupF).filter(r => !unsentOnly || !sentOf(r))
     .sort((a, b) => ORDER.indexOf(a.group) - ORDER.indexOf(b.group) || num(b.prog.last?.vb) - num(a.prog.last?.vb))
 
-  const MSG_TYPES = ['intro', 'won', 'streak', 'near', 'idle', 'care']
-  const MSG_LABEL = k => (k === 'intro' ? T('📣 Campaign intro', '📣 活动介绍') : `${GROUPS[k].icon} ${lang === 'zh' ? GROUPS[k].zh : GROUPS[k].en}`)
+  const MSG_TYPES = ['intro', 'won', 'streak', 'near', 'idle', 'care', 'ended']
+  const MSG_LABEL = k => (k === 'intro' ? T('📣 Campaign intro', '📣 活动介绍') : k === 'ended' ? T('🏁 Campaign ended', '🏁 活动结束') : `${GROUPS[k].icon} ${lang === 'zh' ? GROUPS[k].zh : GROUPS[k].en}`)
   const typeFor = r => {
     const t0 = rowType[r.id] && rowType[r.id] !== 'auto' ? rowType[r.id] : msgType
-    return t0 !== 'auto' ? t0 : (started ? r.group : 'intro')
+    return t0 !== 'auto' ? t0 : (!started ? 'intro' : ended ? 'ended' : r.group)
   }
   const msgFor = (r, group) => fillMessage({ group, lang: waLang, cfg, campaign: camp, prog: r.prog, username: r.username, agent: myName, summary, currency: r.m.currency })
-  const typeName = k => (k === 'intro' ? 'Campaign intro 活动介绍' : `${GROUPS[k]?.en || k} ${GROUPS[k]?.zh || ''}`)
+  const typeName = k => (k === 'intro' ? 'Campaign intro 活动介绍' : k === 'ended' ? 'Campaign ended 活动结束' : `${GROUPS[k]?.en || k} ${GROUPS[k]?.zh || ''}`)
   // Mark as sent today + write a Contact Log entry (so VIP360 / Churn Urgency / KPI count it)
   async function markSent(r, group, via) {
     if (sentOf(r)) return
@@ -574,7 +575,7 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
                           <td style={td}>
                             <div style={{ display: 'flex', gap: 4 }}>
                               <select value={rowType[r.id] || 'auto'} onChange={e => setRowType(m0 => ({ ...m0, [r.id]: e.target.value }))} style={{ ...input, padding: '5px 6px', fontSize: 13 }} title={T('Message type for this player', '这位玩家的信息类型')}>
-                                <option value="auto">{T('Auto', '自动')} ({started ? (lang === 'zh' ? GROUPS[r.group].zh : GROUPS[r.group].en) : T('Intro', '活动介绍')})</option>
+                                <option value="auto">{T('Auto', '自动')} ({!started ? T('Intro', '活动介绍') : ended ? T('Campaign ended', '活动结束') : (lang === 'zh' ? GROUPS[r.group].zh : GROUPS[r.group].en)})</option>
                                 {MSG_TYPES.map(k => <option key={k} value={k}>{MSG_LABEL(k)}</option>)}
                               </select>
                               <button style={{ ...sec, padding: '6px 12px', background: '#25D366', color: '#fff', border: 'none' }} onClick={() => openWa(r, typeFor(r))} title={msgFor(r, typeFor(r))}>💬 WA</button>
