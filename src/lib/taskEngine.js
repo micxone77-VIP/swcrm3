@@ -151,7 +151,7 @@ async function genKpiReminderTask() {
 
 // ─── Display localisation (render-time only; stored titles stay English) ─────
 export const TASK_TYPE_ZH = {
-  'Follow Up': '跟进', 'VIP Contact': 'VIP联系', 'Campaign': '活动', 'Upgrade': '升级',
+  'Follow Up': '跟进', 'Call': '打电话', 'VIP Contact': 'VIP联系', 'Campaign': '活动', 'Upgrade': '升级',
   'Birthday': '生日', 'Review': '审阅', 'Other': '其他',
 }
 export const TASK_PRIORITY_ZH = { Urgent: '紧急', High: '高', Medium: '中', Low: '低' }

@@ -11,8 +11,9 @@ import {
 } from '../components/ui'
 import { TierBadge } from '../components/ui'
 import { useLanguage } from '../contexts/LanguageContext'
+import CallLogModal from '../components/task/CallLogModal'
 
-const TASK_TYPES = ['Follow Up', 'VIP Contact', 'Campaign', 'Upgrade', 'Birthday', 'Review', 'Other']
+const TASK_TYPES = ['Follow Up', 'Call', 'VIP Contact', 'Campaign', 'Upgrade', 'Birthday', 'Review', 'Other']
 const PRIORITIES  = ['Urgent', 'High', 'Medium', 'Low']
 const PRIORITY_COLOR = { Urgent: 'var(--danger)', High: '#f59e0b', Medium: 'var(--info)', Low: 'var(--muted)' }
 
@@ -37,11 +38,13 @@ const sourceLabel = (src, lang = 'en') => {
     auto_upgrade: `⬆️ ${a}`,
     auto_campaign_deadline: `📢 ${a}`,
     auto_kpi_reminder: `🏆 ${a}`,
+    auto_daily: lang === 'zh' ? '📋 每日名单' : '📋 Daily list',
+    auto_followup: lang === 'zh' ? '📅 跟进日' : '📅 Follow-up date',
   }
   return map[src] || null
 }
 
-function TaskRow({ task, onStatusChange, onDelete, onOpen, t }) {
+function TaskRow({ task, phone, onLogCall, onStatusChange, onDelete, onOpen, t }) {
   const { lang } = useLanguage()
   const L2 = (en, zh) => (lang === 'zh' ? zh : en)
   const [saving, setSaving] = useState(false)
@@ -101,6 +104,14 @@ function TaskRow({ task, onStatusChange, onDelete, onOpen, t }) {
 
       {/* Actions */}
       <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'center' }}>
+        {task.task_type === 'Call' && task.status !== 'Completed' && (
+          <>
+            {phone
+              ? <a href={`tel:+${phone}`} title={`+${phone}`} style={{ background: '#22C55E', color: '#fff', borderRadius: 6, padding: '4px 10px', fontSize: 12, fontWeight: 700, textDecoration: 'none' }}>📞 {L2('Call', '打电话')}</a>
+              : <span style={{ fontSize: 11, color: '#d29922' }}>{L2('No phone on file', '没有电话')}</span>}
+            <Btn size="sm" variant="ghost" onClick={() => onLogCall?.(task)} style={{ color: 'var(--brand)', borderColor: 'var(--brand)' }}>📝 {L2('Log call', '记录通话')}</Btn>
+          </>
+        )}
         {task.status !== 'Completed' && (
           <Btn size="sm" variant="ghost" disabled={saving} onClick={() => setStatus('Completed')}
             style={{ color: 'var(--success)', borderColor: 'var(--success)' }}>{t('myTasks.doneBtn')}</Btn>
@@ -133,6 +144,8 @@ export default function MyTasks() {
   const [saving, setSaving]             = useState(false)
   const [syncing, setSyncing]           = useState(false)
   const [vipSearch, setVipSearch]       = useState('')
+  const [phones, setPhones]             = useState({})   // vip_id → digits, for 📞 Call tasks
+  const [callTask, setCallTask]         = useState(null)
   const [vipResults, setVipResults]     = useState([])
 
   const emptyForm = { title:'', vip_id:'', vip_username:'', vip_tier:'', task_type:'Follow Up', priority:'High', due_date:'', notes:'' }
@@ -149,6 +162,14 @@ export default function MyTasks() {
         .limit(500)
       if (err) throw err
       setTasks(data || [])
+      // phone numbers for open call tasks (only these need a dial button)
+      const ids = [...new Set((data || []).filter(x => x.task_type === 'Call' && x.status !== 'Completed' && x.vip_id).map(x => x.vip_id))]
+      const map = {}
+      for (let i = 0; i < ids.length; i += 150) {
+        const { data: ms } = await supabase.from('vip_members_all').select('id, phone, whatsapp').in('id', ids.slice(i, i + 150))
+        ;(ms || []).forEach(m => { const d = String(m.phone || m.whatsapp || '').replace(/[^0-9]/g, ''); if (d.length >= 8) map[m.id] = d })
+      }
+      setPhones(map)
     } catch(e) { setError(e.message || String(e)) }
     setLoading(false)
   }, [])
@@ -277,6 +298,8 @@ export default function MyTasks() {
               <TaskRow
                 key={task.id}
                 task={task}
+                phone={phones[task.vip_id]}
+                onLogCall={setCallTask}
                 onStatusChange={load}
                 onDelete={deleteTask}
                 onOpen={id => navigate(`/vips/${id}`)}
@@ -286,6 +309,9 @@ export default function MyTasks() {
           )}
         </div>
       </Card>
+
+      {callTask && <CallLogModal task={callTask} hostName={profile?.full_name || ''} onClose={() => setCallTask(null)}
+        onDone={() => { setCallTask(null); toast(L2('Call logged ✓', '通话已记录 ✓'), 'success'); load() }} />}
 
       {/* Create Task Modal */}
       <Modal open={showCreate} onClose={() => { setShowCreate(false); setForm(emptyForm); setVipSearch('') }} title={t('myTasks.modalTitle')}>
