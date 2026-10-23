@@ -8,6 +8,9 @@ import NotificationBell from './NotificationBell'
 // permKey = the key stored in profile.permissions[] to grant access to this page
 // admin role always sees everything regardless of permissions
 const NAV_GROUPS = [
+  { key: 'exec', label: 'Management', zh: '管理层', icon: '🏛️', items: [
+    { to: '/exec',    label: 'Executive Overview', zh: '上司总览', icon: '🏛️', permKey: 'exec' },
+  ] },
   { key: 'command', label: 'Command Center', zh: '指挥中心', icon: '⚡', items: [
     { to: '/today',   label: 'Today', zh: '今天',         icon: '🗓', permKey: 'today'   },
     { to: '/tasks',   label: 'My Tasks', zh: '我的任务',      icon: '✅', permKey: 'tasks'   },

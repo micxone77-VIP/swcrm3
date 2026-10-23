@@ -27,6 +27,7 @@ const Alerts = lazyPage(() => import('./pages/Alerts'))
 const AllVIPs = lazyPage(() => import('./pages/AllVIPs'))
 const Segments = lazyPage(() => import('./pages/Segments'))
 const ManagerKPI = lazyPage(() => import('./pages/ManagerKPI'))
+const ExecOverview = lazyPage(() => import('./pages/ExecOverview'))
 const VIP360 = lazyPage(() => import('./pages/VIP360'))
 const AtRisk = lazyPage(() => import('./pages/AtRisk'))
 const FollowUp = lazyPage(() => import('./pages/FollowUp'))
@@ -109,6 +110,7 @@ export default function App() {
       <Route path="kpi"              element={<RequireRole permKey="kpi"><KPIProgress /></RequireRole>} />
       <Route path="host-performance" element={<RequireRole permKey="host-performance"><HostPerformance /></RequireRole>} />
       <Route path="manager-kpi"      element={<RequireRole permKey="manager-kpi"><ManagerKPI /></RequireRole>} />
+      <Route path="exec"             element={<RequireRole permKey="exec"><ExecOverview /></RequireRole>} />
       <Route path="ask"              element={<RequireRole permKey="ask"><AskData /></RequireRole>} />
 
       {/* System */}
