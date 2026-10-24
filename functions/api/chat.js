@@ -16,6 +16,7 @@
 //   OPENAI_API_KEY        your OpenAI API key (secret)
 
 import { summarizeImpact, VERDICT, LASTING } from '../../src/lib/campaignImpactCore.js'
+import { buildCampaignDraft, challengePlayer, estimateCost, kindGuideText, GOAL_TO_KIND } from '../../src/lib/aiCampaignDraft.js'
 
 const OPENAI_MODEL   = 'gpt-4.1'
 const MAX_TOKENS     = 3000
@@ -485,21 +486,49 @@ const TOOLS = [
         notes:       { type: 'string', description: 'what to say / do, 1–2 lines' },
       }, required: ['username'] } } }, ['tasks']),
   tool('propose_campaign_draft',
-    'PROPOSE a new campaign as a DRAFT (optionally with players). Shown as a confirm card. It is never launched — going live stays a manual step on the Campaigns page.',
-    { campaign_name: { type: 'string' },
-      campaign_type: { type: 'string', enum: ['gold_bar', 'pct_reward', 'fixed_reward', 'tiered_reward', 'dual_tier', 'leaderboard'] },
-      platform:      { type: 'string', enum: ['MY', 'SG', 'BOTH'] },
-      start_date:    { type: 'string', description: 'YYYY-MM-DD' },
+    'PROPOSE a COMPLETE campaign as a DRAFT, with every setting its kind needs, so it can launch without editing. Shown as a confirm card with the settings, the audience and an estimated cost from recent history. Never launched by you. If it returns problems, fix them and propose again.\n\n' + GOAL_TO_KIND + '\n\nHow each kind works (same guide as the Campaigns page):\n' + kindGuideText(),
+    { kind: { type: 'string', enum: ['challenge_daily', 'challenge_trust', 'challenge_rebate', 'dual_tier', 'tiered_deposit_reward', 'tiered_reward', 'pct_reward', 'fixed_reward', 'gold_bar', 'leaderboard'] },
+      campaign_name: { type: 'string' },
+      platform:      { type: 'string', enum: ['MY', 'SG'], description: 'one currency per campaign' },
+      start_date:    { type: 'string', description: 'YYYY-MM-DD, today or later' },
       end_date:      { type: 'string', description: 'YYYY-MM-DD' },
-      target_tier:   { type: 'array', items: { type: 'string', enum: ['BRONZE', 'SILVER', 'GOLD', 'PLATINUM', 'DIAMOND'] } },
-      offer_desc:    { type: 'string', description: 'the offer in plain words' },
+      target_tiers:  { type: 'array', items: { type: 'string', enum: ['BLACK', 'DIAMOND-P', 'DIAMOND', 'PLATINUM', 'GOLD', 'SILVER'] } },
+      audience:      { type: 'string', enum: ['all_in_tiers', 'list'], description: 'all_in_tiers = every player of target_tiers on this platform; list = only usernames' },
+      usernames:     { type: 'array', items: { type: 'string' }, description: 'for audience "list" (max 200)' },
       budget_rm:     { type: 'number' },
-      deposit_target:{ type: 'number' },
-      reward_pct:    { type: 'number' },
-      reward_fixed:  { type: 'number' },
-      notes:         { type: 'string', description: 'why this campaign (the data behind it)' },
-      usernames:     { type: 'array', items: { type: 'string' }, description: 'players to enrol (max 200)' } },
-    ['campaign_name', 'campaign_type', 'platform']),
+      offer_desc:    { type: 'string', description: 'the offer in plain words, as players will read it' },
+      notes:         { type: 'string', description: 'why this campaign: the data behind it' },
+      reward_delivery: { type: 'string', enum: ['credit', 'wcash'] },
+      turnover_multiplier: { type: 'number', description: 'turnover requirement on the reward (e.g. 3 = ×3)' },
+      whatsapp_template: { type: 'string', description: 'intro message for players, casual English bro tone, starts "I\'m {agent} from sureWin VIP department"' },
+      deposit_target: { type: 'number', description: 'gold_bar / pct_reward / fixed_reward' },
+      gold_bar_value: { type: 'number', description: 'gold_bar: value of the gift' },
+      reward_pct:    { type: 'number', description: 'pct_reward' },
+      reward_cap:    { type: 'number', description: 'pct_reward: max per player' },
+      reward_fixed:  { type: 'number', description: 'fixed_reward' },
+      levels:        { type: 'array', description: 'tiered_deposit_reward: reward ≤ 5% of its deposit', items: { type: 'object', properties: { deposit_threshold: { type: 'number' }, reward_amount: { type: 'number' }, level_name: { type: 'string' } } } },
+      payout_mode:   { type: 'string', enum: ['all', 'highest_only'], description: 'tiered_deposit_reward: pay every level reached or only the highest' },
+      tiers:         { type: 'array', description: 'tiered_reward: % of the whole-period deposit by band', items: { type: 'object', properties: { min: { type: 'number' }, pct: { type: 'number' } } } },
+      dual_tiers:    { type: 'array', description: 'dual_tier: highest tier where BOTH thresholds are met', items: { type: 'object', properties: { deposit: { type: 'number' }, turnover: { type: 'number' }, credit: { type: 'number' }, wcash: { type: 'number' } } } },
+      settlement:    { type: 'string', enum: ['total', 'daily'], description: 'dual_tier: whole period or each day on its own' },
+      streak:        { type: 'object', description: 'dual_tier streak bonus', properties: { enabled: { type: 'boolean' }, days: { type: 'integer' }, type: { type: 'string', enum: ['pct', 'fixed'] }, pct: { type: 'number' }, fixed: { type: 'number' }, cap: { type: 'number' } } },
+      metric:        { type: 'string', enum: ['turnover', 'deposit', 'turnover_deposit'], description: 'leaderboard ranking' },
+      top_n:         { type: 'integer', description: 'leaderboard' },
+      rank_rewards:  { type: 'array', description: 'leaderboard: one prize per rank 1..top_n', items: { type: 'object', properties: { rank: { type: 'integer' }, amount: { type: 'number' } } } },
+      min_valid_bet: { type: 'number', description: 'leaderboard: minimum valid bet to qualify' },
+      min_deposit:   { type: 'number', description: 'leaderboard: minimum deposit to qualify' },
+      daily_tiers:   { type: 'array', description: "challenge_daily: the day's turnover → fixed reward", items: { type: 'object', properties: { turnover: { type: 'number' }, reward: { type: 'number' } } } },
+      streak_enabled: { type: 'boolean', description: 'challenge_daily' }, streak_days: { type: 'integer', description: 'challenge_daily' },
+      streak_style:  { type: 'string', enum: ['rolling', 'block'], description: 'challenge_daily' },
+      streak_pct:    { type: 'number', description: 'challenge_daily: % of deposits on the streak days' }, streak_cap: { type: 'number', description: 'challenge_daily' },
+      challenge:     { type: 'object', description: 'challenge_trust / challenge_rebate settings (leave out to use the standard ones)', properties: {
+        credit_enabled: { type: 'boolean' }, credit_default: { type: 'number' }, credit_cap: { type: 'number' }, credit_suggest_pct_of_loss: { type: 'number' },
+        goal_metric: { type: 'string', enum: ['turnover', 'deposit', 'both'] }, target_turnover_default: { type: 'number' }, target_deposit_default: { type: 'number' },
+        target_suggest_multiplier: { type: 'number' }, completion_type: { type: 'string', enum: ['review', 'rebate_pct', 'fixed', 'none'] },
+        completion_pct: { type: 'number' }, completion_fixed: { type: 'number' }, completion_cap: { type: 'number' },
+        streak_enabled: { type: 'boolean' }, streak_min_days: { type: 'integer' }, streak_min_daily_deposit: { type: 'number' },
+        streak_bonus_type: { type: 'string', enum: ['fixed', 'pct'] }, streak_bonus_fixed: { type: 'number' }, streak_bonus_pct: { type: 'number' }, streak_bonus_cap: { type: 'number' } } } },
+    ['kind', 'campaign_name', 'platform', 'start_date', 'end_date', 'audience']),
   tool('propose_add_players',
     'PROPOSE adding players (max 200) to an existing draft / upcoming / active campaign. Shown as a confirm card.',
     { campaign_id: { type: 'string' }, name: { type: 'string', description: 'part of the campaign name' },
@@ -518,6 +547,17 @@ function cleanFilters(a) {
       out[k] = out[k].filter(v => allowed.includes(v))
       if (!out[k].length) delete out[k]
     }
+  }
+  return out
+}
+
+// v_vip_recent_stats rows by username (for challenge targets), in chunks like allPlayers.js
+async function recentStats(db, usernames) {
+  const out = {}
+  for (let i = 0; i < usernames.length; i += 150) {
+    const list = usernames.slice(i, i + 150).map(u => `"${String(u).replace(/"/g, '')}"`).join(',')
+    const rows = await db.rows(`v_vip_recent_stats?select=username,data_as_of,dep_30d,loss_30d,avg_daily_turnover_30d,max_deps_one_day_14d,dep_7d,dep_prev_28d&username=in.(${encodeURIComponent(list)})`)
+    for (const r of rows || []) out[r.username] = r
   }
   return out
 }
@@ -685,13 +725,39 @@ async function runTool(name, a, db, ctx = {}) {
     }
 
     case 'propose_campaign_draft': {
-      const { found, unknown } = await checkPlayers(db, a.usernames, 200)
-      const payload = { ...a, usernames: found.map(f => f.username) }
-      const mixed = new Set(found.map(f => f.currency)).size > 1
-      ctx.actions?.push({ id: `a${ctx.actions.length + 1}`, kind: 'create_campaign_draft', payload })
-      return { proposal_shown: true, players: found.length, unknown_players: unknown,
-               warning: mixed ? 'Players are from more than one currency — consider separate MY and SG campaigns.' : undefined,
-               note: 'Shown to the user as a confirm card. Not created yet; it will be a draft.' }
+      const draft = buildCampaignDraft(a, todayMYT())
+      if (draft.errors?.length) return { error: 'Not proposed yet — fix these and call propose_campaign_draft again', problems: draft.errors }
+      const cur = draft.summary.currency
+      const days = Math.min(draft.days, 31)
+      let history, unknown = []
+      if (draft.allInTiers) {
+        if (draft.tiers.includes('BRONZE')) return { error: 'Too many Bronze players for "all_in_tiers" — use Silver and above, or a list' }
+        history = await db.rpc('ai_campaign_history', { p: { tiers: draft.tiers, currencies: [cur], days } })
+      } else {
+        const chk = await checkPlayers(db, a.usernames, 200)
+        unknown = chk.unknown
+        const other = chk.found.filter(f => f.currency !== cur).map(f => f.username)
+        if (other.length) draft.warnings.push(`Left out (not ${cur}): ${other.join(', ')}`)
+        const keep = chk.found.filter(f => f.currency === cur).map(f => f.username)
+        if (!keep.length) return { error: `None of these players are ${cur} players`, unknown }
+        history = await db.rpc('ai_campaign_history', { p: { usernames: keep, days } })
+      }
+      const usernames = (history?.players || []).map(x => x.u)
+      if (!usernames.length) return { error: 'No players match this audience' }
+      let players = []
+      if (draft.campaign.campaign_type === 'challenge') {
+        if (usernames.length > 1000) return { error: `${usernames.length} players — a challenge can take max 1000; narrow the tiers` }
+        const stats = draft.cfg.mode === 'daily_milestone' ? {} : await recentStats(db, usernames)
+        players = usernames.map(u => challengePlayer(u, stats[u], draft.cfg, draft.days))
+      } else if (!draft.allInTiers) players = usernames.map(u => ({ username: u }))
+      const estimate = estimateCost(draft, history, players)
+      const display = { ...draft.summary, warnings: draft.warnings, estimate, unknown, player_count: usernames.length, sample: usernames.slice(0, 20),
+        audience: draft.allInTiers ? 'all_in_tiers' : 'list', tiers: draft.tiers, name: draft.campaign.campaign_name,
+        start_date: draft.campaign.start_date, end_date: draft.campaign.end_date, offer: draft.campaign.offer_desc, budget: draft.campaign.budget_rm,
+        reward_delivery: draft.campaign.reward_delivery, turnover_multiplier: draft.campaign.turnover_multiplier, why: a.notes || '' }
+      ctx.actions?.push({ id: `a${ctx.actions.length + 1}`, kind: 'create_campaign_draft', payload: { campaign: draft.campaign, levels: draft.levels, players, display } })
+      return { proposal_shown: true, players: usernames.length, unknown_players: unknown, estimate, warnings: draft.warnings,
+               note: 'Shown to the user as a confirm card with all settings. Not created yet; it will be a draft. Mention the estimated cost and that it is based on the last ' + days + ' days.' }
     }
 
     case 'propose_add_players': {
@@ -786,7 +852,7 @@ HOW TO WORK
 - You can call several tools at once and do several rounds (e.g. find players, then open player_detail for the top ones).
 - If something is not in the data, say so plainly and say what would be needed.
 - You can see every player: Bronze and Silver (potential VIPs) and Gold, Platinum, Diamond, Diamond-P, Black (VIPs). "VIP" alone means Gold and above.
-- ACTIONS: you can PROPOSE (1) tasks / follow-up dates (propose_tasks), (2) a DRAFT campaign, optionally with players (propose_campaign_draft), (3) adding players to an existing campaign (propose_add_players). Each proposal appears under your answer as a card with Confirm / Cancel — NOTHING changes until the user clicks Confirm. Propose only when the user asks you to do it or agrees to your suggestion; in analysis answers you may end with an offer such as "要我帮你建这些任务吗？". After proposing, say briefly what the card contains and ask them to check it and click Confirm. Never write that it is done / created / added ("已建立", "已加入", "已为…生成") — write "已准备好，按确认后才会建立". Write card notes in the same language as your answer. For tiered rewards put the tiers in offer_desc and say the tiers still need to be set on the Campaigns page. Campaign drafts are never launched by you; one currency per campaign (MY or SG). Everything else (sending WhatsApp, changing hosts, launching campaigns, payouts) the user does on the CRM pages: say what to do and on which page. Use ONLY these page names (sidebar): Executive Overview, Today, My Tasks, Alerts, Daily Targets, All VIPs, Player Segments, Active Risk, Active Tracker, Follow Up, Birthdays, Upgrades, Transfers, Churn Analysis, Daily Work Queue, Churn Urgency, Contact Log, Weekly Outcome, Campaigns, Budget, Analytics, Player Insights, Reports, KPI, Manager KPI Board, Expenses, Mgmt View, and VIP360 (click a player name). Do not describe buttons or menus inside a page unless you are sure they exist — just name the page.
+- ACTIONS: you can PROPOSE (1) tasks / follow-up dates (propose_tasks), (2) a DRAFT campaign, optionally with players (propose_campaign_draft), (3) adding players to an existing campaign (propose_add_players). Each proposal appears under your answer as a card with Confirm / Cancel — NOTHING changes until the user clicks Confirm. Propose only when the user asks you to do it or agrees to your suggestion; in analysis answers you may end with an offer such as "要我帮你建这些任务吗？". After proposing, say briefly what the card contains and ask them to check it and click Confirm. Never write that it is done / created / added ("已建立", "已加入", "已为…生成") — write "已准备好，按确认后才会建立". Write card notes in the same language as your answer. For tiered rewards put the tiers in offer_desc and say the tiers still need to be set on the Campaigns page. Campaign drafts are never launched by you; one currency per campaign (MY or SG). For campaigns pick the kind by the goal (see propose_campaign_draft) and fill EVERY setting of that kind (tiers / levels / prizes / streak / caps) — never leave the rules only in offer_desc. If the user's idea does not fit any kind exactly, say so, choose the closest kind and explain the difference. Everything else (sending WhatsApp, changing hosts, launching campaigns, payouts) the user does on the CRM pages: say what to do and on which page. Use ONLY these page names (sidebar): Executive Overview, Today, My Tasks, Alerts, Daily Targets, All VIPs, Player Segments, Active Risk, Active Tracker, Follow Up, Birthdays, Upgrades, Transfers, Churn Analysis, Daily Work Queue, Churn Urgency, Contact Log, Weekly Outcome, Campaigns, Budget, Analytics, Player Insights, Reports, KPI, Manager KPI Board, Expenses, Mgmt View, and VIP360 (click a player name). Do not describe buttons or menus inside a page unless you are sure they exist — just name the page.
 
 BUSINESS RULES (must follow)
 - MYR (Malaysia) and SGD (Singapore) are different platforms; KHUSD is Cambodia. NEVER add different currencies together. Always show the currency with every amount, e.g. "MYR 12,500".

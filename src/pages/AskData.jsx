@@ -221,6 +221,49 @@ function ActionCard({ action, question, onChange }) {
         </table>
       </div>
     )
+  } else if (kind === 'create_campaign_draft' && p.display) {
+    // Full draft (src/lib/aiCampaignDraft.js): every setting of its kind + estimated cost
+    const d = p.display
+    const money = v => (v == null ? '—' : `${d.currency} ${Math.round(Number(v)).toLocaleString('en-US')}`)
+    title = `🎯 ${L2('Create a DRAFT campaign', '建立草稿活动')}: ${d.name}`
+    link = { to: '/campaigns', label: L2('Open Campaigns', '打开 Campaigns') }
+    const rows = [
+      [L2('Kind', '类型'), lang === 'zh' ? d.kind_zh : d.kind_en],
+      [L2('Platform', '平台'), `${d.platform} (${d.currency})`],
+      [L2('Dates', '日期'), `${d.start_date} → ${d.end_date} (${d.days} ${L2('days', '天')})`],
+      [L2('Players', '玩家'), d.audience === 'all_in_tiers'
+        ? L2(`All ${d.tiers.join(', ')} on ${d.platform} — ${d.player_count} now (new ones join automatically)`, `${d.platform} 全部 ${d.tiers.join('、')} — 目前 ${d.player_count} 位（之后符合的会自动加入）`)
+        : `${d.player_count}: ${d.sample.join(', ')}${d.player_count > d.sample.length ? ' …' : ''}`],
+      ...d.rows.map(r => [lang === 'zh' ? r[1] : r[0], r[2]]),
+      [L2('Paid as', '发放'), `${d.reward_delivery === 'wcash' ? 'WCash' : 'Credit'}${d.turnover_multiplier ? ` · ×${d.turnover_multiplier} ${L2('turnover', '流水')}` : ''}`],
+      [L2('Budget', '预算'), money(d.budget)],
+      [L2('Offer (players read)', '优惠说明'), d.offer || '—'],
+      [L2('Why', '原因'), d.why || '—'],
+    ]
+    const e = d.estimate
+    body = (
+      <div>
+        <table style={{ borderCollapse: 'collapse', fontSize: 12 }}><tbody>
+          {rows.map(([k, v]) => <tr key={k}><td style={{ ...cardTd, color: 'var(--muted)', verticalAlign: 'top' }}>{k}</td><td style={{ ...cardTd, whiteSpace: 'normal' }}>{v}</td></tr>)}
+        </tbody></table>
+        {d.tier_table && (
+          <table style={{ borderCollapse: 'collapse', fontSize: 12, marginTop: 8 }}>
+            <thead><tr>{d.tier_table.cols.map(c => <th key={c} style={cardTh}>{c}</th>)}</tr></thead>
+            <tbody>{d.tier_table.rows.map((r, i) => <tr key={i}>{r.map((c, j) => <td key={j} style={cardTd}>{c}</td>)}</tr>)}</tbody>
+          </table>
+        )}
+        {e && (
+          <div style={{ marginTop: 8, fontSize: 12, padding: '6px 8px', borderRadius: 6, background: 'var(--surface2)' }}>
+            💰 {L2(`Estimated cost if these players repeat their last ${e.lookback_days} days (${e.data_from} → ${e.data_to}):`, `如果这些玩家重复最近 ${e.lookback_days} 天（${e.data_from} → ${e.data_to}）的表现，预计成本：`)}{' '}
+            <b>{money(e.est_payout)}</b> {L2(`to ${e.est_winners} player(s)`, `，${e.est_winners} 位玩家`)}{e.note ? ` · ${e.note}` : ''}
+          </div>
+        )}
+        {[...(d.warnings || []), ...(d.unknown?.length ? [L2(`Not found: ${d.unknown.join(', ')}`, `找不到：${d.unknown.join(', ')}`)] : [])].map(w => (
+          <div key={w} style={{ fontSize: 11, color: '#d29922', marginTop: 4 }}>⚠️ {w}</div>
+        ))}
+        <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>{L2('It is saved as a DRAFT. Launch it yourself on the Campaigns page after a final look.', '会存成草稿。最后检查后，由你在 Campaigns 页面启动。')}</div>
+      </div>
+    )
   } else if (kind === 'create_campaign_draft') {
     title = `🎯 ${L2('Create a DRAFT campaign', '建立草稿活动')}: ${p.campaign_name}`
     link = { to: '/campaigns', label: L2('Open Campaigns', '打开 Campaigns') }
@@ -251,6 +294,8 @@ function ActionCard({ action, question, onChange }) {
     if (kind === 'create_tasks') done = L2(`Created ${result.created} task(s)`, `已建立 ${result.created} 个任务`) +
       (result.skipped?.length ? L2(` · skipped ${result.skipped.length}: `, ` · 跳过 ${result.skipped.length} 个：`) + result.skipped.map(s => `${s.username} (${s.reason})`).join(', ') : '')
     else if (kind === 'create_campaign_draft') done = L2(`Draft created: ${result.campaign_code}`, `草稿已建立：${result.campaign_code}`) +
+      (result.players_enrolled != null ? L2(` · ${result.players_enrolled} player(s) enrolled`, ` · 已加入 ${result.players_enrolled} 位玩家`) : '') +
+      (result.levels ? L2(` · ${result.levels} level(s)`, ` · ${result.levels} 个级别`) : '') +
       (result.players ? L2(` · ${result.players.added} player(s) added`, ` · 已加 ${result.players.added} 个玩家`) : '')
     else done = L2(`Added ${result.added}`, `已加 ${result.added} 个`) +
       (result.already_in ? L2(` · ${result.already_in} already in`, ` · ${result.already_in} 个原本就在`) : '') +
