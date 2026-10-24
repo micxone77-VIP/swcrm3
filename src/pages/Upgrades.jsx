@@ -593,12 +593,17 @@ function ChallengeModal({ player, challenge, agentName, waNumbers = [], onClose,
   const [lang, setLang]                 = useState('en')
   const [L2, uiLang] = useL2()
 
+  // A challenge is a lower upgrade target for THIS MONTH (e.g. 1.8M instead of 2M):
+  // progress = the month's total valid bet so far, not only what was played after the offer.
   const currency    = player.currency || 'MYR'
-  const baseline    = challenge?.baseline_bet ?? player.monthly_valid_bet ?? 0
   const currentBet  = player.monthly_valid_bet ?? 0
   const target      = parseFloat(targetAmount) || 0
-  const chProgress  = target > 0 ? Math.min(100, Math.max(0, ((currentBet - baseline) / target) * 100)) : 0
-  const achieved    = target > 0 && (currentBet - baseline) >= target
+  const chProgress  = target > 0 ? Math.min(100, Math.max(0, (currentBet / target) * 100)) : 0
+  const achieved    = target > 0 && currentBet >= target
+  const remaining   = Math.max(0, target - currentBet)
+  const normalTarget = { GOLD: 2000000, PLATINUM: 6000000 }[player.tier] || null
+  const monthEnd    = (() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth() + 1, 0) })()
+  const pastMonth   = deadline && new Date(deadline + 'T00:00:00') > monthEnd
 
   const deadlineDate = deadline ? new Date(deadline + 'T23:59:59') : null
   const isExpired    = deadlineDate && deadlineDate < new Date()
@@ -609,15 +614,16 @@ function ChallengeModal({ player, challenge, agentName, waNumbers = [], onClose,
 
   const targetFmt   = target > 0 ? fmt(target, currency) : '___'
   const deadlineFmt = deadline ? new Date(deadline + 'T12:00:00').toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' }) : '___'
-  const progressFmt = fmt(Math.max(0, currentBet - baseline), currency)
+  const progressFmt = fmt(currentBet, currency)
+  const remainingFmt = fmt(remaining, currency)
 
   const waTemplates = {
     en: achieved
-      ? `Hi *${player.username}*! 🎉 Congratulations! You've completed our special upgrade challenge!\n\nYour valid bet has increased by *${progressFmt}*, meeting the *${targetFmt}* target! 🏆\n\nYou are now eligible for your *${nextTier}* upgrade! We will arrange it shortly. Thank you for your loyalty! 💎`
-      : `Hi *${player.username}*! 👋 This is ${agentName} from sureWin VIP Department.\n\nWe have a special offer just for you! 🎯\n\nComplete *${targetFmt}* in valid bet by *${deadlineFmt}*, and you will be eligible for an upgrade to *${nextTier}*!\n\n${challenge ? `📊 Your progress so far: *${progressFmt}* / ${targetFmt} (${chProgress.toFixed(0)}%)\n` : ''}Feel free to reach out anytime! 💎`,
+      ? `Hi *${player.username}*! 🎉 Congratulations! You've completed our special upgrade challenge!\n\nYour valid bet this month is *${progressFmt}*, meeting the *${targetFmt}* target! 🏆\n\nYou are now eligible for your *${nextTier}* upgrade! We will arrange it shortly. Thank you for your loyalty! 💎`
+      : `Hi *${player.username}*! 👋 This is ${agentName} from sureWin VIP Department.\n\nWe have a special offer just for you! 🎯\n\nReach *${targetFmt}* total valid bet this month by *${deadlineFmt}*, and you will be eligible for an upgrade to *${nextTier}*!\n\n📊 This month so far: *${progressFmt}* / ${targetFmt} (${chProgress.toFixed(0)}%) — only *${remainingFmt}* more to go!\n\nFeel free to reach out anytime! 💎`,
     cn: achieved
-      ? `您好 *${player.username}*！🎉 恭喜您完成了我们的特别升级挑战！\n\n您的有效流水增加了 *${progressFmt}*，达成了 *${targetFmt}* 的目标！🏆\n\n您现在有资格晋升到 *${nextTier}*！我们将尽快为您安排。感谢您的支持！💎`
-      : `您好 *${player.username}*！👋 我是sureWin VIP部门的${agentName}。\n\n我们为您提供一个特别升级优惠！🎯\n\n在 *${deadlineFmt}* 之前完成 *${targetFmt}* 的有效投注，即可获得晋升到 *${nextTier}* 的资格！\n\n${challenge ? `📊 您的当前进度：*${progressFmt}* / ${targetFmt} (${chProgress.toFixed(0)}%)\n` : ''}有任何需要请随时联系！💎`,
+      ? `您好 *${player.username}*！🎉 恭喜您完成了我们的特别升级挑战！\n\n您本月的有效流水已达 *${progressFmt}*，达成了 *${targetFmt}* 的目标！🏆\n\n您现在有资格晋升到 *${nextTier}*！我们将尽快为您安排。感谢您的支持！💎`
+      : `您好 *${player.username}*！👋 我是sureWin VIP部门的${agentName}。\n\n我们为您提供一个特别升级优惠！🎯\n\n在 *${deadlineFmt}* 之前，本月有效流水累计达到 *${targetFmt}*，即可获得晋升到 *${nextTier}* 的资格！\n\n📊 本月目前：*${progressFmt}* / ${targetFmt} (${chProgress.toFixed(0)}%) — 只差 *${remainingFmt}*！\n\n有任何需要请随时联系！💎`,
   }
   const message = waTemplates[lang]
 
@@ -697,7 +703,7 @@ function ChallengeModal({ player, challenge, agentName, waNumbers = [], onClose,
               <span style={{ fontSize: 12, fontWeight: 700, color: achieved ? '#4ade80' : 'var(--text)', minWidth: 36 }}>{chProgress.toFixed(0)}%</span>
             </div>
             <div style={{ fontSize: 11, color: 'var(--muted)', display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-              <span>{L2('Progress', '进度')}: <strong style={{ color: 'var(--text)' }}>{fmt(Math.max(0, currentBet - baseline), currency)}</strong> / {fmt(challenge.target_amount, currency)}</span>
+              <span>{L2('This month', '本月')}: <strong style={{ color: 'var(--text)' }}>{fmt(currentBet, currency)}</strong> / {fmt(challenge.target_amount, currency)}{!achieved && <> · {L2('needs', '还差')} <strong style={{ color: 'var(--text)' }}>{fmt(Math.max(0, challenge.target_amount - currentBet), currency)}</strong></>}</span>
               <span>{L2('Deadline', '截止日期')}: <strong style={{ color: 'var(--text)' }}>{new Date(challenge.deadline + 'T12:00:00').toLocaleDateString(uiLang === 'zh' ? 'zh-CN' : 'en-MY', { day: 'numeric', month: 'short', year: 'numeric' })}</strong></span>
             </div>
           </div>
@@ -714,7 +720,8 @@ function ChallengeModal({ player, challenge, agentName, waNumbers = [], onClose,
               placeholder={L2('e.g. 150000', '例如 150000')}
               style={{ width: '100%', padding: '8px 10px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13, boxSizing: 'border-box' }}
             />
-            {target > 0 && <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>= {fmt(target, currency)}</div>}
+            {target > 0 && <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>= {fmt(target, currency)}{normalTarget ? ` · ${L2('normal', '正常')} ${fmt(normalTarget, currency)}` : ''} · {L2("counts this month's total valid bet", '按本月累计有效流水计算')}</div>}
+            {pastMonth && <div style={{ fontSize: 10, color: '#f85149', marginTop: 2 }}>{L2('Deadline is after this month — monthly valid bet starts again from 0 next month.', '截止日期超过本月 — 下个月有效流水会从 0 重新计算。')}</div>}
           </div>
           <div>
             <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>{L2('Deadline', '截止日期')}</div>
@@ -1168,7 +1175,7 @@ function VIPCandidatesTab({ hostFilter = 'ALL' }) {
                                 const ch = challengeMap[v.username]
                                 if (!ch || ch.status !== 'active') return null
                                 const chPct = ch.target_amount > 0
-                                  ? Math.min(100, Math.max(0, ((v.monthly_valid_bet - ch.baseline_bet) / ch.target_amount) * 100))
+                                  ? Math.min(100, Math.max(0, ((v.monthly_valid_bet || 0) / ch.target_amount) * 100))
                                   : 0
                                 return (
                                   <div style={{ marginTop: 5 }}>
