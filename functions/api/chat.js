@@ -554,13 +554,22 @@ async function runTool(name, a, db, ctx = {}) {
       return db.rpc('get_daily_brief', { p_top: 10 })
 
     case 'campaigns': {
-      let q = 'campaigns?select=id,campaign_name,campaign_type,status,platform,start_date,end_date,target_tier,budget_rm,offer_desc&order=start_date.desc.nullslast&limit=40'
-      if (a.status) q += `&status=eq.${enc(a.status)}`
-      if (a.search) q += `&campaign_name=ilike.*${enc(a.search)}*`
-      const [list, players] = await Promise.all([db.rows(q), safe(db.rows('campaign_players?select=campaign_id&limit=5000'))])
+      const base = 'campaigns?select=id,campaign_name,campaign_type,status,platform,start_date,end_date,target_tier,budget_rm,offer_desc&order=start_date.desc.nullslast&limit=40' +
+        (a.search ? `&campaign_name=ilike.*${enc(a.search)}*` : '')
+      const [first, players] = await Promise.all([
+        db.rows(base + (a.status ? `&status=eq.${enc(a.status)}` : '')),
+        safe(db.rows('campaign_players?select=campaign_id&limit=5000')),
+      ])
+      // A wrong status guess (e.g. "ended" for a running campaign) must not hide the campaign
+      let list = first, note
+      if (!list.length && a.status) {
+        list = await db.rows(base)
+        if (list.length) note = `Nothing with status "${a.status}" — showing all statuses instead.`
+      }
       const count = {}
       for (const p of Array.isArray(players) ? players : []) count[p.campaign_id] = (count[p.campaign_id] || 0) + 1
-      return list.map(c => ({ ...c, offer_desc: (c.offer_desc || '').slice(0, 160), players: count[c.id] || 0 }))
+      const rows = list.map(c => ({ ...c, offer_desc: (c.offer_desc || '').slice(0, 160), players: count[c.id] || 0 }))
+      return note ? { note, campaigns: rows } : rows
     }
 
     case 'campaign_detail': {
@@ -743,7 +752,7 @@ HOW TO WORK
 - You can call several tools at once and do several rounds (e.g. find players, then open player_detail for the top ones).
 - If something is not in the data, say so plainly and say what would be needed.
 - You can see every player: Bronze and Silver (potential VIPs) and Gold, Platinum, Diamond, Diamond-P, Black (VIPs). "VIP" alone means Gold and above.
-- ACTIONS: you can PROPOSE (1) tasks / follow-up dates (propose_tasks), (2) a DRAFT campaign, optionally with players (propose_campaign_draft), (3) adding players to an existing campaign (propose_add_players). Each proposal appears under your answer as a card with Confirm / Cancel — NOTHING changes until the user clicks Confirm. Propose only when the user asks you to do it or agrees to your suggestion; in analysis answers you may end with an offer such as "要我帮你建这些任务吗？". After proposing, say briefly what the card contains and ask them to check it and click Confirm. Never say it is already done. Campaign drafts are never launched by you; one currency per campaign (MY or SG). Everything else (sending WhatsApp, changing hosts, launching campaigns, payouts) the user does on the CRM pages: say what to do and on which page. Use ONLY these page names (sidebar): Executive Overview, Today, My Tasks, Alerts, Daily Targets, All VIPs, Player Segments, Active Risk, Active Tracker, Follow Up, Birthdays, Upgrades, Transfers, Churn Analysis, Daily Work Queue, Churn Urgency, Contact Log, Weekly Outcome, Campaigns, Budget, Analytics, Player Insights, Reports, KPI, Manager KPI Board, Expenses, Mgmt View, and VIP360 (click a player name). Do not describe buttons or menus inside a page unless you are sure they exist — just name the page.
+- ACTIONS: you can PROPOSE (1) tasks / follow-up dates (propose_tasks), (2) a DRAFT campaign, optionally with players (propose_campaign_draft), (3) adding players to an existing campaign (propose_add_players). Each proposal appears under your answer as a card with Confirm / Cancel — NOTHING changes until the user clicks Confirm. Propose only when the user asks you to do it or agrees to your suggestion; in analysis answers you may end with an offer such as "要我帮你建这些任务吗？". After proposing, say briefly what the card contains and ask them to check it and click Confirm. Never write that it is done / created / added ("已建立", "已加入", "已为…生成") — write "已准备好，按确认后才会建立". Write card notes in the same language as your answer. For tiered rewards put the tiers in offer_desc and say the tiers still need to be set on the Campaigns page. Campaign drafts are never launched by you; one currency per campaign (MY or SG). Everything else (sending WhatsApp, changing hosts, launching campaigns, payouts) the user does on the CRM pages: say what to do and on which page. Use ONLY these page names (sidebar): Executive Overview, Today, My Tasks, Alerts, Daily Targets, All VIPs, Player Segments, Active Risk, Active Tracker, Follow Up, Birthdays, Upgrades, Transfers, Churn Analysis, Daily Work Queue, Churn Urgency, Contact Log, Weekly Outcome, Campaigns, Budget, Analytics, Player Insights, Reports, KPI, Manager KPI Board, Expenses, Mgmt View, and VIP360 (click a player name). Do not describe buttons or menus inside a page unless you are sure they exist — just name the page.
 
 BUSINESS RULES (must follow)
 - MYR (Malaysia) and SGD (Singapore) are different platforms; KHUSD is Cambodia. NEVER add different currencies together. Always show the currency with every amount, e.g. "MYR 12,500".
