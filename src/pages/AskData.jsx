@@ -159,6 +159,7 @@ const TOOL_LABELS = {
   rules:             ['CRM rules', 'CRM 规则'],
   birthdays:         ['Birthdays', '生日'],
   tier_changes:      ['Tier changes', '等级变动'],
+  ask_sql:                ['Custom query', '自定义查询'],
   propose_tasks:          ['Prepared tasks', '准备任务'],
   propose_campaign_draft: ['Prepared draft campaign', '准备草稿活动'],
   propose_add_players:    ['Prepared players to add', '准备加玩家'],

@@ -394,6 +394,33 @@ const tool = (name, description, properties = {}, required = []) =>
 
 const TASK_TYPES = ['Follow Up', 'Call', 'VIP Contact', 'Campaign', 'Upgrade', 'Birthday', 'Review', 'Other']
 
+// Tables the ask_sql safety net may read (contact columns left out on purpose; the DB function
+// ai_readonly_query only runs one SELECT, as the caller, inside a read-only function, max 200 rows)
+const SQL_GUIDE = `Main tables / views (public schema):
+vip_members_all(username,tier,currency,region,host_assigned,activity_status,churn_risk,days_inactive,last_deposit_date,last_bet_date,last_contacted,birthday,join_date,registration_date,fav_game,lang_pref,best_contact_time,reply_rate,vip_score,is_excluded,personality_notes,interests_topics,special_requests,affiliate_login,upgrade_date,last_big_win,last_big_loss) — one row per player; its money columns are only the LATEST day, do not use them for totals
+vip_daily_snapshots_all(username,snapshot_date,tier,currency,host_assigned,total_deposit,total_withdrawal,monthly_valid_bet,win_loss,bet_count,deposit_count,bonus_amount,total_rebate) — one row per player per day; monthly_valid_bet here = that DAY's valid bet; count deposit/withdrawal/win_loss only where monthly_valid_bet > 0
+vip_monthly_totals(username,snapshot_month,tier,currency,host_assigned,total_deposit,total_withdrawal,monthly_valid_bet,win_loss,bonus_amount,days_with_data) — trusted month totals
+v_vip_segments(username,tier,currency,host_assigned,lifecycle,dep_90d,value_band,behaviour,dep_trend,preference,games_month) — Gold+ only
+v_vip_recent_stats(username,data_as_of,dep_30d,wd_30d,loss_30d,loss_60d,turnover_30d,active_days_30d,deposit_days_30d,dep_7d,dep_prev_28d)
+contact_logs(username,tier,channel,direction,intent,message_summary,vip_response,outcome,follow_up_date,host_name,logged_at,log_month,emotion_tag,topic,bonus_offered,bonus_type)
+tasks(title,task_type,vip_username,vip_tier,assigned_to,due_date,priority,status,source,completed_at)
+campaigns(id,campaign_code,campaign_name,campaign_type,status,platform,start_date,end_date,target_tier,offer_desc,budget_rm,deposit_target,reward_pct,reward_fixed,reward_cap,reward_tiers,min_valid_bet,top_n,rank_rewards,leaderboard_metric,challenge_config,impact_cost)
+campaign_players(campaign_id,username,tier,status,total_deposit,valid_bet,total_withdrawal,reward_amount,payout_status,rank_position,enrolled_at,enrollment_source)
+vip_bonus_txns(username,txn_at,month,bonus_name,category,amount,currency)
+department_expenses(month,category,item_name,platform,currency,amount,expense_type,linked_campaign,vip_username)
+cash_voucher_claims(claimed_at,claim_month,username,currency,amount,status,satisfaction,recommend_score,feedback)
+gift_logs(username,birthday_year,gift_type,gift_cost,bonus_given,total_spent,contacted,contact_date)
+birthday_engine(username,tier,birthday,gift_type,budget_rm,gift_status,sent_date,host_name)
+reactivation_logs(username,tier,currency,reactivated_month,days_was_inactive,prev_last_deposit,new_deposit_date,reactivation_deposit,host_name)
+tier_change_logs(username,old_tier,new_tier,changed_at,import_month,source)
+provider_player_monthly(period_month,provider,username,currency,bet_count,turnover,valid_turnover,win_loss,bonus,rebate)
+v_bonus_dependency(month,username,tier,host_assigned,deposit_days,bonus_days,natural_days,deposit_total,bonus_total,bonus_cost_pct,dependency_class)
+vip_profiles(username,preferred_games,deposit_pattern,deposit_trigger,preferred_contact_time,preferred_contact_channel,interests,personality_tags,relationship_level,family_tags)
+retention_metrics(month,tier,total_members,metric_type,week1_pct,week2_pct,week3_pct,week4_pct,monthly_pct)
+transfer_players(username,source_platform,joined_date,is_active)
+crm_rules(rule_key,value,unit,category,description) · upgrade_thresholds(from_tier,to_tier,metric,threshold,is_active)
+Rules: join tables on exact username = username (never lower()); always GROUP BY currency for money; dates are Malaysia time; keep queries simple (6 s limit, 200 rows).`
+
 const TOOLS = [
   tool('find_players',
     'List players (all tiers, Bronze to Black) matching filters, with status, manager, last deposit/bet, segment, and money for the period (dep, wd, vb = valid bet, wl = player win/loss, bonus, dep_days, active_days, dep_90d). Returns total_matched and up to `limit` rows. Every row also has the upgrade picture, already calculated by the database: month_vb (valid bet this calendar month), next_tier, next_target, gap_to_next (still needed), qualifies_for (highest tier this month\'s valid bet already reaches, empty = none).',
@@ -437,6 +464,10 @@ const TOOLS = [
   tool('rules', 'Current CRM thresholds (crm_rules: inactivity days, task cap, etc.) and tier upgrade thresholds.'),
   tool('birthdays', 'Players with a birthday coming up, with gift status.',
     { days_ahead: { type: 'integer', description: 'default 14' } }),
+  tool('ask_sql',
+    'Safety net: run ONE read-only SQL SELECT on the CRM database when no other tool can answer (unusual breakdowns, cross-table questions, history). Use the other tools first.\n' + SQL_GUIDE,
+    { sql: { type: 'string', description: 'a single SELECT or WITH … SELECT, no semicolon' },
+      purpose: { type: 'string', description: 'one line: what this query answers' } }, ['sql']),
   tool('tier_changes', 'Recent tier upgrades and downgrades.',
     { since: { type: 'string', description: 'YYYY-MM-DD, default 60 days back' } }),
 
@@ -634,6 +665,9 @@ async function runTool(name, a, db, ctx = {}) {
 
     case 'tier_changes':
       return db.rows(`tier_change_logs?select=username,old_tier,new_tier,changed_at&changed_at=gte.${a.since || daysBefore(todayMYT(), 60)}&order=changed_at.desc&limit=100`)
+
+    case 'ask_sql':
+      return db.rpc('ai_readonly_query', { p_sql: String(a.sql || '') })
 
     case 'propose_tasks': {
       const rows = (a.tasks || []).slice(0, 50)
