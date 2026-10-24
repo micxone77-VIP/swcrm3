@@ -310,7 +310,9 @@ export async function onRequestPost({ request, env }) {
 
   } catch (e) {
     console.error('[/api/chat] unhandled error:', e?.message || e)
-    return err('Internal server error', 500)
+    // Show the real reason (e.g. OpenAI quota / key problem) so it can be fixed;
+    // only logged-in staff reach this point, and no secrets are in these messages.
+    return err(`Server error: ${String(e?.message || e).slice(0, 300)}`, 500)
   }
 }
 
@@ -365,8 +367,8 @@ async function fetchCRMContext(env) {
       `&snapshot_date=gte.${daysAgoStr(31)}&order=snapshot_date.desc&limit=5000`
     ),
     sbFetch(env,
-      `contact_logs?select=vip_id,contact_type,outcome,notes,contacted_at,vip_members(username)` +
-      `&contacted_at=gte.${daysAgoStr(30)}&order=contacted_at.desc&limit=500`
+      `contact_logs?select=username,channel,outcome,message_summary,logged_at` +
+      `&logged_at=gte.${daysAgoStr(30)}&order=logged_at.desc&limit=500`
     ),
     // Campaign tables
     sbFetch(env,
@@ -405,15 +407,15 @@ async function fetchCRMContext(env) {
   // Per-player contact log map: username → recent contacts
   const contactByUser = {}
   for (const c of contacts) {
-    const u = c.vip_members?.username
+    const u = c.username
     if (!u) continue
     if (!contactByUser[u]) contactByUser[u] = []
     if (contactByUser[u].length < 5) { // keep last 5 per player
       contactByUser[u].push({
-        date:    (c.contacted_at || '').slice(0, 10),
-        type:    c.contact_type || '?',
+        date:    (c.logged_at || '').slice(0, 10),
+        type:    c.channel || '?',
         outcome: c.outcome || '?',
-        notes:   (c.notes || '').slice(0, 100),
+        notes:   maskDigits(c.message_summary).slice(0, 100),
       })
     }
   }
@@ -722,8 +724,8 @@ function buildSystemPrompt({ vips, contacts, campaigns, monthlyByUser, distinctM
 
   // ── Recent contacts
   const contactsBlock = contacts.slice(0, 30).map(c =>
-    `  ${(c.contacted_at || '').slice(0, 10)} | ${c.contact_type || '?'} → ${c.outcome || '?'}` +
-    (c.notes ? ` | ${c.notes.slice(0, 80)}` : '')
+    `  ${(c.logged_at || '').slice(0, 10)} | ${c.username || '?'} | ${c.channel || '?'} → ${c.outcome || '?'}` +
+    (c.message_summary ? ` | ${maskDigits(c.message_summary).slice(0, 80)}` : '')
   ).join('\n') || '  (no recent contacts)'
 
   // ── Campaigns section
@@ -805,6 +807,8 @@ async function callOpenAI(messages, env) {
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
+// Hide phone / bank numbers pasted into notes: 7+ digits -> ****last4
+function maskDigits(t) { return String(t || '').replace(/\d{7,}/g, m => '****' + m.slice(-4)) }
 function todayStr() { return new Date().toISOString().slice(0, 10) }
 function daysAgoStr(days) { const d = new Date(); d.setDate(d.getDate() - days); return d.toISOString().slice(0, 10) }
 function monthStrOffset(offsetMonths) {
