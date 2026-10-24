@@ -795,7 +795,7 @@ async function callOpenAI(messages, env) {
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: { Authorization: `Bearer ${env.OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: OPENAI_MODEL, messages, max_tokens: MAX_TOKENS, temperature: 0.3 }),
+    body: JSON.stringify({ model: OPENAI_MODEL, messages: messages.map(m => ({ ...m, content: wellFormed(m.content) })), max_tokens: MAX_TOKENS, temperature: 0.3 }),
   })
   if (!res.ok) {
     const e = await res.json().catch(() => ({}))
@@ -809,6 +809,8 @@ async function callOpenAI(messages, env) {
 
 // Hide phone / bank numbers pasted into notes: 7+ digits -> ****last4
 function maskDigits(t) { return String(t || '').replace(/\d{7,}/g, m => '****' + m.slice(-4)) }
+// .slice() can cut an emoji in half; OpenAI rejects the leftover half as invalid JSON
+function wellFormed(t) { return String(t ?? '').replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, '') }
 function todayStr() { return new Date().toISOString().slice(0, 10) }
 function daysAgoStr(days) { const d = new Date(); d.setDate(d.getDate() - days); return d.toISOString().slice(0, 10) }
 function monthStrOffset(offsetMonths) {
