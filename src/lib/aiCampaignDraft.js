@@ -4,7 +4,8 @@
 // Pure: no Supabase calls. The DB function ai_apply_action('create_campaign_draft') saves it.
 import { CAMPAIGN_GUIDE } from './campaignGuide'
 import { defaultChallengeConfig, suggestForPlayer, periodDates, num } from './challengeEngine'
-import { defaultDailyConfig } from './dailyMilestone'
+import { defaultDailyConfig, VARS as DAILY_VARS } from './dailyMilestone'
+import { WA_STAGES, WA_VARS } from './campaignWaTemplates'
 import { validateCampaignEditor } from './campaignEditor'
 
 // kind = what the user picks on the Campaigns page (guide key); campaign_type = what is stored
@@ -42,6 +43,9 @@ export function kindGuideText() {
   }).join('\n')
 }
 
+// Daily Milestone message groups (dailyMilestone.js DEFAULT_TEMPLATES)
+export const DAILY_WA_STAGES = ['intro', 'won', 'streak', 'near', 'idle', 'care', 'ended']
+
 const TIERS = ['BLACK', 'DIAMOND-P', 'DIAMOND', 'PLATINUM', 'GOLD', 'SILVER', 'BRONZE']
 const n0 = v => (v === '' || v == null || !Number.isFinite(Number(v)) ? null : Number(v))
 const fmt = v => (v == null ? '—' : Number(v).toLocaleString('en-US'))
@@ -73,7 +77,7 @@ export function buildCampaignDraft(input, todayYmd) {
     budget_rm: n0(a.budget_rm), offer_desc: a.offer_desc || null, notes: a.notes || null,
     reward_delivery: a.reward_delivery === 'wcash' ? 'wcash' : 'credit',
     turnover_multiplier: n0(a.turnover_multiplier),
-    whatsapp_template: a.whatsapp_template || null, whatsapp_template_zh: a.whatsapp_template_zh || null,
+    whatsapp_template: null, whatsapp_template_zh: null,   // replaced by wa_templates (one text per stage × language)
   }
   // Same enrolment rule as the unified creator: tiers → auto-enrol; challenges always use an explicit list
   if (K.type !== 'challenge') {
@@ -171,6 +175,27 @@ export function buildCampaignDraft(input, todayYmd) {
   if (!campaign.campaign_name) errors.push('campaign_name is required')
   if (campaign.budget_rm == null) warnings.push('No budget set.')
 
+  // WhatsApp texts per stage × language (EN / MY / 中文); placeholders must be ones the system fills
+  let wa = null
+  if (kind === 'challenge_daily' || K.type !== 'challenge') {
+    const daily = kind === 'challenge_daily'
+    const stages = daily ? DAILY_WA_STAGES : WA_STAGES
+    const known = daily ? DAILY_VARS.map(v => v.slice(1, -1)) : WA_VARS
+    wa = {}
+    const missing = []
+    for (const st of stages) for (const l of ['en', 'my', 'zh']) {
+      const text = a.wa_templates?.[st]?.[l]
+      if (typeof text === 'string' && text.trim()) {
+        const bad = [...new Set((text.match(/\{(\w+)\}/g) || []).map(m => m.slice(1, -1)).filter(k => !known.includes(k)))]
+        if (bad.length) errors.push(`wa_templates.${st}.${l} uses unknown placeholder(s) ${bad.map(b => '{' + b + '}').join(' ')} — use only: ${known.map(k => '{' + k + '}').join(' ')}`)
+        ;(wa[st] = wa[st] || {})[l] = text.trim()
+      } else missing.push(`${st}/${l}`)
+    }
+    if (missing.length) warnings.push(`Built-in WhatsApp text used for: ${missing.join(', ')}`)
+    if (daily) cfg.wa_templates = wa
+    else campaign.wa_templates = Object.keys(wa).length ? wa : null
+  }
+
   const summary = {
     kind, kind_en: K.en, kind_zh: K.zh, days, platform, currency: platform === 'SG' ? 'SGD' : 'MYR',
     rows,
@@ -181,6 +206,7 @@ export function buildCampaignDraft(input, todayYmd) {
       : kind === 'challenge_daily' ? { cols: ["Day's turnover ≥", 'Reward'], rows: cfg.tiers.map(t => [fmt(t.turnover), fmt(t.reward)]) }
       : null,
   }
+  summary.wa = wa && { daily: kind === 'challenge_daily', stages: kind === 'challenge_daily' ? DAILY_WA_STAGES : WA_STAGES, texts: wa }
   return { campaign, levels, cfg, kind, days, allInTiers, tiers, errors, warnings, summary }
 }
 

@@ -295,7 +295,7 @@ function ChallengeDetailClassic({ campaign: initial, onClose, onChanged }) {
           <input style={{ ...input, width: 180 }} placeholder={T('Search VIP', '搜索VIP')} value={search} onChange={e => setSearch(e.target.value)} />
           <span style={{ fontSize: 12, color: 'var(--muted)' }}>{rows.length} {T('shown', '位显示中')}</span>
           <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--muted)' }}>{T('WhatsApp language', 'WhatsApp 语言')}:</span>
-          {[['en', 'EN'], ['zh', '中文']].map(([k, l]) => <button key={k} onClick={() => setWaLang(k)} style={{ ...sec, padding: '4px 10px', borderColor: waLang === k ? 'var(--accent)' : 'var(--border)', color: waLang === k ? 'var(--accent)' : 'var(--text)' }}>{l}</button>)}
+          {[['en', 'EN'], ['my', 'MY'], ['zh', '中文']].map(([k, l]) => <button key={k} onClick={() => setWaLang(k)} style={{ ...sec, padding: '4px 10px', borderColor: waLang === k ? 'var(--accent)' : 'var(--border)', color: waLang === k ? 'var(--accent)' : 'var(--text)' }}>{l}</button>)}
         </div>
 
         {/* table */}

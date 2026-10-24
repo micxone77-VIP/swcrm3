@@ -9,6 +9,7 @@ import { callAI } from '../lib/aiApi'
 import { useAuth } from '../hooks/useAuth'
 import { useLanguage } from '../contexts/LanguageContext'
 import { supabase } from '../lib/supabase'
+import { fillWa, tierList, STAGE_INFO } from '../lib/campaignWaTemplates'
 
 const s = {
   page:      { padding:'24px 28px', minHeight:'100vh', color:'var(--text)', display:'flex', flexDirection:'column', height:'100vh' },
@@ -189,6 +190,39 @@ function StepsLine({ steps, dataDate }) {
 const cardTh = { textAlign: 'left', padding: '4px 8px', borderBottom: '1px solid var(--border)', color: 'var(--muted)', whiteSpace: 'nowrap' }
 const cardTd = { padding: '4px 8px', borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap' }
 
+// The draft's WhatsApp texts per stage × EN / MY / 中文 (normal kinds shown filled with sample values)
+const DAILY_STAGE_LABEL = { intro: '📣 Intro', won: '🎉 Won yesterday', streak: '🔥 1 day to streak', near: '😬 Almost', idle: '💤 Not active', care: '💙 Big loss — care', ended: '🏁 Ended' }
+function WaPreview({ wa, campaign, levels }) {
+  const { lang } = useLanguage()
+  const L2 = (en, zh) => (lang === 'zh' ? zh : en)
+  const [stage, setStage] = useState(wa.stages[0])
+  const [l, setL] = useState(lang === 'zh' ? 'zh' : 'en')
+  const raw = wa.texts?.[stage]?.[l]
+  const cur = campaign?.platform === 'SG' ? 'SGD ' : 'RM'
+  const text = !raw ? null : wa.daily ? raw : fillWa(raw, { username: 'haur2972', agent: 'Marcus', campaign: campaign?.campaign_name, start: campaign?.start_date, end: campaign?.end_date,
+    days_left: 3, cur, gap: '12,000', next_reward: `${cur}900`, reward: `${cur}900`, turnover: campaign?.turnover_multiplier ? `${cur}${900 * campaign.turnover_multiplier}` : '',
+    tier_list: tierList(campaign, levels, l), streak: (campaign?.streak_days || 3) - 1, streak_n: campaign?.streak_days || 3, streak_pct: campaign?.streak_bonus_pct ?? 1 })
+  const chip = on => ({ padding: '3px 9px', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', border: '1px solid var(--border)', background: on ? 'var(--accent)' : 'var(--surface2)', color: on ? '#fff' : 'var(--muted)' })
+  return (
+    <div style={{ marginTop: 10, borderTop: '1px dashed var(--border)', paddingTop: 8 }}>
+      <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>💬 {L2('WhatsApp messages (every stage, EN / MY / 中文)', 'WhatsApp 讯息（每个阶段，EN / MY / 中文）')}</div>
+      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 6 }}>
+        {wa.stages.map(st => {
+          const info = STAGE_INFO[st]
+          const label = wa.daily ? DAILY_STAGE_LABEL[st] : `${info.icon} ${lang === 'zh' ? info.zh : info.en}`
+          return <button key={st} onClick={() => setStage(st)} style={chip(stage === st)}>{label}</button>
+        })}
+        <span style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
+          {['en', 'my', 'zh'].map(x => <button key={x} onClick={() => setL(x)} style={chip(l === x)}>{x === 'en' ? 'EN' : x === 'my' ? 'MY' : '中文'}</button>)}
+        </span>
+      </div>
+      <div style={{ whiteSpace: 'pre-wrap', fontSize: 12, padding: '8px 10px', borderRadius: 6, background: 'rgba(37,211,102,.06)', border: '1px solid rgba(37,211,102,.2)' }}>
+        {text || <span style={{ color: 'var(--muted)' }}>{L2('(built-in text will be used)', '（使用内置讯息）')}</span>}
+      </div>
+    </div>
+  )
+}
+
 function ActionCard({ action, question, onChange }) {
   const { lang } = useLanguage()
   const L2 = (en, zh) => (lang === 'zh' ? zh : en)
@@ -261,6 +295,7 @@ function ActionCard({ action, question, onChange }) {
         {[...(d.warnings || []), ...(d.unknown?.length ? [L2(`Not found: ${d.unknown.join(', ')}`, `找不到：${d.unknown.join(', ')}`)] : [])].map(w => (
           <div key={w} style={{ fontSize: 11, color: '#d29922', marginTop: 4 }}>⚠️ {w}</div>
         ))}
+        {d.wa && <WaPreview wa={d.wa} campaign={p.campaign} levels={p.levels} />}
         <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>{L2('It is saved as a DRAFT. Launch it yourself on the Campaigns page after a final look.', '会存成草稿。最后检查后，由你在 Campaigns 页面启动。')}</div>
       </div>
     )

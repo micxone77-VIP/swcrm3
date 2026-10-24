@@ -113,31 +113,38 @@ export const DEFAULT_TEMPLATES = {
   intro: {
     zh: "哈咯 {username}～我是sureWin VIP部门的 {agent} 😄\n\n跟你讲个好东西 ⚡ {campaign} 开跑了（{start} – {end}）\n每天流水到就有 VIP Credit，隔天我直接帮你派：\n{tier_list}\n\n🔥 连续 {streak_n} 天都有到的话，再多送你这 {streak_n} 天存款的 {streak_pct}%！\n\n每天重新算的，有空就来玩一下，祝你旺 🍀",
     en: "Yo {username}! I'm {agent} from sureWin VIP department 😄\n\nGot something nice for you bro — ⚡ {campaign} is on from {start} to {end}!\nHit the daily turnover and you get VIP Credit, I bank in for you the next day:\n{tier_list}\n\n🔥 Hit it {streak_n} days in a row, you get extra {streak_pct}% of your deposits on those days!\n\nEvery day fresh start one, jom try. Good luck bro 🍀",
+    my: "Hai {username}! Saya {agent} dari jabatan VIP sureWin 😄\n\nAda benda best untuk bro — ⚡ {campaign} berjalan dari {start} hingga {end}!\nCapai turnover harian dan dapat VIP Credit, saya masukkan esoknya:\n{tier_list}\n\n🔥 Capai {streak_n} hari berturut-turut, dapat extra {streak_pct}% daripada deposit hari-hari tu!\n\nSetiap hari kira baru, jom try. Semoga ong bro 🍀",
   },
   won: {
     zh: "哈咯 {username}，我是sureWin VIP部门的 {agent}～\n\n哇你可以哦 🎉 昨天（{asof}）流水 {cur}{y_turnover}，{y_reward} Credit 我今天已经帮你派进去了 ✅\n\n今天冲到 {cur}{next_target} 就有 {next_reward} Credit 💪\n还有 {days_left} 天，继续旺下去！",
     en: "Yo {username}! {agent} here from sureWin VIP department~\n\nWah steady bro 🎉 Yesterday ({asof}) your turnover {cur}{y_turnover} — {y_reward} Credit I already banked in today ✅\n\nToday hit {cur}{next_target} can get {next_reward} Credit 💪\nStill got {days_left} day(s), keep going bro!",
+    my: "Hai {username}! {agent} dari jabatan VIP sureWin~\n\nWah power bro 🎉 Semalam ({asof}) turnover bro {cur}{y_turnover} — {y_reward} Credit saya dah masukkan hari ni ✅\n\nHari ni capai {cur}{next_target} boleh dapat {next_reward} Credit 💪\nMasih ada {days_left} hari, teruskan bro!",
   },
   streak: {
     zh: "哈咯 {username}，我是sureWin VIP部门的 {agent}～\n\n你很稳哦，已经连续 {streak} 天了 🔥🔥\n昨天的 {y_reward} Credit 今天派了 ✅\n\n今天只要再到 {cur}{first_target}，连续奖励大概 {cur}{streak_est} 就是你的了！别断掉啊 💪",
     en: "Yo {username}! {agent} here from sureWin VIP department~\n\nBro, {streak} days in a row already, power lah 🔥🔥\nYesterday's {y_reward} Credit banked in today ✅\n\nToday hit {cur}{first_target} one more time and the streak bonus, around {cur}{streak_est}, is yours! Don't break it ah 💪",
+    my: "Hai {username}! {agent} dari jabatan VIP sureWin~\n\nBro, dah {streak} hari berturut-turut, power lah 🔥🔥\n{y_reward} Credit semalam dah masuk hari ni ✅\n\nHari ni capai {cur}{first_target} sekali lagi, bonus streak lebih kurang {cur}{streak_est} jadi milik bro! Jangan putus ya 💪",
   },
   near: {
     zh: "哈咯 {username}，我是sureWin VIP部门的 {agent}～\n\n昨天好可惜啊 😅 流水 {cur}{y_turnover}，就差 {cur}{missed_by} 而已，{miss_reward} Credit 就到手了！\n\n昨天 {winners} 个VIP有拿到，最高 {top_reward} Credit。\n今天重新来，流水到 {cur}{first_target} 就有了 💪",
     en: "Yo {username}! {agent} here from sureWin VIP department~\n\nAiyo, so close yesterday bro 😅 Your turnover {cur}{y_turnover}, short only {cur}{missed_by} to get {miss_reward} Credit!\n\n{winners} VIPs got rewards yesterday, highest {top_reward} Credit.\nToday new round — hit {cur}{first_target} and it's yours 💪",
+    my: "Hai {username}! {agent} dari jabatan VIP sureWin~\n\nAiyo, semalam dekat sangat bro 😅 Turnover bro {cur}{y_turnover}, kurang {cur}{missed_by} je untuk dapat {miss_reward} Credit!\n\n{winners} VIP dapat ganjaran semalam, paling tinggi {top_reward} Credit.\nHari ni pusingan baru — capai {cur}{first_target} dan ia milik bro 💪",
   },
   idle: {
     zh: "哈咯 {username}，我是sureWin VIP部门的 {agent}，最近好吗～\n\n⚡ {campaign} 还在跑，剩 {days_left} 天哦\n昨天 {winners} 个VIP拿了奖励，最高 {top_reward} Credit 🎁\n一天流水到 {cur}{first_target} 就有，有空来玩一下 😄",
     en: "Hey {username}! {agent} here from sureWin VIP department, how's it going bro~\n\n⚡ {campaign} still running, {days_left} day(s) left!\n{winners} VIPs grabbed rewards yesterday, up to {top_reward} Credit 🎁\nJust hit {cur}{first_target} turnover in a day can claim — free come try ya 😄",
+    my: "Hai {username}! {agent} dari jabatan VIP sureWin, apa khabar bro~\n\n⚡ {campaign} masih berjalan, tinggal {days_left} hari!\n{winners} VIP dapat ganjaran semalam, sampai {top_reward} Credit 🎁\nCapai turnover {cur}{first_target} dalam sehari je boleh claim — jom try ya 😄",
   },
   // after the last day is settled: thank-you + more campaigns coming. {final_line} / {total_line} are empty when not earned.
   ended: {
     zh: "哈咯 {username}，我是sureWin VIP部门的 {agent}～\n\n⚡ {campaign}（{start} – {end}）已经圆满结束啦 🏁\n{final_line}\n{total_line}\n\n谢谢你这段时间一路的支持，有你一起玩真的很开心 🙏\n我们很快会有新的活动，到时第一时间通知你！\n\n祝你天天好运，越玩越旺，赢多多 🍀💰",
     en: "Yo {username}! I'm {agent} from sureWin VIP department~\n\n⚡ {campaign} ({start} – {end}) has officially ended 🏁\n{final_line}\n{total_line}\n\nThanks a lot for being with us the whole way bro, really appreciate it 🙏\nMore campaigns coming soon — I'll let you know first!\n\nWish you good luck always and win more more bro 🍀💰",
+    my: "Hai {username}! Saya {agent} dari jabatan VIP sureWin~\n\n⚡ {campaign} ({start} – {end}) dah rasmi tamat 🏁\n{final_line}\n{total_line}\n\nTerima kasih banyak sebab bersama kami dari awal bro, saya hargai sangat 🙏\nKempen baru akan datang tak lama lagi — saya bagitahu bro dulu!\n\nSemoga ong selalu dan menang lebih banyak bro 🍀💰",
   },
   care: {
     zh: "{username}，我是sureWin VIP部门的 {agent}。看你昨天手气不太顺，来问候一下 🙏 好好休息，不用急。有什么事随时找我～",
     en: "Hey {username}, {agent} here from sureWin VIP department. Saw yesterday not so ong for you bro, just checking on you 🙏 Rest well ya, no rush. Anything just WhatsApp me~",
+    my: "Hai {username}, {agent} dari jabatan VIP sureWin. Nampak semalam kurang ong untuk bro, saja nak tanya khabar 🙏 Rehat cukup ya, tak payah rush. Ada apa-apa WhatsApp saya je~",
   },
 }
 
@@ -145,7 +152,7 @@ export const VARS = ['{cur}', '{username}', '{agent}', '{campaign}', '{start}', 
 
 export function fillMessage({ group, lang, cfg, campaign, prog, username, agent, summary, currency }) {
   const custom = cfg.wa_templates?.[group]?.[lang]
-  const tpl = (custom && custom.trim()) || DEFAULT_TEMPLATES[group]?.[lang] || ''
+  const tpl = (custom && custom.trim()) || DEFAULT_TEMPLATES[group]?.[lang] || DEFAULT_TEMPLATES[group]?.en || ''
   const tiers = prog?.tiers || sortedTiers(cfg)
   const last = prog?.last || {}
   const cur = currency === 'SGD' ? 'SGD ' : currency === 'KHUSD' ? 'USD ' : 'RM'
@@ -162,12 +169,12 @@ export function fillMessage({ group, lang, cfg, campaign, prog, username, agent,
   if (group === 'near') v.missed_by = fmt(Math.max(0, num((tiers[0] || {}).turnover) - num(last.vb)))
   // campaign-ended lines: only when the player actually earned something
   const label = cfg.reward_label || 'Credit'
-  const zh = lang === 'zh'
+  const zh = lang === 'zh', my = lang === 'my'
   v.total_reward = fmt(prog?.credit)
   v.final_line = last.qualifies && num(last.reward) > 0
-    ? (zh ? `最后一天的 ${fmt(last.reward)} ${label} 今天已经帮你派进去了 ✅` : `Your last day's ${fmt(last.reward)} ${label} already banked in today ✅`) : ''
-  const streakPart = num(prog?.streak) > 0 ? (zh ? ` + ${cur}${fmt(prog.streak)} 连续奖励` : ` + ${cur}${fmt(prog.streak)} streak bonus`) : ''
+    ? (zh ? `最后一天的 ${fmt(last.reward)} ${label} 今天已经帮你派进去了 ✅` : my ? `${fmt(last.reward)} ${label} hari terakhir dah masuk hari ni ✅` : `Your last day's ${fmt(last.reward)} ${label} already banked in today ✅`) : ''
+  const streakPart = num(prog?.streak) > 0 ? (zh ? ` + ${cur}${fmt(prog.streak)} 连续奖励` : my ? ` + ${cur}${fmt(prog.streak)} bonus streak` : ` + ${cur}${fmt(prog.streak)} streak bonus`) : ''
   v.total_line = num(prog?.credit) > 0 || num(prog?.streak) > 0
-    ? (zh ? `这次活动你一共拿了 ${fmt(prog.credit)} ${label}${streakPart} 🎉` : `This campaign you got total ${fmt(prog.credit)} ${label}${streakPart} 🎉`) : ''
+    ? (zh ? `这次活动你一共拿了 ${fmt(prog.credit)} ${label}${streakPart} 🎉` : my ? `Kempen ni bro dapat jumlah ${fmt(prog.credit)} ${label}${streakPart} 🎉` : `This campaign you got total ${fmt(prog.credit)} ${label}${streakPart} 🎉`) : ''
   return tpl.replace(/\{(\w+)\}/g, (m, k) => (v[k] !== undefined ? String(v[k]) : m)).replace(/\n{3,}/g, '\n\n')
 }

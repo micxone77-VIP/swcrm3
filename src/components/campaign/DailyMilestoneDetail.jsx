@@ -519,7 +519,7 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
                 {MSG_TYPES.map(k => <option key={k} value={k}>{MSG_LABEL(k)}</option>)}
               </select>
               <span style={{ fontSize: 12, color: 'var(--muted)' }}>{T('WhatsApp language', 'WhatsApp 语言')}</span>
-              {['zh', 'en'].map(l => <button key={l} style={{ ...sec, padding: '6px 12px', background: waLang === l ? 'var(--accent)' : 'var(--surface2)', color: waLang === l ? '#fff' : 'var(--text)' }} onClick={() => setWaLang(l)}>{l === 'zh' ? '中文' : 'EN'}</button>)}
+              {['zh', 'en', 'my'].map(l => <button key={l} style={{ ...sec, padding: '6px 12px', background: waLang === l ? 'var(--accent)' : 'var(--surface2)', color: waLang === l ? '#fff' : 'var(--text)' }} onClick={() => setWaLang(l)}>{l === 'zh' ? '中文' : l === 'my' ? 'MY' : 'EN'}</button>)}
             </div>
           )}
 

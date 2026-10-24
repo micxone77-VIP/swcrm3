@@ -72,14 +72,14 @@ export function DailyRulesEditor({ cfg, setCfg, withTemplates = false }) {
         <div style={{ marginTop: 16, borderTop: '1px dashed var(--border)', paddingTop: 12 }}>
           <div style={lbl}>💬 {T('WhatsApp messages per group — edit the text directly, then Save', '各分组 WhatsApp 话术 — 直接修改文字后保存')}</div>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', margin: '6px 0' }}>
-            {TPL_KEYS.map(k => <button type="button" key={k} style={{ ...sec, background: tplKey === k ? 'var(--accent)' : 'var(--surface2)', color: tplKey === k ? '#fff' : 'var(--text)' }} onClick={() => setTplKey(k)}>{TPL_LABEL[k].icon} {lang === 'zh' ? TPL_LABEL[k].zh : TPL_LABEL[k].en}{((tpl[k]?.zh && tpl[k].zh !== DEFAULT_TEMPLATES[k].zh) || (tpl[k]?.en && tpl[k].en !== DEFAULT_TEMPLATES[k].en)) ? ' ✎' : ''}</button>)}
+            {TPL_KEYS.map(k => <button type="button" key={k} style={{ ...sec, background: tplKey === k ? 'var(--accent)' : 'var(--surface2)', color: tplKey === k ? '#fff' : 'var(--text)' }} onClick={() => setTplKey(k)}>{TPL_LABEL[k].icon} {lang === 'zh' ? TPL_LABEL[k].zh : TPL_LABEL[k].en}{['zh', 'en', 'my'].some(l => tpl[k]?.[l] && tpl[k][l] !== DEFAULT_TEMPLATES[k][l]) ? ' ✎' : ''}</button>)}
           </div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>{T('Variables: ', '变量：')}{VARS.join(' ')}</div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            {['zh', 'en'].map(l => (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
+            {['zh', 'en', 'my'].map(l => (
               <div key={l}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div style={lbl}>{l === 'zh' ? '中文' : 'English'}{tpl[tplKey]?.[l] && tpl[tplKey][l] !== DEFAULT_TEMPLATES[tplKey][l] ? <span style={{ color: 'var(--accent)', marginLeft: 6 }}>✎ {T('edited', '已修改')}</span> : <span style={{ color: 'var(--muted)', marginLeft: 6, fontWeight: 400 }}>{T('(default)', '（默认）')}</span>}</div>
+                  <div style={lbl}>{l === 'zh' ? '中文' : l === 'my' ? 'Bahasa Melayu' : 'English'}{tpl[tplKey]?.[l] && tpl[tplKey][l] !== DEFAULT_TEMPLATES[tplKey][l] ? <span style={{ color: 'var(--accent)', marginLeft: 6 }}>✎ {T('edited', '已修改')}</span> : <span style={{ color: 'var(--muted)', marginLeft: 6, fontWeight: 400 }}>{T('(default)', '（默认）')}</span>}</div>
                   <button type="button" style={{ ...sec, padding: '2px 8px', fontSize: 11 }} onClick={() => setTpl(tplKey, l, '')} title={T('Go back to the built-in text', '恢复系统默认文字')}>↺ {T('Reset to default', '恢复默认')}</button>
                 </div>
                 <textarea style={{ ...input, minHeight: 260, fontFamily: 'inherit', fontSize: 14, lineHeight: 1.5, resize: 'vertical' }} value={tpl[tplKey]?.[l] || DEFAULT_TEMPLATES[tplKey][l]} onChange={e => setTpl(tplKey, l, e.target.value === DEFAULT_TEMPLATES[tplKey][l] ? '' : e.target.value)} />

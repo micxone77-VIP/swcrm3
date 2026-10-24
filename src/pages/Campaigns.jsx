@@ -16,6 +16,8 @@ import CampaignMedia from '../components/campaign/CampaignMedia'
 import CampaignScorecard from '../components/campaign/CampaignScorecard'
 import { CampaignInfoButton } from '../components/campaign/CampaignGuide'
 import { ListCount } from '../components/ui'
+import { waMessage, tierList, STAGE_INFO } from '../lib/campaignWaTemplates'
+import CampaignWaEditor from '../components/campaign/CampaignWaEditor'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const TIERS = ['BLACK','DIAMOND-P','DIAMOND','PLATINUM','GOLD','SILVER','BRONZE']
@@ -204,48 +206,11 @@ function calcLevelTierForDeposit(dep, levels) {
   return { levelOrder: bestLevel.level_order ?? null, creditReward: Number(bestLevel.reward_amount) || 0 }
 }
 
-// WhatsApp notification helpers
-// Substitutes {username} {campaign} {agent} {reward} {turnover} in a custom template
-function applyPayoutTemplate(tpl, username, campaignName, rewardFormatted, agent, turnoverRequired) {
-  return tpl
-    .replace(/\{username\}/g, username || '')
-    .replace(/\{campaign\}/g, campaignName || '')
-    .replace(/\{agent\}/g, agent || '')
-    .replace(/\{reward\}/g, rewardFormatted || '')
-    .replace(/\{turnover\}/g, turnoverRequired || '')
-}
-
-// agent = host_assigned name; turnoverRequired = reward × multiplier (null if no requirement)
-const WA_MSGS = {
-  en: (u, c, r, agent, turnoverRequired) => {
-    const intro = agent ? `Hi ${u}! 🎉 I'm ${agent} from sureWin VIP Team.` : `Hi ${u}! 🎉`
-    const body = `\nYour "${c}" reward of ${r} Credit has been credited to your account. Please check your balance!`
-    const turnover = turnoverRequired ? `\n\n⚠️ Please note: A ${turnoverRequired} turnover is required before you can make a withdrawal.` : ''
-    return intro + body + turnover
-  },
-  my: (u, c, r, agent, turnoverRequired) => {
-    const intro = agent ? `Hi ${u}! 🎉 Saya ${agent} dari Pasukan sureWin VIP.` : `Hi ${u}! 🎉`
-    const body = `\nHadiah kempen "${c}" sebanyak ${r} Kredit telah dikreditkan ke akaun anda. Sila semak baki anda!`
-    const turnover = turnoverRequired ? `\n\n⚠️ Harap maklum: Turnover sebanyak ${turnoverRequired} diperlukan sebelum pengeluaran boleh dibuat.` : ''
-    return intro + body + turnover
-  },
-  cn: (u, c, r, agent, turnoverRequired) => {
-    const intro = agent ? `你好 ${u}！🎉我是sureWin VIP部门的${agent}` : `你好 ${u}！🎉`
-    const body = `\n你的"${c}"奖励 ${r} 积分已成功存入你的账户，请查看余额！`
-    const turnover = turnoverRequired ? `\n\n⚠️ 温馨提示：领取奖励后需完成 ${turnoverRequired} 的流水要求，方可申请提款。` : ''
-    return intro + body + turnover
-  },
-}
+// WhatsApp notification helpers (texts: src/lib/campaignWaTemplates.js)
 function buildWaMsgText(username, campaignName, rewardFormatted, lang, agent, turnoverRequired, campaign) {
-  // Use campaign's custom payout template if set for this language
-  const templateKey = { en: 'payout_template_en', my: 'payout_template_my', cn: 'payout_template_cn' }[lang]
-  const customTpl = campaign && templateKey ? campaign[templateKey] : null
-  if (customTpl && customTpl.trim()) {
-    return applyPayoutTemplate(customTpl, username, campaignName, rewardFormatted, agent, turnoverRequired)
-  }
-  const fn = WA_MSGS[lang]
-  if (fn) return fn(username, campaignName, rewardFormatted, agent, turnoverRequired)
-  return Object.values(WA_MSGS).map(f => f(username, campaignName, rewardFormatted, agent, turnoverRequired)).join('\n\n')
+  // Payout tab = "paid" stage of the campaign's WhatsApp messages (src/lib/campaignWaTemplates.js)
+  const l = lang === 'cn' ? 'zh' : lang === 'my' ? 'my' : 'en'
+  return waMessage(campaign, 'paid', l, { username, agent: agent || '', campaign: campaignName, reward: rewardFormatted, turnover: turnoverRequired || '' })
 }
 function buildWaMsg(username, campaignName, rewardFormatted, lang, agent, turnoverRequired, campaign) {
   return encodeURIComponent(buildWaMsgText(username, campaignName, rewardFormatted, lang, agent, turnoverRequired, campaign))
@@ -1513,103 +1478,62 @@ export default function Campaigns() {
     setRealFinancialsLoading(false)
   }
 
-  // Builds a progress-aware WhatsApp message: tells the player exactly how
-  // Builds the pre-filled WhatsApp message body for a player.
-  // If the campaign has a whatsapp_template set, that template takes priority
-  // (with {username}, {campaign}, {agent}, {gap} substituted).
-  // Otherwise falls back to the progress-aware smart message.
+  // WhatsApp message for one player: the STAGE is picked from where the player stands
+  // (not active yet → intro · some play → near · reached → won · paid → paid · campaign over → ended),
+  // in EN / MY / 中文 from the campaign's own texts or the built-in ones (src/lib/campaignWaTemplates.js).
+  // extra: { stage, streak } to force a stage (Streak tab), leaderboard { inTop, reward, gap }.
   function buildCampaignWaMessage(p, extra) {
     const rawNumber = (p.whatsapp || '').replace(/\D/g, '')
     if (!rawNumber || rawNumber.length < 10) return null
     const campName = selected?.campaign_name || 'this campaign'
-    let body
-
-    // ── Calculate gap once (used by both EN and ZH templates) ─────────────────
-    let gapStr = ''
-    if (campType === 'dual_tier') {
-      const nextTier = (rewardTiers||[]).find(t => playerDeposit(p) < (parseFloat(t.depositThreshold)||0) || (parseFloat(p.valid_bet)||0) < (parseFloat(t.turnoverThreshold)||0))
-      if (nextTier) {
-        const dg = Math.max(0, (parseFloat(nextTier.depositThreshold)||0) - playerDeposit(p))
-        gapStr = `RM${dg.toLocaleString()}`
-      }
-    } else if (campType !== 'leaderboard') {
-      const dep = playerDeposit(p)
-      if (dep < depTarget) gapStr = `RM${(depTarget - dep).toLocaleString()}`
-    }
-    const fillTemplate = (tpl) => tpl
-      .replace(/\{username\}/g, p.username || '')
-      .replace(/\{campaign\}/g, campName)
-      .replace(/\{agent\}/g, myName)
-      .replace(/\{gap\}/g, gapStr)
-
-    // ── Campaign-level custom template (overrides smart message) ──────────────
-    if (selected?.whatsapp_template || selected?.whatsapp_template_zh) {
-      const enBody = selected?.whatsapp_template ? fillTemplate(selected.whatsapp_template) : null
-      const zhBody = selected?.whatsapp_template_zh ? fillTemplate(selected.whatsapp_template_zh) : null
-      // Default: ZH if available, else EN
-      body = zhBody || enBody
-      return { rawNumber, body, enBody, zhBody }
-    }
-
-    // ── Smart progress-aware message ──────────────────────────────────────────
+    const cur = campCurrency === 'SGD' ? 'SGD ' : 'RM'
+    const num = v => Math.round(Number(v) || 0).toLocaleString('en-US')
+    const dep = playerDeposit(p), vb = parseFloat(p.valid_bet) || 0
+    let reward = 0, gap = 0, nextReward = 0
     if (selected?.is_multi_level && campType === 'fixed_reward') {
       const metric = multiMetricsByPlayer[p.id]
-      const dep = playerDeposit(p)
-      if (metric?.allCompleted) {
-        body = `Hi ${p.username}, great news — you've unlocked all levels of ${campName}! Your total unlocked reward is RM${(metric.qualifiedRewardTotal||0).toLocaleString()}. This is ${myName}.`
-      } else if (metric?.completedCount > 0 && metric?.nextLevel) {
-        const gap = Math.max(0, Number(metric.nextLevel.deposit_threshold) - dep)
-        body = `Hi ${p.username}, you've unlocked ${metric.completedCount} level${metric.completedCount>1?'s':''} in ${campName}. You need RM${gap.toLocaleString()} more deposit to unlock ${metric.nextLevel.level_name} and RM${Number(metric.nextLevel.reward_amount||0).toLocaleString()} Credit. This is ${myName}.`
-      } else if (metric?.nextLevel) {
-        const gap = Math.max(0, Number(metric.nextLevel.deposit_threshold) - dep)
-        body = `Hi ${p.username}, you're on your way in ${campName}! You need RM${gap.toLocaleString()} more deposit to unlock ${metric.nextLevel.level_name} and RM${Number(metric.nextLevel.reward_amount||0).toLocaleString()} Credit. This is ${myName}.`
-      } else {
-        body = `Hi ${p.username}, checking in on ${campName} — let us know if you need anything. This is ${myName}.`
-      }
+      reward = metric?.qualifiedRewardTotal || 0
+      if (metric?.nextLevel) { gap = Math.max(0, Number(metric.nextLevel.deposit_threshold) - dep); nextReward = Number(metric.nextLevel.reward_amount) || 0 }
     } else if (campType === 'dual_tier') {
-      const result = calcDualTierReward(playerDeposit(p), p.valid_bet, rewardTiers)
-      if (result.tierIndex >= 0) {
-        body = `Hi ${p.username}, great news — you've completed ${campName}! You've qualified for RM${result.creditAmount} Credit + RM${result.wcashAmount} WCash. This is ${myName}, let us know if you have questions.`
-      } else {
-        const nextTier = (rewardTiers||[]).find(tier => playerDeposit(p) < (parseFloat(tier.depositThreshold)||0) || (parseFloat(p.valid_bet)||0) < (parseFloat(tier.turnoverThreshold)||0))
-        if (nextTier) {
-          const depGap = Math.max(0, (parseFloat(nextTier.depositThreshold)||0) - playerDeposit(p))
-          const vbGap = Math.max(0, (parseFloat(nextTier.turnoverThreshold)||0) - (parseFloat(p.valid_bet)||0))
-          body = `Hi ${p.username}, you're on your way in ${campName}! You need RM${depGap.toLocaleString()} more deposit and RM${vbGap.toLocaleString()} more turnover to earn RM${nextTier.creditAmount} Credit + RM${nextTier.wcashAmount} WCash. This is ${myName}.`
-        } else {
-          body = `Hi ${p.username}, checking in on ${campName} — let us know if you need anything. This is ${myName}.`
-        }
+      const result = calcDualTierReward(dep, vb, rewardTiers)
+      if (result.tierIndex >= 0) reward = (Number(result.creditAmount) || 0) + (Number(result.wcashAmount) || 0)
+      const next = (rewardTiers || [])[result.tierIndex + 1]
+      if (next) {
+        const dg = Math.max(0, (parseFloat(next.depositThreshold) || 0) - dep), tg = Math.max(0, (parseFloat(next.turnoverThreshold) || 0) - vb)
+        gap = dg > 0 ? dg : tg
+        nextReward = (parseFloat(next.creditAmount) || 0) + (parseFloat(next.wcashAmount) || 0)
       }
     } else if (campType === 'leaderboard') {
-      const vb = extra?.vb ?? (parseFloat(p.valid_bet) || 0)
-      const inTop = extra?.inTop
-      const reward = extra?.reward || 0
-      const gap = extra?.gap
-      if (inTop) {
-        body = `Hi ${p.username}, great news — you're currently in the Top ${topN} for ${campName}! If this holds, you'll receive RM${reward}. This is ${myName}.`
-      } else if (gap != null) {
-        body = `Hi ${p.username}, you're close in ${campName}! You need RM${Math.round(gap).toLocaleString()} more valid bet to reach the Top ${topN}. This is ${myName}.`
-      } else {
-        body = `Hi ${p.username}, checking in on ${campName} — let us know if you need anything. This is ${myName}.`
-      }
+      reward = extra?.inTop ? (extra?.reward || 0) : 0
+      gap = extra?.gap || 0
+      nextReward = Number((selected?.rank_rewards || [])[(Number(selected?.top_n) || 3) - 1]?.amount) || 0
     } else {
-      const dep = playerDeposit(p)
-      const qualified = dep >= depTarget
-      if (qualified) {
-        const reward = calcReward(campType, dep, rewardPct, rewardFixed, goldVal, rewardCap, rewardTiers, campaignLevels, selected?.is_multi_level)
-        body = `Hi ${p.username}, great news — you've completed ${campName}! You'll receive RM${reward.toLocaleString()}. This is ${myName}, let us know if you have questions.`
-      } else {
-        const gap = depTarget - dep
-        body = `Hi ${p.username}, you're close to completing ${campName}! You need RM${gap.toLocaleString()} more in deposits to qualify. This is ${myName}.`
-      }
+      reward = calcReward(campType, dep, rewardPct, rewardFixed, goldVal, rewardCap, rewardTiers, campaignLevels, selected?.is_multi_level)
+      if (dep < depTarget) { gap = depTarget - dep; nextReward = calcReward(campType, depTarget, rewardPct, rewardFixed, goldVal, rewardCap, rewardTiers, campaignLevels, selected?.is_multi_level) }
     }
-    return { rawNumber, body }
+    const today = new Date().toISOString().slice(0, 10)
+    const ended = selected?.status === 'ended' || (selected?.end_date && selected.end_date < today)
+    let stage = ended ? 'ended' : p.payout_status === 'paid' && reward > 0 ? 'paid' : reward > 0 ? 'won' : (dep > 0 || vb > 0) ? 'near' : 'intro'
+    if (extra?.stage) stage = extra.stage
+    const daysLeft = selected?.end_date ? Math.max(0, Math.round((new Date(selected.end_date + 'T00:00:00Z') - new Date(today + 'T00:00:00Z')) / 86400000) + 1) : ''
+    const mult = Number(selected?.turnover_multiplier) || 0
+    const vars = l => ({
+      username: p.username || '', agent: myName, campaign: campName, start: selected?.start_date || '', end: selected?.end_date || '', days_left: daysLeft, cur,
+      gap: gap > 0 ? num(gap) : '', next_reward: nextReward > 0 ? cur + num(nextReward) : '', reward: reward > 0 ? cur + num(reward) : '',
+      turnover: mult && reward > 0 ? cur + num(reward * mult) : '', tier_list: tierList(selected, campaignLevels, l),
+      streak: extra?.streak ?? '', streak_n: selected?.streak_days || '', streak_pct: selected?.streak_bonus_pct != null ? Number(selected.streak_bonus_pct) : '',
+    })
+    const enBody = waMessage(selected, stage, 'en', vars('en'))
+    const myBody = waMessage(selected, stage, 'my', vars('my'))
+    const zhBody = waMessage(selected, stage, 'zh', vars('zh'))
+    const body = waLang === 'cn' ? zhBody : waLang === 'my' ? myBody : enBody
+    return { rawNumber, stage, body, enBody, myBody, zhBody }
   }
   function CampaignWaButton({ p, extra }) {
     const result = buildCampaignWaMessage(p, extra)
     if (!result) return <span style={{ color:'var(--muted)' }}>—</span>
     return (
-      <button onClick={e=>{e.stopPropagation();setWaPopup({ rawNumber: result.rawNumber, message: result.body, enBody: result.enBody||null, zhBody: result.zhBody||null })}}
+      <button onClick={e=>{e.stopPropagation();setWaPopup({ rawNumber: result.rawNumber, message: result.body, enBody: result.enBody, myBody: result.myBody, zhBody: result.zhBody, stage: result.stage })}}
         style={{ display:'inline-flex', width:26, height:26, borderRadius:13, background:'#25D366', color:'#fff', alignItems:'center', justifyContent:'center', fontSize:13, fontWeight:700, border:'none', cursor:'pointer' }}>W</button>
     )
   }
@@ -2325,58 +2249,7 @@ export default function Campaigns() {
                 </div>
 
                 <div style={{ borderTop:'1px solid var(--border)', paddingTop:14, marginBottom:14 }}>
-                  <div style={{ fontSize:11, fontWeight:800, color:'var(--muted)', marginBottom:6, letterSpacing:'.5px' }}>{L2('💬 WHATSAPP MESSAGE TEMPLATE','💬 WHATSAPP 讯息模板')}</div>
-                  <div style={{ fontSize:11, color:'var(--muted)', marginBottom:8 }}>{L2('Optional — overrides the auto-generated message. Variables:','可选 — 覆盖自动生成的讯息。变量：')} <code>{'{username}'}</code> <code>{'{campaign}'}</code> <code>{'{agent}'}</code> <code>{'{gap}'}</code></div>
-                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
-                    <div>
-                      <div style={{ fontSize:11, color:'var(--muted)', marginBottom:4, fontWeight:600 }}>🇬🇧 {L2('English','英文')}</div>
-                      <textarea style={{ ...s.fta, width:'100%' }} rows={6} value={editCampForm.whatsapp_template||''} onChange={e=>setEditCampForm(f=>({...f,whatsapp_template:e.target.value}))} placeholder={"e.g. Hi {username}, checking in on {campaign}! You need {gap} more to qualify. - {agent}"} />
-                    </div>
-                    <div>
-                      <div style={{ fontSize:11, color:'var(--muted)', marginBottom:4, fontWeight:600 }}>🇨🇳 中文</div>
-                      <textarea style={{ ...s.fta, width:'100%' }} rows={6} value={editCampForm.whatsapp_template_zh||''} onChange={e=>setEditCampForm(f=>({...f,whatsapp_template_zh:e.target.value}))} placeholder={"e.g. 您好 {username}，我是sureWin VIP 部门的 {agent}。\n\n您参与了 {campaign} 活动，还需 {gap} 即可达标！"} />
-                    </div>
-                  </div>
-                </div>
-
-                {/* ── PAYOUT WA MESSAGE TEMPLATES ── */}
-                <div style={{ borderTop:'1px solid var(--border)', paddingTop:14, marginBottom:14 }}>
-                  <div style={{ fontSize:11, fontWeight:800, color:'#25d366', marginBottom:4, letterSpacing:'.5px' }}>📲 {L2('PAYOUT NOTIFICATION MESSAGE','派彩通知讯息')}</div>
-                  <div style={{ fontSize:11, color:'var(--muted)', marginBottom:10 }}>
-                    {L2('Edit the message sent when a player qualifies for payout. Leave blank to use the default. Variables:','编辑玩家符合派彩条件时发送的讯息。留空则使用默认讯息。变量：')} <code style={{ background:'var(--surface2)', padding:'1px 4px', borderRadius:3 }}>{'{username}'}</code> <code style={{ background:'var(--surface2)', padding:'1px 4px', borderRadius:3 }}>{'{campaign}'}</code> <code style={{ background:'var(--surface2)', padding:'1px 4px', borderRadius:3 }}>{'{agent}'}</code> <code style={{ background:'var(--surface2)', padding:'1px 4px', borderRadius:3 }}>{'{reward}'}</code> <code style={{ background:'var(--surface2)', padding:'1px 4px', borderRadius:3 }}>{'{turnover}'}</code>
-                  </div>
-                  {[
-                    ['en', '🇬🇧 English', 'payout_template_en', `Hi {username}! 🎉 I'm {agent} from sureWin VIP Team.\nYour "{campaign}" reward of {reward} Credit has been credited to your account. Please check your balance!\n\n⚠️ A {turnover} turnover is required before withdrawal.`],
-                    ['my', '🇲🇾 Malay', 'payout_template_my', `Hi {username}! 🎉 Saya {agent} dari Pasukan sureWin VIP.\nHadiah kempen "{campaign}" sebanyak {reward} Kredit telah dikreditkan ke akaun anda. Sila semak baki anda!\n\n⚠️ Turnover sebanyak {turnover} diperlukan sebelum pengeluaran boleh dibuat.`],
-                    ['cn', '🇨🇳 中文', 'payout_template_cn', `你好 {username}！🎉我是sureWin VIP部门的{agent}\n你的"{campaign}"奖励 {reward} 积分已成功存入你的账户，请查看余额！\n\n⚠️ 温馨提示：领取奖励后需完成 {turnover} 的流水要求，方可申请提款。`],
-                  ].map(([lang, label, field, placeholder]) => {
-                    const tpl = editCampForm[field] ?? ''
-                    const sampleAgent = 'Marcus'
-                    const sampleReward = 'RM 800'
-                    const sampleTurnover = editCampForm.turnover_multiplier ? `RM ${800 * Number(editCampForm.turnover_multiplier)}` : 'RM 2400'
-                    const preview = applyPayoutTemplate(
-                      tpl || placeholder,
-                      'haur2972', editCampForm.campaign_name || selected?.campaign_name || 'Campaign',
-                      sampleReward, sampleAgent, sampleTurnover
-                    )
-                    return (
-                      <div key={lang} style={{ marginBottom:16 }}>
-                        <div style={{ fontSize:11, color:'var(--muted)', fontWeight:700, marginBottom:6 }}>{label}</div>
-                        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
-                          <textarea
-                            style={{ ...s.fta, width:'100%', fontFamily:'monospace', fontSize:12 }}
-                            rows={5}
-                            value={tpl !== '' ? tpl : placeholder}
-                            onChange={e=>setEditCampForm(f=>({...f,[field]:e.target.value}))}
-                          />
-                          <div style={{ background:'rgba(37,211,102,.06)', border:'1px solid rgba(37,211,102,.2)', borderRadius:8, padding:'10px 12px', fontSize:12, color:'var(--text)', whiteSpace:'pre-wrap', lineHeight:1.6 }}>
-                            <div style={{ fontSize:10, color:'#25d366', fontWeight:700, marginBottom:6 }}>👁 {L2('Preview','预览')}</div>
-                            {preview}
-                          </div>
-                        </div>
-                      </div>
-                    )
-                  })}
+                  <CampaignWaEditor form={editCampForm} setForm={setEditCampForm} levels={campaignLevelsEdit} />
                 </div>
 
                 <div style={{ display:'flex', gap:8, alignItems:'center' }}>
@@ -3701,7 +3574,11 @@ export default function Campaigns() {
                         return (
                           <tr key={p.id} style={{ background: achieved ? 'rgba(63,185,80,.04)' : 'transparent' }}>
                             <td style={{ ...s.td, color:'var(--muted)', fontSize:11 }}>{i+1}</td>
-                            <td style={{ ...s.td, fontWeight:700 }}>{p.username}</td>
+                            <td style={{ ...s.td, fontWeight:700 }}>
+                              <div style={{ display:'flex', alignItems:'center', gap:6 }}>{p.username}
+                                {!achieved && currentRun.length > 0 && currentRun.length % streakDays === streakDays - 1 && <CampaignWaButton p={p} extra={{ stage:'streak', streak: currentRun.length }} />}
+                              </div>
+                            </td>
                             <td style={s.td}>{p.tier ? <span style={{ ...s.badge, background:TIER_BG[p.tier]||'transparent', color:TIER_COLOR[p.tier]||'var(--muted)' }}>{p.tier}</span> : '—'}</td>
                             <td style={{ ...s.td, fontSize:12, color:'var(--muted)' }}>{p.host_assigned || '—'}</td>
                             <td style={{ ...s.td, color:'#58a6ff', fontWeight:600 }}>{dates.length}</td>
@@ -4138,19 +4015,14 @@ export default function Campaigns() {
             <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
               <div style={{ fontSize:14, fontWeight:700 }}>💬 {L2('WhatsApp Message','WhatsApp 讯息')}</div>
               {(waPopup.enBody || waPopup.zhBody) && (
-                <div style={{ display:'flex', gap:4 }}>
-                  {waPopup.enBody && (
-                    <button onClick={()=>setWaPopup(p=>({...p,message:p.enBody}))}
+                <div style={{ display:'flex', gap:4, alignItems:'center' }}>
+                  {waPopup.stage && STAGE_INFO[waPopup.stage] && <span style={{ fontSize:11, color:'var(--muted)', marginRight:6 }}>{STAGE_INFO[waPopup.stage].icon} {lang==='zh' ? STAGE_INFO[waPopup.stage].zh : STAGE_INFO[waPopup.stage].en}</span>}
+                  {[['enBody','🇬🇧 EN'],['myBody','🇲🇾 MY'],['zhBody','🇨🇳 中文']].filter(([k]) => waPopup[k]).map(([k, label]) => (
+                    <button key={k} onClick={()=>setWaPopup(p=>({...p,message:p[k]}))}
                       style={{ padding:'3px 10px', borderRadius:6, fontSize:12, fontWeight:600, border:'1px solid var(--border)', cursor:'pointer',
-                        background: waPopup.message===waPopup.enBody ? 'var(--accent)' : 'var(--surface2)',
-                        color: waPopup.message===waPopup.enBody ? '#fff' : 'var(--muted)' }}>🇬🇧 EN</button>
-                  )}
-                  {waPopup.zhBody && (
-                    <button onClick={()=>setWaPopup(p=>({...p,message:p.zhBody}))}
-                      style={{ padding:'3px 10px', borderRadius:6, fontSize:12, fontWeight:600, border:'1px solid var(--border)', cursor:'pointer',
-                        background: waPopup.message===waPopup.zhBody ? 'var(--accent)' : 'var(--surface2)',
-                        color: waPopup.message===waPopup.zhBody ? '#fff' : 'var(--muted)' }}>🇨🇳 中文</button>
-                  )}
+                        background: waPopup.message===waPopup[k] ? 'var(--accent)' : 'var(--surface2)',
+                        color: waPopup.message===waPopup[k] ? '#fff' : 'var(--muted)' }}>{label}</button>
+                  ))}
                 </div>
               )}
             </div>

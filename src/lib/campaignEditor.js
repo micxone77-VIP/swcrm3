@@ -6,7 +6,7 @@ export const EDITABLE_CAMPAIGN_FIELDS = [
   'settlement_frequency','campaign_category','is_multi_level','max_levels','requires_period_deposit',
   'enrollment_mode','auto_enroll_tiers','leaderboard_metric','payout_mode',
   'streak_enabled','streak_days','streak_bonus_type','streak_bonus_pct','streak_bonus_fixed','streak_bonus_cap',
-  'whatsapp_template','whatsapp_template_zh',
+  'whatsapp_template','whatsapp_template_zh','wa_templates',
 ]
 
 export const EMPTY_LEVEL = () => ({
@@ -67,6 +67,7 @@ export function normalizeCampaignForEdit(campaign) {
   form.streak_bonus_cap = c.streak_bonus_cap != null ? Number(c.streak_bonus_cap) : 0
   form.whatsapp_template = c.whatsapp_template || ''
   form.whatsapp_template_zh = c.whatsapp_template_zh || ''
+  form.wa_templates = c.wa_templates && typeof c.wa_templates === 'object' ? structuredClone(c.wa_templates) : {}
   form.start_date = normalizeDate(c.start_date)
   form.end_date = normalizeDate(c.end_date)
   return form
@@ -159,6 +160,7 @@ export function buildCampaignUpdate(form) {
     streak_bonus_cap: form.streak_bonus_cap != null ? Number(form.streak_bonus_cap) : 0,
     whatsapp_template: form.whatsapp_template || null,
     whatsapp_template_zh: form.whatsapp_template_zh || null,
+    wa_templates: cleanWaTemplates(form.wa_templates),
     turnover_multiplier: numeric(form.turnover_multiplier),
     payout_template_en: form.payout_template_en || null,
     payout_template_my: form.payout_template_my || null,
@@ -185,4 +187,15 @@ export function buildLevelUpsert(level, index, defaultRewardType = 'credit') {
 function parseManualUserIds(value) {
   if (Array.isArray(value)) return [...new Set(value.map(v => String(v || '').trim()).filter(Boolean))]
   return [...new Set(String(value || '').split(/[\s,;]+/).map(v => v.trim()).filter(Boolean))]
+}
+
+// Keep only non-empty texts: { stage: { en, my, zh } } → null when nothing is set
+function cleanWaTemplates(t) {
+  if (!t || typeof t !== 'object') return null
+  const out = {}
+  for (const [stage, langs] of Object.entries(t)) {
+    const keep = Object.fromEntries(Object.entries(langs || {}).filter(([, v]) => typeof v === 'string' && v.trim()))
+    if (Object.keys(keep).length) out[stage] = keep
+  }
+  return Object.keys(out).length ? out : null
 }

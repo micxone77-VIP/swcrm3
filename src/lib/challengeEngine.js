@@ -170,6 +170,14 @@ export function progressMessage({ lang, username, campaignName, p, cfg, hostName
     lines.push('', p.completed ? '✅ 恭喜您已完成任务！奖励将在活动结束后为您处理。' : left > 0 ? `⏳ 还剩 ${left} 天，加油！` : '活动已结束，感谢您的参与！')
     return lines.join('\n')
   }
+  if (lang === 'my') {
+    const lines = [`Hai ${username}! Saya ${hostName || ''} dari jabatan VIP sureWin.`, '', `🎯 Progress cabaran ${campaignName} bro:`]
+    if (metric !== 'deposit') lines.push(`• Turnover: ${rm(p.turnover)} / ${rm(p.targetTurnover)} (${Math.round(p.toPct * 100)}%)`)
+    if (metric !== 'turnover') lines.push(`• Deposit: ${rm(p.deposit)} / ${rm(p.targetDeposit)} (${Math.round(p.depPct * 100)}%)`)
+    if (cfg.streak_enabled) lines.push(`• Bonus streak: ${p.qualifiedDays} / ${p.minDays} hari dengan deposit ≥ ${rm(cfg.streak_min_daily_deposit)}`)
+    lines.push('', p.completed ? '✅ Tahniah bro, tugasan dah siap! Ganjaran akan diproses selepas kempen tamat.' : left > 0 ? `⏳ Tinggal ${left} hari lagi — bro boleh buat!` : 'Kempen dah tamat — terima kasih sebab join bro!')
+    return lines.join('\n')
+  }
   const lines = [`Hi ${username}! This is ${hostName || 'your host'} from sureWin VIP.`, '', `🎯 Your ${campaignName} challenge progress:`]
   if (metric !== 'deposit') lines.push(`• Turnover: ${rm(p.turnover)} / ${rm(p.targetTurnover)} (${Math.round(p.toPct * 100)}%)`)
   if (metric !== 'turnover') lines.push(`• Deposit: ${rm(p.deposit)} / ${rm(p.targetDeposit)} (${Math.round(p.depPct * 100)}%)`)
