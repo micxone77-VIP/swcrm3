@@ -40,6 +40,7 @@ const sourceLabel = (src, lang = 'en') => {
     auto_kpi_reminder: `🏆 ${a}`,
     auto_daily: lang === 'zh' ? '📋 每日名单' : '📋 Daily list',
     auto_followup: lang === 'zh' ? '📅 跟进日' : '📅 Follow-up date',
+    ai: lang === 'zh' ? '🤖 Ask Data' : '🤖 Ask Data',
   }
   return map[src] || null
 }

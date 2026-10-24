@@ -8,6 +8,7 @@ import { useNavigate } from 'react-router-dom'
 import { callAI } from '../lib/aiApi'
 import { useAuth } from '../hooks/useAuth'
 import { useLanguage } from '../contexts/LanguageContext'
+import { supabase } from '../lib/supabase'
 
 const s = {
   page:      { padding:'24px 28px', minHeight:'100vh', color:'var(--text)', display:'flex', flexDirection:'column', height:'100vh' },
@@ -179,8 +180,103 @@ function StepsLine({ steps, dataDate }) {
   )
 }
 
+// ── Confirm card for something the AI proposed (tasks / draft campaign / add players).
+// Nothing happens until Confirm; then the DB function ai_apply_action re-checks it, does it and logs it.
+const cardTh = { textAlign: 'left', padding: '4px 8px', borderBottom: '1px solid var(--border)', color: 'var(--muted)', whiteSpace: 'nowrap' }
+const cardTd = { padding: '4px 8px', borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap' }
+
+function ActionCard({ action, question, onChange }) {
+  const { lang } = useLanguage()
+  const L2 = (en, zh) => (lang === 'zh' ? zh : en)
+  const navigate = useNavigate()
+  const { kind, payload: p, state = 'pending', result, error } = action
+
+  async function confirm() {
+    onChange({ state: 'running' })
+    const { data, error: e } = await supabase.rpc('ai_apply_action', { p_kind: kind, p_payload: p, p_question: question || null })
+    if (e) onChange({ state: 'error', error: e.message })
+    else onChange({ state: 'done', result: data?.result })
+  }
+
+  let title, body, link
+  if (kind === 'create_tasks') {
+    title = `📋 ${L2(`Create ${p.tasks.length} task(s)`, `建立 ${p.tasks.length} 个任务`)}`
+    link = { to: '/tasks', label: L2('Open My Tasks', '打开 My Tasks') }
+    body = (
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ borderCollapse: 'collapse', fontSize: 12 }}>
+          <thead><tr>{[L2('Player', '玩家'), L2('Type', '类型'), L2('Due', '日期'), L2('Priority', '优先'), L2('Assigned to', '负责人'), L2('Note', '备注')].map(h => <th key={h} style={cardTh}>{h}</th>)}</tr></thead>
+          <tbody>{p.tasks.map((t, i) => (
+            <tr key={i}>
+              <td style={{ ...cardTd, fontWeight: 600 }}>{t.username} <span style={{ color: 'var(--muted)', fontWeight: 400 }}>{t.tier}</span></td>
+              <td style={cardTd}>{t.task_type}</td><td style={cardTd}>{t.due_date}</td><td style={cardTd}>{t.priority}</td>
+              <td style={cardTd}>{t.assigned_to || '—'}</td>
+              <td style={{ ...cardTd, whiteSpace: 'normal', minWidth: 180 }}>{t.notes || t.title}</td>
+            </tr>
+          ))}</tbody>
+        </table>
+      </div>
+    )
+  } else if (kind === 'create_campaign_draft') {
+    title = `🎯 ${L2('Create a DRAFT campaign', '建立草稿活动')}: ${p.campaign_name}`
+    link = { to: '/campaigns', label: L2('Open Campaigns', '打开 Campaigns') }
+    const rows = [
+      [L2('Type', '类型'), p.campaign_type], [L2('Platform', '平台'), p.platform],
+      [L2('Dates', '日期'), [p.start_date, p.end_date].filter(Boolean).join(' → ') || '—'],
+      [L2('Target tiers', '目标等级'), (p.target_tier || []).join(', ') || '—'],
+      [L2('Offer', '优惠'), p.offer_desc || '—'],
+      [L2('Budget', '预算'), p.budget_rm != null ? Number(p.budget_rm).toLocaleString() : '—'],
+      [L2('Deposit target', '存款门槛'), p.deposit_target != null ? Number(p.deposit_target).toLocaleString() : '—'],
+      [L2('Reward', '奖励'), p.reward_pct != null ? `${p.reward_pct}%` : p.reward_fixed != null ? Number(p.reward_fixed).toLocaleString() : '—'],
+      [L2('Why', '原因'), p.notes || '—'],
+      [L2('Players', '玩家'), (p.usernames || []).length ? `${p.usernames.length}: ${p.usernames.slice(0, 20).join(', ')}${p.usernames.length > 20 ? ' …' : ''}` : '—'],
+    ]
+    body = (
+      <table style={{ borderCollapse: 'collapse', fontSize: 12 }}><tbody>
+        {rows.map(([k, v]) => <tr key={k}><td style={{ ...cardTd, color: 'var(--muted)' }}>{k}</td><td style={{ ...cardTd, whiteSpace: 'normal' }}>{v}</td></tr>)}
+      </tbody></table>
+    )
+  } else if (kind === 'add_players_to_campaign') {
+    title = `➕ ${L2(`Add ${p.usernames.length} player(s) to`, `加 ${p.usernames.length} 个玩家到`)} ${p.campaign_name}`
+    link = { to: '/campaigns', label: L2('Open Campaigns', '打开 Campaigns') }
+    body = <div style={{ fontSize: 12 }}>{p.usernames.join(', ')}</div>
+  } else return null
+
+  let done = null
+  if (state === 'done' && result) {
+    if (kind === 'create_tasks') done = L2(`Created ${result.created} task(s)`, `已建立 ${result.created} 个任务`) +
+      (result.skipped?.length ? L2(` · skipped ${result.skipped.length}: `, ` · 跳过 ${result.skipped.length} 个：`) + result.skipped.map(s => `${s.username} (${s.reason})`).join(', ') : '')
+    else if (kind === 'create_campaign_draft') done = L2(`Draft created: ${result.campaign_code}`, `草稿已建立：${result.campaign_code}`) +
+      (result.players ? L2(` · ${result.players.added} player(s) added`, ` · 已加 ${result.players.added} 个玩家`) : '')
+    else done = L2(`Added ${result.added}`, `已加 ${result.added} 个`) +
+      (result.already_in ? L2(` · ${result.already_in} already in`, ` · ${result.already_in} 个原本就在`) : '') +
+      (result.not_found?.length ? L2(` · not found: `, ` · 找不到：`) + result.not_found.join(', ') : '')
+  }
+
+  return (
+    <div style={{ marginTop: 12, border: '1px solid var(--brand)', borderRadius: 10, padding: '10px 12px', background: 'var(--brand-dim)' }}>
+      <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6 }}>{title}</div>
+      {body}
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 10, flexWrap: 'wrap' }}>
+        {(state === 'pending' || state === 'error') && <>
+          <button onClick={confirm} style={{ background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 6, padding: '6px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>✅ {L2('Confirm', '确认执行')}</button>
+          <button onClick={() => onChange({ state: 'cancelled' })} style={{ background: 'var(--surface2)', color: 'var(--muted)', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 14px', fontSize: 12, cursor: 'pointer' }}>{L2('Cancel', '取消')}</button>
+          <span style={{ fontSize: 11, color: 'var(--muted)' }}>{L2('Nothing is changed until you click Confirm.', '按确认之前不会有任何改动。')}</span>
+        </>}
+        {state === 'running' && <span style={{ fontSize: 12, color: 'var(--muted)' }}>{L2('Working…', '执行中…')}</span>}
+        {state === 'cancelled' && <span style={{ fontSize: 12, color: 'var(--muted)' }}>{L2('Cancelled — nothing was changed.', '已取消，没有任何改动。')}</span>}
+        {state === 'done' && <>
+          <span style={{ fontSize: 12, color: 'var(--success, #3fb950)', fontWeight: 600 }}>✅ {done}</span>
+          {link && <button onClick={() => navigate(link.to)} style={{ background: 'none', border: 'none', color: 'var(--brand)', fontSize: 12, cursor: 'pointer', textDecoration: 'underline' }}>{link.label}</button>}
+        </>}
+      </div>
+      {state === 'error' && <div style={{ fontSize: 12, color: 'var(--danger)', marginTop: 6 }}>⚠️ {error}</div>}
+    </div>
+  )
+}
+
 // ── AI message bubble with inline clickable usernames + chips + copy
-function AIBubble({ content, steps, dataDate, onVipClick }) {
+function AIBubble({ content, steps, dataDate, actions, question, onActionChange, onVipClick }) {
   const { lang } = useLanguage()
   const [copied, setCopied] = useState(false)
   const usernames = extractUsernames(content)
@@ -193,6 +289,9 @@ function AIBubble({ content, steps, dataDate, onVipClick }) {
   return (
     <div style={s.bubbleAI}>
       <div>{renderMarkdown(content, onVipClick, usernameSet)}</div>
+      {(actions || []).map(a => (
+        <ActionCard key={a.id} action={a} question={question} onChange={patch => onActionChange(a.id, patch)} />
+      ))}
       <StepsLine steps={steps} dataDate={dataDate} />
 
       {/* Clickable VIP username chips (quick access row) */}
@@ -270,6 +369,13 @@ export default function AskData() {
     if (userId) localStorage.removeItem(storageKey(userId))
   }
 
+  // Confirm-card state lives on the message so it survives a reload (chat is kept in localStorage)
+  function updateAction(msgIndex, actionId, patch) {
+    setMessages(prev => prev.map((m, i) => (i !== msgIndex ? m : {
+      ...m, actions: (m.actions || []).map(a => (a.id === actionId ? { ...a, ...patch } : a)),
+    })))
+  }
+
   // VIP360 looks the player up by username in vip_members_all (Silver/Bronze too)
   function handleVipClick(username) {
     navigate(`/vip360?player=${encodeURIComponent(username)}`)
@@ -283,7 +389,9 @@ export default function AskData() {
     setMessages(nextMessages)
     setLoading(true)
     try {
-      const history = nextMessages.slice(0, -1).slice(-6).map(m => ({ role: m.role, content: m.content }))
+      // Tell the AI what happened to its earlier proposals (confirmed / cancelled / still waiting)
+      const cardNote = m => (m.actions || []).map(a => `\n[card ${a.kind}: ${a.state || 'pending'}${a.result ? ' ' + JSON.stringify(a.result).slice(0, 200) : ''}]`).join('')
+      const history = nextMessages.slice(0, -1).slice(-6).map(m => ({ role: m.role, content: m.content + cardNote(m) }))
       const result = await callAI('chat', {
         question,
         history,
@@ -291,7 +399,7 @@ export default function AskData() {
         hostName:  profile?.full_name,
         hostEmail: profile?.email,
       })
-      setMessages(prev => [...prev, { role: 'assistant', content: result.answer || L2('No answer generated.','未生成回答。'), steps: result.steps, dataDate: result.data_date }])
+      setMessages(prev => [...prev, { role: 'assistant', content: result.answer || L2('No answer generated.','未生成回答。'), steps: result.steps, dataDate: result.data_date, actions: result.actions || [] }])
     } catch (e) {
       setMessages(prev => [...prev, { role: 'assistant', content: `⚠️ ${e.message}` }])
     } finally {
@@ -330,7 +438,8 @@ export default function AskData() {
         {messages.map((m, i) =>
           m.role === 'user'
             ? <div key={i} style={s.bubbleUser}>{m.content}</div>
-            : <AIBubble key={i} content={m.content} steps={m.steps} dataDate={m.dataDate} onVipClick={handleVipClick} />
+            : <AIBubble key={i} content={m.content} steps={m.steps} dataDate={m.dataDate} actions={m.actions}
+                question={messages[i - 1]?.content} onActionChange={(id, patch) => updateAction(i, id, patch)} onVipClick={handleVipClick} />
         )}
 
         {loading && (

@@ -312,8 +312,8 @@ export async function onRequestPost({ request, env }) {
       { role: 'user', content: question.trim() },
     ]
 
-    const { answer, steps } = await runAgent(messages, db, env)
-    return ok({ answer, steps, data_date: dataDate })
+    const { answer, steps, actions } = await runAgent(messages, db, env)
+    return ok({ answer, steps, actions, data_date: dataDate })
 
   } catch (e) {
     console.error('[/api/chat] unhandled error:', e?.message || e)
@@ -392,6 +392,8 @@ const FILTER_PROPS = {
 const tool = (name, description, properties = {}, required = []) =>
   ({ type: 'function', function: { name, description, parameters: { type: 'object', properties, required } } })
 
+const TASK_TYPES = ['Follow Up', 'Call', 'VIP Contact', 'Campaign', 'Upgrade', 'Birthday', 'Review', 'Other']
+
 const TOOLS = [
   tool('find_players',
     'List players (all tiers, Bronze to Black) matching filters, with status, manager, last deposit/bet, segment, and money for the period (dep, wd, vb = valid bet, wl = player win/loss, bonus, dep_days, active_days, dep_90d). Returns total_matched and up to `limit` rows. Every row also has the upgrade picture, already calculated by the database: month_vb (valid bet this calendar month), next_tier, next_target, gap_to_next (still needed), qualifies_for (highest tier this month\'s valid bet already reaches, empty = none).',
@@ -437,6 +439,40 @@ const TOOLS = [
     { days_ahead: { type: 'integer', description: 'default 14' } }),
   tool('tier_changes', 'Recent tier upgrades and downgrades.',
     { since: { type: 'string', description: 'YYYY-MM-DD, default 60 days back' } }),
+
+  // Proposals: shown to the user as a confirm card; nothing changes until they click Confirm
+  // (the page then calls the DB function ai_apply_action, which re-checks everything and logs it)
+  tool('propose_tasks',
+    'PROPOSE tasks / follow-up dates (max 50). Shown as a confirm card — not done until the user clicks Confirm. A follow-up date = task_type "Follow Up" due that date.',
+    { tasks: { type: 'array', items: { type: 'object', properties: {
+        username:    { type: 'string' },
+        task_type:   { type: 'string', enum: TASK_TYPES },
+        due_date:    { type: 'string', description: 'YYYY-MM-DD, today to 90 days ahead' },
+        priority:    { type: 'string', enum: ['Urgent', 'High', 'Medium', 'Low'] },
+        assigned_to: { type: 'string', description: 'manager name; leave empty = the player\'s own manager' },
+        title:       { type: 'string' },
+        notes:       { type: 'string', description: 'what to say / do, 1–2 lines' },
+      }, required: ['username'] } } }, ['tasks']),
+  tool('propose_campaign_draft',
+    'PROPOSE a new campaign as a DRAFT (optionally with players). Shown as a confirm card. It is never launched — going live stays a manual step on the Campaigns page.',
+    { campaign_name: { type: 'string' },
+      campaign_type: { type: 'string', enum: ['gold_bar', 'pct_reward', 'fixed_reward', 'tiered_reward', 'dual_tier', 'leaderboard'] },
+      platform:      { type: 'string', enum: ['MY', 'SG', 'BOTH'] },
+      start_date:    { type: 'string', description: 'YYYY-MM-DD' },
+      end_date:      { type: 'string', description: 'YYYY-MM-DD' },
+      target_tier:   { type: 'array', items: { type: 'string', enum: ['BRONZE', 'SILVER', 'GOLD', 'PLATINUM', 'DIAMOND'] } },
+      offer_desc:    { type: 'string', description: 'the offer in plain words' },
+      budget_rm:     { type: 'number' },
+      deposit_target:{ type: 'number' },
+      reward_pct:    { type: 'number' },
+      reward_fixed:  { type: 'number' },
+      notes:         { type: 'string', description: 'why this campaign (the data behind it)' },
+      usernames:     { type: 'array', items: { type: 'string' }, description: 'players to enrol (max 200)' } },
+    ['campaign_name', 'campaign_type', 'platform']),
+  tool('propose_add_players',
+    'PROPOSE adding players (max 200) to an existing draft / upcoming / active campaign. Shown as a confirm card.',
+    { campaign_id: { type: 'string' }, name: { type: 'string', description: 'part of the campaign name' },
+      usernames: { type: 'array', items: { type: 'string' } } }, ['usernames']),
 ]
 
 const enc = s => encodeURIComponent(String(s ?? '').trim())
@@ -455,7 +491,17 @@ function cleanFilters(a) {
   return out
 }
 
-async function runTool(name, a, db) {
+// Known players among `usernames` → { found: [{username, tier, currency, host}], unknown: [...] }
+async function checkPlayers(db, usernames, max) {
+  const list = [...new Set((usernames || []).map(u => String(u).trim()).filter(Boolean))].slice(0, max)
+  if (!list.length) return { found: [], unknown: [] }
+  const r = await db.rpc('ai_players', { p: { usernames: list, limit: max } })
+  const found = (r?.rows || []).map(x => ({ username: x.username, tier: x.tier, currency: x.currency, host: x.host || '' }))
+  const seen = new Set(found.map(x => x.username))
+  return { found, unknown: list.filter(u => !seen.has(u)) }
+}
+
+async function runTool(name, a, db, ctx = {}) {
   if (name === 'find_players' || name === 'summarize_players') a = cleanFilters(a)
   switch (name) {
     case 'find_players':
@@ -580,6 +626,44 @@ async function runTool(name, a, db) {
     case 'tier_changes':
       return db.rows(`tier_change_logs?select=username,old_tier,new_tier,changed_at&changed_at=gte.${a.since || daysBefore(todayMYT(), 60)}&order=changed_at.desc&limit=100`)
 
+    case 'propose_tasks': {
+      const rows = (a.tasks || []).slice(0, 50)
+      const { found, unknown } = await checkPlayers(db, rows.map(t => t.username), 50)
+      const byName = Object.fromEntries(found.map(f => [f.username, f]))
+      const tasks = rows.filter(t => byName[String(t.username).trim()]).map(t => {
+        const pl = byName[String(t.username).trim()]
+        return { username: pl.username, tier: pl.tier, task_type: TASK_TYPES.includes(t.task_type) ? t.task_type : 'Follow Up',
+                 due_date: t.due_date || todayMYT(), priority: t.priority || 'Medium', assigned_to: t.assigned_to || pl.host || '',
+                 title: t.title || '', notes: t.notes || '' }
+      })
+      if (!tasks.length) return { error: 'None of these players exist', unknown }
+      ctx.actions?.push({ id: `a${ctx.actions.length + 1}`, kind: 'create_tasks', payload: { tasks } })
+      return { proposal_shown: true, tasks: tasks.length, unknown_players: unknown, note: 'Shown to the user as a confirm card. Not created yet.' }
+    }
+
+    case 'propose_campaign_draft': {
+      const { found, unknown } = await checkPlayers(db, a.usernames, 200)
+      const payload = { ...a, usernames: found.map(f => f.username) }
+      const mixed = new Set(found.map(f => f.currency)).size > 1
+      ctx.actions?.push({ id: `a${ctx.actions.length + 1}`, kind: 'create_campaign_draft', payload })
+      return { proposal_shown: true, players: found.length, unknown_players: unknown,
+               warning: mixed ? 'Players are from more than one currency — consider separate MY and SG campaigns.' : undefined,
+               note: 'Shown to the user as a confirm card. Not created yet; it will be a draft.' }
+    }
+
+    case 'propose_add_players': {
+      let c
+      if (a.campaign_id) c = (await db.rows(`campaigns?select=id,campaign_name,status,platform&id=eq.${enc(a.campaign_id)}`))[0]
+      if (!c && a.name) c = (await db.rows(`campaigns?select=id,campaign_name,status,platform&campaign_name=ilike.*${enc(a.name)}*&order=start_date.desc.nullslast&limit=1`))[0]
+      if (!c) return { error: 'Campaign not found — call campaigns first' }
+      if (!['draft', 'upcoming', 'active'].includes(String(c.status).toLowerCase())) return { error: `Campaign is ${c.status}; players can only be added to draft, upcoming or active campaigns` }
+      const { found, unknown } = await checkPlayers(db, a.usernames, 200)
+      if (!found.length) return { error: 'None of these players exist', unknown }
+      ctx.actions?.push({ id: `a${ctx.actions.length + 1}`, kind: 'add_players_to_campaign',
+        payload: { campaign_id: c.id, campaign_name: c.campaign_name, usernames: found.map(f => f.username) } })
+      return { proposal_shown: true, campaign: c.campaign_name, players: found.length, unknown_players: unknown, note: 'Shown to the user as a confirm card. Not added yet.' }
+    }
+
     default:
       return { error: `Unknown tool ${name}` }
   }
@@ -619,12 +703,13 @@ function impactSummary(data, campaign) {
 
 async function runAgent(messages, db, env) {
   const steps = []
+  const ctx = { actions: [] }
   for (let round = 0; round < MAX_ROUNDS; round++) {
     const lastRound = round === MAX_ROUNDS - 1
     // Round 1 must look something up, so numbers never come from the model's memory
     const msg = await callOpenAI(messages, env, round === 0 ? 'required' : lastRound ? 'none' : 'auto')
     if (!msg.tool_calls?.length) {
-      return { answer: (msg.content || '').trim() || 'No answer generated.', steps }
+      return { answer: (msg.content || '').trim() || 'No answer generated.', steps, actions: ctx.actions }
     }
     messages.push({ role: 'assistant', content: msg.content || null, tool_calls: msg.tool_calls })
     const results = await Promise.all(msg.tool_calls.map(async tc => {
@@ -632,13 +717,13 @@ async function runAgent(messages, db, env) {
       try { args = JSON.parse(tc.function.arguments || '{}') } catch { /* keep {} */ }
       steps.push({ tool: tc.function.name, args })
       let out
-      try { out = await runTool(tc.function.name, args, db) }
+      try { out = await runTool(tc.function.name, args, db, ctx) }
       catch (e) { out = { error: e.message } }
       return { role: 'tool', tool_call_id: tc.id, content: clip(JSON.stringify(maskDeep(out) ?? null)) }
     }))
     messages.push(...results)
   }
-  return { answer: 'Sorry — this question needed too many lookups. Please ask something more specific.', steps }
+  return { answer: 'Sorry — this question needed too many lookups. Please ask something more specific.', steps, actions: ctx.actions }
 }
 
 // ─── System prompt ────────────────────────────────────────────────────────────
@@ -658,7 +743,7 @@ HOW TO WORK
 - You can call several tools at once and do several rounds (e.g. find players, then open player_detail for the top ones).
 - If something is not in the data, say so plainly and say what would be needed.
 - You can see every player: Bronze and Silver (potential VIPs) and Gold, Platinum, Diamond, Diamond-P, Black (VIPs). "VIP" alone means Gold and above.
-- You cannot change anything in the CRM yet. When an action is needed, say what to do and on which page. Use ONLY these page names (sidebar): Executive Overview, Today, My Tasks, Alerts, Daily Targets, All VIPs, Player Segments, Active Risk, Active Tracker, Follow Up, Birthdays, Upgrades, Transfers, Churn Analysis, Daily Work Queue, Churn Urgency, Contact Log, Weekly Outcome, Campaigns, Budget, Analytics, Player Insights, Reports, KPI, Manager KPI Board, Expenses, Mgmt View, and VIP360 (click a player name). Do not describe buttons or menus inside a page unless you are sure they exist — just name the page.
+- ACTIONS: you can PROPOSE (1) tasks / follow-up dates (propose_tasks), (2) a DRAFT campaign, optionally with players (propose_campaign_draft), (3) adding players to an existing campaign (propose_add_players). Each proposal appears under your answer as a card with Confirm / Cancel — NOTHING changes until the user clicks Confirm. Propose only when the user asks you to do it or agrees to your suggestion; in analysis answers you may end with an offer such as "要我帮你建这些任务吗？". After proposing, say briefly what the card contains and ask them to check it and click Confirm. Never say it is already done. Campaign drafts are never launched by you; one currency per campaign (MY or SG). Everything else (sending WhatsApp, changing hosts, launching campaigns, payouts) the user does on the CRM pages: say what to do and on which page. Use ONLY these page names (sidebar): Executive Overview, Today, My Tasks, Alerts, Daily Targets, All VIPs, Player Segments, Active Risk, Active Tracker, Follow Up, Birthdays, Upgrades, Transfers, Churn Analysis, Daily Work Queue, Churn Urgency, Contact Log, Weekly Outcome, Campaigns, Budget, Analytics, Player Insights, Reports, KPI, Manager KPI Board, Expenses, Mgmt View, and VIP360 (click a player name). Do not describe buttons or menus inside a page unless you are sure they exist — just name the page.
 
 BUSINESS RULES (must follow)
 - MYR (Malaysia) and SGD (Singapore) are different platforms; KHUSD is Cambodia. NEVER add different currencies together. Always show the currency with every amount, e.g. "MYR 12,500".
