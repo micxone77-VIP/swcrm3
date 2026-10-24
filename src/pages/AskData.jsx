@@ -1,13 +1,13 @@
 // AskData.jsx — chat interface for data questions, backed by /api/chat
 // The model can only call the fixed set of read-only tools defined in
-// functions/api/chat.js — there's no path from a typed question to a
-// database write, no matter what's asked.
+// functions/api/chat.js (find_players, player_detail, alerts, campaigns, …)
+// — there's no path from a typed question to a database write.
+// Each answer shows which tools it used and the data date.
 import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { callAI } from '../lib/aiApi'
 import { useAuth } from '../hooks/useAuth'
 import { useLanguage } from '../contexts/LanguageContext'
-import { supabase } from '../lib/supabase'
 
 const s = {
   page:      { padding:'24px 28px', minHeight:'100vh', color:'var(--text)', display:'flex', flexDirection:'column', height:'100vh' },
@@ -15,7 +15,7 @@ const s = {
   sub:       { fontSize:13, color:'var(--muted)', marginTop:4, marginBottom:20 },
   chatArea:  { flex:1, overflowY:'auto', display:'flex', flexDirection:'column', gap:14, paddingBottom:20 },
   bubbleUser:{ alignSelf:'flex-end', maxWidth:'75%', background:'var(--accent)', color:'#fff', padding:'10px 14px', borderRadius:'12px 12px 2px 12px', fontSize:13, lineHeight:1.6 },
-  bubbleAI:  { alignSelf:'flex-start', maxWidth:'80%', background:'var(--surface)', border:'1px solid var(--border)', padding:'12px 16px', borderRadius:'12px 12px 12px 2px', fontSize:13, lineHeight:1.7 },
+  bubbleAI:  { alignSelf:'flex-start', maxWidth:'92%', background:'var(--surface)', border:'1px solid var(--border)', padding:'12px 16px', borderRadius:'12px 12px 12px 2px', fontSize:13, lineHeight:1.7 },
   inputRow:  { display:'flex', gap:10, borderTop:'1px solid var(--border)', paddingTop:16 },
   input:     { flex:1, background:'var(--surface)', border:'1px solid var(--border)', borderRadius:10, padding:'12px 16px', color:'var(--text)', fontSize:13, outline:'none' },
   sendBtn:   { background:'var(--accent)', color:'#fff', border:'none', borderRadius:10, padding:'0 20px', fontSize:13, fontWeight:600, cursor:'pointer' },
@@ -31,8 +31,36 @@ function renderMarkdown(text, onVipClick, usernameSet) {
   const elements = []
   let key = 0
 
-  for (const line of lines) {
+  for (let li = 0; li < lines.length; li++) {
+    const line = lines[li]
     const trimmed = line.trim()
+
+    // | table | rows |  (consecutive lines; the |---| line is skipped)
+    if (trimmed.startsWith('|')) {
+      const rows = []
+      while (li < lines.length && lines[li].trim().startsWith('|')) {
+        const cells = lines[li].trim().replace(/^\||\|$/g, '').split('|').map(c => c.trim())
+        if (!cells.every(c => /^:?-{2,}:?$/.test(c))) rows.push(cells)
+        li++
+      }
+      li--
+      const [head, ...body] = rows
+      elements.push(
+        <div key={key++} style={{ overflowX: 'auto', margin: '6px 0' }}>
+          <table style={{ borderCollapse: 'collapse', fontSize: 12 }}>
+            <thead><tr>{head.map((c, i) => (
+              <th key={i} style={{ textAlign: 'left', padding: '5px 10px', borderBottom: '1px solid var(--border)', color: 'var(--muted)', whiteSpace: 'nowrap' }}>{inlineBold(c, onVipClick, usernameSet)}</th>
+            ))}</tr></thead>
+            <tbody>{body.map((r, ri) => (
+              <tr key={ri}>{r.map((c, i) => (
+                <td key={i} style={{ padding: '5px 10px', borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap' }}>{inlineBold(c, onVipClick, usernameSet)}</td>
+              ))}</tr>
+            ))}</tbody>
+          </table>
+        </div>
+      )
+      continue
+    }
     if (!trimmed) { elements.push(<div key={key++} style={{ height: 6 }} />); continue }
 
     // ### Header
@@ -114,8 +142,45 @@ function extractUsernames(text) {
   return out
 }
 
+// Tool names from functions/api/chat.js → what the user sees under an answer
+const TOOL_LABELS = {
+  find_players:      ['Find players', '查找玩家'],
+  summarize_players: ['Player totals', '玩家统计'],
+  player_detail:     ['Player profile', '玩家档案'],
+  player_history:    ['Daily / monthly history', '每日/每月记录'],
+  alerts:            ['Alerts', '预警'],
+  daily_brief:       ['Daily brief', '每日简报'],
+  campaigns:         ['Campaign list', '活动列表'],
+  campaign_detail:   ['Campaign results', '活动效果'],
+  team_kpi:          ['Team KPI', '团队 KPI'],
+  contacts_tasks:    ['Contacts & tasks', '联系记录和任务'],
+  money_and_games:   ['Bonus, expenses & games', '红利、开销和游戏'],
+  rules:             ['CRM rules', 'CRM 规则'],
+  birthdays:         ['Birthdays', '生日'],
+  tier_changes:      ['Tier changes', '等级变动'],
+}
+
+// "🔎 Looked up: Find players · Player profile (qqq163) · data up to 2026-10-23"
+function StepsLine({ steps, dataDate }) {
+  const { lang } = useLanguage()
+  if (!steps?.length && !dataDate) return null
+  const label = s => {
+    const l = TOOL_LABELS[s.tool]
+    const name = l ? (lang === 'zh' ? l[1] : l[0]) : s.tool
+    const who = s.args?.username || s.args?.name || (s.args?.usernames?.length === 1 ? s.args.usernames[0] : '')
+    return who ? `${name} (${who})` : name
+  }
+  const uniq = [...new Set((steps || []).map(label))]
+  return (
+    <div style={{ marginTop: 10, fontSize: 11, color: 'var(--muted)' }}>
+      {uniq.length > 0 && <>🔎 {lang === 'zh' ? '查了：' : 'Looked up: '}{uniq.join(' · ')}</>}
+      {dataDate && <>{uniq.length > 0 ? ' · ' : ''}{lang === 'zh' ? `资料截至 ${dataDate}` : `data up to ${dataDate}`}</>}
+    </div>
+  )
+}
+
 // ── AI message bubble with inline clickable usernames + chips + copy
-function AIBubble({ content, onVipClick }) {
+function AIBubble({ content, steps, dataDate, onVipClick }) {
   const { lang } = useLanguage()
   const [copied, setCopied] = useState(false)
   const usernames = extractUsernames(content)
@@ -128,6 +193,7 @@ function AIBubble({ content, onVipClick }) {
   return (
     <div style={s.bubbleAI}>
       <div>{renderMarkdown(content, onVipClick, usernameSet)}</div>
+      <StepsLine steps={steps} dataDate={dataDate} />
 
       {/* Clickable VIP username chips (quick access row) */}
       {usernames.length > 0 && (
@@ -162,17 +228,19 @@ export default function AskData() {
   const userId = profile?.id
 
   const SUGGESTIONS = lang === 'zh' ? [
-    '我的金牌玩家最近表现如何？前10名是谁？',
-    '哪些钻石会员超过14天没来？',
-    '中秋节每日存款活动参与情况怎么样？',
-    '有哪些 VIP 可能会流失？',
-    '所有活动的总充值和奖励是多少？',
+    '今天我应该先联系哪 10 个 VIP？为什么？',
+    '高价值（V4/V5）里有谁开始流失？给我一个召回计划。',
+    'VIP Power Play 活动有效吗？MYR 和 SGD 分开看，下一个活动应该怎么做？',
+    '这个月各个 VIP 经理的 KPI 怎么样？谁需要帮忙？',
+    '有哪些 Silver 玩家最近存款很多，可能可以升级成 VIP？',
+    '这个月红利和礼物花了多少？哪些玩家拿最多？',
   ] : [
-    'How is my gold tier recently? Who is top 10?',
-    'Which Diamond members have been inactive for 14+ days?',
-    'How is the Mid-Autumn Festival Daily Deposit campaign going? Who are the top depositors?',
-    'Which VIPs are at risk of churning?',
-    'Show me a summary of all campaigns — total deposits and rewards.',
+    'Which 10 VIPs should I contact first today, and why?',
+    'Which high-value (V4/V5) VIPs are starting to churn? Give me a recall plan.',
+    'Did the VIP Power Play campaign work? MYR and SGD separately — what should the next campaign be?',
+    'How is each VIP manager doing on KPI this month? Who needs help?',
+    'Which Silver players deposited a lot recently and could become VIPs?',
+    'How much did we spend on bonuses and gifts this month, and who received the most?',
   ]
 
   const [messages, setMessages] = useState([])
@@ -202,22 +270,9 @@ export default function AskData() {
     if (userId) localStorage.removeItem(storageKey(userId))
   }
 
-  async function handleVipClick(username) {
-    // Look up vip_id by username, then navigate to VIP360
-    try {
-      const { data } = await supabase
-        .from('vip_members')
-        .select('id')
-        .eq('username', username)
-        .limit(1)
-      if (data && data.length > 0) {
-        navigate(`/vips/${data[0].id}`)
-      } else {
-        navigate(`/vips?search=${encodeURIComponent(username)}`)
-      }
-    } catch {
-      navigate(`/vips?search=${encodeURIComponent(username)}`)
-    }
+  // VIP360 looks the player up by username in vip_members_all (Silver/Bronze too)
+  function handleVipClick(username) {
+    navigate(`/vip360?player=${encodeURIComponent(username)}`)
   }
 
   async function send(text) {
@@ -236,7 +291,7 @@ export default function AskData() {
         hostName:  profile?.full_name,
         hostEmail: profile?.email,
       })
-      setMessages(prev => [...prev, { role: 'assistant', content: result.answer || L2('No answer generated.','未生成回答。') }])
+      setMessages(prev => [...prev, { role: 'assistant', content: result.answer || L2('No answer generated.','未生成回答。'), steps: result.steps, dataDate: result.data_date }])
     } catch (e) {
       setMessages(prev => [...prev, { role: 'assistant', content: `⚠️ ${e.message}` }])
     } finally {
@@ -249,7 +304,7 @@ export default function AskData() {
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start' }}>
         <div>
           <div style={s.title}>💬 {L2('Ask Your Data','数据问答')}</div>
-          <div style={s.sub}>{L2('Ask questions about VIPs, campaigns, contacts, and churn risk — answers pull live from the CRM, never guessed. VIP names are clickable.','询问关于 VIP、活动、联系记录和流失风险的问题 — 答案实时取自 CRM，绝不猜测。VIP 名称可点击。')}</div>
+          <div style={s.sub}>{L2('Ask anything about all players (Bronze to Black), status, alerts, campaigns and their results, team KPI, contacts, tasks, bonuses and games. The AI looks the data up itself, shows what it checked, and suggests next steps. Player names are clickable.','可以问所有玩家（Bronze 到 Black）、状态、预警、活动和活动效果、团队 KPI、联系记录、任务、红利和游戏。AI 会自己去查资料，显示查了什么，并给出下一步建议。玩家名字可以点开。')}</div>
         </div>
         {messages.length > 0 && (
           <button onClick={clearConversation}
@@ -275,7 +330,7 @@ export default function AskData() {
         {messages.map((m, i) =>
           m.role === 'user'
             ? <div key={i} style={s.bubbleUser}>{m.content}</div>
-            : <AIBubble key={i} content={m.content} onVipClick={handleVipClick} />
+            : <AIBubble key={i} content={m.content} steps={m.steps} dataDate={m.dataDate} onVipClick={handleVipClick} />
         )}
 
         {loading && (
