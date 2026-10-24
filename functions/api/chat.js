@@ -386,6 +386,7 @@ const FILTER_PROPS = {
   min_win_loss:  { type: 'number', description: 'period player win/loss ≥ (positive = player won)' },
   max_win_loss:  { type: 'number', description: 'period player win/loss ≤ (e.g. -100000 = lost 100k or more)' },
   birthday_within_days: { type: 'integer', description: 'birthday in the next N days' },
+  upgrade_ready: { type: 'boolean', description: 'true = this month\'s valid bet already reaches a higher tier (qualifies_for is set); false = not yet' },
 }
 
 const tool = (name, description, properties = {}, required = []) =>
@@ -393,13 +394,13 @@ const tool = (name, description, properties = {}, required = []) =>
 
 const TOOLS = [
   tool('find_players',
-    'List players (all tiers, Bronze to Black) matching filters, with status, manager, last deposit/bet, segment, and money for the period (dep, wd, vb = valid bet, wl = player win/loss, bonus, dep_days, active_days, dep_90d). Returns total_matched and up to `limit` rows. For tier-upgrade checks set period_from to the 1st of the current month (upgrades use calendar-month valid bet).',
+    'List players (all tiers, Bronze to Black) matching filters, with status, manager, last deposit/bet, segment, and money for the period (dep, wd, vb = valid bet, wl = player win/loss, bonus, dep_days, active_days, dep_90d). Returns total_matched and up to `limit` rows. Every row also has the upgrade picture, already calculated by the database: month_vb (valid bet this calendar month), next_tier, next_target, gap_to_next (still needed), qualifies_for (highest tier this month\'s valid bet already reaches, empty = none).',
     { ...FILTER_PROPS,
-      sort: { type: 'string', enum: ['deposit', 'valid_bet', 'win_loss', 'withdrawal', 'days_inactive', 'dep_90d', 'bonus', 'last_deposit_date'] },
+      sort: { type: 'string', enum: ['deposit', 'valid_bet', 'win_loss', 'withdrawal', 'days_inactive', 'dep_90d', 'bonus', 'last_deposit_date', 'month_vb', 'gap_to_next'], description: 'gap_to_next with ascending=true = closest to the next tier first' },
       ascending: { type: 'boolean' },
       limit: { type: 'integer', description: '1–200, default 50' } }),
   tool('summarize_players',
-    'Count players and total their money for the period, grouped by one field (always split by currency). Use for "how many", totals, breakdowns.',
+    'Count players and total their money for the period, grouped by one field (always split by currency). Each group also has month_valid_bet and upgrade_ready (how many already reach a higher tier this month). Use for "how many", totals, breakdowns.',
     { ...FILTER_PROPS,
       group_by: { type: 'string', enum: ['tier', 'currency', 'status', 'host', 'lifecycle', 'value_band', 'behaviour', 'preference', 'churn_risk'] } }),
   tool('player_detail',
@@ -665,7 +666,7 @@ BUSINESS RULES (must follow)
 - A real deposit day = deposit > 0 AND valid bet > 0 that day. Deposits on days with no bets are not counted.
 - Status (same on every page): Active = deposited within 3 days; Resting = no recent deposit but bet within 2 days; At Risk = 3+ days without deposit; Churn = 7+ days; Dormant = 15+ days. churn_risk: LOW = Active/Resting, MEDIUM = At Risk, HIGH = Churn/Dormant.
 - Value band = 90-day deposit band V1 Minimal … V5 Top (Gold+ only).
-- Upgrades are by valid bet in the calendar month (same numbers for SGD): Bronze→Silver 100,000; Silver→Gold 500,000; Bronze→Gold 600,000; Gold→Platinum 2,000,000; Platinum→Diamond 6,000,000; Gold straight to Diamond 8,000,000. For upgrade questions use find_players with period_from = the 1st of this month and compare vb to these numbers. Deposit is NOT an upgrade rule.
+- Upgrades are by valid bet in the calendar month (same numbers for SGD): Bronze→Silver 100,000; Silver→Gold 500,000; Bronze→Gold 600,000; Gold→Platinum 2,000,000; Platinum→Diamond 6,000,000; Gold straight to Diamond 8,000,000. Deposit is NOT an upgrade rule. For upgrade questions use find_players (upgrade_ready, or sort gap_to_next ascending) and report month_vb, next_tier, gap_to_next and qualifies_for exactly as given — do NOT compare or subtract numbers yourself. Only players with qualifies_for set have reached a higher tier.
 - Never invent a threshold or rule. If a number is not listed here, get it with the rules tool or say it is not set.
 - Unreachable = 3 "Contacted" logs in a row with no reply.
 - Big-loss gift: tracked net loss ≥ 100,000; around 1,000,000 loss deserves a premium gift (e.g. latest iPhone Pro Max).
