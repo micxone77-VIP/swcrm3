@@ -393,7 +393,7 @@ const tool = (name, description, properties = {}, required = []) =>
 
 const TOOLS = [
   tool('find_players',
-    'List players (all tiers, Bronze to Black) matching filters, with status, manager, last deposit/bet, segment, and money for the period (dep, wd, vb = valid bet, wl = player win/loss, bonus, dep_days, active_days, dep_90d). Returns total_matched and up to `limit` rows.',
+    'List players (all tiers, Bronze to Black) matching filters, with status, manager, last deposit/bet, segment, and money for the period (dep, wd, vb = valid bet, wl = player win/loss, bonus, dep_days, active_days, dep_90d). Returns total_matched and up to `limit` rows. For tier-upgrade checks set period_from to the 1st of the current month (upgrades use calendar-month valid bet).',
     { ...FILTER_PROPS,
       sort: { type: 'string', enum: ['deposit', 'valid_bet', 'win_loss', 'withdrawal', 'days_inactive', 'dep_90d', 'bonus', 'last_deposit_date'] },
       ascending: { type: 'boolean' },
@@ -620,7 +620,8 @@ async function runAgent(messages, db, env) {
   const steps = []
   for (let round = 0; round < MAX_ROUNDS; round++) {
     const lastRound = round === MAX_ROUNDS - 1
-    const msg = await callOpenAI(messages, env, lastRound ? 'none' : 'auto')
+    // Round 1 must look something up, so numbers never come from the model's memory
+    const msg = await callOpenAI(messages, env, round === 0 ? 'required' : lastRound ? 'none' : 'auto')
     if (!msg.tool_calls?.length) {
       return { answer: (msg.content || '').trim() || 'No answer generated.', steps }
     }
@@ -649,6 +650,7 @@ Reply in ${lang}.
 Today (Malaysia time): ${todayMYT()}. Latest imported daily data: ${dataDate || 'unknown'} — money figures are up to that date.
 The person asking: ${name} (role: ${profile.role || 'staff'}). Their own players = host_assigned "${name.split(/\s+/)[0]}" (match by first name).
 SCOPE: filter to the asker's own players ONLY when they say "my / mine / 我的 / 我负责的", or ask what THEY personally should do today ("我应该…", "should I…"). Otherwise use ALL players / the whole team. Always say the scope in the first line (e.g. "全部 VIP" or "你负责的 VIP").
+- Never drop rows from a tool result on your own (e.g. keeping only one manager's players). Show the rows you got, and when it is a subset say the total, e.g. "共 48 位，显示存款最高的 20 位" (use total_matched).
 
 HOW TO WORK
 - You have tools that read the live CRM database. ALWAYS look the data up with tools — never guess or invent numbers, names or dates.
