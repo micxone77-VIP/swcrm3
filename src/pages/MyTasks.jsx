@@ -41,6 +41,7 @@ const sourceLabel = (src, lang = 'en') => {
     auto_daily: lang === 'zh' ? '📋 每日名单' : '📋 Daily list',
     auto_followup: lang === 'zh' ? '📅 跟进日' : '📅 Follow-up date',
     ai: lang === 'zh' ? '🤖 Ask Data' : '🤖 Ask Data',
+    survey: lang === 'zh' ? '🗣 问卷跟进' : '🗣 Survey follow-up',
   }
   return map[src] || null
 }

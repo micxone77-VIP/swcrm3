@@ -419,6 +419,7 @@ v_bonus_dependency(month,username,tier,host_assigned,deposit_days,bonus_days,nat
 vip_profiles(username,preferred_games,deposit_pattern,deposit_trigger,preferred_contact_time,preferred_contact_channel,interests,personality_tags,relationship_level,family_tags)
 retention_metrics(month,tier,total_members,metric_type,week1_pct,week2_pct,week3_pct,week4_pct,monthly_pct)
 transfer_players(username,source_platform,joined_date,is_active)
+vip_survey_responses(survey_name,submitted_at,username,reported_tier,tier_at_import,reason_less_use,return_drivers[],preferred_rewards[],manager_wants[],improve_one,channel,drop_reasons[],benefit_feeling,deposit_factor,other_platforms[],better_elsewhere[]) — VIP survey answers (text[] columns: use = any(...) / unnest)
 crm_rules(rule_key,value,unit,category,description) · upgrade_thresholds(from_tier,to_tier,metric,threshold,is_active)
 Rules: join tables on exact username = username (never lower()); always GROUP BY currency for money; dates are Malaysia time; keep queries simple (6 s limit, 200 rows).`
 
@@ -469,6 +470,9 @@ const TOOLS = [
     'Safety net: run ONE read-only SQL SELECT on the CRM database when no other tool can answer (unusual breakdowns, cross-table questions, history). Use the other tools first.\n' + SQL_GUIDE,
     { sql: { type: 'string', description: 'a single SELECT or WITH … SELECT, no semicolon' },
       purpose: { type: 'string', description: 'one line: what this query answers' } }, ['sql']),
+  tool('vip_survey',
+    'What VIPs answered in the member survey: why they play less, how they feel about VIP benefits (good / average / decreased / unclear), favourite rewards, what they want from their VIP manager, what would bring them back, deposit factor, other platforms they play on, what is better elsewhere, preferred channel, their own words — with each player\'s current tier, status and manager. Use for "what do VIPs want / feel", competitor questions, and to find players by their answers.',
+    { username: { type: 'string', description: 'one player only' }, survey: { type: 'string', description: 'part of the survey name (default: all)' } }),
   tool('tier_changes', 'Recent tier upgrades and downgrades.',
     { since: { type: 'string', description: 'YYYY-MM-DD, default 60 days back' } }),
 
@@ -589,16 +593,17 @@ async function runTool(name, a, db, ctx = {}) {
         const like = await db.rpc('ai_players', { p: { search: u, limit: 8, sort: 'dep_90d' } })
         return { error: `No player "${u}"`, did_you_mean: (like?.rows || []).map(r => `${r.username} (${r.tier})`) }
       }
-      const [auto, manual, nextStep, timeline, campaigns, tiers] = await Promise.all([
+      const [auto, manual, nextStep, timeline, campaigns, tiers, survey] = await Promise.all([
         safe(db.rpc('get_vip_profile_auto', { p_username: u })),
         safe(db.rows(`vip_profiles?select=preferred_games,deposit_pattern,deposit_trigger,preferred_contact_time,preferred_contact_channel,interests,personality_tags,host_notes,relationship_level,family_tags,family_notes&username=eq.${enc(u)}`)),
         safe(db.rows(`v_vip_next_step?select=stage_label,next_action,attempts_since_reply,last_outcome,last_contact_date&username=eq.${enc(u)}`)),
         safe(db.rpc('get_vip_timeline', { p_username: u, p_limit: 10 })),
         safe(db.rows(`campaign_players?select=status,total_deposit,reward_amount,payout_status,enrolled_at,campaigns(campaign_name,status,start_date,end_date)&username=eq.${enc(u)}&order=enrolled_at.desc&limit=10`)),
         safe(db.rows(`tier_change_logs?select=old_tier,new_tier,changed_at&username=eq.${enc(u)}&order=changed_at.desc&limit=5`)),
+        safe(db.rows(`vip_survey_responses?select=survey_name,submitted_at,reported_tier,reason_less_use,drop_reasons,benefit_feeling,preferred_rewards,manager_wants,return_drivers,deposit_factor,other_platforms,better_elsewhere,channel,improve_one&username=eq.${enc(u)}&order=submitted_at.desc&limit=3`)),
       ])
       return { player: stats.rows[0], period: [stats.period_from, stats.period_to], auto_profile: auto, manual_profile: manual?.[0] || manual,
-               next_step: nextStep?.[0] || nextStep, last_10_interactions: timeline, campaigns, tier_changes: tiers }
+               next_step: nextStep?.[0] || nextStep, last_10_interactions: timeline, campaigns, tier_changes: tiers, survey_answers: survey }
     }
 
     case 'player_history': {
@@ -703,6 +708,17 @@ async function runTool(name, a, db, ctx = {}) {
 
     case 'birthdays':
       return db.rpc('get_upcoming_birthdays', { days_ahead: Math.min(a.days_ahead || 14, 60) })
+
+    case 'vip_survey': {
+      let q = `vip_survey_responses?select=username,${'survey_name,submitted_at,reported_tier,reason_less_use,drop_reasons,benefit_feeling,preferred_rewards,manager_wants,return_drivers,deposit_factor,other_platforms,better_elsewhere,channel,improve_one'}&order=submitted_at.desc&limit=300`
+      if (a.username) q += `&username=eq.${enc(a.username)}`
+      if (a.survey) q += `&survey_name=ilike.*${enc(a.survey)}*`
+      const rows = await db.rows(q)
+      const names = [...new Set(rows.map(r => r.username).filter(Boolean))].slice(0, 200)
+      const now = names.length ? await safe(db.rpc('ai_players', { p: { usernames: names, limit: 200 } })) : null
+      const cur = Object.fromEntries((now?.rows || []).map(p => [p.username, { tier: p.tier, status: p.status, host: p.host, days_inactive: p.days_inactive }]))
+      return { responses: rows.length, unmatched: rows.filter(r => !r.username).length, rows: rows.map(r => ({ ...r, now: cur[r.username] || null })) }
+    }
 
     case 'tier_changes':
       return db.rows(`tier_change_logs?select=username,old_tier,new_tier,changed_at&changed_at=gte.${a.since || daysBefore(todayMYT(), 60)}&order=changed_at.desc&limit=100`)

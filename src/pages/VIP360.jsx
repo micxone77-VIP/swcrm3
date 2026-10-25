@@ -19,6 +19,7 @@ import { callAI } from '../lib/aiApi'
 import { useLanguage } from '../contexts/LanguageContext'
 import DepositProfileCard from '../components/vip/DepositProfileCard'
 import ProfileCard from '../components/vip/ProfileCard'
+import SurveyCard from '../components/vip/SurveyCard'
 import InteractionTimeline from '../components/vip/InteractionTimeline'
 import { autoText } from '../lib/profileAutoText'
 import ProviderActivityCard from '../components/vip/ProviderActivityCard'
@@ -519,6 +520,7 @@ onMouseLeave={e => e.currentTarget.style.opacity=.6}
 
 {/* ── Player profile card (manual + auto from data) ── */}
 <ProfileCard username={vip.username} />
+<SurveyCard username={vip.username} />
 
 {/* ── Financial Summary ── */}
 <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:14, marginTop:20 }}>

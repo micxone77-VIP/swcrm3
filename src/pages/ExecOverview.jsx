@@ -11,6 +11,7 @@ import { loadBigWinLoss } from '../lib/bigWinLoss'
 import { useLanguage } from '../contexts/LanguageContext'
 import { StatusBadge, TierBadge } from '../components/ui'
 import { STATUS_CONFIG } from '../lib/enums'
+import VipVoice from '../components/exec/VipVoice'
 
 const LIFECYCLE = ['Active', 'Resting', 'At Risk', 'Churn', 'Dormant']
 const HV = ['V5 Top', 'V4 High']
@@ -167,6 +168,8 @@ export default function ExecOverview() {
             </table>
           </div>
         </div>
+        {/* 6. VIP Voice (member survey) */}
+        <VipVoice card={card} h2={h2} />
       </>}
     </div>
   )
