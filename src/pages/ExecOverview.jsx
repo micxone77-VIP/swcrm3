@@ -32,7 +32,7 @@ export default function ExecOverview() {
     supabase.rpc('get_manager_kpi', { p_month: month }).then(({ data }) => setKpi(data || []))
     supabase.rpc('get_sentiment_kpi', { p_month: month }).then(({ data }) =>
       setMood((data || []).reduce((t, r) => ({ rated: t.rated + r.rated, pts: t.pts + r.positive * 100 + r.neutral * 50, neg: t.neg + r.negative }), { rated: 0, pts: 0, neg: 0 })))
-    fetchAll(() => supabase.from('v_vip_segments').select('id,username,tier,currency,host_assigned,lifecycle,value_band,dep_90d,days_inactive').order('username')).then(setSeg, () => setSeg([]))
+    fetchAll(() => supabase.from('v_vip_segments').select('id,username,tier,currency,host_assigned,lifecycle,value_band,dep_90d,days_inactive,last_deposit_date').order('username')).then(setSeg, () => setSeg([]))
     loadBigWinLoss().then(setAlerts, () => setAlerts({ losses: [], wins: [], withdrawals: [], spikes: [], drops: [] }))
   }, [month])
 
@@ -49,6 +49,7 @@ export default function ExecOverview() {
     return { t, hosts: Object.values(hosts).filter(h => h.host !== '(no host)').sort((a, b) => a.host.localeCompare(b.host)) }
   }, [kpi])
 
+  const fmtDay = d => new Date(d + 'T00:00:00').toLocaleDateString(lang === 'zh' ? 'zh-CN' : 'en-MY', { day: 'numeric', month: 'short' })
   const segs = seg || []
   const lc = c => segs.filter(r => r.lifecycle === c).length
   const hvRisk = segs.filter(r => HV.includes(r.value_band) && ['At Risk', 'Churn'].includes(r.lifecycle)).sort((a, b) => Number(b.dep_90d) - Number(a.dep_90d))
@@ -139,8 +140,13 @@ export default function ExecOverview() {
               {hvRisk.slice(0, 10).map((r, i) => (
                 <tr key={r.id} style={{ cursor: 'pointer' }} onClick={() => navigate(`/vip360?player=${encodeURIComponent(r.username)}`)}>
                   <td style={{ ...td, color: 'var(--muted)' }}>{i + 1}</td><td style={td}><b>{r.username}</b></td><td style={td}><TierBadge tier={r.tier} /></td>
-                  <td style={td}><StatusBadge status={r.lifecycle} /> <span style={{ color: 'var(--muted)', fontSize: 12 }}>{L2(`${r.days_inactive}d`, `${r.days_inactive}天`)}</span></td>
-                  <td style={{ ...td, fontWeight: 700 }}>{formatMoney(r.dep_90d, r.currency)}<div style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 400 }}>{L2('deposits, 90 days', '近90天存款')}</div></td>
+                  <td style={td}><StatusBadge status={r.lifecycle} />
+                    <div style={{ color: 'var(--muted)', fontSize: 11, marginTop: 2 }}>{r.last_deposit_date
+                      ? L2(`last deposit ${fmtDay(r.last_deposit_date)} · ${r.days_inactive}d ago`, `最后存款 ${fmtDay(r.last_deposit_date)} · ${r.days_inactive}天前`)
+                      : L2('no deposit', '没有存款')}</div></td>
+                  <td style={{ ...td, fontWeight: 700 }}>{formatMoney(r.dep_90d, r.currency)}<div style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 400 }}>{alerts?.dataDate
+                    ? L2(`deposits, 90 days to ${fmtDay(alerts.dataDate)}`, `截至 ${fmtDay(alerts.dataDate)} 的 90 天存款`)
+                    : L2('deposits, 90 days', '近90天存款')}</div></td>
                   <td style={{ ...td, color: 'var(--muted)' }}>{r.host_assigned || L2('no host', '无负责人')}</td>
                 </tr>
               ))}

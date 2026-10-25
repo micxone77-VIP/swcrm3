@@ -165,7 +165,7 @@ supabase.from('vip_daily_snapshots_all')
 .select('snapshot_date,total_deposit,total_withdrawal,monthly_valid_bet,win_loss')
 .eq('vip_id', resolvedId)
 .order('snapshot_date', { ascending: false })
-.limit(90),
+.limit(100),
 supabase.from('contact_logs')
 .select('*')
 .eq('vip_id', resolvedId)
@@ -309,14 +309,25 @@ const [y,mo] = m.snapshot_month.split('-').map(Number)
 const mDate = new Date(y, mo-1, 1)
 return mDate >= cutoff
 })
-const sumDeposit = periodMonthly.reduce((s,m) => s + (parseFloat(m.total_deposit)||0), 0)
-const sumWithdrawal = periodMonthly.reduce((s,m) => s + (parseFloat(m.total_withdrawal)||0), 0)
-const sumTurnover = periodMonthly.reduce((s,m) => s + (parseFloat(m.monthly_valid_bet)||0), 0)
-const sumWL = periodMonthly.reduce((s,m) => s + (parseFloat(m.win_loss)||0), 0)
+// 30D / 90D / MTD = real days from the daily rows, ending at the latest data date (same as Exec Overview,
+// Segments, Ask Data). Deposit / withdrawal / W-L only on days with valid bet (stale CSV rows otherwise).
+// 6M / 1Y stay on whole months.
+const dataDate = daily[0]?.snapshot_date || null
+const dailyWindow = !dataDate || !['30', '90', 'mtd'].includes(period) ? null : daily.filter(d => {
+if (period === 'mtd') return d.snapshot_date.slice(0, 7) === dataDate.slice(0, 7)
+const from = new Date(dataDate + 'T00:00:00Z'); from.setUTCDate(from.getUTCDate() - (parseInt(period) - 1))
+return d.snapshot_date >= from.toISOString().slice(0, 10)
+})
+const trusted = d => (parseFloat(d.monthly_valid_bet) || 0) > 0
+const sumDeposit = dailyWindow ? dailyWindow.reduce((s,d) => s + (trusted(d) ? parseFloat(d.total_deposit)||0 : 0), 0) : periodMonthly.reduce((s,m) => s + (parseFloat(m.total_deposit)||0), 0)
+const sumWithdrawal = dailyWindow ? dailyWindow.reduce((s,d) => s + (trusted(d) ? parseFloat(d.total_withdrawal)||0 : 0), 0) : periodMonthly.reduce((s,m) => s + (parseFloat(m.total_withdrawal)||0), 0)
+const sumTurnover = dailyWindow ? dailyWindow.reduce((s,d) => s + (parseFloat(d.monthly_valid_bet)||0), 0) : periodMonthly.reduce((s,m) => s + (parseFloat(m.monthly_valid_bet)||0), 0)
+const sumWL = dailyWindow ? dailyWindow.reduce((s,d) => s + (trusted(d) ? parseFloat(d.win_loss)||0 : 0), 0) : periodMonthly.reduce((s,m) => s + (parseFloat(m.win_loss)||0), 0)
 
-const daysInactive = vip?.last_deposit_date
+// Days since the last real deposit, counted to the latest data date — the same number as every other page
+const daysInactive = vip?.days_inactive ?? (vip?.last_deposit_date
 ? Math.floor((now - new Date(vip.last_deposit_date)) / 86400000)
-: (vip?.days_inactive ?? null)
+: null)
 
 async function submitLog() {
 if (logSaving) return
@@ -514,7 +525,7 @@ onMouseLeave={e => e.currentTarget.style.opacity=.6}
 {[
 { label:L2('Deposit', '存款'), value:formatMoney(sumDeposit, vip.currency), trend:null },
 { label:L2('Turnover', '流水'), value:formatMoney(sumTurnover, vip.currency), trend:null },
-{ label:L2('Win/Loss', '输赢'), value:formatMoney(Math.abs(sumWL), vip.currency), isWL:true, wl:sumWL },
+{ label:L2('Player Win/Loss', '玩家输赢'), value:formatMoney(Math.abs(sumWL), vip.currency), isWL:true, wl:sumWL },
 { label:L2('Last Deposit', '最后存款'), value:daysInactive != null ? L2(`${daysInactive}d ago`, `${daysInactive}天前`) : '—', sub:vip.last_deposit_date ? fmtDate(vip.last_deposit_date, lang) : null },
 ].map((m,i) => (
 <div key={i} style={{ background:'var(--surface2)', borderRadius:8, padding:'12px 14px' }}>
@@ -537,7 +548,8 @@ color: period===p.value ? '#fff' : 'var(--muted)', cursor:'pointer',
 fontSize:18, fontWeight:700,
 color: m.isWL ? (m.wl <= 0 ? 'var(--success)' : 'var(--danger)') : 'var(--text)',
 }}>
-{m.isWL ? (m.wl <= 0 ? '+' : '-') : ''}{m.value}
+{/* win_loss is the player's side: negative = player lost */}
+{m.isWL ? (m.wl < 0 ? L2('Player lost ', '玩家输 ') : m.wl > 0 ? L2('Player won ', '玩家赢 ') : '') : ''}{m.value}
 </div>
 {m.sub && <div style={{ fontSize:11, color:'var(--muted)', marginTop:2 }}>{m.sub}</div>}
 </div>
