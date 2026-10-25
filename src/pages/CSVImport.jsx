@@ -485,6 +485,18 @@ async function processRawData(rows, month, thresholds, onProgress) {
 
 const TIER_SHEETS = ['GOLD', 'PLATINUM', 'DIAMOND', 'DIAMOND-P', 'BLACK']
 
+// Snapshot batches are upserts on (username, snapshot_date), so sending one again is safe.
+// A batch can fail on a brief database timeout (24 Oct: one Silver/Bronze batch of 500 lost):
+// retry once after 2s before reporting the error.
+async function upsertSnapshotBatch(table, batch) {
+  let { error } = await supabase.from(table).upsert(batch, { onConflict: 'username,snapshot_date' })
+  if (error) {
+    await new Promise(r => setTimeout(r, 2000))
+    ;({ error } = await supabase.from(table).upsert(batch, { onConflict: 'username,snapshot_date' }))
+  }
+  return { error }
+}
+
 // Parse datetime string from new export e.g. "2026-09-18 17:01" → "2026-09-18"
 function parseDateOnly(str) {
   if (!str) return null
@@ -1223,9 +1235,7 @@ export default function CSVImport() {
           host_assigned:      v.host_assigned || null,
         }
       })
-      const { error } = await supabase
-        .from('vip_daily_snapshots')
-        .upsert(batch, { onConflict: 'username,snapshot_date' })
+      const { error } = await upsertSnapshotBatch('vip_daily_snapshots', batch)
       if (error) {
         errors.push(error.message)
         onProgress(L2(`⚠ Daily snapshot batch failed: ${error.message}`, `⚠ 每日快照批次失败：${error.message}`))
@@ -1258,7 +1268,7 @@ export default function CSVImport() {
             currency: v.currency || 'MYR', host_assigned: v.host_assigned || null,
           }
         })
-        const { error } = await supabase.from('vip_daily_snapshots_all').upsert(batch, { onConflict: 'username,snapshot_date' })
+        const { error } = await upsertSnapshotBatch('vip_daily_snapshots_all', batch)
         if (error) errors.push(`Silver/Bronze daily: ${error.message}`)
         else potSaved += batch.length
         onProgress(L2(`Saving Silver/Bronze daily snapshot… ${potSaved}/${pots.length}`, `正在保存银/铜级每日快照… ${potSaved}/${pots.length}`))
@@ -1311,9 +1321,7 @@ export default function CSVImport() {
         tier:                p.tier,
         monthly_valid_bet:   p.monthly_valid_bet || 0,
       }))
-      const { error } = await supabase
-        .from('potential_daily_snapshots')
-        .upsert(batch, { onConflict: 'username,snapshot_date' })
+      const { error } = await upsertSnapshotBatch('potential_daily_snapshots', batch)
       if (error) {
         errors.push(error.message)
         onProgress(L2(`⚠ Potential daily snapshot batch failed: ${error.message}`, `⚠ 潜力玩家每日快照批次失败：${error.message}`))
