@@ -26,6 +26,7 @@ const MyTasks = lazyPage(() => import('./pages/MyTasks'))
 const Alerts = lazyPage(() => import('./pages/Alerts'))
 const AllVIPs = lazyPage(() => import('./pages/AllVIPs'))
 const Segments = lazyPage(() => import('./pages/Segments'))
+const Survey = lazyPage(() => import('./pages/Survey'))
 const ManagerKPI = lazyPage(() => import('./pages/ManagerKPI'))
 const ExecOverview = lazyPage(() => import('./pages/ExecOverview'))
 const VIP360 = lazyPage(() => import('./pages/VIP360'))
@@ -77,6 +78,7 @@ export default function App() {
       {/* VIP Operations */}
       <Route path="vips"          element={<RequireRole permKey="vips"><AllVIPs /></RequireRole>} />
       <Route path="segments"      element={<RequireRole permKey="segments"><Segments /></RequireRole>} />
+      <Route path="survey"        element={<RequireRole permKey="segments"><Survey /></RequireRole>} />
       <Route path="vips/:id"      element={<RequireRole permKey="vips"><VIP360 /></RequireRole>} />
       <Route path="vip360"        element={<RequireRole permKey="vips"><VIP360 /></RequireRole>} />{/* /vip360?player=<username>&tab=<tab> */}
       <Route path="at-risk"       element={<RequireRole permKey="at-risk"><AtRisk /></RequireRole>} />

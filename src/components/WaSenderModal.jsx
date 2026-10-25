@@ -200,7 +200,7 @@ export default function WaSenderModal({ vip, waNumbers, myName, onClose, onLogge
   const [lang, setLang] = useState(uiLang === 'zh' ? 'cn' : 'en')
   const built = defaultTemplates(vip, agentName, purpose)
   const kind = templates ? 'custom' : built.kind
-  const [texts, setTexts] = useState({ en: templates?.en ?? built.en, cn: templates?.cn ?? built.cn })
+  const [texts, setTexts] = useState({ en: templates?.en ?? built.en, cn: templates?.cn ?? built.cn, ...(templates?.my ? { my: templates.my } : {}) })
   const [copied, setCopied] = useState(false)
   const [logId, setLogId] = useState(null)
   const [logBusy, setLogBusy] = useState(false)
@@ -224,7 +224,7 @@ export default function WaSenderModal({ vip, waNumbers, myName, onClose, onLogge
     if (logId || logBusy) return
     setLogBusy(true); setLogErr('')
     const label = logLabel || KIND_LABEL[kind][0].replace(/^\S+\s/, '')
-    const summary = `💬 ${label} sent (${via === 'wa' ? 'WhatsApp button' : 'copied, manual WhatsApp'}, ${lang === 'cn' ? '中文' : 'EN'})`
+    const summary = `💬 ${label} sent (${via === 'wa' ? 'WhatsApp button' : 'copied, manual WhatsApp'}, ${lang === 'cn' ? '中文' : lang === 'my' ? 'MY' : 'EN'})`
     const res = await insertContactLog({ vip, hostName: agentName, summary, topic, waNumberUsed: sender })
     setLogBusy(false)
     if (res.error) { setLogErr(res.error); return }
@@ -257,7 +257,7 @@ export default function WaSenderModal({ vip, waNumbers, myName, onClose, onLogge
         <div style={{ marginTop: 8 }}><ProfileCard username={vip.username} compact /></div>
 
         <div style={{ display: 'flex', gap: 6, margin: '10px 0', alignItems: 'center' }}>
-          {[['en', 'EN'], ['cn', '中文']].map(([k, label]) => (
+          {[['en', 'EN'], ...(texts.my != null ? [['my', 'MY']] : []), ['cn', '中文']].map(([k, label]) => (
             <button key={k} onClick={() => { setLang(k); setCopied(false) }} style={{ ...st.chip, ...(lang === k ? st.chipOn : null) }}>{label}</button>
           ))}
           <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--muted)' }}>{L2(...KIND_LABEL[kind])}</span>
