@@ -16,7 +16,7 @@ import CampaignMedia from '../components/campaign/CampaignMedia'
 import CampaignScorecard from '../components/campaign/CampaignScorecard'
 import { CampaignInfoButton } from '../components/campaign/CampaignGuide'
 import { ListCount } from '../components/ui'
-import { waMessage, tierList, STAGE_INFO } from '../lib/campaignWaTemplates'
+import { waMessage, tierList, STAGE_INFO, WA_STAGES } from '../lib/campaignWaTemplates'
 import CampaignWaEditor from '../components/campaign/CampaignWaEditor'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -298,7 +298,8 @@ export default function Campaigns() {
   const [contactChannel, setContactChannel] = useState('WhatsApp') // via which app the chase happened
   const [contactNote, setContactNote] = useState('')       // note being entered in log popup
   const [contactHistory, setContactHistory] = useState(null) // player_id of open history view
-  const [waPopup, setWaPopup] = useState(null)  // { rawNumber, message } — editable before opening WA
+  // Message box: { p, extra, autoStage, stage, lang, text, logged } — pick the situation + language, edit, copy / WhatsApp / log
+  const [msgPopup, setMsgPopup] = useState(null)
   const [waCopied, setWaCopied] = useState(false)
   // All daily entries for streak/inactive tabs — loaded on demand
   const [allDailyEntries, setAllDailyEntries] = useState([])  // full flat list for campaign
@@ -942,7 +943,7 @@ export default function Campaigns() {
     setContacts(map)
   }
 
-  async function logContact(playerId, type) {
+  async function logContact(playerId, type, opts = {}) {
     const now = new Date().toISOString()
     const { error } = await supabase.from('campaign_player_contacts').insert({
       campaign_id: selected.id,
@@ -950,7 +951,7 @@ export default function Campaigns() {
       contacted_at: now,
       contact_type: type,
       host: profile?.email || null,
-      notes: contactNote.trim() || null,
+      notes: (opts.note ?? contactNote).trim() || null,
     })
     if (error) { console.error('logContact error', error); return }
     // Auto-sync to global contact_logs + VIP data
@@ -958,7 +959,7 @@ export default function Campaigns() {
     if (player?.username) {
       const myName = profile?.full_name || profile?.username || (profile?.email ? profile.email.split('@')[0] : 'Host')
       const channelMap = { wa_sent:'WhatsApp', daily:'WhatsApp', responded:'WhatsApp', no_response:'WhatsApp', promised:'WhatsApp', deposited:'WhatsApp', reward:'WhatsApp', inactive:'WhatsApp', other:'Other' }
-      const noteText = contactNote.trim() || `Campaign chase: ${selected?.campaign_name || ''}`
+      const noteText = (opts.note ?? contactNote).trim() || `Campaign chase: ${selected?.campaign_name || ''}`
       const { data: vipRow } = await supabase.from(MEMBERS_ALL).select('id').eq('username', player.username).maybeSingle()
       await Promise.all([
         supabase.from('contact_logs').insert({
@@ -967,7 +968,7 @@ export default function Campaigns() {
           tier: player.tier || null,
           host_name: myName,
           host_id: profile?.id || null,
-          channel: type === 'other' && contactChannel === 'WhatsApp' ? (channelMap[type] || 'WhatsApp') : contactChannel,
+          channel: opts.channel || (type === 'other' && contactChannel === 'WhatsApp' ? (channelMap[type] || 'WhatsApp') : contactChannel),
           outcome: 'Contacted',
           notes: noteText,
           message_summary: noteText,
@@ -1529,11 +1530,31 @@ export default function Campaigns() {
     const body = waLang === 'cn' ? zhBody : waLang === 'my' ? myBody : enBody
     return { rawNumber, stage, body, enBody, myBody, zhBody }
   }
+  const bodyKey = l => (l === 'zh' ? 'zhBody' : l === 'my' ? 'myBody' : 'enBody')
+  function openMsg(p, extra) {
+    const r = buildCampaignWaMessage(p, extra)
+    if (!r) return
+    const l = waLang === 'cn' ? 'zh' : waLang === 'my' ? 'my' : 'en'
+    setMsgPopup({ p, extra, autoStage: r.stage, stage: r.stage, lang: l, text: r[bodyKey(l)], logged: false })
+  }
+  function pickMsg(stage, l) {
+    setMsgPopup(m => {
+      const r = buildCampaignWaMessage(m.p, { ...(m.extra || {}), stage })
+      return { ...m, stage, lang: l, text: r ? r[bodyKey(l)] : m.text }
+    })
+  }
+  async function logMsg(how) {
+    const m = msgPopup
+    if (!m || m.logged) return
+    const info = STAGE_INFO[m.stage]
+    await logContact(m.p.id, 'wa_sent', { channel: 'WhatsApp', note: `${info ? info.en : m.stage} message (${m.lang === 'zh' ? '中文' : m.lang.toUpperCase()}) — ${how}` })
+    setMsgPopup(x => (x ? { ...x, logged: true } : x))
+  }
   function CampaignWaButton({ p, extra }) {
     const result = buildCampaignWaMessage(p, extra)
     if (!result) return <span style={{ color:'var(--muted)' }}>—</span>
     return (
-      <button onClick={e=>{e.stopPropagation();setWaPopup({ rawNumber: result.rawNumber, message: result.body, enBody: result.enBody, myBody: result.myBody, zhBody: result.zhBody, stage: result.stage })}}
+      <button onClick={e=>{e.stopPropagation();openMsg(p, extra)}}
         style={{ display:'inline-flex', width:26, height:26, borderRadius:13, background:'#25D366', color:'#fff', alignItems:'center', justifyContent:'center', fontSize:13, fontWeight:700, border:'none', cursor:'pointer' }}>W</button>
     )
   }
@@ -2797,28 +2818,12 @@ export default function Campaigns() {
                                             style={{ background:'rgba(88,166,255,.1)', color:'#58a6ff', border:'1px solid rgba(88,166,255,.25)', borderRadius:5, padding:'2px 7px', fontSize:10, cursor:'pointer', fontWeight:600 }}>
                                             + Log
                                           </button>
-                                          {p.whatsapp && (() => {
-                                            const chaseReward = multi
-                                              ? (isDailyMode ? rmFmt(dailyEntry?.credit_reward||0, campCurrency) : rmFmt(multiMetric?.qualifiedRewardTotal||0, campCurrency))
-                                              : campType==='dual_tier' ? rmFmt((dualReward?.creditAmount||0)+(dualReward?.wcashAmount||0), campCurrency)
-                                              : rmFmt(calcReward(campType,playerDeposit(p),rewardPct,rewardFixed,goldVal,rewardCap,rewardTiers,campaignLevels,selected?.is_multi_level), campCurrency)
-                                            const chaseWaMsgResult = buildCampaignWaMessage(p, null)
-                                            const chaseWaUrl = chaseWaMsgResult
-                                              ? waHref(p.whatsapp, encodeURIComponent(chaseWaMsgResult.body))
-                                              : waHref(p.whatsapp, buildWaMsg(p.username, selected?.campaign_name||'Campaign', chaseReward, waLang, p.host_assigned||null, null, selected))
-                                            const chaseTemplateTxt = chaseWaMsgResult?.body || ''
-                                            return <>
-                                              <a href={chaseWaUrl} target="_blank" rel="noopener noreferrer"
-                                                style={{ background:'rgba(37,211,102,.1)', color:'#25d366', border:'1px solid rgba(37,211,102,.25)', borderRadius:5, padding:'2px 7px', fontSize:10, cursor:'pointer', fontWeight:600, textDecoration:'none' }}>
-                                                📱 WA
-                                              </a>
-                                              <button onClick={()=>{navigator.clipboard.writeText(chaseTemplateTxt || p.whatsapp||''); const btn=document.getElementById('copy-wa-'+p.id); if(btn){btn.textContent='✓';setTimeout(()=>{btn.textContent=L2('Copy','复制')},1200)}}}
-                                                id={'copy-wa-'+p.id}
-                                                style={{ background:'rgba(88,166,255,.1)', color:'#58a6ff', border:'1px solid rgba(88,166,255,.25)', borderRadius:5, padding:'2px 7px', fontSize:10, cursor:'pointer', fontWeight:600 }}>
-                                                {L2('Copy','复制')}
-                                              </button>
-                                            </>
-                                          })()}
+                                          {p.whatsapp && (
+                                            <button onClick={()=>openMsg(p, null)} title={L2('Choose message, copy or WhatsApp, log', '选择讯息、复制或 WhatsApp、记录')}
+                                              style={{ background:'rgba(37,211,102,.1)', color:'#25d366', border:'1px solid rgba(37,211,102,.25)', borderRadius:5, padding:'2px 7px', fontSize:10, cursor:'pointer', fontWeight:600 }}>
+                                              💬 WA
+                                            </button>
+                                          )}
                                         </div>
                                       )}
                                     </>
@@ -4009,36 +4014,54 @@ export default function Campaigns() {
           </div>
         </div>
       )}
-      {waPopup && (
-        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.6)', zIndex:1000, display:'flex', alignItems:'center', justifyContent:'center' }} onClick={()=>setWaPopup(null)}>
-          <div style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:14, padding:24, width:520, maxWidth:'94vw' }} onClick={e=>e.stopPropagation()}>
-            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
-              <div style={{ fontSize:14, fontWeight:700 }}>💬 {L2('WhatsApp Message','WhatsApp 讯息')}</div>
-              {(waPopup.enBody || waPopup.zhBody) && (
-                <div style={{ display:'flex', gap:4, alignItems:'center' }}>
-                  {waPopup.stage && STAGE_INFO[waPopup.stage] && <span style={{ fontSize:11, color:'var(--muted)', marginRight:6 }}>{STAGE_INFO[waPopup.stage].icon} {lang==='zh' ? STAGE_INFO[waPopup.stage].zh : STAGE_INFO[waPopup.stage].en}</span>}
-                  {[['enBody','🇬🇧 EN'],['myBody','🇲🇾 MY'],['zhBody','🇨🇳 中文']].filter(([k]) => waPopup[k]).map(([k, label]) => (
-                    <button key={k} onClick={()=>setWaPopup(p=>({...p,message:p[k]}))}
-                      style={{ padding:'3px 10px', borderRadius:6, fontSize:12, fontWeight:600, border:'1px solid var(--border)', cursor:'pointer',
-                        background: waPopup.message===waPopup[k] ? 'var(--accent)' : 'var(--surface2)',
-                        color: waPopup.message===waPopup[k] ? '#fff' : 'var(--muted)' }}>{label}</button>
-                  ))}
+      {msgPopup && (() => {
+        const m = msgPopup
+        const chip = on => ({ padding:'4px 10px', borderRadius:16, fontSize:12, cursor:'pointer', border:`1px solid ${on ? 'var(--accent)' : 'var(--border)'}`, background: on ? 'var(--accent)' : 'var(--surface2)', color: on ? '#fff' : 'var(--muted)', fontWeight: on ? 700 : 500 })
+        const stages = WA_STAGES.filter(st => st !== 'streak' || selected?.streak_enabled || m.autoStage === 'streak')
+        const close = () => { setMsgPopup(null); setWaCopied(false) }
+        return (
+          <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.6)', zIndex:1000, display:'flex', alignItems:'center', justifyContent:'center' }} onClick={close}>
+            <div style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:14, padding:20, width:580, maxWidth:'94vw', maxHeight:'92vh', overflowY:'auto' }} onClick={e=>e.stopPropagation()}>
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:10 }}>
+                <div>
+                  <div style={{ fontSize:15, fontWeight:700 }}>💬 {m.p.username}</div>
+                  <div style={{ fontSize:12, color:'var(--muted)', marginTop:2 }}>{[m.p.tier, m.p.whatsapp ? `📱 ${m.p.whatsapp}` : null, selected?.campaign_name].filter(Boolean).join(' · ')}</div>
                 </div>
-              )}
-            </div>
-            <textarea rows={10} style={{ ...s.fta, width:'100%', marginBottom:14, fontFamily:"'Segoe UI Emoji','Apple Color Emoji','Noto Color Emoji','Twemoji Mozilla',sans-serif" }} value={waPopup.message} onChange={e=>setWaPopup(p=>({...p,message:e.target.value}))} />
-            <div style={{ display:'flex', gap:8 }}>
-              <a href={`https://wa.me/${waPopup.rawNumber}?text=${encodeURIComponent(waPopup.message)}`} target="_blank" rel="noopener noreferrer" onClick={()=>setWaPopup(null)}
-                style={{ ...s.btnG, textDecoration:'none', padding:'8px 18px' }}>{L2('Open WhatsApp','打开 WhatsApp')}</a>
-              <button style={{ ...s.btnSm, background: waCopied ? '#3fb950' : undefined, color: waCopied ? '#fff' : undefined }}
-                onClick={()=>{ navigator.clipboard.writeText(waPopup.message); setWaCopied(true); setTimeout(()=>setWaCopied(false), 2000) }}>
-                {waCopied ? L2('✅ Copied!','✅ 已复制！') : L2('📋 Copy','📋 复制')}
-              </button>
-              <button style={s.btnSm} onClick={()=>{ setWaPopup(null); setWaCopied(false) }}>{L2('Cancel','取消')}</button>
+                <button onClick={close} style={{ background:'none', border:'none', color:'var(--muted)', cursor:'pointer', fontSize:18 }}>✕</button>
+              </div>
+              <div style={{ fontSize:11, color:'var(--muted)', fontWeight:700, marginBottom:6 }}>{L2('1. Situation', '1. 情况')}</div>
+              <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom:10 }}>
+                {stages.map(st => (
+                  <button key={st} onClick={() => pickMsg(st, m.lang)} style={chip(m.stage === st)}>
+                    {STAGE_INFO[st].icon} {lang === 'zh' ? STAGE_INFO[st].zh : STAGE_INFO[st].en}{m.autoStage === st ? L2(' · auto', ' · 自动') : ''}
+                  </button>
+                ))}
+              </div>
+              <div style={{ fontSize:11, color:'var(--muted)', fontWeight:700, marginBottom:6 }}>{L2('2. Language', '2. 语言')}</div>
+              <div style={{ display:'flex', gap:6, marginBottom:10 }}>
+                {[['en','🇬🇧 EN'],['my','🇲🇾 MY'],['zh','🇨🇳 中文']].map(([k, label]) => <button key={k} onClick={() => pickMsg(m.stage, k)} style={chip(m.lang === k)}>{label}</button>)}
+              </div>
+              <div style={{ fontSize:11, color:'var(--muted)', fontWeight:700, marginBottom:6 }}>{L2('3. Message (you can edit)', '3. 讯息（可修改）')}</div>
+              <textarea rows={11} style={{ ...s.fta, width:'100%', marginBottom:12, fontFamily:"'Segoe UI Emoji','Apple Color Emoji','Noto Color Emoji','Twemoji Mozilla',sans-serif" }} value={m.text} onChange={e=>setMsgPopup(x=>({...x,text:e.target.value}))} />
+              <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+                <button style={{ ...s.btnSm, background: waCopied ? '#3fb950' : undefined, color: waCopied ? '#fff' : undefined }}
+                  onClick={() => { navigator.clipboard.writeText(m.text); setWaCopied(true); setTimeout(() => setWaCopied(false), 2000); logMsg('copied') }}>
+                  {waCopied ? L2('✅ Copied!', '✅ 已复制！') : L2('📋 Copy', '📋 复制')}
+                </button>
+                <button style={{ ...s.btnG, padding:'8px 18px' }} disabled={!m.p.whatsapp}
+                  onClick={() => { const href = waHref(m.p.whatsapp, encodeURIComponent(m.text)); if (href) window.open(href, '_blank'); logMsg('WhatsApp') }}>
+                  {L2('💬 Open WhatsApp', '💬 打开 WhatsApp')}
+                </button>
+                <button style={s.btnSm} disabled={m.logged} onClick={() => logMsg('sent manually')}>{L2('✅ Save log only', '✅ 只记录')}</button>
+                <button style={{ ...s.btnSm, marginLeft:'auto' }} onClick={close}>{L2('Close', '关闭')}</button>
+              </div>
+              <div style={{ fontSize:12, marginTop:10, color: m.logged ? '#3fb950' : 'var(--muted)' }}>
+                {m.logged ? L2('✅ Logged to Contact Log as "WA Sent".', '✅ 已记录到联系记录（已发WA）。') : L2('Copy or Open WhatsApp logs it automatically (once).', '复制或打开 WhatsApp 会自动记录（一次）。')}
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
 
       {challengeCamp && <ChallengeDetail campaign={challengeCamp} onClose={() => setChallengeCamp(null)} onChanged={loadCampaigns} />}
       {showScore && <CampaignScorecard campaigns={campaigns} onClose={() => setShowScore(false)} onOpen={camp => {
