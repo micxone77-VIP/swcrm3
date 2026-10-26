@@ -78,7 +78,7 @@ const [hosts, setHosts] = useState([])
 const [loading, setLoading] = useState(true)
 const [error, setError] = useState(null)
 const [tab, setTab] = useState(() => searchParams.get('tab') || 'overview')
-const [period, setPeriod] = useState('30')
+const [period, setPeriod] = useState('mtd')   // MTD first = same as the back office "This Month"
 const [aiInsight, setAiInsight] = useState(null)
 const [aiLoading, setAiLoading] = useState(false)
 
@@ -319,6 +319,17 @@ if (period === 'mtd') return d.snapshot_date.slice(0, 7) === dataDate.slice(0, 7
 const from = new Date(dataDate + 'T00:00:00Z'); from.setUTCDate(from.getUTCDate() - (parseInt(period) - 1))
 return d.snapshot_date >= from.toISOString().slice(0, 10)
 })
+// Date range shown under the money boxes, e.g. "1 Oct – 24 Oct 2026"
+const dayLabel = (ymd, withYear) => new Date(ymd + 'T00:00:00').toLocaleDateString(lang === 'zh' ? 'zh-CN' : 'en-MY', withYear ? { day: 'numeric', month: 'short', year: 'numeric' } : { day: 'numeric', month: 'short' })
+const periodRange = (() => {
+if (dataDate && ['30', '90', 'mtd'].includes(period)) {
+const from = new Date(dataDate + 'T00:00:00Z')
+if (period === 'mtd') from.setUTCDate(1); else from.setUTCDate(from.getUTCDate() - (parseInt(period) - 1))
+return `${dayLabel(from.toISOString().slice(0, 10))} – ${dayLabel(dataDate, true)}`
+}
+const months = periodMonthly.map(m => m.snapshot_month).sort()
+return months.length ? (months.length === 1 ? months[0] : `${months[0]} – ${months[months.length - 1]}`) : null
+})()
 const trusted = d => (parseFloat(d.monthly_valid_bet) || 0) > 0
 const sumDeposit = dailyWindow ? dailyWindow.reduce((s,d) => s + (trusted(d) ? parseFloat(d.total_deposit)||0 : 0), 0) : periodMonthly.reduce((s,m) => s + (parseFloat(m.total_deposit)||0), 0)
 const sumWithdrawal = dailyWindow ? dailyWindow.reduce((s,d) => s + (trusted(d) ? parseFloat(d.total_withdrawal)||0 : 0), 0) : periodMonthly.reduce((s,m) => s + (parseFloat(m.total_withdrawal)||0), 0)
@@ -525,9 +536,9 @@ onMouseLeave={e => e.currentTarget.style.opacity=.6}
 {/* ── Financial Summary ── */}
 <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:14, marginTop:20 }}>
 {[
-{ label:L2('Deposit', '存款'), value:formatMoney(sumDeposit, vip.currency), trend:null },
-{ label:L2('Turnover', '流水'), value:formatMoney(sumTurnover, vip.currency), trend:null },
-{ label:L2('Player Win/Loss', '玩家输赢'), value:formatMoney(Math.abs(sumWL), vip.currency), isWL:true, wl:sumWL },
+{ label:L2('Deposit', '存款'), value:formatMoney(sumDeposit, vip.currency), trend:null, sub:periodRange },
+{ label:L2('Turnover', '流水'), value:formatMoney(sumTurnover, vip.currency), trend:null, sub:periodRange },
+{ label:L2('Player Win/Loss', '玩家输赢'), value:formatMoney(Math.abs(sumWL), vip.currency), isWL:true, wl:sumWL, sub:periodRange },
 { label:L2('Last Deposit', '最后存款'), value:daysInactive != null ? L2(`${daysInactive}d ago`, `${daysInactive}天前`) : '—', sub:vip.last_deposit_date ? fmtDate(vip.last_deposit_date, lang) : null },
 ].map((m,i) => (
 <div key={i} style={{ background:'var(--surface2)', borderRadius:8, padding:'12px 14px' }}>
