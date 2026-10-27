@@ -956,7 +956,7 @@ export default function Campaigns() {
       host: profile?.email || null,
       notes: (opts.note ?? contactNote).trim() || null,
     })
-    if (error) { console.error('logContact error', error); return }
+    if (error) { console.error('logContact error', error); alert(L2('Log failed: ', '记录失败：') + error.message); return false }
     // Auto-sync to global contact_logs + VIP data
     const player = players.find(p => p.id === playerId)
     if (player?.username) {
@@ -987,6 +987,7 @@ export default function Campaigns() {
     setContactNote('')
     setContactHistory(null)
     await loadContacts(selected.id)
+    return true
   }
 
   // Load ALL daily entries for the campaign (used by Streak + Inactive tabs)
@@ -1550,8 +1551,9 @@ export default function Campaigns() {
     const m = msgPopup
     if (!m || m.logged) return
     const info = STAGE_INFO[m.stage]
-    await logContact(m.p.id, 'wa_sent', { channel: 'WhatsApp', note: `${info ? info.en : m.stage} message (${m.lang === 'zh' ? '中文' : m.lang.toUpperCase()}) — ${how}` })
-    setMsgPopup(x => (x ? { ...x, logged: true } : x))
+    // 'daily' = Daily Chase (the contact-type list in the database only allows daily / reward / inactive)
+    const ok = await logContact(m.p.id, 'daily', { channel: 'WhatsApp', note: `${info ? info.en : m.stage} message (${m.lang === 'zh' ? '中文' : m.lang.toUpperCase()}) — ${how}` })
+    if (ok) setMsgPopup(x => (x ? { ...x, logged: true } : x))
   }
   function CampaignWaButton({ p, extra }) {
     const result = buildCampaignWaMessage(p, extra)
@@ -4059,7 +4061,7 @@ export default function Campaigns() {
                 <button style={{ ...s.btnSm, marginLeft:'auto' }} onClick={close}>{L2('Close', '关闭')}</button>
               </div>
               <div style={{ fontSize:12, marginTop:10, color: m.logged ? '#3fb950' : 'var(--muted)' }}>
-                {m.logged ? L2('✅ Logged to Contact Log as "WA Sent".', '✅ 已记录到联系记录（已发WA）。') : L2('Copy or Open WhatsApp logs it automatically (once).', '复制或打开 WhatsApp 会自动记录（一次）。')}
+                {m.logged ? L2('✅ Logged to Contact Log (Daily Chase).', '✅ 已记录到联系记录（每日跟进）。') : L2('Copy or Open WhatsApp logs it automatically (once).', '复制或打开 WhatsApp 会自动记录（一次）。')}
               </div>
             </div>
           </div>
