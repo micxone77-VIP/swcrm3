@@ -73,7 +73,7 @@ export default function ProfileCard({ username, compact = false }) {
         {[['slots_pct', L2('slots', '老虎机')], ['live_pct', L2('live', '真人')], ['sports_pct', L2('sports', '体育')]]
           .filter(([k]) => pct(p[k]) > 0).length > 0 && <span style={muted}> ({[['slots_pct', L2('slots', '老虎机')], ['live_pct', L2('live', '真人')], ['sports_pct', L2('sports', '体育')]]
           .filter(([k]) => pct(p[k]) > 0).map(([k, n]) => `${pct(p[k])}% ${n}`).join(' · ')})</span>}
-        {p.best_provider && <> · {L2('plays most', '最常玩')} <b>{p.best_provider}</b></>}{auto}</>
+        {(p.main_provider || p.best_provider) && <> · {L2('plays most', '最常玩')} <b>{p.main_provider || p.best_provider}</b></>}{auto}</>
     : null
 
   // deposit habit
@@ -102,7 +102,8 @@ export default function ProfileCard({ username, compact = false }) {
     !p.has_phone && L2('phone/WA', '电话/WA'), !p.birthday && L2('birthday', '生日'), !p.host_assigned && L2('host', '负责人'),
     !p.personality_notes && !p.special_requests && L2('personal notes', '性格/喜好备注'),
   ].filter(Boolean)
-  const asOf = [p.game_month && L2(`games ${monthLabel(p.game_month, lang)}`, `游戏 ${monthLabel(p.game_month, lang)}`),
+  const gameTo = p.game_data_to ? ` ${L2('to', '至')} ${String(p.game_data_to).slice(0, 10)}` : ''
+  const asOf = [p.game_month && L2(`games ${monthLabel(p.game_month, lang)}${gameTo}`, `游戏 ${monthLabel(p.game_month, lang)}${gameTo}`),
     p.dep_as_of && L2(`deposits to ${String(p.dep_as_of).slice(0, 10)}`, `存款到 ${String(p.dep_as_of).slice(0, 10)}`)].filter(Boolean)
   const doneColor = p.completeness_pct >= 75 ? '#3fb950' : p.completeness_pct >= 50 ? '#d29922' : '#f85149'
 

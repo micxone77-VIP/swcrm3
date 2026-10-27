@@ -229,10 +229,13 @@ if (tab !== 'gaming' || !vip?.username) return
 if (gaming.length > 0 || gamingLoading) return
 setGamingLoading(true)
 Promise.all([
-  supabase.from('provider_player_stats')
-    .select('*')
+  // Back office provider report, month to date (same source as Provider Activity)
+  supabase.from('provider_player_monthly')
+    .select('provider,period_month,period_end,valid_turnover,win_loss,rebate,bonus,bet_count')
     .eq('username', vip.username)
-    .order('valid_turnover', { ascending: false }),
+    .order('period_month', { ascending: false })
+    .order('valid_turnover', { ascending: false })
+    .limit(200),
   supabase.from('player_gaming_labels')
     .select('*')
     .eq('username', vip.username)
@@ -240,7 +243,8 @@ Promise.all([
     .limit(1)
     .maybeSingle(),
 ]).then(([provRes, labelRes]) => {
-  setGaming(provRes.data || [])
+  const rows = provRes.data || []
+  setGaming(rows.filter(r => r.period_month === rows[0]?.period_month))
   if (labelRes.data) setGamingLabel(labelRes.data)
   setGamingLoading(false)
 })
@@ -694,10 +698,7 @@ onMouseLeave={e => e.currentTarget.style.background='transparent'}
 
 {/* GAMING */}
 {tab === 'gaming' && (() => {
-const fmtK = v => !v ? '0' : Math.abs(v) >= 1000000 ? (v/1000000).toFixed(2)+'M' : Math.abs(v) >= 1000 ? (v/1000).toFixed(1)+'K' : Number(v).toFixed(0)
-const fmtKAbs = v => !v ? '0' : Math.abs(v) >= 1000000 ? (Math.abs(v)/1000000).toFixed(2)+'M' : Math.abs(v) >= 1000 ? (Math.abs(v)/1000).toFixed(1)+'K' : Math.abs(v).toFixed(0)
-
-// Provider category map
+// Provider category map (fallback; labels now carry best_category / worst_category from provider_categories)
 const LIVE_PROVIDERS = new Set(['Evo','DG','SA','MTL','AES2','PPL'])
 const SLOTS_PROVIDERS = new Set(['PP Slot','JL','NS','FC','PT4','MEGA','SG','BNG','SCR2','PTL4'])
 const SPORTS_PROVIDERS = new Set(['CBX','IBC','CMD','L365','BTI2'])
@@ -707,12 +708,17 @@ const CAT_LABEL = lang === 'zh' ? { live:'真人娱乐', slots:'老虎机', spor
 const PT_ZH = { 'Slots King':'老虎机之王','Live Casino VIP':'真人娱乐VIP','Sports Punter':'体育投注玩家','Slots + Live':'老虎机 + 真人','Live + Sports':'真人 + 体育','Multi-Platform':'多平台','Casual':'休闲' }
 const CAT_ICON  = { live:'🎲', slots:'🎰', sports:'⚽', other:'🃏' }
 
-// Sort by turnover
-const sortedProviders = [...gaming].sort((a,b) => (b.valid_turnover||0) - (a.valid_turnover||0))
-const maxTurnover = sortedProviders[0]?.valid_turnover || 1
-
 // Category totals from label
 const gl = gamingLabel
+// Which month the label is from: "Oct 2026 · month to date (to 24 Oct)" or "Sep 2026 · no games this month yet"
+const nowMYT = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 7)
+const glMonthName = gl?.snapshot_month ? new Date(gl.snapshot_month + '-01T00:00:00Z').toLocaleDateString(lang === 'zh' ? 'zh-CN' : 'en-GB', { month: 'short', year: 'numeric', timeZone: 'UTC' }) : ''
+const glIsMTD = gl?.snapshot_month === nowMYT
+const glTo = gl?.data_to ? new Date(gl.data_to + 'T00:00:00Z').toLocaleDateString(lang === 'zh' ? 'zh-CN' : 'en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' }) : ''
+const glPeriod = !gl ? '' : glIsMTD
+  ? L2(`${glMonthName} · month to date${glTo ? ` (to ${glTo})` : ''}`, `${glMonthName} · 本月至今${glTo ? `（至 ${glTo}）` : ''}`)
+  : L2(`${glMonthName} · no games this month yet`, `${glMonthName} · 本月还没有游戏记录`)
+const catOf = (c, p) => c || getCat(p)
 const PLAYER_TYPE_COLOR = {
   'Slots King': '#8b5cf6',
   'Live Casino VIP': '#f59e0b',
@@ -744,8 +750,8 @@ return (
                 <span style={{ fontSize:28 }}>{gl.player_type_icon}</span>
                 <span style={{ fontSize:18, fontWeight:800, color: ptColor }}>{lang === 'zh' ? (PT_ZH[gl.player_type] || gl.player_type) : gl.player_type}</span>
               </div>
-              <div style={{ fontSize:12, color:'var(--muted)', marginBottom:8 }}>
-                {gl.snapshot_month} · {L2(`${gl.active_providers} active provider${gl.active_providers !== 1 ? 's':''}`, `${gl.active_providers} 个活跃供应商`)}</div>
+              <div style={{ fontSize:12, color: glIsMTD ? 'var(--muted)' : 'var(--warning, #d29922)', marginBottom:8 }}>
+                📅 {glPeriod} · {L2(`${gl.active_providers} active provider${gl.active_providers !== 1 ? 's':''}`, `${gl.active_providers} 个活跃供应商`)}</div>
               {/* Category bars */}
               {[
                 { label:CAT_LABEL.slots, pct: gl.slots_pct, color: CAT_COLOR.slots },
@@ -770,22 +776,25 @@ return (
 
         {/* Good at / Bad at */}
         <div style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:10, padding:'16px 18px' }}>
-          <div style={{ fontSize:11, fontWeight:700, color:'var(--muted)', letterSpacing:'.5px', textTransform:'uppercase', marginBottom:10 }}>{L2('Strengths & Weaknesses', '强项与弱项')}</div>
+          <div style={{ fontSize:11, fontWeight:700, color:'var(--muted)', letterSpacing:'.5px', textTransform:'uppercase', marginBottom:4 }}>{L2('Strengths & Weaknesses', '强项与弱项')}</div>
+          {gl && <div style={{ fontSize:12, color: glIsMTD ? 'var(--muted)' : 'var(--warning, #d29922)', marginBottom:10 }}>📅 {glPeriod}</div>}
           {gl?.best_provider && (
             <div style={{ marginBottom:12 }}>
               <div style={{ fontSize:11, color:'var(--success)', fontWeight:700, marginBottom:4 }}>{L2('✅ Best at (player wins)', '✅ 强项（玩家赢）')}</div>
-              <div style={{ fontSize:14, fontWeight:700 }}>{gl.best_provider}</div>
+              <div style={{ fontSize:14, fontWeight:700 }}>{gl.best_provider}
+                {gl.best_wl != null && <span style={{ fontSize:12, fontWeight:600, color:'var(--success)', marginLeft:8 }}>{L2('player won', '玩家赢')} {formatMoney(Math.abs(gl.best_wl), gl.currency || vip.currency)}</span>}</div>
               <div style={{ fontSize:11, color:'var(--muted)' }}>
-                {CAT_ICON[getCat(gl.best_provider)]} {CAT_LABEL[getCat(gl.best_provider)]}
+                {CAT_ICON[catOf(gl.best_category, gl.best_provider)]} {CAT_LABEL[catOf(gl.best_category, gl.best_provider)]}
               </div>
             </div>
           )}
           {gl?.worst_provider && (
             <div style={{ marginBottom:12 }}>
               <div style={{ fontSize:11, color:'var(--danger)', fontWeight:700, marginBottom:4 }}>{L2('⚠️ Worst at (house wins most)', '⚠️ 弱项（庄家赢最多）')}</div>
-              <div style={{ fontSize:14, fontWeight:700 }}>{gl.worst_provider}</div>
+              <div style={{ fontSize:14, fontWeight:700 }}>{gl.worst_provider}
+                {gl.worst_wl != null && <span style={{ fontSize:12, fontWeight:600, color:'var(--danger)', marginLeft:8 }}>{L2('player lost', '玩家输')} {formatMoney(Math.abs(gl.worst_wl), gl.currency || vip.currency)}</span>}</div>
               <div style={{ fontSize:11, color:'var(--muted)' }}>
-                {CAT_ICON[getCat(gl.worst_provider)]} {CAT_LABEL[getCat(gl.worst_provider)]}
+                {CAT_ICON[catOf(gl.worst_category, gl.worst_provider)]} {CAT_LABEL[catOf(gl.worst_category, gl.worst_provider)]}
               </div>
             </div>
           )}
@@ -821,55 +830,6 @@ return (
         </div>
       )}
 
-      {/* Provider Breakdown Table */}
-      <div>
-        <SectionLabel>{L2('Provider Breakdown', '供应商明细')}</SectionLabel>
-        <div style={{ overflowX:'auto' }}>
-          <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12 }}>
-            <thead>
-              <tr>
-                {[['Provider','供应商'],['Category','类别'],['Turnover','流水'],['Win/Loss','输赢'],['Rebate','返水'],['Bonus','奖励'],['Sessions','场次']].map(([h, hz]) => (
-                  <th key={h} style={{ padding:'8px 10px', textAlign: h==='Provider'||h==='Category'?'left':'right', background:'var(--surface)', color:'var(--muted)', fontWeight:600, fontSize:11, borderBottom:'1px solid var(--border)' }}>{L2(h, hz)}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {sortedProviders.map(p => {
-                const cat = getCat(p.provider)
-                const wl = parseFloat(p.win_loss)||0
-                return (
-                  <tr key={p.provider + (p.snapshot_month||'')}
-                    onMouseEnter={e => e.currentTarget.style.background='var(--surface2)'}
-                    onMouseLeave={e => e.currentTarget.style.background='transparent'}
-                  >
-                    <td style={{ padding:'8px 10px', borderBottom:'1px solid var(--border)', fontWeight:600 }}>
-                      <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-                        {/* Turnover bar */}
-                        <div style={{ width:40, height:4, background:'var(--border)', borderRadius:2, flexShrink:0 }}>
-                          <div style={{ height:4, borderRadius:2, background: CAT_COLOR[cat], width:`${Math.round((p.valid_turnover||0)/maxTurnover*100)}%` }} />
-                        </div>
-                        {p.provider}
-                      </div>
-                    </td>
-                    <td style={{ padding:'8px 10px', borderBottom:'1px solid var(--border)' }}>
-                      <span style={{ fontSize:11, fontWeight:700, padding:'1px 7px', borderRadius:10, background: `${CAT_COLOR[cat]}22`, color: CAT_COLOR[cat] }}>
-                        {CAT_ICON[cat]} {CAT_LABEL[cat]}
-                      </span>
-                    </td>
-                    <td style={{ padding:'8px 10px', borderBottom:'1px solid var(--border)', textAlign:'right', fontWeight:600 }}>{fmtK(p.valid_turnover)}</td>
-                    <td style={{ padding:'8px 10px', borderBottom:'1px solid var(--border)', textAlign:'right', fontWeight:700, color: wl>0?'var(--success)':wl<0?'var(--danger)':'var(--muted)' }}>
-                      {wl>0?'+':''}{fmtK(wl)}
-                    </td>
-                    <td style={{ padding:'8px 10px', borderBottom:'1px solid var(--border)', textAlign:'right', color:'var(--muted)' }}>{fmtK(p.total_rebate)}</td>
-                    <td style={{ padding:'8px 10px', borderBottom:'1px solid var(--border)', textAlign:'right', color:'var(--muted)' }}>{fmtK(p.total_bonus)}</td>
-                    <td style={{ padding:'8px 10px', borderBottom:'1px solid var(--border)', textAlign:'right', color:'var(--muted)' }}>{p.transfer_in_count||0}</td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
     </div>
   )}
 </div>
