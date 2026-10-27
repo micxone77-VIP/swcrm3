@@ -11,6 +11,7 @@ import {
 import { MONTHS, MONTHS_CN } from '../lib/constants'
 import { useUrlParam, useUrlParamNumber } from '../hooks/useUrlParam'
 import { useLanguage } from '../contexts/LanguageContext'
+import CopyBtn from '../components/CopyBtn'
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 const s = {
@@ -375,7 +376,7 @@ export default function KPIProgress() {
                   <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
                     {(autoData.diamond_uncovered || []).map(d => (
                       <span key={d.id} style={{ padding:'4px 10px', background:'rgba(248,81,73,.1)', border:'1px solid rgba(248,81,73,.3)', borderRadius:8, fontSize:12, fontWeight:600, color:'#f85149' }}>
-                        {d.username}
+                        {d.username}<CopyBtn text={d.username} />
                       </span>
                     ))}
                   </div>

@@ -8,6 +8,7 @@ import { PageHeader, Card, Tabs, Btn, Badge, LoadingState, EmptyState } from '..
 import { TierBadge, RiskBadge } from '../components/ui'
 import { useLanguage } from '../contexts/LanguageContext'
 import { useAuth } from '../hooks/useAuth'
+import CopyBtn from '../components/CopyBtn'
 
 function timeAgo(d, lang = 'en') {
   if (!d) return '—'
@@ -124,7 +125,7 @@ export default function Alerts() {
                     >
                       <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)' }}>
                         <div style={{ fontWeight: 600 }}>{v.full_name || v.username}</div>
-                        <div style={{ fontSize: 11, color: 'var(--muted)' }}>{v.username}</div>
+                        <div style={{ fontSize: 11, color: 'var(--muted)' }}>{v.username}<CopyBtn text={v.username} /></div>
                       </td>
                       <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)' }}><TierBadge tier={v.tier} /></td>
                       <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)' }}><RiskBadge risk={v.churn_risk} /></td>

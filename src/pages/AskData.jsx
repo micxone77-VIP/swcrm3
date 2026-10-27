@@ -10,6 +10,7 @@ import { useAuth } from '../hooks/useAuth'
 import { useLanguage } from '../contexts/LanguageContext'
 import { supabase } from '../lib/supabase'
 import { fillWa, tierList, STAGE_INFO } from '../lib/campaignWaTemplates'
+import CopyBtn from '../components/CopyBtn'
 
 const s = {
   page:      { padding:'24px 28px', minHeight:'100vh', color:'var(--text)', display:'flex', flexDirection:'column', height:'100vh' },
@@ -247,7 +248,7 @@ function ActionCard({ action, question, onChange }) {
           <thead><tr>{[L2('Player', '玩家'), L2('Type', '类型'), L2('Due', '日期'), L2('Priority', '优先'), L2('Assigned to', '负责人'), L2('Note', '备注')].map(h => <th key={h} style={cardTh}>{h}</th>)}</tr></thead>
           <tbody>{p.tasks.map((t, i) => (
             <tr key={i}>
-              <td style={{ ...cardTd, fontWeight: 600 }}>{t.username} <span style={{ color: 'var(--muted)', fontWeight: 400 }}>{t.tier}</span></td>
+              <td style={{ ...cardTd, fontWeight: 600 }}>{t.username}<CopyBtn text={t.username} /> <span style={{ color: 'var(--muted)', fontWeight: 400 }}>{t.tier}</span></td>
               <td style={cardTd}>{t.task_type}</td><td style={cardTd}>{t.due_date}</td><td style={cardTd}>{t.priority}</td>
               <td style={cardTd}>{t.assigned_to || '—'}</td>
               <td style={{ ...cardTd, whiteSpace: 'normal', minWidth: 180 }}>{t.notes || t.title}</td>

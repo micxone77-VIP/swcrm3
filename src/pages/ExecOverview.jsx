@@ -12,6 +12,7 @@ import { useLanguage } from '../contexts/LanguageContext'
 import { StatusBadge, TierBadge } from '../components/ui'
 import { STATUS_CONFIG } from '../lib/enums'
 import VipVoice from '../components/exec/VipVoice'
+import CopyBtn from '../components/CopyBtn'
 
 const LIFECYCLE = ['Active', 'Resting', 'At Risk', 'Churn', 'Dormant']
 const HV = ['V5 Top', 'V4 High']
@@ -124,7 +125,7 @@ export default function ExecOverview() {
             <table style={{ width: '100%', borderCollapse: 'collapse' }}><tbody>
               {moves.map(r => (
                 <tr key={r.mk + r.username} style={{ cursor: 'pointer' }} onClick={() => navigate(`/vip360?player=${encodeURIComponent(r.username)}`)}>
-                  <td style={td}>{r.mk === 'wd' ? '💸' : '📈'} <b>{r.username}</b></td><td style={td}><TierBadge tier={r.tier} /></td>
+                  <td style={td}>{r.mk === 'wd' ? '💸' : '📈'} <b>{r.username}<CopyBtn text={r.username} /></b></td><td style={td}><TierBadge tier={r.tier} /></td>
                   <td style={{ ...td, fontWeight: 700, color: r.mk === 'wd' ? '#d29922' : '#3fb950' }}>{formatMoney(r.amount, r.currency)}</td>
                   <td style={{ ...td, color: 'var(--muted)' }}>{r.ratio ? `${Number(r.ratio).toFixed(1)}× ${L2('usual', '平常')}` : ''}</td><td style={{ ...td, color: 'var(--muted)' }}>{r.host || L2('no host', '无负责人')}</td>
                 </tr>
@@ -140,7 +141,7 @@ export default function ExecOverview() {
             <table style={{ width: '100%', borderCollapse: 'collapse' }}><tbody>
               {hvRisk.slice(0, 10).map((r, i) => (
                 <tr key={r.id} style={{ cursor: 'pointer' }} onClick={() => navigate(`/vip360?player=${encodeURIComponent(r.username)}`)}>
-                  <td style={{ ...td, color: 'var(--muted)' }}>{i + 1}</td><td style={td}><b>{r.username}</b></td><td style={td}><TierBadge tier={r.tier} /></td>
+                  <td style={{ ...td, color: 'var(--muted)' }}>{i + 1}</td><td style={td}><b>{r.username}<CopyBtn text={r.username} /></b></td><td style={td}><TierBadge tier={r.tier} /></td>
                   <td style={td}><StatusBadge status={r.lifecycle} />
                     <div style={{ color: 'var(--muted)', fontSize: 11, marginTop: 2 }}>{r.last_deposit_date
                       ? L2(`last deposit ${fmtDay(r.last_deposit_date)} · ${r.days_inactive}d ago`, `最后存款 ${fmtDay(r.last_deposit_date)} · ${r.days_inactive}天前`)

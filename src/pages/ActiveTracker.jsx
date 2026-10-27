@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { Card, LoadingState } from '../components/ui'
 import { useLanguage } from '../contexts/LanguageContext'
+import CopyBtn from '../components/CopyBtn'
 
 const TIER_COLOR  = { DIAMOND:'#58a6ff', PLATINUM:'#cbd5e1' }
 const TIERS       = ['DIAMOND', 'PLATINUM']
@@ -245,7 +246,7 @@ function Section({ title, subtitle, color, players, activeThisWeek, activeLastWe
                     >
                       <td style={{ padding:'10px 16px', borderBottom:'1px solid var(--border)', color:'var(--muted)', fontSize:12, width:36 }}>{rowIdx + 1}</td>
                       <td style={{ padding:'10px 16px', borderBottom:'1px solid var(--border)' }}>
-                        <div style={{ fontWeight:700, color: tierColor }}>{p.username}</div>
+                        <div style={{ fontWeight:700, color: tierColor }}>{p.username}<CopyBtn text={p.username} /></div>
                         {p.full_name && <div style={{ fontSize:11, color:'var(--muted)' }}>{p.full_name}</div>}
                       </td>
                       <td style={{ padding:'10px 16px', borderBottom:'1px solid var(--border)', color:'var(--muted)', fontSize:12 }}>

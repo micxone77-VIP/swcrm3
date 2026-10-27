@@ -10,6 +10,7 @@ import { useLanguage } from '../contexts/LanguageContext'
 import { TierBadge, StatusBadge, LastBet } from '../components/ui'
 import { WaButton } from '../components/WaSenderModal'
 import { STATUS_CONFIG } from '../lib/enums'
+import CopyBtn from '../components/CopyBtn'
 
 const LIFECYCLE = ['Active', 'Resting', 'At Risk', 'Churn', 'Dormant', 'Unknown']
 const VALUE = ['V5 Top', 'V4 High', 'V3 Mid', 'V2 Low', 'V1 Minimal']
@@ -197,7 +198,7 @@ export default function Segments() {
           <tbody>
             {filtered.slice(0, limit).map(r => (
               <tr key={r.id}>
-                <td style={td}><button onClick={() => navigate(`/vip360?player=${encodeURIComponent(r.username)}`)} style={{ background: 'none', border: 'none', color: 'var(--text)', fontWeight: 700, cursor: 'pointer', padding: 0, fontSize: 13 }}>{r.username}</button>
+                <td style={td}><button onClick={() => navigate(`/vip360?player=${encodeURIComponent(r.username)}`)} style={{ background: 'none', border: 'none', color: 'var(--text)', fontWeight: 700, cursor: 'pointer', padding: 0, fontSize: 13 }}>{r.username}<CopyBtn text={r.username} /></button>
                   <div style={{ fontSize: 10, color: 'var(--muted)' }}>{mktOf(r.currency)}</div></td>
                 <td style={td}><TierBadge tier={r.tier} /></td>
                 <td style={td}><StatusBadge status={r.lifecycle} /></td>

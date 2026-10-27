@@ -7,6 +7,7 @@ import { useLanguage } from '../contexts/LanguageContext'
 import { useUrlParam, useUrlParamNumber } from '../hooks/useUrlParam'
 import { TIER_COLOR, TIER_BG } from '../lib/constants'
 import { ContactFollowUp } from '../components/WaSenderModal'
+import CopyBtn from '../components/CopyBtn'
 
 // ── Tier config ───────────────────────────────────────────────────────────────
 const TIER_ORDER = ['BRONZE', 'SILVER', 'GOLD', 'PLATINUM', 'DIAMOND', 'BLACK']
@@ -201,36 +202,6 @@ const s = {
   value:      { fontSize: 13, fontWeight: 500 },
 }
 
-// ── Copy Button helper ────────────────────────────────────────────────────────
-function CopyBtn({ text, style }) {
-  const [L2] = useL2()
-  const [done, setDone] = useState(false)
-  const copy = (e) => {
-    e.stopPropagation()
-    if (!text) return
-    navigator.clipboard.writeText(text).then(() => {
-      setDone(true)
-      setTimeout(() => setDone(false), 1500)
-    })
-  }
-  return (
-    <button
-      onClick={copy}
-      title={L2(`Copy ${text}`, `复制 ${text}`)}
-      style={{
-        border: 'none', background: 'transparent',
-        cursor: text ? 'pointer' : 'default',
-        color: done ? '#4ade80' : 'var(--muted)',
-        fontSize: 11, padding: '0 3px', lineHeight: 1,
-        opacity: text ? 1 : 0.3,
-        ...style,
-      }}
-    >
-      {done ? '✓' : '📋'}
-    </button>
-  )
-}
-
 // ── Confirm Upgrade Modal ─────────────────────────────────────────────────────
 function ConfirmUpgradeModal({ player, isPotential, onClose, onConfirm }) {
   const { t } = useLanguage()
@@ -262,7 +233,7 @@ function ConfirmUpgradeModal({ player, isPotential, onClose, onConfirm }) {
 
         <div style={s.row}>
           <span style={s.label}>{t('common.username', 'Username')}</span>
-          <span style={s.value}>{player.username}</span>
+          <span style={s.value}>{player.username}<CopyBtn text={player.username} /></span>
         </div>
         <div style={s.row}>
           <span style={s.label}>{t('upgrades.modal.currentTier', 'Current tier')}</span>
@@ -458,7 +429,7 @@ function WhatsAppModal({ player, agentName, waNumbers = [], onClose, onLogged })
             <div style={s.modalTitle}>{L2('WhatsApp Template', 'WhatsApp 模板')}</div>
             <div style={s.modalSub}>
               <span style={s.tierBadge(player.tier)}>{L2(player.tier, TIER_ZH[player.tier] || player.tier)}</span>
-              <span style={{ marginLeft: 8 }}>{player.username}</span>
+              <span style={{ marginLeft: 8 }}>{player.username}<CopyBtn text={player.username} /></span>
               <span style={{ marginLeft: 8 }}>· {L2('Turnover', '流水')}: {turnover}</span>
               {nextTier && <span style={{ marginLeft: 8 }}>· {L2('Next', '下一级')}: {L2(nextTier, TIER_ZH[nextTier] || nextTier)}</span>}
             </div>
@@ -1509,7 +1480,7 @@ function PotentialsTab({ hostFilter = 'ALL' }) {
                         onMouseLeave={() => setHovered(null)}
                       >
                         <td style={{ ...s.td, color:'var(--muted)', fontSize:12, width:36 }}>{page * PAGE + rowIdx + 1}</td>
-                        <td style={s.td}><strong>{p.username}</strong></td>
+                        <td style={s.td}><strong>{p.username}<CopyBtn text={p.username} /></strong></td>
                         <td style={s.td}><span style={s.tierBadge(p.tier)}>{L2(p.tier, TIER_ZH[p.tier] || p.tier)}</span></td>
                         <td style={s.td}>{fmt(p.monthly_valid_bet, p.currency)}</td>
                         <td style={{ ...s.td, minWidth: 100 }}>
@@ -1683,7 +1654,7 @@ function GraduatedTab({ hostFilter = 'ALL' }) {
                     onMouseLeave={() => setHovered(null)}
                   >
                     <td style={{ ...s.td, color:'var(--muted)', fontSize:12, width:36 }}>{rowIdx + 1}</td>
-                    <td style={s.td}><strong>{p.username}</strong></td>
+                    <td style={s.td}><strong>{p.username}<CopyBtn text={p.username} /></strong></td>
                     <td style={s.td}><span style={s.tierBadge(p.tier)}>{L2(p.tier, TIER_ZH[p.tier] || p.tier)}</span></td>
                     <td style={s.td}>
                       <span style={s.tierBadge(p.upgraded_to_tier || 'GOLD')}>
@@ -1875,7 +1846,7 @@ function TierHistoryTab({ hostFilter = 'ALL' }) {
                       )}
                     </td>
                     <td style={{ padding: '10px 12px', fontWeight: 700, color: 'var(--text)' }}>
-                      {log.username || '—'}
+                      {log.username || '—'}<CopyBtn text={log.username} />
                     </td>
                     <td style={{ padding: '10px 12px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>

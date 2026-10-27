@@ -14,6 +14,7 @@ import { formatMoney } from '../lib/format'
 import VipQuickSearch from '../components/VipQuickSearch'
 import BigWinLossBanner from '../components/alerts/BigWinLossBanner'
 import { useLanguage } from '../contexts/LanguageContext'
+import CopyBtn from '../components/CopyBtn'
 
 const FollowUpTab = lazy(() => import('./FollowUp'))
 const RetentionQueueTab = lazy(() => import('./RetentionQueue'))
@@ -406,7 +407,7 @@ export default function Today() {
                       <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', color: 'var(--muted)', fontSize: 12, width: 36 }}>{i + 1}</td>
                       <td style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)' }}>
                         <div style={{ fontWeight: 600, cursor: 'pointer', color: 'var(--text)' }}
-                          onClick={() => navigate(`/vips/${v.id}`)}>{v.username}</div>
+                          onClick={() => navigate(`/vips/${v.id}`)}>{v.username}<CopyBtn text={v.username} /></div>
                         {v.full_name && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{v.full_name}</div>}
                         {isBirthday && <span style={{ fontSize: 10, color: '#EC4899' }}>{t('today.birthday')}</span>}
                       </td>

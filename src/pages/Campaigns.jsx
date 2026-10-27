@@ -18,6 +18,7 @@ import { CampaignInfoButton } from '../components/campaign/CampaignGuide'
 import { ListCount } from '../components/ui'
 import { waMessage, tierList, STAGE_INFO, WA_STAGES } from '../lib/campaignWaTemplates'
 import CampaignWaEditor from '../components/campaign/CampaignWaEditor'
+import CopyBtn from '../components/CopyBtn'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const TIERS = ['BLACK','DIAMOND-P','DIAMOND','PLATINUM','GOLD','SILVER','BRONZE']
@@ -234,19 +235,6 @@ function calcReward(type, deposit, rewardPct, rewardFixed, goldBarValue, rewardC
   else if (type === 'tiered_reward') reward = calcTieredReward(deposit, rewardTiers||[])
   if (rewardCap && parseFloat(rewardCap) > 0) reward = Math.min(reward, parseFloat(rewardCap))
   return reward
-}
-
-// Small 📋 button: copies text, shows ✅ for a moment
-function CopyBtn({ text, title }) {
-  const [done, setDone] = useState(false)
-  if (!text) return null
-  return (
-    <button type="button" title={title}
-      onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(String(text)); setDone(true); setTimeout(() => setDone(false), 1500) }}
-      style={{ marginLeft:6, background:'none', border:'1px solid var(--border)', borderRadius:5, padding:'0 5px', fontSize:11, lineHeight:'18px', cursor:'pointer', color: done ? '#3fb950' : 'var(--muted)', verticalAlign:'middle' }}>
-      {done ? '✅' : '📋'}
-    </button>
-  )
 }
 
 // ── Main Component ────────────────────────────────────────────────────────────
@@ -2328,7 +2316,7 @@ export default function Campaigns() {
                           onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
                           <span style={{ ...s.badge, background:TIER_BG[v.tier]||'transparent', color:TIER_COLOR[v.tier]||'var(--muted)' }}>{v.tier}</span>
                           {v.source==='potential' && <span style={{ ...s.badge, background:'rgba(99,102,241,.15)', color:'#818cf8', fontSize:9, padding:'1px 6px' }}>{L2('POTENTIAL','潜在')}</span>}
-                          <span style={{ fontWeight:700 }}>{v.username}</span>
+                          <span style={{ fontWeight:700 }}>{v.username}<CopyBtn text={v.username} /></span>
                           <span style={{ color:'var(--muted)', fontSize:12 }}>{v.full_name||''}</span>
                           <span style={{ marginLeft:'auto', color:'#3fb950', fontSize:12 }}>{L2('+ Add','+ 添加')}</span>
                         </div>
@@ -2382,7 +2370,7 @@ export default function Campaigns() {
                                 onMouseLeave={e=>{ e.currentTarget.style.background = checked ? 'rgba(88,166,255,.07)' : 'transparent' }}>
                                 <input type="checkbox" checked={checked} readOnly style={{ accentColor:'var(--accent)', width:14, height:14, cursor:'pointer', flexShrink:0 }} />
                                 <span style={{ ...s.badge, background:TIER_BG[v.tier]||'transparent', color:TIER_COLOR[v.tier]||'var(--muted)', fontSize:10 }}>{v.tier}</span>
-                                <span style={{ fontWeight:700, fontSize:13 }}>{v.username}</span>
+                                <span style={{ fontWeight:700, fontSize:13 }}>{v.username}<CopyBtn text={v.username} /></span>
                                 <span style={{ color:'var(--muted)', fontSize:12 }}>{v.full_name||''}</span>
                               </div>
                             )
@@ -2545,7 +2533,7 @@ export default function Campaigns() {
                                 <td style={{ ...s.td, color:'var(--muted)', fontSize:11 }}>{i+1}</td>
                                 <td style={{ ...s.td, fontWeight:700 }}>
                                   <div style={{ display:'flex', alignItems:'center', gap:4 }}>
-                                    <span style={{ cursor:'pointer' }} onClick={()=>{if(p.vip_id){closeModal();navigate(`/vips/${p.vip_id}`)}}}>{p.username}</span>
+                                    <span style={{ cursor:'pointer' }} onClick={()=>{if(p.vip_id){closeModal();navigate(`/vips/${p.vip_id}`)}}}>{p.username}<CopyBtn text={p.username} /></span>
                                     {p.tier && <span style={{ ...s.badge, background:TIER_BG[p.tier]||'transparent', color:TIER_COLOR[p.tier]||'var(--muted)', fontSize:10 }}>{p.tier}</span>}
                                     <button title={L2('Copy username','复制用户名')} onClick={()=>copyUsername(p.id, p.username)} style={{ marginLeft:2, background:'none', border:'none', cursor:'pointer', fontSize:11, color: copiedId===p.id ? '#3fb950' : 'var(--muted)', padding:'1px 4px', borderRadius:4 }}>{copiedId===p.id ? '✓' : '⎘'}</button>
                                   </div>
@@ -2693,7 +2681,7 @@ export default function Campaigns() {
                                 <td style={{ ...s.td, fontWeight:700 }}>
                                   <div style={{ display:'flex', alignItems:'center', gap:4 }}>
                                     <span style={{ cursor:'pointer' }} onClick={()=>{if(p.vip_id){closeModal();navigate(`/vips/${p.vip_id}`)}}}>
-                                      {p.username}
+                                      {p.username}<CopyBtn text={p.username} />
                                     </span>
                                     {p.tier && <span style={{ ...s.badge, background:TIER_BG[p.tier]||'transparent', color:TIER_COLOR[p.tier]||'var(--muted)', fontSize:10 }}>{p.tier}</span>}
                                     <button title={L2('Copy username','复制用户名')} onClick={()=>copyUsername(p.id, p.username)} style={{ marginLeft:2, background:'none', border:'none', cursor:'pointer', fontSize:11, color: copiedId===p.id ? '#3fb950' : 'var(--muted)', padding:'1px 4px', borderRadius:4 }}>
@@ -2888,7 +2876,7 @@ export default function Campaigns() {
                           const waUrl = player?.whatsapp ? waHref(player.whatsapp, buildWaMsg(row.username, selected?.campaign_name||'Campaign', rewardFmt(row.rewardAmount,campCurrency), waLang, waMultiAgent, waMultiTurnover, selected)) : null
                           return <tr key={row.rewardId} style={{ background:paid?'rgba(63,185,80,.04)':'transparent' }}>
                             <td style={{ ...s.td, color:'var(--muted)', fontSize:11 }}>{i+1}</td>
-                            <td style={{ ...s.td, fontWeight:700 }}>{row.username}</td>
+                            <td style={{ ...s.td, fontWeight:700 }}>{row.username}<CopyBtn text={row.username} /></td>
                             <td style={s.td}>{row.tier && <span style={{ ...s.badge, background:TIER_BG[row.tier]||'transparent', color:TIER_COLOR[row.tier]||'var(--muted)' }}>{row.tier}</span>}</td>
                             <td style={{ ...s.td, fontWeight:600 }}>{row.levelName}</td>
                             <td style={{ ...s.td, color:'#3fb950', fontWeight:600 }}>{player ? rmFmt(playerDeposit(player), campCurrency) : '—'}</td>
@@ -2896,7 +2884,7 @@ export default function Campaigns() {
                             <td style={s.td}><button onClick={()=>{const newTotal=multiPayoutRows.filter(r=>r.playerId===row.playerId).filter(r=>r.rewardId===row.rewardId?!paid:r.status==='paid').reduce((s,r)=>s+r.rewardAmount,0);toggleCampaignReward(row.rewardId,!paid,row.playerId,newTotal)}} style={{ ...s.tag(paid?'#3fb950':'#f59e0b',paid?'rgba(63,185,80,.15)':'rgba(245,158,11,.15)'),cursor:'pointer',border:`1px solid ${paid?'rgba(63,185,80,.3)':'rgba(245,158,11,.3)'}` }}>{payoutLabel}</button></td>
                             <td style={{ ...s.td, fontSize:11, color:'var(--muted)' }}>{row.paidAt ? new Date(row.paidAt).toLocaleDateString('en-MY',{day:'numeric',month:'short',year:'numeric'}) : '—'}</td>
                             <td style={{...s.td,minWidth:130}}>
-                              <div style={{fontSize:12,color:'var(--muted)',marginBottom:4}}>{player?.whatsapp||'—'}</div>
+                              <div style={{fontSize:12,color:'var(--muted)',marginBottom:4}}>{player?.whatsapp||'—'}<CopyBtn text={player?.whatsapp} kind="phone" /></div>
                               <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
                                 {waUrl && <a href={waUrl} target="_blank" rel="noreferrer" style={{ display:'inline-flex', alignItems:'center', gap:4, background:'rgba(37,211,102,.15)', color:'#25d366', border:'1px solid rgba(37,211,102,.3)', borderRadius:6, padding:'3px 8px', fontSize:11, fontWeight:700, textDecoration:'none' }}>📲 WA</a>}
                                 <button onClick={()=>navigator.clipboard.writeText(waMultiText).catch(()=>{})} style={{ background:'rgba(88,166,255,.12)', color:'#58a6ff', border:'1px solid rgba(88,166,255,.3)', borderRadius:6, padding:'3px 8px', fontSize:11, fontWeight:700, cursor:'pointer' }}>📋 {L2('Copy','复制')}</button>
@@ -3054,7 +3042,7 @@ export default function Campaigns() {
                       const waUrl = p.whatsapp ? waHref(p.whatsapp, buildWaMsg(p.username, selected?.campaign_name||'Campaign', rmFmt(creditReward,campCurrency), waLang, waAgent, waTurnoverReq, selected)) : null
                       return <tr key={p.id}>
                         <td style={{...s.td,color:'var(--muted)',fontSize:11}}>{i+1}</td>
-                        <td style={{...s.td,fontWeight:700}}>{p.username}</td>
+                        <td style={{...s.td,fontWeight:700}}>{p.username}<CopyBtn text={p.username} /></td>
                         <td style={s.td}>{isDailyMulti
                           ? <span style={{ fontSize:11, color:'#c9a961', fontWeight:600 }}>{lvlName}</span>
                           : (p.tier ? <span style={{ ...s.badge, background:TIER_BG[p.tier]||'transparent', color:TIER_COLOR[p.tier]||'var(--muted)' }}>{p.tier}</span> : '—')
@@ -3142,7 +3130,7 @@ export default function Campaigns() {
                         </td>
                         <td style={{...s.td,fontSize:12,color:'var(--muted)',fontWeight:600}}>{p.host_assigned||<span style={{color:'var(--surface2)'}}>—</span>}</td>
                         <td style={{...s.td,minWidth:130}}>
-                          <div style={{fontSize:12,color:'var(--muted)',marginBottom:4}}>{p.whatsapp||<span style={{color:'var(--surface2)'}}>—</span>}</div>
+                          <div style={{fontSize:12,color:'var(--muted)',marginBottom:4}}>{p.whatsapp||<span style={{color:'var(--surface2)'}}>—</span>}<CopyBtn text={p.whatsapp} kind="phone" /></div>
                           <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
                             {waUrl && <a href={waUrl} target="_blank" rel="noreferrer" style={{ display:'inline-flex', alignItems:'center', gap:4, background:'rgba(37,211,102,.15)', color:'#25d366', border:'1px solid rgba(37,211,102,.3)', borderRadius:6, padding:'3px 8px', fontSize:11, fontWeight:700, textDecoration:'none' }}>📲 WA</a>}
                             <button onClick={()=>navigator.clipboard.writeText(waMsgText).catch(()=>{})} style={{ background:'rgba(88,166,255,.12)', color:'#58a6ff', border:'1px solid rgba(88,166,255,.3)', borderRadius:6, padding:'3px 8px', fontSize:11, fontWeight:700, cursor:'pointer' }}>📋 {L2('Copy','复制')}</button>
@@ -3221,7 +3209,7 @@ export default function Campaigns() {
                                 <tr key={sb.id} style={{ background: paid ? 'rgba(63,185,80,.04)' : 'transparent' }}>
                                   <td style={{ ...s.td, color:'var(--muted)', fontSize:11 }}>{i+1}</td>
                                   <td style={{ ...s.td, fontWeight:700 }}>
-                                    {sb.username}
+                                    {sb.username}<CopyBtn text={sb.username} />
                                     {sb.tier && <span style={{ ...s.badge, background:TIER_BG[sb.tier]||'transparent', color:TIER_COLOR[sb.tier]||'var(--muted)', fontSize:10, marginLeft:4 }}>{sb.tier}</span>}
                                   </td>
                                   <td style={{ ...s.td, color:'#f59e0b', fontWeight:700 }}>🔥 #{sb.streak_number}</td>
@@ -3542,7 +3530,7 @@ export default function Campaigns() {
                               <tr key={sb.id} style={{ background: paid ? 'rgba(63,185,80,.04)' : 'transparent' }}>
                                 <td style={{ ...s.td, color:'var(--muted)', fontSize:11 }}>{i+1}</td>
                                 <td style={{ ...s.td, fontWeight:700 }}>
-                                  {sb.username}
+                                  {sb.username}<CopyBtn text={sb.username} />
                                   {sb.tier && <span style={{ ...s.badge, background:TIER_BG[sb.tier]||'transparent', color:TIER_COLOR[sb.tier]||'var(--muted)', fontSize:10, marginLeft:4 }}>{sb.tier}</span>}
                                 </td>
                                 <td style={{ ...s.td, fontSize:12, color:'var(--muted)' }}>{sb.host || '—'}</td>
@@ -3608,7 +3596,7 @@ export default function Campaigns() {
                           <tr key={p.id} style={{ background: achieved ? 'rgba(63,185,80,.04)' : 'transparent' }}>
                             <td style={{ ...s.td, color:'var(--muted)', fontSize:11 }}>{i+1}</td>
                             <td style={{ ...s.td, fontWeight:700 }}>
-                              <div style={{ display:'flex', alignItems:'center', gap:6 }}>{p.username}
+                              <div style={{ display:'flex', alignItems:'center', gap:6 }}>{p.username}<CopyBtn text={p.username} />
                                 {!achieved && currentRun.length > 0 && currentRun.length % streakDays === streakDays - 1 && <CampaignWaButton p={p} extra={{ stage:'streak', streak: currentRun.length }} />}
                               </div>
                             </td>
@@ -3792,7 +3780,7 @@ export default function Campaigns() {
                                   style={{ accentColor:'var(--accent)', cursor:'pointer' }} />
                               </td>
                               <td style={{ ...s.td, color:'var(--muted)', fontSize:11 }}>{i+1}</td>
-                              <td style={{ ...s.td, fontWeight:700 }}>{p.username}</td>
+                              <td style={{ ...s.td, fontWeight:700 }}>{p.username}<CopyBtn text={p.username} /></td>
                               <td style={{ ...s.td, color:'#3fb950' }}>
                                 {isDailyMode
                                   ? rmFmt(summaryData?.depositByPlayer?.[p.id] ?? null, campCurrency)
@@ -3809,7 +3797,7 @@ export default function Campaigns() {
                                 </span>
                               </td>
                               <td style={s.td}>{p.tier && <span style={{ ...s.badge, background:TIER_BG[p.tier]||'transparent', color:TIER_COLOR[p.tier]||'var(--muted)' }}>{p.tier}</span>}</td>
-                              <td style={{ ...s.td, fontSize:12 }}>{p.whatsapp||'—'}</td>
+                              <td style={{ ...s.td, fontSize:12 }}>{p.whatsapp||'—'}<CopyBtn text={p.whatsapp} kind="phone" /></td>
                               <td style={s.td}>
                                 {multi
                                   ? (multiMetric?.allCompleted
@@ -3950,7 +3938,7 @@ export default function Campaigns() {
                                   {allSRows.sort((a,b) => a.username.localeCompare(b.username) || a.streak_number - b.streak_number).map((sb,i) => (
                                     <tr key={i} onMouseEnter={e=>e.currentTarget.style.background='var(--surface2)'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
                                       <td style={{ ...s.td, color:'var(--muted)', fontSize:12, width:36 }}>{i + 1}</td>
-                                      <td style={{ ...s.td, fontWeight:700 }}>{sb.username}</td>
+                                      <td style={{ ...s.td, fontWeight:700 }}>{sb.username}<CopyBtn text={sb.username} /></td>
                                       <td style={s.td}><span style={{ fontSize:12, fontWeight:700, color:'#f59e0b' }}>🔥 #{sb.streak_number}</span></td>
                                       <td style={{ ...s.td, color:'#c9a961', fontWeight:700 }}>{bonusFmt(sb.bonus_amount, campCurrency)}</td>
                                       <td style={s.td}>
@@ -4011,7 +3999,7 @@ export default function Campaigns() {
                           return (
                             <tr key={p.id} style={{ background:inTop?'rgba(167,139,250,.06)':'transparent' }}>
                               <td style={{ ...s.td, fontWeight:800 }}>{qualified?(rank<=3?['#1','#2','#3'][rank-1]:'#'+rank):'--'}</td>
-                              <td style={{ ...s.td, fontWeight:700 }}>{p.username}</td>
+                              <td style={{ ...s.td, fontWeight:700 }}>{p.username}<CopyBtn text={p.username} /></td>
                               <td style={s.td}><span style={{ ...s.badge, background:TIER_BG[p.tier]||'', color:TIER_COLOR[p.tier]||'var(--muted)' }}>{p.tier}</span></td>
                               <td style={{ ...s.td, color:qualified?'#a78bfa':'var(--muted)', fontWeight:700 }}>
                                 <input type="number" style={{ ...s.editInput, width:90 }} defaultValue={vb||''} onBlur={e=>updatePlayer(p.id,{valid_bet:parseFloat(e.target.value)||0})} placeholder={L2('valid bet','有效投注')} />
@@ -4052,7 +4040,7 @@ export default function Campaigns() {
             <div style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:14, padding:20, width:580, maxWidth:'94vw', maxHeight:'92vh', overflowY:'auto' }} onClick={e=>e.stopPropagation()}>
               <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:10 }}>
                 <div>
-                  <div style={{ fontSize:15, fontWeight:700 }}>💬 {m.p.username}</div>
+                  <div style={{ fontSize:15, fontWeight:700 }}>💬 {m.p.username}<CopyBtn text={m.p.username} /></div>
                   <div style={{ fontSize:12, color:'var(--muted)', marginTop:2 }}>{[m.p.tier, m.p.whatsapp ? `📱 ${m.p.whatsapp}` : null, selected?.campaign_name].filter(Boolean).join(' · ')}</div>
                 </div>
                 <button onClick={close} style={{ background:'none', border:'none', color:'var(--muted)', cursor:'pointer', fontSize:18 }}>✕</button>

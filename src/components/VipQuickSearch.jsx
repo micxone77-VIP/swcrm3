@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { TIER_COLOR } from '../lib/constants'
 import { useLanguage } from '../contexts/LanguageContext'
+import CopyBtn from './CopyBtn'
 
 export default function VipQuickSearch() {
   const [query, setQuery]     = useState('')
@@ -89,7 +90,7 @@ export default function VipQuickSearch() {
               }}
             >
               <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 600, fontSize: 14 }}>{v.username}</div>
+                <div style={{ fontWeight: 600, fontSize: 14 }}>{v.username}<CopyBtn text={v.username} /></div>
                 <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
                   {v.host_assigned ? `${lang === 'zh' ? '负责人' : 'Host'}: ${v.host_assigned} · ` : ''}
                   {v.days_inactive > 0 ? (lang === 'zh' ? `${v.days_inactive}天不活跃` : `${v.days_inactive}d inactive`) : (lang === 'zh' ? '近期活跃' : 'Active recently')}

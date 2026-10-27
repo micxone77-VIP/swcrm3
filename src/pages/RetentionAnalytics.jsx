@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase'
 import { calculateRetentionMetrics, aggregateHostPerformance } from '../lib/retentionAnalytics'
 import { resolveSnapshotWindow } from '../lib/retention.js'
 import { useLanguage } from '../contexts/LanguageContext'
+import CopyBtn from '../components/CopyBtn'
 
 const monthKey = (date) => { const d = new Date(date); return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}` }
 const money = (n,c) => `${c || ''} ${Number(n || 0).toLocaleString(undefined,{maximumFractionDigits:2})}`.trim()
@@ -422,7 +423,7 @@ export default function RetentionAnalytics() {
                             onMouseEnter={e=>e.currentTarget.style.background='var(--surface2)'}
                             onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
                             <td style={{ padding:'9px 16px', color:'var(--muted)', fontSize:11 }}>{i+1}</td>
-                            <td style={{ padding:'9px 16px', fontWeight:600 }}>{v.username || '—'}</td>
+                            <td style={{ padding:'9px 16px', fontWeight:600 }}>{v.username || '—'}<CopyBtn text={v.username} /></td>
                             <td style={{ padding:'9px 16px' }}>
                               {v.tier
                                 ? <span style={{ padding:'2px 8px', borderRadius:20, fontSize:11, fontWeight:700, background:(TIER_COLOR[String(v.tier).toUpperCase()]||'#8b949e')+'22', color:TIER_COLOR[String(v.tier).toUpperCase()]||'#8b949e' }}>{v.tier}</span>

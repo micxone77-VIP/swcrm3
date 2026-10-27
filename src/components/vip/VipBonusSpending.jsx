@@ -5,6 +5,7 @@ import { supabase } from '../../lib/supabase'
 import { useLanguage } from '../../contexts/LanguageContext'
 import { useAuth } from '../../hooks/useAuth'
 import { BONUS_CATS, parseBonusPaste, money2 } from '../../lib/vipBonus'
+import CopyBtn from '../CopyBtn'
 
 export default function VipBonusSpending({ username, vipId, currency = 'MYR', onTotals }) {
   const { lang } = useLanguage()
@@ -131,7 +132,7 @@ export default function VipBonusSpending({ username, vipId, currency = 'MYR', on
                       <td style={{ ...td, padding: '6px 10px', color: 'var(--muted)', whiteSpace: 'nowrap' }}>{p.txn_at.slice(0, 16).replace('T', ' ')}</td>
                       <td style={{ ...td, padding: '6px 10px' }}>{BONUS_CATS[p.category]?.icon} {p.bonus_name}</td>
                       <td style={{ ...td, padding: '6px 10px', fontWeight: 700, textAlign: 'right', whiteSpace: 'nowrap' }}>{money2(p.amount, currency)}</td>
-                      <td style={{ ...td, padding: '6px 10px', color: 'var(--muted)' }}>{p.username}</td>
+                      <td style={{ ...td, padding: '6px 10px', color: 'var(--muted)' }}>{p.username}<CopyBtn text={p.username} /></td>
                       <td style={{ ...td, padding: '6px 10px' }}><span style={{ fontSize: 11, fontWeight: 700, color: ST[p.status][0] }}>{ST[p.status][1]}</span></td>
                     </tr>
                   ))}

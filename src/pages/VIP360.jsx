@@ -23,6 +23,7 @@ import SurveyCard from '../components/vip/SurveyCard'
 import InteractionTimeline from '../components/vip/InteractionTimeline'
 import { autoText } from '../lib/profileAutoText'
 import ProviderActivityCard from '../components/vip/ProviderActivityCard'
+import CopyBtn from '../components/CopyBtn'
 
 const TIERS = ['BRONZE','SILVER','GOLD','PLATINUM','DIAMOND','DIAMOND-P','BLACK']
 const PERIODS = [
@@ -487,7 +488,7 @@ fontSize:22, fontWeight:700, color:tierCfg.color, flexShrink:0,
 </div>
 <div>
 <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:2 }}>
-<h2 style={{ fontSize:22, fontWeight:700, margin:0 }}>{vip.username}</h2>
+<h2 style={{ fontSize:22, fontWeight:700, margin:0 }}>{vip.username}<CopyBtn text={vip.username} /></h2>
 <button
 title={L2('Copy username', '复制用户名')}
 onClick={() => navigator.clipboard.writeText(vip.username)}
@@ -505,7 +506,7 @@ onMouseLeave={e => e.currentTarget.style.opacity=.6}
 <div style={{ fontSize:12, color:'var(--muted)', marginTop:4 }}>
 {vip.region && <span>{vip.region}</span>}
 {vip.host_assigned && <span> · {L2('Host', '负责人')}: {vip.host_assigned}</span>}
-{vip.affiliate_login && <span> · {L2('Affiliate', '代理')}: <b style={{ color:'var(--brand)' }}>{vip.affiliate_login}</b></span>}
+{vip.affiliate_login && <span> · {L2('Affiliate', '代理')}: <b style={{ color:'var(--brand)' }}>{vip.affiliate_login}<CopyBtn text={vip.affiliate_login} /></b></span>}
 {vip.currency && <span> · {vip.currency}</span>}
 </div>
 {gamingLabel && (
@@ -589,7 +590,7 @@ color: m.isWL ? (m.wl <= 0 ? 'var(--success)' : 'var(--danger)') : 'var(--text)'
 {/* Left: profile summary */}
 <div>
 <SectionLabel>{L2('Profile', '档案')}</SectionLabel>
-<Field label={L2('Username', '用户名')}>{vip.username}</Field>
+<Field label={L2('Username', '用户名')}>{vip.username}<CopyBtn text={vip.username} /></Field>
 <Field label={L2('Full Name', '全名')}>{vip.full_name}</Field>
 <Field label={L2('Tier', '等级')}><TierBadge tier={vip.tier} /></Field>
 <Field label={L2('Status', '状态')}><StatusBadge status={vip.activity_status} /></Field>
@@ -598,8 +599,8 @@ color: m.isWL ? (m.wl <= 0 ? 'var(--success)' : 'var(--danger)') : 'var(--text)'
 <Field label={L2('Currency', '货币')}>{vip.currency}</Field>
 <Field label={L2('Host', '负责人')}>{vip.host_assigned}</Field>
 <Field label={L2('Affiliate', '代理')}>{vip.affiliate_login ? vip.affiliate_login : vip.affiliate_updated_at ? L2('Direct (no affiliate)', '直客（无代理）') : '—'}</Field>
-<Field label={L2('Phone', '电话')}>{vip.phone}</Field>
-<Field label={L2('WhatsApp', 'WhatsApp')}>{vip.whatsapp}</Field>
+<Field label={L2('Phone', '电话')}>{vip.phone}<CopyBtn text={vip.phone} kind="phone" /></Field>
+<Field label={L2('WhatsApp', 'WhatsApp')}>{vip.whatsapp}<CopyBtn text={vip.whatsapp} kind="phone" /></Field>
 <Field label={L2('Email', '电邮')}>{vip.email}</Field>
 <Field label={L2('Telegram', 'Telegram')}>{vip.telegram ? `@${vip.telegram}` : '—'}</Field>
 <Field label={L2('Address', '地址')}>{vip.address}</Field>
@@ -906,8 +907,8 @@ color: cp.campaigns?.status==='Active' ? 'var(--success)' : 'var(--muted)',
 <Btn size="sm" variant="primary" onClick={() => setShowLog(true)}>{L2('+ Log Contact', '+ 记录联系')}</Btn>
 </div>
 <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, marginBottom:20 }}>
-<Field label={L2('Phone', '电话')}>{vip.phone || '—'}</Field>
-<Field label={L2('WhatsApp', 'WhatsApp')}>{vip.whatsapp || '—'}</Field>
+<Field label={L2('Phone', '电话')}>{vip.phone || '—'}<CopyBtn text={vip.phone} kind="phone" /></Field>
+<Field label={L2('WhatsApp', 'WhatsApp')}>{vip.whatsapp || '—'}<CopyBtn text={vip.whatsapp} kind="phone" /></Field>
 <Field label={L2('Email', '电邮')}>{vip.email || '—'}</Field>
 <Field label={L2('Telegram', 'Telegram')}>{vip.telegram ? `@${vip.telegram}` : '—'}</Field>
 <Field label={L2('Address', '地址')}>{vip.address || '—'}</Field>

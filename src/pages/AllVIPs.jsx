@@ -13,6 +13,7 @@ import { TierBadge, StatusBadge, RiskBadge, LastBet } from '../components/ui'
 import { PotentialSearch } from '../components/vip/PotentialProfile'
 import { formatMoney } from '../lib/format'
 import { enumLabel } from '../lib/enums'
+import CopyBtn from '../components/CopyBtn'
 
 const PAGE_SIZE = 50
 const TIERS    = ['ALL','BLACK','DIAMOND-P','DIAMOND','PLATINUM','GOLD','SILVER','BRONZE']
@@ -492,7 +493,7 @@ export default function AllVIPs() {
                     >
                       <td style={{ padding:'9px 8px 9px 12px', borderBottom:'1px solid var(--border)', color:'var(--muted)', fontSize:12, width:36 }}>{(page-1)*PAGE_SIZE + rowIdx + 1}</td>
                       <td style={{ padding:'9px 12px', borderBottom:'1px solid var(--border)' }}>
-                        <div style={{ fontWeight:600, color:'var(--text)' }}>{v.username}</div>
+                        <div style={{ fontWeight:600, color:'var(--text)' }}>{v.username}<CopyBtn text={v.username} /></div>
                         <div style={{ fontSize:11, color:'var(--muted)' }}>{v.full_name || ''}</div>
                         {gamingLabels[v.username] && (
                           <div style={{ marginTop:3 }}>
@@ -582,7 +583,7 @@ export default function AllVIPs() {
                         )}
                       </td>
                       <td style={{ padding:'9px 12px', borderBottom:'1px solid var(--border)', fontSize:12, whiteSpace:'nowrap' }}>
-                        {v.affiliate_login ? <span style={{ fontWeight:600, color:'var(--brand)' }}>{v.affiliate_login}</span>
+                        {v.affiliate_login ? <span style={{ fontWeight:600, color:'var(--brand)' }}>{v.affiliate_login}<CopyBtn text={v.affiliate_login} /></span>
                           : v.affiliate_updated_at ? <span style={{ color:'var(--text)' }}>{L2('Direct', '直客')}</span>
                           : <span style={{ color:'var(--muted)' }}>—</span>}
                       </td>

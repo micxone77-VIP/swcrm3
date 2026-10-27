@@ -7,6 +7,7 @@ import { supabase } from '../lib/supabase'
 import { useLanguage } from '../contexts/LanguageContext'
 import { useAuth } from '../hooks/useAuth'
 import ProfileCard from './vip/ProfileCard'
+import CopyBtn from './CopyBtn'
 
 const MYT_MS = 8 * 3600 * 1000
 const mytNow = () => new Date(Date.now() + MYT_MS)
@@ -245,7 +246,7 @@ export default function WaSenderModal({ vip, waNumbers, myName, onClose, onLogge
       <div style={st.box} onClick={e => e.stopPropagation()}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
           <div>
-            <div style={{ fontWeight: 700, fontSize: 16 }}>💬 WhatsApp — {vip.username}</div>
+            <div style={{ fontWeight: 700, fontSize: 16 }}>💬 WhatsApp — {vip.username}<CopyBtn text={vip.username} /></div>
             <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
               {[vip.tier, vip.activity_status, (vip.whatsapp || vip.phone) ? `📱 ${vip.whatsapp || vip.phone}` : null].filter(Boolean).join(' · ')}
             </div>

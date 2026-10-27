@@ -5,6 +5,7 @@ import { useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useLanguage } from '../../contexts/LanguageContext'
 import { insertContactLog, MoodPicker } from '../WaSenderModal'
+import CopyBtn from '../CopyBtn'
 
 const mytDateStr = (addDays = 0) => { const d = new Date(Date.now() + 8 * 3600 * 1000); d.setUTCDate(d.getUTCDate() + addDays); return d.toISOString().slice(0, 10) }
 const OUTCOMES = {
@@ -48,7 +49,7 @@ export default function CallLogModal({ task, hostName, onClose, onDone }) {
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={onClose}>
       <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: 20, width: 460, maxWidth: '100%' }} onClick={e => e.stopPropagation()}>
-        <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 4 }}>📝 {L2('Log call', '记录通话')} — {task.vip_username}</div>
+        <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 4 }}>📝 {L2('Log call', '记录通话')} — {task.vip_username}<CopyBtn text={task.vip_username} /></div>
         <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 14 }}>{L2('Saved to Contact Log (channel: Call) and this task is marked done.', '会存进联系记录（渠道：电话），这个任务会标记完成。')}</div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
           {Object.entries(OUTCOMES).map(([k, o]) => <button key={k} style={chip(res === k)} onClick={() => pick(k)}>{o.icon} {L2(o.en, o.zh)}</button>)}

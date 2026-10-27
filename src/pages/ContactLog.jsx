@@ -10,6 +10,7 @@ import { callAI } from '../lib/aiApi'
 import { useLanguage } from '../contexts/LanguageContext'
 import * as XLSX from 'xlsx'
 import AwaitingReplyAffiliate from '../components/contact/AwaitingReplyAffiliate'
+import CopyBtn from '../components/CopyBtn'
 
 const CONTACT_TYPES    = ['WhatsApp','Call','Telegram','In-person','Other']
 const CONTACT_OUTCOMES = ['Contacted','No Reply','Replied','Deposited','Reactivated']
@@ -214,7 +215,7 @@ function BenefitsTab({ onBack }) {
                 <tr key={i}
                   onMouseEnter={ev => ev.currentTarget.style.background='var(--surface2)'}
                   onMouseLeave={ev => ev.currentTarget.style.background='transparent'}>
-                  <td style={{ ...s.td, fontWeight:700 }}>{e.username}</td>
+                  <td style={{ ...s.td, fontWeight:700 }}>{e.username}<CopyBtn text={e.username} /></td>
                   <td style={s.td}>
                     {e.tier && <span style={{ ...s.badge, background:TIER_BG[e.tier]||'transparent', color:TIER_COLOR[e.tier]||'var(--text)' }}>{L2(e.tier, TIER_ZH[e.tier] || e.tier)}</span>}
                   </td>
@@ -686,7 +687,7 @@ export default function ContactLog() {
               ) : selectedVip ? (
                 <div style={{ display:'flex', alignItems:'center', gap:10, background:'var(--surface2)', border:'1px solid var(--accent)', borderRadius:8, padding:'8px 12px' }}>
                   <span style={{ ...s.badge, background:TIER_BG[selectedVip.tier], color:TIER_COLOR[selectedVip.tier] }}>{L2(selectedVip.tier, TIER_ZH[selectedVip.tier] || selectedVip.tier)}</span>
-                  <span style={{ fontWeight:700, color:'var(--text)' }}>{selectedVip.username}</span>
+                  <span style={{ fontWeight:700, color:'var(--text)' }}>{selectedVip.username}<CopyBtn text={selectedVip.username} /></span>
                   <span style={{ color:'var(--muted)', fontSize:12 }}>{selectedVip.full_name}</span>
                   <button onClick={() => { setSelectedVip(null); setVipSearch('') }}
                     style={{ marginLeft:'auto', background:'none', border:'none', color:'var(--muted)', cursor:'pointer', fontSize:16 }}>x</button>
@@ -704,7 +705,7 @@ export default function ContactLog() {
                           onMouseEnter={e => e.currentTarget.style.background='var(--surface2)'}
                           onMouseLeave={e => e.currentTarget.style.background='transparent'}>
                           <span style={{ ...s.badge, background:TIER_BG[v.tier], color:TIER_COLOR[v.tier] }}>{L2(v.tier, TIER_ZH[v.tier] || v.tier)}</span>
-                          <span style={{ fontWeight:700 }}>{v.username}</span>
+                          <span style={{ fontWeight:700 }}>{v.username}<CopyBtn text={v.username} /></span>
                           <span style={{ color:'var(--muted)', fontSize:12 }}>{v.full_name}</span>
                         </div>
                       ))}
@@ -876,7 +877,7 @@ export default function ContactLog() {
                     <td style={{ ...s.td, color:'var(--muted)', fontSize:11 }}>{page*PAGE_SIZE+i+1}</td>
                     <td style={{ ...s.td, fontWeight:700 }} onClick={e => e.stopPropagation()}>
                       <span style={{ display:'inline-flex', alignItems:'center', gap:5 }}>
-                        <span style={{ cursor:'pointer' }} onClick={() => navigate(`/vips/${log.vip_id}`)}>{log.username}</span>
+                        <span style={{ cursor:'pointer' }} onClick={() => navigate(`/vips/${log.vip_id}`)}>{log.username}<CopyBtn text={log.username} /></span>
                         <button
                           title={L2('Copy username', '复制用户名')}
                           onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(log.username) }}
@@ -989,7 +990,7 @@ export default function ContactLog() {
             <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, width: 'min(860px, 96vw)', maxHeight: '92vh', overflowY: 'auto', padding: 26, boxShadow: '0 20px 60px rgba(0,0,0,.5)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 18 }}>
                 <div>
-                  <div style={{ fontSize: 22, fontWeight: 800 }}>✏ {L2('Edit contact', '编辑联系记录')} — {d.username}</div>
+                  <div style={{ fontSize: 22, fontWeight: 800 }}>✏ {L2('Edit contact', '编辑联系记录')} — {d.username}<CopyBtn text={d.username} /></div>
                   <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 4 }}>{[d.tier, d.host_name, d.logged_at && new Date(d.logged_at).toLocaleString(lang === 'zh' ? 'zh-CN' : 'en-MY', { timeZone: 'Asia/Kuala_Lumpur' })].filter(Boolean).join(' · ')}</div>
                 </div>
                 <button onClick={() => setEditDraft(null)} style={{ background: 'none', border: '1px solid var(--border)', color: 'var(--muted)', borderRadius: 8, padding: '6px 12px', cursor: 'pointer', fontSize: 15 }}>✕</button>
@@ -1059,7 +1060,7 @@ export default function ContactLog() {
             onClick={e => e.stopPropagation()}
           >
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:14 }}>
-              <div style={{ fontSize:13, fontWeight:700, color:'var(--accent)' }}>{notePopup.username} — {L2('Note', '备注')}</div>
+              <div style={{ fontSize:13, fontWeight:700, color:'var(--accent)' }}>{notePopup.username}<CopyBtn text={notePopup.username} /> — {L2('Note', '备注')}</div>
               <button onClick={() => setNotePopup(null)} style={{ background:'none', border:'none', color:'var(--muted)', fontSize:18, cursor:'pointer', lineHeight:1 }}>✕</button>
             </div>
             <div style={{ fontSize:13, color:'var(--text)', lineHeight:1.6, whiteSpace:'pre-wrap', wordBreak:'break-word', maxHeight:'60vh', overflowY:'auto' }}>{notePopup.notes}</div>

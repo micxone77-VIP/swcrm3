@@ -5,6 +5,7 @@ import { TIER_COLOR, TIER_BG, CURRENCY_LIST, CURRENCY_SYMBOL, CURRENCY_REGION, R
 import { formatMoney, formatCompactNumber, pctChange, fmtMonthLabel, currentYearMonth, prevYearMonth } from '../lib/format'
 import { useLanguage } from '../contexts/LanguageContext'
 import { useUrlParam } from '../hooks/useUrlParam'
+import CopyBtn from '../components/CopyBtn'
 
 const TIERS = ['DIAMOND', 'PLATINUM', 'GOLD', 'BLACK']
 
@@ -568,7 +569,7 @@ export default function TierAnalytics() {
                             onMouseEnter={e => e.currentTarget.style.background='var(--surface2)'}
                             onMouseLeave={e => e.currentTarget.style.background='transparent'}>
                             <td style={{ ...s.td, color:'var(--muted)', fontSize:11 }}>{i+1}</td>
-                            <td style={{ ...s.td, fontWeight:600 }}>{m.username}</td>
+                            <td style={{ ...s.td, fontWeight:600 }}>{m.username}<CopyBtn text={m.username} /></td>
                             <td style={{ ...s.tdR, color:TIER_COLOR[tier], fontWeight:m.validBet>0?700:400 }}>
                               {m.active ? fmt(m.validBet) : <span style={{ color:'var(--muted)' }}>—</span>}
                             </td>

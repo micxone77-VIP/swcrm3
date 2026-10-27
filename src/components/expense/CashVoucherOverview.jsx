@@ -7,6 +7,7 @@ import { useAuth } from '../../hooks/useAuth'
 import { useLanguage } from '../../contexts/LanguageContext'
 import { fetchAll } from '../../lib/depositProfile'
 import { setClaimStatus } from '../../lib/cashVoucherImport'
+import CopyBtn from '../CopyBtn'
 
 const ST = { pending: ['#d29922', 'Pending', '待处理'], accepted: ['#3fb950', 'Accepted', '已批准'], declined: ['#f85149', 'Declined', '已拒绝'] }
 const sym = c => (c === 'SGD' ? 'SGD ' : c === 'KHUSD' ? 'USD ' : 'RM ')
@@ -160,7 +161,7 @@ export default function CashVoucherOverview() {
                   <td style={{ ...td, color: 'var(--muted)', fontSize: 12 }}>{i + 1}</td>
                   <td style={{ ...td, whiteSpace: 'nowrap', color: 'var(--muted)', fontSize: 12 }}>{new Date(r.claimed_at).toLocaleDateString(lang === 'zh' ? 'zh-CN' : 'en-MY', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
                   <td style={td}>
-                    <button onClick={() => navigate(`/vip360?player=${encodeURIComponent(r.username)}&tab=spending`)} style={{ background: 'none', border: 0, padding: 0, color: 'var(--accent)', fontWeight: 700, cursor: 'pointer' }}>{r.username}</button>
+                    <button onClick={() => navigate(`/vip360?player=${encodeURIComponent(r.username)}&tab=spending`)} style={{ background: 'none', border: 0, padding: 0, color: 'var(--accent)', fontWeight: 700, cursor: 'pointer' }}>{r.username}<CopyBtn text={r.username} /></button>
                     {r.full_name && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{r.full_name}</div>}
                   </td>
                   <td style={{ ...td, fontWeight: 700, whiteSpace: 'nowrap' }}>{money(r.amount, r.currency)}</td>

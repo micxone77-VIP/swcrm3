@@ -17,6 +17,7 @@ import { ChallengeRulesEditor, cleanChallengeConfig } from './ChallengeCreator'
 import DailyMilestoneDetail from './DailyMilestoneDetail'
 import { DAILY_MODE } from '../../lib/dailyMilestone'
 import { WaButton } from '../../components/WaSenderModal'
+import CopyBtn from '../CopyBtn'
 
 const rm = v => 'RM ' + Math.round(num(v)).toLocaleString('en-MY')
 const btn = { background: 'var(--accent)', color: '#fff', border: 'none', padding: '7px 14px', borderRadius: 7, fontWeight: 700, cursor: 'pointer', fontSize: 12 }
@@ -333,7 +334,7 @@ function ChallengeDetailClassic({ campaign: initial, onClose, onChanged }) {
                     <tr key={r.id}>
                       <td style={{ ...td, color: 'var(--muted)', fontSize: 12, width: 36 }}>{rowIdx + 1}</td>
                       <td style={td}>
-                        <div style={{ fontWeight: 700 }}>{r.username}</div>
+                        <div style={{ fontWeight: 700 }}>{r.username}<CopyBtn text={r.username} /></div>
                         <div style={{ fontSize: 10, color: 'var(--muted)' }}>{r.m.full_name} · {r.m.tier || r.tier} · {r.m.host_assigned || T('no host', '无负责人')}</div>
                         {flags.map(f => <div key={f} style={{ fontSize: 10, color: '#fbbf24' }}>⚠️ {FLAG_LABEL[f] ? FLAG_LABEL[f][lang === 'zh' ? 'zh' : 'en'] : f}</div>)}
                       </td>

@@ -10,6 +10,7 @@ import DepositSegments from '../components/vip/DepositSegments'
 import AffiliateSummary from '../components/vip/AffiliateSummary'
 import { ListCount } from '../components/ui'
 import { WaButton } from '../components/WaSenderModal'
+import CopyBtn from '../components/CopyBtn'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 // fmt() is defined inside the component so it can use the selected currency state
@@ -437,7 +438,7 @@ export default function Analytics() {
                         background: i===0?'rgba(255,215,0,.04)':i===1?'rgba(192,192,192,.04)':i===2?'rgba(205,127,50,.04)':'transparent' }}>
                         <div style={s.rankNum(i+1)}>{i+1}</div>
                         <div style={{ minWidth:130 }}>
-                          <div style={{ fontWeight:700, fontSize:14 }}>{v.username}</div>
+                          <div style={{ fontWeight:700, fontSize:14 }}>{v.username}<CopyBtn text={v.username} /></div>
                           <div style={{ display:'flex', gap:6, marginTop:3, flexWrap:'wrap' }}>
                             <span style={s.badge(v.tier)}>{v.tier}</span>
                             <span style={{ fontSize:11, color:'var(--muted)' }}>{v.host_assigned||'—'}</span>
@@ -533,7 +534,7 @@ export default function Analytics() {
                         onMouseEnter={e=>e.currentTarget.style.background='var(--surface2)'}
                         onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
                         <td style={{ ...s.td, color:'var(--muted)', fontSize:12, width:36 }}>{i + 1}</td>
-                        <td style={{ ...s.td, fontWeight:600 }}>{v.username}</td>
+                        <td style={{ ...s.td, fontWeight:600 }}>{v.username}<CopyBtn text={v.username} /></td>
                         <td style={s.td}><span style={s.badge(v.tier)}>{v.tier}</span></td>
                         <td style={s.td}>
                           <div style={{ display:'flex', alignItems:'center', gap:8 }}>
@@ -631,7 +632,7 @@ export default function Analytics() {
                           logs.filter(l => !taggedLogIds.has(l.id)).slice(0, 50).map(log => (
                             <div key={log.id} style={{ padding:'10px 16px', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'flex-start', gap:10 }}>
                               <div style={{ flex:1, minWidth:0 }}>
-                                <div style={{ fontSize:12, fontWeight:700 }}>{log.username} <span style={{ color:'var(--muted)', fontWeight:400 }}>· {log.tier||'—'}</span></div>
+                                <div style={{ fontSize:12, fontWeight:700 }}>{log.username}<CopyBtn text={log.username} /> <span style={{ color:'var(--muted)', fontWeight:400 }}>· {log.tier||'—'}</span></div>
                                 <div style={{ fontSize:11, color:'var(--muted)', marginTop:2, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', maxWidth:220 }}>{log.notes||'—'}</div>
                               </div>
                               <button
@@ -657,7 +658,7 @@ export default function Analytics() {
                                 <div style={{ flex:1, minWidth:0 }}>
                                   <div style={{ fontSize:12, fontWeight:700 }}>
                                     <span style={{ color:'#3fb950', marginRight:4 }}>✓</span>
-                                    {log.username} <span style={{ color:'var(--muted)', fontWeight:400 }}>· {log.tier||'—'}</span>
+                                    {log.username}<CopyBtn text={log.username} /> <span style={{ color:'var(--muted)', fontWeight:400 }}>· {log.tier||'—'}</span>
                                   </div>
                                   <div style={{ fontSize:11, color:'var(--muted)', marginTop:2, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', maxWidth:220 }}>{log.notes||'—'}</div>
                                 </div>
@@ -686,7 +687,7 @@ export default function Analytics() {
                       </button>
                     </div>
                     <div style={{ fontSize:12, color:'var(--muted)', marginBottom:16 }}>
-                      {tagModal.username} · <span style={{ fontStyle:'italic' }}>{tagModal.notes?.slice(0,60)}...</span>
+                      {tagModal.username}<CopyBtn text={tagModal.username} /> · <span style={{ fontStyle:'italic' }}>{tagModal.notes?.slice(0,60)}...</span>
                     </div>
 
                     {/* Preset tags */}
@@ -866,7 +867,7 @@ export default function Analytics() {
                               onMouseEnter={e => e.currentTarget.style.background='var(--surface2)'}
                               onMouseLeave={e => e.currentTarget.style.background='transparent'}>
                               <td style={{ padding:'10px 16px', color:'var(--muted)', fontSize:12, width:36 }}>{rowIdx + 1}</td>
-                              <td style={{ padding:'10px 16px', fontWeight:700 }}>{r.username}</td>
+                              <td style={{ padding:'10px 16px', fontWeight:700 }}>{r.username}<CopyBtn text={r.username} /></td>
                               <td style={{ padding:'10px 16px' }}>
                                 {r.tier && <span style={{ fontSize:11, fontWeight:700, padding:'2px 8px', borderRadius:10, background:TIER_BG[r.tier]||'transparent', color:TIER_COLOR[r.tier]||'var(--text)' }}>{r.tier}</span>}
                               </td>

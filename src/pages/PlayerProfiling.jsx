@@ -5,6 +5,7 @@ import { TIER_COLOR, TIER_BG, CURRENCY_LIST, CURRENCY_SYMBOL, CURRENCY_REGION, R
 import { formatMoney, currentYearMonth } from '../lib/format'
 import { useLanguage } from '../contexts/LanguageContext'
 import { useUrlParam, useUrlParamBool, useUrlParamsRaw } from '../hooks/useUrlParam'
+import CopyBtn from '../components/CopyBtn'
 
 // ── Player classification by ROI ─────────────────────────────────────────────
 const PLAYER_TYPES = [
@@ -396,7 +397,7 @@ export default function PlayerProfiling() {
                     onMouseEnter={e => e.currentTarget.style.background = 'var(--surface2)'}
                     onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                     <td style={{ ...s.td, color: 'var(--muted)', fontSize: 11 }}>{i + 1}</td>
-                    <td style={{ ...s.td, fontWeight: 700 }}>{p.username}</td>
+                    <td style={{ ...s.td, fontWeight: 700 }}>{p.username}<CopyBtn text={p.username} /></td>
                     <td style={s.td}>
                       <span style={s.badge(TIER_BG[p.tier]||'', TIER_COLOR[p.tier]||'var(--muted)')}>{p.tier}</span>
                     </td>

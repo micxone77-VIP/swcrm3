@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { useLanguage } from '../contexts/LanguageContext'
+import CopyBtn from '../components/CopyBtn'
 
 const OUTCOMES = ['Contacted','Replied','Deposited','Reactivated','No Reply']
 const OUTCOME_ZH = { Contacted:'已联系', Replied:'已回复', Deposited:'已存款', Reactivated:'已召回', 'No Reply':'未回复', WhatsApp:'WhatsApp', Call:'电话', 'In-person':'面谈', Other:'其他' }
@@ -183,7 +184,7 @@ export default function WeeklyOutcome() {
                 <tr key={l.id}>
                   <td style={{ ...s.td, color:'var(--muted)', fontSize:12, width:36 }}>{rowIdx + 1}</td>
                   <td style={s.td}>{l.logged_at?.slice(0,10) || '-'}</td>
-                  <td style={s.td}><strong>{l.vip_members?.username || l.vip_id}</strong></td>
+                  <td style={s.td}><strong>{l.vip_members?.username || l.vip_id}<CopyBtn text={l.vip_members?.username} /></strong></td>
                   <td style={s.td}>{l.vip_members?.tier || '-'}</td>
                   <td style={s.td}>{l.vip_members?.host_assigned || '-'}</td>
                   <td style={s.td}>{l.channel ? OL(l.channel) : '-'}</td>

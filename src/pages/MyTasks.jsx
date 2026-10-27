@@ -12,6 +12,7 @@ import {
 import { TierBadge } from '../components/ui'
 import { useLanguage } from '../contexts/LanguageContext'
 import CallLogModal from '../components/task/CallLogModal'
+import CopyBtn from '../components/CopyBtn'
 
 const TASK_TYPES = ['Follow Up', 'Call', 'VIP Contact', 'Campaign', 'Upgrade', 'Birthday', 'Review', 'Other']
 const PRIORITIES  = ['Urgent', 'High', 'Medium', 'Low']
@@ -91,7 +92,7 @@ function TaskRow({ task, phone, onLogCall, onStatusChange, onDelete, onOpen, t }
           {task.vip_username && (
             <span style={{ cursor: 'pointer', color: 'var(--brand)', textDecoration: 'underline' }}
               onClick={() => task.vip_id && onOpen?.(task.vip_id)}>
-              {task.vip_username}
+              {task.vip_username}<CopyBtn text={task.vip_username} />
               {task.vip_tier && <span style={{ marginLeft: 4 }}>({task.vip_tier})</span>}
             </span>
           )}
@@ -336,7 +337,7 @@ export default function MyTasks() {
                       setVipSearch(v.username)
                       setVipResults([])
                     }}>
-                    <span style={{ fontWeight: 600 }}>{v.username}</span>
+                    <span style={{ fontWeight: 600 }}>{v.username}<CopyBtn text={v.username} /></span>
                     {v.full_name && <span style={{ color: 'var(--muted)', marginLeft: 6 }}>{v.full_name}</span>}
                     <span style={{ color: 'var(--muted)', fontSize: 11, marginLeft: 6 }}>· {v.tier}</span>
                   </div>

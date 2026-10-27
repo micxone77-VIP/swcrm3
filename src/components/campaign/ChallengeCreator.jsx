@@ -11,6 +11,7 @@ import { defaultChallengeConfig, suggestForPlayer, periodDates, num, FLAG_LABEL 
 import { CampaignInfoButton } from './CampaignGuide'
 import { defaultDailyConfig } from '../../lib/dailyMilestone'
 import { DailyRulesEditor, cleanDailyConfig } from './DailyRulesEditor'
+import CopyBtn from '../CopyBtn'
 
 const TIERS = ['BLACK', 'DIAMOND-P', 'DIAMOND', 'PLATINUM', 'GOLD', 'SILVER', 'BRONZE']
 const COUNTRY_LABEL = { MY: '🇲🇾 MY', SG: '🇸🇬 SG', KH: '🇰🇭 KH' }
@@ -351,10 +352,10 @@ export default function ChallengeCreator({ mode = 'trust_credit', onCancel, onCr
                     <tr key={r.username} style={{ background: on ? 'rgba(255,106,0,.06)' : 'transparent' }}>
                       <td style={{ ...td, color: 'var(--muted)', fontSize: 12, width: 36 }}>{rowIdx + 1}</td>
                       <td style={td}><input type="checkbox" checked={on} onChange={() => toggle(r.username)} /></td>
-                      <td style={td}><b>{r.username}</b>{r.manual && <span style={{ fontSize: 10, color: '#a78bfa', marginLeft: 4 }}>{T('manual', '手动')}</span>}<div style={{ fontSize: 10, color: 'var(--muted)' }}>{r.full_name}</div></td>
+                      <td style={td}><b>{r.username}<CopyBtn text={r.username} /></b>{r.manual && <span style={{ fontSize: 10, color: '#a78bfa', marginLeft: 4 }}>{T('manual', '手动')}</span>}<div style={{ fontSize: 10, color: 'var(--muted)' }}>{r.full_name}</div></td>
                       <td style={td}>{r.tier}</td>
                       <td style={td}>{r.host_assigned || '—'}</td>
-                      <td style={{ ...td, color: r.affiliate_login ? 'var(--accent)' : 'var(--muted)' }}>{r.affiliate_login || T('Direct', '直客')}</td>
+                      <td style={{ ...td, color: r.affiliate_login ? 'var(--accent)' : 'var(--muted)' }}>{r.affiliate_login || T('Direct', '直客')}<CopyBtn text={r.affiliate_login} /></td>
                       <td style={td}>{seg ? <span style={{ color: seg.color, fontWeight: 700 }}>{seg.icon} {lang === 'zh' ? seg.zh : r.segment}</span> : <span style={{ color: 'var(--muted)' }}>{T('No deposits', '无存款')}</span>}</td>
                       <td style={{ ...td, textAlign: 'right', color: r.sug.loss30 > 0 ? '#f87171' : 'var(--muted)' }}>{r.sug.loss30 > 0 ? rm(r.sug.loss30) : '—'}</td>
                       <td style={{ ...td, textAlign: 'right' }}>{r.sug.avgDailyTurnover > 0 ? rm(r.sug.avgDailyTurnover) : '—'}</td>

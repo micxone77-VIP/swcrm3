@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useLanguage } from '../../contexts/LanguageContext'
+import CopyBtn from '../CopyBtn'
 
 const TIER_STYLE = { SILVER: ['#c0c7d1', '🥈'], BRONZE: ['#cd7f32', '🥉'] }
 const sym = c => (String(c || '').toUpperCase() === 'SGD' ? 'SGD ' : String(c || '').toUpperCase() === 'KHUSD' ? 'USD ' : 'RM ')
@@ -43,7 +44,7 @@ export function PotentialSearch({ query, limit = 15 }) {
           return (
             <button key={r.username} onClick={() => navigate(`/vip360?player=${encodeURIComponent(r.username)}`)}
               style={{ padding: '6px 10px', borderRadius: 8, border: `1px solid ${col}66`, background: 'var(--surface2)', color: 'var(--text)', cursor: 'pointer', fontSize: 13, textAlign: 'left' }}>
-              <span style={{ fontWeight: 700 }}>{ic} {r.username}</span>
+              <span style={{ fontWeight: 700 }}>{ic} {r.username}<CopyBtn text={r.username} /></span>
               <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 6 }}>{r.tier} · {String(r.currency || 'MYR').toUpperCase()} · {L2('lifetime dep', '累计存款')} {sym(r.currency)}{fmt(r.total_deposit)}</span>
             </button>
           )
@@ -93,7 +94,7 @@ export default function PotentialProfile({ p }) {
         <div style={{ width: 54, height: 54, borderRadius: '50%', border: `2px solid ${col}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 26 }}>{ic}</div>
         <div style={{ flex: 1, minWidth: 240 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 24, fontWeight: 800 }}>{p.username}</span>
+            <span style={{ fontSize: 24, fontWeight: 800 }}>{p.username}<CopyBtn text={p.username} /></span>
             <button onClick={() => { navigator.clipboard.writeText(p.username); setCopied(true); setTimeout(() => setCopied(false), 1500) }}
               style={{ fontSize: 12, padding: '2px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: copied ? '#3fb950' : 'var(--muted)', cursor: 'pointer' }}>{copied ? '✅' : '📋'}</button>
           </div>

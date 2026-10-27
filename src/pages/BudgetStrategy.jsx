@@ -5,6 +5,7 @@ import { MONTHS, MONTHS_CN, TIER_COLOR, TIER_BG, CURRENCY_LIST, CURRENCY_SYMBOL,
 import { formatMoney } from '../lib/format'
 import { useUrlParam, useUrlParamNumber } from '../hooks/useUrlParam'
 import { useLanguage } from '../contexts/LanguageContext'
+import CopyBtn from '../components/CopyBtn'
 
 const s = {
   page:    { padding:'24px 28px', minHeight:'100vh' },
@@ -258,7 +259,7 @@ export default function BudgetStrategy() {
                     <tr key={log.id}
                       onMouseEnter={e=>e.currentTarget.style.background='var(--surface2)'}
                       onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
-                      <td style={{ ...s.td, fontWeight:700 }}>{log.vip_username}</td>
+                      <td style={{ ...s.td, fontWeight:700 }}>{log.vip_username}<CopyBtn text={log.vip_username} /></td>
                       <td style={s.td}>
                         <span style={{ ...s.badge, background:TIER_BG[log.vip_members?.tier]||'transparent', color:TIER_COLOR[log.vip_members?.tier]||'var(--text)', fontSize:10 }}>
                           {log.vip_members?.tier||'—'}

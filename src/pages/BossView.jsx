@@ -7,6 +7,7 @@ import { useUrlParam } from '../hooks/useUrlParam'
 import { useLanguage } from '../contexts/LanguageContext'
 import { LastBet } from '../components/ui'
 import { enumLabel } from '../lib/enums'
+import CopyBtn from '../components/CopyBtn'
 
 const s = {
   page:    { padding:'24px 28px', minHeight:'100vh' },
@@ -306,7 +307,7 @@ export default function BossView() {
                   onClick={() => navigate(`/vips/${log.vip_id}`)}>
                   <div style={{ width:8, height:8, borderRadius:'50%', background:outcomeColor, marginTop:4, flexShrink:0 }} />
                   <div style={{ flex:1 }}>
-                    <div style={{ fontSize:13, fontWeight:600 }}>{log.vip_username} <span style={{ color:'var(--muted)', fontWeight:400, fontSize:12 }}>· {VZ(log.channel)}</span></div>
+                    <div style={{ fontSize:13, fontWeight:600 }}>{log.vip_username}<CopyBtn text={log.vip_username} /> <span style={{ color:'var(--muted)', fontWeight:400, fontSize:12 }}>· {VZ(log.channel)}</span></div>
                     <div style={{ fontSize:11, color:'var(--muted)' }}>{log.host_name} · {ago}</div>
                   </div>
                   <span style={{ fontSize:11, color:outcomeColor, fontWeight:600 }}>{VZ(log.outcome)}</span>
@@ -348,7 +349,7 @@ export default function BossView() {
                     onMouseEnter={e=>e.currentTarget.style.background='var(--surface2)'}
                     onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
                     <td style={{ ...s.td, color:'var(--muted)', fontSize:11, fontWeight:700 }}>{i+1}</td>
-                    <td style={{ ...s.td, fontWeight:700 }}>{v.username}</td>
+                    <td style={{ ...s.td, fontWeight:700 }}>{v.username}<CopyBtn text={v.username} /></td>
                     <td style={s.td}>
                       <span style={{ ...s.badge, background:TIER_BG[v.tier]||'transparent', color:TIER_COLOR[v.tier]||'var(--text)' }}>{v.tier}</span>
                     </td>

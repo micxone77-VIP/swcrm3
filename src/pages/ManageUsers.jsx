@@ -5,6 +5,7 @@ import { useLanguage } from '../contexts/LanguageContext'
 import { TIER_COLOR, TIER_BG } from '../lib/constants'
 import { NAV_GROUPS } from '../components/Sidebar'
 import { ListCount } from '../components/ui'
+import CopyBtn from '../components/CopyBtn'
 
 // ── styles ────────────────────────────────────────────────────────────────────
 const ROLE_COLOR = { admin:'#58a6ff', host:'#3fb950', readonly:'#8b949e' }
@@ -695,7 +696,7 @@ export default function ManageUsers() {
                         onMouseLeave={e => e.currentTarget.style.background=isAssigned?'rgba(88,166,255,.05)':'transparent'}
                         style={{ background: isAssigned ? 'rgba(88,166,255,.05)' : 'transparent' }}>
                         <td style={{ ...s.td, color:'var(--muted)', fontSize:12, width:36 }}>{rowIdx + 1}</td>
-                        <td style={{ ...s.td, fontWeight:700 }}>{v.username}
+                        <td style={{ ...s.td, fontWeight:700 }}>{v.username}<CopyBtn text={v.username} />
                           {v.full_name && <span style={{ fontSize:11, color:'var(--muted)', fontWeight:400, marginLeft:6 }}>{v.full_name}</span>}
                         </td>
                         <td style={s.td}>
@@ -755,7 +756,7 @@ export default function ManageUsers() {
               <div style={{ border:'1px solid var(--border)', borderRadius:8, overflow:'hidden', maxWidth:560 }}>
                 {exResults.map(r => (
                   <div key={r.id} style={{ display:'flex', alignItems:'center', gap:12, padding:'9px 14px', borderBottom:'1px solid var(--border)', background: r.is_excluded ? 'rgba(248,81,73,.05)' : 'transparent' }}>
-                    <span style={{ flex:1, fontSize:13, fontWeight:600 }}>{r.username}</span>
+                    <span style={{ flex:1, fontSize:13, fontWeight:600 }}>{r.username}<CopyBtn text={r.username} /></span>
                     <span style={{ fontSize:11, color: r.tier==='DIAMOND'?'#b9f2ff':r.tier==='PLATINUM'?'#C0C0C0':'#ffd700', fontWeight:700 }}>{r.tier}</span>
                     <span style={{ fontSize:11, color:'var(--muted)' }}>{r.host_assigned || '—'}</span>
                     {r.is_excluded
@@ -776,7 +777,7 @@ export default function ManageUsers() {
                 {excluded.map(ex => (
                   <div key={ex.id} style={{ display:'flex', alignItems:'center', gap:6, background:'rgba(248,81,73,.08)', border:'1px solid rgba(248,81,73,.2)', borderRadius:8, padding:'5px 10px' }}>
                     <span style={{ fontSize:12, fontWeight:700, color:'#f85149' }}>🚫</span>
-                    <span style={{ fontSize:12, fontWeight:600 }}>{ex.username}</span>
+                    <span style={{ fontSize:12, fontWeight:600 }}>{ex.username}<CopyBtn text={ex.username} /></span>
                     <span style={{ fontSize:10, color:'var(--muted)' }}>{ex.tier}</span>
                     <button onClick={() => setExclude(ex.id, ex.username, false)}
                       style={{ background:'none', border:'none', color:'var(--muted)', cursor:'pointer', fontSize:14, lineHeight:1, padding:'0 2px', marginLeft:2 }}

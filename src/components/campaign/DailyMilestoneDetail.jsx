@@ -17,6 +17,7 @@ import { DailyRulesEditor, cleanDailyConfig } from './DailyRulesEditor'
 import CampaignImpact from './CampaignImpact'
 import CampaignMedia from './CampaignMedia'
 import { deleteCampaignCascade, confirmCampaignDelete } from '../../lib/campaignDelete'
+import CopyBtn from '../CopyBtn'
 
 const fmt = v => Math.round(num(v)).toLocaleString('en-MY')
 const sym = c => (c === 'SGD' ? 'SGD ' : c === 'KHUSD' ? 'USD ' : 'RM ')
@@ -437,7 +438,7 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
   const nameCell = (r, sub) => (
     <span style={{ display: 'inline-flex', flexDirection: 'column' }}>
       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-        <b onClick={() => setOpenP(r)} title={T('View daily deposit / withdrawal / turnover', '查看每日存款 / 提款 / 流水')} style={{ cursor: 'pointer', color: 'var(--accent)' }}>{r.username}</b>
+        <b onClick={() => setOpenP(r)} title={T('View daily deposit / withdrawal / turnover', '查看每日存款 / 提款 / 流水')} style={{ cursor: 'pointer', color: 'var(--accent)' }}>{r.username}<CopyBtn text={r.username} /></b>
         <button onClick={e => { e.stopPropagation(); copyName(r.username) }} title={T('Copy username', '复制用户名')} style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 15, padding: '0 2px' }}>⎘</button>
       </span>
       <span style={{ fontSize: 12, color: 'var(--muted)' }}>{sub}</span>
@@ -866,7 +867,7 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
                         {roi.streakList.sort((x, y) => x.date.localeCompare(y.date) || y.bonus - x.bonus).map((x, i) => (
                           <tr key={x.username + x.date}>
                             <td style={{ ...td, color: 'var(--muted)' }}>{i + 1}</td>
-                            <td style={{ ...td, fontWeight: 700 }}>{x.username}</td>
+                            <td style={{ ...td, fontWeight: 700 }}>{x.username}<CopyBtn text={x.username} /></td>
                             <td style={{ ...td, color: '#f97316' }}>🔥 #{x.n}</td>
                             <td style={td}>{x.date}</td>
                             <td style={td}>{rmS(x.base)}</td>

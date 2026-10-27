@@ -8,6 +8,7 @@ import { useUrlParam } from '../hooks/useUrlParam'
 import CashVoucherImportButton from '../components/expense/CashVoucherImportButton'
 import CashVoucherOverview from '../components/expense/CashVoucherOverview'
 import BonusOverview from '../components/expense/BonusOverview'
+import CopyBtn from '../components/CopyBtn'
 
 const MONTHS     = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 // CATEGORIES (and the 'Bonus 红包' default below) are stored as literal values in
@@ -466,7 +467,7 @@ export default function ExpenseTracker() {
                           <button
                             onClick={() => navigate(`/vip360?player=${encodeURIComponent(exp.vip_username)}&tab=spending`)}
                             style={{ background:'none', border:'1px solid var(--accent)', borderRadius:6, padding:'2px 9px', fontSize:11, fontWeight:700, color:'var(--accent)', cursor:'pointer', whiteSpace:'nowrap' }}>
-                            👑 {exp.vip_username}
+                            👑 {exp.vip_username}<CopyBtn text={exp.vip_username} />
                           </button>
                         ) : <span style={{ color:'var(--muted)', fontSize:12 }}>—</span>}
                       </td>

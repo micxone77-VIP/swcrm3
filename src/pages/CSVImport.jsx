@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabase'
 import { fetchAll } from '../lib/depositProfile'
 import { useAuth } from '../hooks/useAuth'
 import { useLanguage } from '../contexts/LanguageContext'
+import CopyBtn from '../components/CopyBtn'
 
 // ─── Column mappings per import type ───────────────────────────────────────
 const RAW_DATA_SKIP_ROWS = 0
@@ -908,7 +909,7 @@ function ResultBox({ result }) {
           <div style={{ marginTop: 6, maxHeight: 160, overflowY: 'auto', fontSize: 11 }}>
             {result.tierChangeLogs.map((t, i) => (
               <div key={i} style={{ padding: '3px 0', borderBottom: '1px solid var(--border)' }}>
-                <strong>{t.username}</strong>
+                <strong>{t.username}<CopyBtn text={t.username} /></strong>
                 <span style={{ color: 'var(--muted)', margin: '0 6px' }}>{t.old_tier}</span>
                 <span style={{ color: '#f59e0b' }}>→</span>
                 <span style={{ color: '#3fb950', marginLeft: 6 }}>{t.new_tier}</span>

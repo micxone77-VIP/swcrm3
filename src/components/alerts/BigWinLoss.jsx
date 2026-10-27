@@ -8,6 +8,7 @@ import { TIER_COLOR, TIER_BG } from '../../lib/constants'
 import { loadBigWinLoss, saveWinLossSettings, WINLOSS_TIERS } from '../../lib/bigWinLoss'
 import { WaButton } from '../WaSenderModal'
 import { enumLabel } from '../../lib/enums'
+import CopyBtn from '../CopyBtn'
 
 const th = { textAlign: 'left', padding: '8px 10px', color: 'var(--muted)', fontWeight: 600, fontSize: 11, whiteSpace: 'nowrap', borderBottom: '1px solid var(--border)' }
 const td = { padding: '9px 10px', borderBottom: '1px solid var(--border)', fontSize: 13, whiteSpace: 'nowrap' }
@@ -113,7 +114,7 @@ Congrats bro on your big win yesterday! 🎉 Need anything, I'm here ya 💎`,
               <tr key={r.username} style={{ cursor: 'pointer' }} onClick={() => r.id && navigate(`/vips/${r.id}`)}
                 onMouseEnter={e => { e.currentTarget.style.background = 'var(--surface2)' }} onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}>
                 <td style={{ ...td, color: 'var(--muted)', fontSize: 12 }}>{i + 1}</td>
-                <td style={td}><b>{r.username}</b><div style={{ fontSize: 11, color: 'var(--muted)' }}>{r.full_name}{r.affiliate ? ` · ${r.affiliate}` : ''}</div></td>
+                <td style={td}><b>{r.username}<CopyBtn text={r.username} /></b><div style={{ fontSize: 11, color: 'var(--muted)' }}>{r.full_name}{r.affiliate ? ` · ${r.affiliate}` : ''}</div></td>
                 <td style={td}><span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: TIER_BG[r.tier] || 'transparent', color: TIER_COLOR[r.tier] || 'var(--text)' }}>{r.tier}</span></td>
                 <td style={{ ...td, color: r.host === myName ? 'var(--brand, #FF6B00)' : 'var(--muted)', fontWeight: r.host === myName ? 700 : 400 }}>{r.host || '—'}</td>
                 <td style={{ ...td, fontSize: 15, fontWeight: 800, color: kind === 'loss' ? '#f85149' : '#3fb950' }}>
@@ -185,7 +186,7 @@ Congrats bro on your big win yesterday! 🎉 Need anything, I'm here ya 💎`,
               <tr key={r.username} style={{ cursor: 'pointer' }} onClick={() => r.id && navigate(`/vips/${r.id}`)}
                 onMouseEnter={e => { e.currentTarget.style.background = 'var(--surface2)' }} onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}>
                 <td style={{ ...td, color: 'var(--muted)', fontSize: 12 }}>{i + 1}</td>
-                <td style={td}><b>{r.username}</b><div style={{ fontSize: 11, color: 'var(--muted)' }}>{r.full_name}{r.affiliate ? ` · ${r.affiliate}` : ''}</div></td>
+                <td style={td}><b>{r.username}<CopyBtn text={r.username} /></b><div style={{ fontSize: 11, color: 'var(--muted)' }}>{r.full_name}{r.affiliate ? ` · ${r.affiliate}` : ''}</div></td>
                 <td style={td}><span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: TIER_BG[r.tier] || 'transparent', color: TIER_COLOR[r.tier] || 'var(--text)' }}>{r.tier}</span></td>
                 <td style={{ ...td, color: r.host === myName ? 'var(--brand, #FF6B00)' : 'var(--muted)', fontWeight: r.host === myName ? 700 : 400 }}>{r.host || '—'}</td>
                 {kind !== 'drop' && (

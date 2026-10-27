@@ -11,6 +11,7 @@ import { formatMoney } from '../lib/format'
 import { useLanguage } from '../contexts/LanguageContext'
 import { useAuth } from '../hooks/useAuth'
 import WaSenderModal from '../components/WaSenderModal'
+import CopyBtn from '../components/CopyBtn'
 
 function daysAgoLabel(d, lang = 'en') {
   if (!d) return '—'
@@ -149,7 +150,7 @@ export default function AtRisk() {
                     >
                       <td style={{ padding:'10px 14px', borderBottom:'1px solid var(--border)', color:'var(--muted)', fontSize:12, width:36 }}>{rowIdx + 1}</td>
                       <td style={{ padding:'10px 14px', borderBottom:'1px solid var(--border)' }}>
-                        <div style={{ fontWeight:600 }}>{v.username}</div>
+                        <div style={{ fontWeight:600 }}>{v.username}<CopyBtn text={v.username} /></div>
                         <div style={{ fontSize:11, color:'var(--muted)' }}>{v.full_name || ''}</div>
                       </td>
                       <td style={{ padding:'10px 14px', borderBottom:'1px solid var(--border)' }}><TierBadge tier={v.tier} /></td>

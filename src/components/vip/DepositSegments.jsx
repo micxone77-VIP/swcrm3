@@ -6,6 +6,7 @@ import { TIER_COLOR, TIER_BG } from '../../lib/constants'
 import { SEGMENTS, STYLES, fmtHour, fmtRM, fetchAll, dayNameZh } from '../../lib/depositProfile'
 import { useLanguage } from '../../contexts/LanguageContext'
 import { WaButton } from '../../components/WaSenderModal'
+import CopyBtn from '../CopyBtn'
 
 const sel = { background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 10px', fontSize: 12, color: 'var(--text)' }
 const th = { textAlign: 'left', padding: '10px 12px', color: 'var(--muted)', fontWeight: 600, whiteSpace: 'nowrap', cursor: 'pointer', userSelect: 'none' }
@@ -212,15 +213,15 @@ export default function DepositSegments({ myName = 'VIP Team' }) {
                   <td style={{ ...td, color: 'var(--muted)', fontSize: 12, width: 36 }}>{rowIdx + 1}</td>
                   <td style={td}>
                     {m.id ? (
-                      <span onClick={() => navigate(`/vips/${m.id}`)} style={{ fontWeight: 700, color: 'var(--brand, #FF6B00)', cursor: 'pointer' }}>{r.login}</span>
-                    ) : <span style={{ fontWeight: 700 }}>{r.login}</span>}
+                      <span onClick={() => navigate(`/vips/${m.id}`)} style={{ fontWeight: 700, color: 'var(--brand, #FF6B00)', cursor: 'pointer' }}>{r.login}<CopyBtn text={r.login} /></span>
+                    ) : <span style={{ fontWeight: 700 }}>{r.login}<CopyBtn text={r.login} /></span>}
                     <div style={{ fontSize: 11, color: 'var(--muted)' }}>{r.member_name}</div>
                   </td>
                   <td style={td}>
                     {r.tier && <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: TIER_BG[r.tier] || 'transparent', color: TIER_COLOR[r.tier] || 'var(--text)' }}>{r.tier}</span>}
                   </td>
                   <td style={{ ...td, color: r.host_assigned ? 'var(--text)' : 'var(--muted)' }}>{r.host_assigned || '—'}</td>
-                  <td style={{ ...td, color: r.affiliate_login ? 'var(--brand, #FF6B00)' : 'var(--muted)', fontWeight: r.affiliate_login ? 600 : 400 }}>{r.affiliate_login || L2('Direct', '直客')}</td>
+                  <td style={{ ...td, color: r.affiliate_login ? 'var(--brand, #FF6B00)' : 'var(--muted)', fontWeight: r.affiliate_login ? 600 : 400 }}>{r.affiliate_login || L2('Direct', '直客')}<CopyBtn text={r.affiliate_login} /></td>
                   <td style={td}>
                     <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: seg.bg, color: seg.color }}>{seg.icon} {L2(r.segment, seg.zh)}</span>
                   </td>

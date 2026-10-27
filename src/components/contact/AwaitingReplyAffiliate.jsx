@@ -10,6 +10,7 @@ import { useLanguage } from '../../contexts/LanguageContext'
 import { fetchAll } from '../../lib/depositProfile'
 import { TIER_COLOR, TIER_BG } from '../../lib/constants'
 import { WaButton } from '../../components/WaSenderModal'
+import CopyBtn from '../CopyBtn'
 
 const UNANSWERED = ['Contacted', 'No Reply']
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
@@ -196,7 +197,7 @@ export default function AwaitingReplyAffiliate({ onBack, myName, viewMode }) {
             return (
               <tr key={r.username}>
                 <td style={{ ...st.td, color: 'var(--muted)', fontSize: 12, width: 36 }}>{rowIdx + 1}</td>
-                <td style={st.td}><b>{r.username}</b><div style={{ fontSize: 10, color: 'var(--muted)' }}>{r.full_name}</div></td>
+                <td style={st.td}><b>{r.username}<CopyBtn text={r.username} /></b><div style={{ fontSize: 10, color: 'var(--muted)' }}>{r.full_name}</div></td>
                 <td style={st.td}>{r.tier && <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: TIER_BG[r.tier] || 'transparent', color: TIER_COLOR[r.tier] || 'var(--text)' }}>{r.tier}</span>}</td>
                 {!grouped && <td style={{ ...st.td, color: r.affiliate.startsWith('(') ? 'var(--muted)' : 'var(--brand, #FF6B00)', fontWeight: 600 }}>{affLabel(r.affiliate)}</td>}
                 <td style={st.td}><span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: r.status === 'unreachable' ? 'rgba(248,81,73,.15)' : 'rgba(210,153,34,.15)', color: r.status === 'unreachable' ? '#f85149' : '#d29922' }}>{statusLabel(r.status)}</span>

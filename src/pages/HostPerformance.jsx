@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabase'
 import { formatMoney } from '../lib/format'
 import { useLanguage } from '../contexts/LanguageContext'
 import RecallByLayer from '../components/RecallByLayer'
+import CopyBtn from '../components/CopyBtn'
 
 /* ─── Tier config ─── */
 const TIERS = ['GOLD', 'PLATINUM', 'DIAMOND']
@@ -686,7 +687,7 @@ export default function HostPerformance() {
                   <td style={{ padding: '10px 14px', color: 'var(--muted)', fontSize: 12, width: 36 }}>{idx + 1}</td>
                   {/* Username */}
                   <td style={{ padding: '10px 14px' }}>
-                    <div style={{ fontWeight: 700, fontSize: 13 }}>{r.username}</div>
+                    <div style={{ fontWeight: 700, fontSize: 13 }}>{r.username}<CopyBtn text={r.username} /></div>
                     {r.lastDeposit && <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 1 }}>{L2('Last dep','最后存款')}: {r.lastDeposit}</div>}
                   </td>
                   {/* Tier */}

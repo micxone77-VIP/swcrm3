@@ -6,6 +6,7 @@ import { useLanguage } from '../contexts/LanguageContext'
 import { useUrlParam } from '../hooks/useUrlParam'
 import { formatMoney } from '../lib/format'
 import { CURRENCY_LIST_MAIN } from '../lib/constants'
+import CopyBtn from '../components/CopyBtn'
 
 const COST_TYPES = ['Cash Voucher', 'Bonus', 'Free Credit', 'Other']
 const COST_TYPE_ZH = { 'Cash Voucher':'现金券', 'Bonus':'奖金', 'Free Credit':'免费积分', 'Other':'其他' }
@@ -295,7 +296,7 @@ export default function TransferTracker() {
                   return (
                     <tr key={p.username} style={{ cursor: 'pointer' }} onClick={() => setSelected(selected?.username === p.username ? null : p)}>
                       <td style={{ ...s.td, color: 'var(--muted)', fontSize: 12, width: 36 }}>{rowIdx + 1}</td>
-                      <td style={s.td}><span style={{ fontWeight: 700 }}>{p.username}</span></td>
+                      <td style={s.td}><span style={{ fontWeight: 700 }}>{p.username}<CopyBtn text={p.username} /></span></td>
                       <td style={s.td}><span style={{ background: 'rgba(88,166,255,.15)', color: '#58a6ff', padding: '2px 8px', borderRadius: 5, fontSize: 11, fontWeight: 700 }}>{p.source_platform}</span></td>
                       <td style={s.td}>{latestSnap ? fmtMoney(latestSnap.total_deposit, currency) : '—'}</td>
                       <td style={s.td}>{latestSnap ? fmtMoney(latestSnap.total_withdrawal, currency) : '—'}</td>
@@ -512,7 +513,7 @@ export default function TransferTracker() {
               <tbody>
                 {Object.values(costs).flat().sort((a,b) => b.cost_date.localeCompare(a.cost_date)).slice(0,20).map(c => (
                   <tr key={c.id}>
-                    <td style={s.td}><span style={{ fontWeight: 700 }}>{c.username}</span></td>
+                    <td style={s.td}><span style={{ fontWeight: 700 }}>{c.username}<CopyBtn text={c.username} /></span></td>
                     <td style={s.td}>{c.cost_date}</td>
                     <td style={s.td}><span style={{ background: 'rgba(245,158,11,.15)', color: '#f59e0b', padding: '2px 8px', borderRadius: 5, fontSize: 11, fontWeight: 700 }}>{costTypeLabel(c.cost_type)}</span></td>
                     <td style={{ ...s.td, color: '#f85149', fontWeight: 700 }}>{fmtMoney(c.amount, currency)}</td>

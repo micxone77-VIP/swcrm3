@@ -11,6 +11,7 @@ import { WaButton } from '../components/WaSenderModal'
 import VipVoice from '../components/exec/VipVoice'
 import { parseCsv, surveyRows } from '../lib/surveyImport'
 import { surveyLabel, FEELING_EN, FEELING_COLOR } from '../lib/surveyLabels'
+import CopyBtn from '../components/CopyBtn'
 
 const VIP_TIERS = ['BLACK', 'DIAMOND-P', 'DIAMOND', 'PLATINUM', 'GOLD']
 const SETTINGS_KEY = 'survey_invite'
@@ -163,7 +164,7 @@ export default function Survey() {
                 const vars = { username: v.username, agent, link }
                 return (
                   <tr key={v.id}>
-                    <td style={{ ...s.td, fontWeight: 700, cursor: 'pointer' }} onClick={() => navigate(`/vip360?player=${encodeURIComponent(v.username)}`)}>{v.username}</td>
+                    <td style={{ ...s.td, fontWeight: 700, cursor: 'pointer' }} onClick={() => navigate(`/vip360?player=${encodeURIComponent(v.username)}`)}>{v.username}<CopyBtn text={v.username} /></td>
                     <td style={s.td}><TierBadge tier={v.tier} /></td>
                     <td style={s.td}><StatusBadge status={v.activity_status} /></td>
                     <td style={{ ...s.td, color: 'var(--muted)' }}>{v.host_assigned || L2('no host', '无负责人')}</td>

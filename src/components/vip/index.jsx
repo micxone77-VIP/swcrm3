@@ -3,6 +3,7 @@ import { TierBadge, StatusBadge, RiskBadge, Btn } from '../ui'
 import { TIER_CONFIG, RISK_CONFIG, enumLabel } from '../../lib/enums'
 import { useLanguage } from '../../contexts/LanguageContext'
 import { formatMoney } from '../../lib/format'
+import CopyBtn from '../CopyBtn'
 
 // VIP avatar initials
 export function VIPAvatar({ name, size = 36 }) {
@@ -27,7 +28,7 @@ export function VIPIdentity({ vip, onClick }) {
         <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>
           {vip.full_name || vip.username}
         </div>
-        <div style={{ fontSize: 11, color: 'var(--muted)' }}>{vip.username}</div>
+        <div style={{ fontSize: 11, color: 'var(--muted)' }}>{vip.username}<CopyBtn text={vip.username} /></div>
       </div>
     </div>
   )

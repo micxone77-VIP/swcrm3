@@ -6,6 +6,7 @@ import { TIER_COLOR, TIER_BG, MONTHS } from '../lib/constants'
 import { formatMoney } from '../lib/format'
 import { useUrlParam, useUrlParamNumber, useUrlParamBool } from '../hooks/useUrlParam'
 import { useLanguage } from '../contexts/LanguageContext'
+import CopyBtn from '../components/CopyBtn'
 
 function daysUntilBirthday(birthdayStr) {
   if (!birthdayStr) return null
@@ -321,7 +322,7 @@ export default function BirthdayReminder() {
                     <tr key={v.id} style={{ cursor:'pointer' }} onClick={() => navigate(`/vips/${v.id}`)}
                       onMouseEnter={e => e.currentTarget.style.background = 'var(--surface2)'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                       <td style={{ ...s.td, color:'var(--muted)', fontSize:11 }}>{i+1}</td>
-                      <td style={{ ...s.td, fontWeight:700 }}>{v.username}{v.full_name && <div style={{ fontSize:11, color:'var(--muted)', fontWeight:400 }}>{v.full_name}</div>}</td>
+                      <td style={{ ...s.td, fontWeight:700 }}>{v.username}<CopyBtn text={v.username} />{v.full_name && <div style={{ fontSize:11, color:'var(--muted)', fontWeight:400 }}>{v.full_name}</div>}</td>
                       <td style={s.td}><span style={{ ...s.badge, background:TIER_BG[v.tier], color:TIER_COLOR[v.tier] }}>{L2(v.tier, TIER_ZH[v.tier] || v.tier)}</span> <span style={{ fontSize:11, color:'var(--muted)' }}>{v.currency}</span></td>
                       <td style={{ ...s.td, fontSize:12 }}>{v.activity_status ? L2(v.activity_status, STATUS_ZH[v.activity_status] || v.activity_status) : '—'}</td>
                       <td style={{ ...s.td, fontSize:12, color:'var(--muted)' }}>{v.host_assigned || '—'}</td>
@@ -387,7 +388,7 @@ export default function BirthdayReminder() {
                     <td style={{ ...s.td, color:'var(--muted)', fontSize:11 }}>{i+1}</td>
                     <td style={{ ...s.td, fontWeight:700 }}>
                       {isToday && <span style={{ marginRight:6 }}>🎂</span>}
-                      {v.username}
+                      {v.username}<CopyBtn text={v.username} />
                     </td>
                     <td style={s.td}><span style={{ ...s.badge, background:TIER_BG[v.tier], color:TIER_COLOR[v.tier] }}>{L2(v.tier, TIER_ZH[v.tier] || v.tier)}</span></td>
                     <td style={{ ...s.td, fontWeight:600 }}>{fmtBday(v.birthday, lang)}</td>
@@ -441,7 +442,7 @@ export default function BirthdayReminder() {
           <div style={s.modal} onClick={e => e.stopPropagation()}>
             <div style={s.mhdr}>
               <div>
-                <div style={{ fontSize:16, fontWeight:700 }}>🎁 {t('birthdayReminder.giftLogTitle')} — {modal.vip.username}</div>
+                <div style={{ fontSize:16, fontWeight:700 }}>🎁 {t('birthdayReminder.giftLogTitle')} — {modal.vip.username}<CopyBtn text={modal.vip.username} /></div>
                 <div style={{ fontSize:12, color:'var(--muted)', marginTop:2, display:'flex', alignItems:'center', gap:10, flexWrap:'wrap' }}>
                   <span>{fmtBday(modal.vip.birthday, lang)} · {L2('Age', '年龄')} {modal.vip.age}</span>
                   <span style={{ color:'var(--accent)' }}>{t('birthdayReminder.year')}:</span>
@@ -540,7 +541,7 @@ export default function BirthdayReminder() {
         <div style={s.overlay} onClick={() => setContactModal(null)}>
           <div style={{ ...s.modal, maxWidth:440 }} onClick={e => e.stopPropagation()}>
             <div style={s.mhdr}>
-              <div style={{ fontSize:16, fontWeight:700 }}>{t('birthdayReminder.logBirthdayContact')} — {contactModal.username}</div>
+              <div style={{ fontSize:16, fontWeight:700 }}>{t('birthdayReminder.logBirthdayContact')} — {contactModal.username}<CopyBtn text={contactModal.username} /></div>
               <button onClick={() => setContactModal(null)} style={{ background:'none', border:'none', color:'var(--muted)', fontSize:20, cursor:'pointer' }}>✕</button>
             </div>
             <div style={{ padding:'18px 22px' }}>
