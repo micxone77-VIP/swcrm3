@@ -2398,8 +2398,8 @@ export default function Campaigns() {
               )}
             </div>
 
-            {/* Tabs */}
-            <div style={{ display:'flex', borderBottom:'1px solid var(--border)', padding:'0 24px' }}>
+            {/* Tabs — stay at the top of the window while the list scrolls */}
+            <div style={{ display:'flex', borderBottom:'1px solid var(--border)', padding:'0 24px', position:'sticky', top:0, zIndex:6, background:'var(--surface)', overflowX:'auto' }}>
               {[
                 ['chase',    L2(`🏃 Chase List (${players.length})`, `🏃 跟进名单 (${players.length})`)],
                 ['payout',   `💰 ${L2('Payout','派彩')} (${isDailyMode ? dailyAchieved.length : selected?.is_multi_level ? multiPayoutRows.length : achieved.length} ${L2('rewards','份奖励')})`],
@@ -3387,10 +3387,18 @@ export default function Campaigns() {
                                         <button onClick={()=>{setContactHistory(null);setContactLog(p.id)}} style={{ background:'rgba(88,166,255,.1)', color:'#58a6ff', border:'1px solid rgba(88,166,255,.25)', borderRadius:5, padding:'2px 7px', fontSize:10, cursor:'pointer', fontWeight:600, marginTop:2 }}>{L2('+ Log New','+ 新记录')}</button>
                                       </div>
                                     ) : (
-                                      <button onClick={()=>{setContactHistory(null);setContactNote('');setContactLog(p.id)}}
-                                        style={{ background:'rgba(88,166,255,.1)', color:'#58a6ff', border:'1px solid rgba(88,166,255,.25)', borderRadius:5, padding:'2px 7px', fontSize:10, cursor:'pointer', fontWeight:600 }}>
-                                        + Log
-                                      </button>
+                                      <div style={{ display:'flex', gap:4, alignItems:'center' }}>
+                                        <button onClick={()=>{setContactHistory(null);setContactNote('');setContactLog(p.id)}}
+                                          style={{ background:'rgba(88,166,255,.1)', color:'#58a6ff', border:'1px solid rgba(88,166,255,.25)', borderRadius:5, padding:'2px 7px', fontSize:10, cursor:'pointer', fontWeight:600 }}>
+                                          + Log
+                                        </button>
+                                        {p.whatsapp && (
+                                          <button onClick={()=>openMsg(p, null)} title={L2('Choose message, copy or WhatsApp, log', '选择讯息、复制或 WhatsApp、记录')}
+                                            style={{ background:'rgba(37,211,102,.1)', color:'#25d366', border:'1px solid rgba(37,211,102,.25)', borderRadius:5, padding:'2px 7px', fontSize:10, cursor:'pointer', fontWeight:600 }}>
+                                            💬 WA
+                                          </button>
+                                        )}
+                                      </div>
                                     )}
                                   </>
                                 })()}
