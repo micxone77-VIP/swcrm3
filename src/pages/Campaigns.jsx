@@ -215,6 +215,9 @@ function buildWaMsgText(username, campaignName, rewardFormatted, lang, agent, tu
 function buildWaMsg(username, campaignName, rewardFormatted, lang, agent, turnoverRequired, campaign) {
   return encodeURIComponent(buildWaMsgText(username, campaignName, rewardFormatted, lang, agent, turnoverRequired, campaign))
 }
+// Calendar days between a contact time and today, in Malaysia time (yesterday 11pm = 1 day ago, not "Today")
+const mytDay = t => new Date(new Date(t).getTime() + 8 * 3600e3).toISOString().slice(0, 10)
+function daysAgoMYT(t) { return Math.round((new Date(mytDay(Date.now())) - new Date(mytDay(t))) / 86400000) }
 function waHref(phone, encodedMsg) {
   if (!phone) return null
   const clean = String(phone).replace(/\D/g, '')
@@ -2764,7 +2767,7 @@ export default function Campaigns() {
                                     const last = playerContacts[0]
                                     let badge = null
                                     if (last) {
-                                      const days = Math.floor((Date.now() - new Date(last.contacted_at).getTime()) / 86400000)
+                                      const days = daysAgoMYT(last.contacted_at)
                                       const col = days === 0 ? '#3fb950' : days <= 2 ? '#f59e0b' : '#f85149'
                                       badge = <div style={{ fontSize:10, color:col, fontWeight:700, marginBottom:3, cursor:'pointer' }}
                                         onClick={()=>{setContactLog(null);setContactNote('');setContactHistory(contactHistory===p.id?null:p.id)}} title={L2('View contact history','查看联系记录')}>
@@ -2800,7 +2803,7 @@ export default function Campaigns() {
                                             <button onClick={()=>setContactHistory(null)} style={{ background:'none', border:'none', color:'var(--muted)', fontSize:10, cursor:'pointer', padding:0 }}>✕</button>
                                           </div>
                                           {(contacts[p.id]||[]).slice(0,8).map((c,ci)=>{
-                                            const d=Math.floor((Date.now()-new Date(c.contacted_at).getTime())/86400000)
+                                            const d=daysAgoMYT(c.contacted_at)
                                             return <div key={ci} style={{ borderBottom:'1px solid var(--border)', paddingBottom:4, marginBottom:4 }}>
                                               <div style={{ fontSize:10, fontWeight:600, color:d===0?'#3fb950':d<=2?'#f59e0b':'var(--muted)' }}>
                                                 {CT_ICON[c.contact_type]||'📞'} {ctLabel(c.contact_type)} · {d===0?L2('Today','今天'):L2(`${d}d ago`, `${d} 天前`)}
@@ -3063,7 +3066,7 @@ export default function Campaigns() {
                             const last = playerContacts[0]
                             let badge = null
                             if (last) {
-                              const days = Math.floor((Date.now() - new Date(last.contacted_at).getTime()) / 86400000)
+                              const days = daysAgoMYT(last.contacted_at)
                               const col = days === 0 ? '#3fb950' : days <= 2 ? '#f59e0b' : '#f85149'
                               badge = <div style={{ fontSize:10, color:col, fontWeight:700, marginBottom:3, cursor:'pointer' }}
                                 onClick={()=>{setContactLog(null);setContactNote('');setContactHistory(contactHistory===p.id?null:p.id)}} title={L2('View contact history','查看联系记录')}>
@@ -3099,7 +3102,7 @@ export default function Campaigns() {
                                     <button onClick={()=>setContactHistory(null)} style={{ background:'none', border:'none', color:'var(--muted)', fontSize:10, cursor:'pointer', padding:0 }}>✕</button>
                                   </div>
                                   {(contacts[p.id]||[]).slice(0,8).map((c,ci)=>{
-                                    const d=Math.floor((Date.now()-new Date(c.contacted_at).getTime())/86400000)
+                                    const d=daysAgoMYT(c.contacted_at)
                                     return <div key={ci} style={{ borderBottom:'1px solid var(--border)', paddingBottom:4, marginBottom:4 }}>
                                       <div style={{ fontSize:10, fontWeight:600, color:d===0?'#3fb950':d<=2?'#f59e0b':'var(--muted)' }}>
                                         {CT_ICON[c.contact_type]||'📞'} {ctLabel(c.contact_type)} · {d===0?L2('Today','今天'):L2(`${d}d ago`, `${d} 天前`)}
@@ -3333,7 +3336,7 @@ export default function Campaigns() {
                                 {(() => {
                                   let badge
                                   if (lastContact) {
-                                    const days = Math.floor((Date.now() - new Date(lastContact.contacted_at).getTime()) / 86400000)
+                                    const days = daysAgoMYT(lastContact.contacted_at)
                                     const col = days === 0 ? '#3fb950' : days <= 2 ? '#f59e0b' : '#f85149'
                                     badge = <div style={{ fontSize:10, color:col, fontWeight:700, marginBottom:3, cursor:'pointer' }}
                                       onClick={()=>{setContactLog(null);setContactNote('');setContactHistory(contactHistory===p.id?null:p.id)}} title={L2('View contact history','查看联系记录')}>
@@ -3369,7 +3372,7 @@ export default function Campaigns() {
                                           <button onClick={()=>setContactHistory(null)} style={{ background:'none', border:'none', color:'var(--muted)', fontSize:10, cursor:'pointer', padding:0 }}>✕</button>
                                         </div>
                                         {(contacts[p.id]||[]).slice(0,8).map((c,ci)=>{
-                                          const d=Math.floor((Date.now()-new Date(c.contacted_at).getTime())/86400000)
+                                          const d=daysAgoMYT(c.contacted_at)
                                           return <div key={ci} style={{ borderBottom:'1px solid var(--border)', paddingBottom:4, marginBottom:4 }}>
                                             <div style={{ fontSize:10, fontWeight:600, color:d===0?'#3fb950':d<=2?'#f59e0b':'var(--muted)' }}>
                                               {CT_ICON[c.contact_type]||'📞'} {ctLabel(c.contact_type)} · {d===0?L2('Today','今天'):L2(`${d}d ago`, `${d} 天前`)}
