@@ -7,6 +7,7 @@ export const EDITABLE_CAMPAIGN_FIELDS = [
   'enrollment_mode','auto_enroll_tiers','leaderboard_metric','payout_mode',
   'streak_enabled','streak_days','streak_bonus_type','streak_bonus_pct','streak_bonus_fixed','streak_bonus_cap',
   'whatsapp_template','whatsapp_template_zh','wa_templates',
+  'turnover_multiplier','payout_template_en','payout_template_my','payout_template_cn',
 ]
 
 export const EMPTY_LEVEL = () => ({
