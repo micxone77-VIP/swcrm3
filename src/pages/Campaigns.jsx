@@ -236,6 +236,19 @@ function calcReward(type, deposit, rewardPct, rewardFixed, goldBarValue, rewardC
   return reward
 }
 
+// Small 📋 button: copies text, shows ✅ for a moment
+function CopyBtn({ text, title }) {
+  const [done, setDone] = useState(false)
+  if (!text) return null
+  return (
+    <button type="button" title={title}
+      onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(String(text)); setDone(true); setTimeout(() => setDone(false), 1500) }}
+      style={{ marginLeft:6, background:'none', border:'1px solid var(--border)', borderRadius:5, padding:'0 5px', fontSize:11, lineHeight:'18px', cursor:'pointer', color: done ? '#3fb950' : 'var(--muted)', verticalAlign:'middle' }}>
+      {done ? '✅' : '📋'}
+    </button>
+  )
+}
+
 // ── Main Component ────────────────────────────────────────────────────────────
 export default function Campaigns() {
   const { profile } = useAuth()
@@ -2538,8 +2551,9 @@ export default function Campaigns() {
                                   </div>
                                 </td>
                                 <td style={{ ...s.td, fontSize:12, color: p.host_assigned ? 'var(--text)' : 'var(--muted)' }}>{p.host_assigned || '—'}</td>
-                                <td style={{ ...s.td, fontSize:12, color:'var(--muted)' }}>
+                                <td style={{ ...s.td, fontSize:12, color:'var(--muted)', whiteSpace:'nowrap' }}>
                                   <input defaultValue={p.whatsapp||''} onBlur={e=>{if(e.target.value!==(p.whatsapp||''))updatePlayer(p.id,{whatsapp:e.target.value})}} style={{ ...s.editInput, width:120 }} placeholder="—" />
+                                  <CopyBtn text={p.whatsapp} title={L2('Copy phone number','复制电话号码')} />
                                 </td>
                                 <td style={s.td}>
                                   <input type="number" defaultValue={p._vb||''}
@@ -2699,8 +2713,9 @@ export default function Campaigns() {
                                   )}
                                 </td>
                                 <td style={{ ...s.td, fontSize:12, color: p.host_assigned ? 'var(--text)' : 'var(--muted)' }}>{p.host_assigned || '—'}</td>
-                                <td style={{ ...s.td, fontSize:12, color:'var(--muted)' }}>
+                                <td style={{ ...s.td, fontSize:12, color:'var(--muted)', whiteSpace:'nowrap' }}>
                                   <input defaultValue={p.whatsapp||''} onBlur={e=>{if(e.target.value!==(p.whatsapp||''))updatePlayer(p.id,{whatsapp:e.target.value})}} style={{ ...s.editInput, width:120 }} placeholder="—" />
+                                  <CopyBtn text={p.whatsapp} title={L2('Copy phone number','复制电话号码')} />
                                 </td>
                                 <td style={s.td}>
                                   {isDailyMode ? (
@@ -3330,10 +3345,10 @@ export default function Campaigns() {
                           return (
                             <tr key={p.id}>
                               <td style={{ ...s.td, color:'var(--muted)', fontSize:11 }}>{i+1}</td>
-                              <td style={{ ...s.td, fontWeight:700 }}>{p.username}</td>
+                              <td style={{ ...s.td, fontWeight:700, whiteSpace:'nowrap' }}>{p.username}<CopyBtn text={p.username} title={L2('Copy username','复制用户名')} /></td>
                               <td style={s.td}>{p.tier ? <span style={{ ...s.badge, background:TIER_BG[p.tier]||'transparent', color:TIER_COLOR[p.tier]||'var(--muted)' }}>{p.tier}</span> : '—'}</td>
                               <td style={{ ...s.td, fontSize:12, color:'var(--muted)' }}>{p.host_assigned || '—'}</td>
-                              <td style={{ ...s.td, fontSize:12 }}>{p.whatsapp || <span style={{ color:'var(--surface2)' }}>—</span>}</td>
+                              <td style={{ ...s.td, fontSize:12, whiteSpace:'nowrap' }}>{p.whatsapp ? <>{p.whatsapp}<CopyBtn text={p.whatsapp} title={L2('Copy phone number','复制电话号码')} /></> : <span style={{ color:'var(--surface2)' }}>—</span>}</td>
                               <td style={{ ...s.td, minWidth:110 }} onClick={e=>e.stopPropagation()}>
                                 {(() => {
                                   let badge
