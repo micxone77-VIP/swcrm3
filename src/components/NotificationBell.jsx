@@ -103,6 +103,22 @@ async function checkAlerts(myName) {
     })
   }
 
+  // VIPs (Gold and above) with no birthday yet — fill in on Birthdays → No birthday
+  try {
+    const { data: noBday } = await supabase.from('vip_members').select('tier')
+      .is('birthday', null).eq('is_excluded', false).range(0, 1999)
+    if (noBday?.length) {
+      const top = noBday.filter(v => v.tier !== 'GOLD').length
+      alerts.push({
+        key: 'no_birthday', icon: '🎂', severity: top ? 'high' : 'low',
+        title: `${noBday.length} VIPs have no birthday`, titleZh: `${noBday.length} 位VIP还没有生日`,
+        desc: `${top} Platinum or higher, ${noBday.length - top} Gold — fill in on the Birthdays page`,
+        descZh: `白金或以上 ${top} 位，黄金 ${noBday.length - top} 位 — 到生日页面填写`,
+        link: '/birthdays?filter=missing',
+      })
+    }
+  } catch (e) { console.error('birthday check failed', e) }
+
   // Big win / big loss yesterday (per-tier thresholds in app_settings)
   try {
     const wl = await loadBigWinLoss()

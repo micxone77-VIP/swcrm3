@@ -79,11 +79,37 @@ export default function BirthdayReminder() {
   const [saving, setSaving]   = useState(false)
   const [contactModal, setContactModal] = useState(null)
   const [contactForm, setContactForm]   = useState({ channel:'WhatsApp', outcome:'Contacted', notes:'' })
+  // VIPs with no birthday yet (Gold and above) + the date typed in each row
+  const [missing, setMissing]   = useState([])
+  const [bdayDraft, setBdayDraft] = useState({})
+  const [bdaySaving, setBdaySaving] = useState(null)
 
   useEffect(() => { loadData() }, [])
 
+  async function loadMissing() {
+    const { data } = await supabase
+      .from('vip_members')
+      .select('id, username, full_name, tier, currency, host_assigned, activity_status, last_deposit_date')
+      .is('birthday', null)
+      .eq('is_excluded', false)
+      .range(0, 1999)
+    setMissing(data || [])
+  }
+
+  async function saveBirthday(v) {
+    const val = bdayDraft[v.id]
+    if (!val) return
+    setBdaySaving(v.id)
+    const { error } = await supabase.from('vip_members_all').update({ birthday: val }).eq('id', v.id)
+    setBdaySaving(null)
+    if (error) { alert(L2('Save failed: ', '保存失败：') + error.message); return }
+    setMissing(m => m.filter(x => x.id !== v.id))
+    setVips(list => [...list, { ...v, birthday: val, daysUntil: daysUntilBirthday(val), age: getAge(val) }])
+  }
+
   async function loadData() {
     setLoading(true)
+    loadMissing()
     const { data: vipData } = await supabase
       .from('vip_members')
       .select('id, username, full_name, tier, birthday, phone, host_assigned, currency')
@@ -205,6 +231,18 @@ export default function BirthdayReminder() {
   const thisMonth  = vips.filter(v => { const b = new Date(v.birthday); return b.getMonth() === today.getMonth() }).length
   const gifted     = Object.keys(gifts).length
 
+  // Missing birthdays: highest tier first, then most recent depositor
+  const TIER_ORDER = ['BLACK','DIAMOND-P','DIAMOND','PLATINUM','GOLD','SILVER','BRONZE']
+  const STATUS_ZH = { Active:'活跃', Resting:'休息中', 'At Risk':'有风险', Churn:'流失', Dormant:'沉睡', Unknown:'未知' }
+  const missingByTier = missing.reduce((m, v) => ({ ...m, [v.tier]: (m[v.tier] || 0) + 1 }), {})
+  const tierTotal = tr => (missingByTier[tr] || 0) + vips.filter(v => v.tier === tr).length
+  const missingShown = missing.filter(v => {
+    if (mineOnly && myName && v.host_assigned !== myName) return false
+    if (tierF !== 'ALL' && v.tier !== tierF) return false
+    if (search && !v.username.toLowerCase().includes(search.toLowerCase()) && !v.full_name?.toLowerCase().includes(search.toLowerCase())) return false
+    return true
+  }).sort((a, b) => (TIER_ORDER.indexOf(a.tier) - TIER_ORDER.indexOf(b.tier)) || String(b.last_deposit_date || '').localeCompare(String(a.last_deposit_date || '')))
+
   return (
     <div style={s.page}>
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:20, flexWrap:'wrap', gap:12 }}>
@@ -215,14 +253,15 @@ export default function BirthdayReminder() {
       </div>
 
       {/* Stats */}
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:12, marginBottom:20 }}>
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(5,1fr)', gap:12, marginBottom:20 }}>
         {[
           { label: t('birthdayReminder.thisWeek'),       val: upcoming7,  color:'#f85149' },
           { label: t('birthdayReminder.next30Days'),     val: upcoming30, color:'#f0883e' },
           { label: t('birthdayReminder.thisMonth'),      val: thisMonth,  color:'#3fb950' },
           { label: t('birthdayReminder.giftedThisYear'), val: gifted,     color:'#ffd700' },
-        ].map(({ label, val, color }) => (
-          <div key={label} style={{ ...s.card, padding:'14px 18px' }}>
+          { label: L2('❓ No birthday yet — click to fill in', '❓ 还没有生日 — 点击填写'), val: missing.length, color:'#d29922', onClick: () => setFilter('missing') },
+        ].map(({ label, val, color, onClick }) => (
+          <div key={label} onClick={onClick} style={{ ...s.card, padding:'14px 18px', cursor: onClick ? 'pointer' : undefined, borderColor: onClick && filter === 'missing' ? '#d29922' : undefined }}>
             <div style={{ fontSize:26, fontWeight:800, color }}>{val}</div>
             <div style={{ fontSize:11, color:'var(--muted)', marginTop:2 }}>{label}</div>
           </div>
@@ -236,6 +275,7 @@ export default function BirthdayReminder() {
           ['thismonth', `📅 ${t('birthdayReminder.filterThisMonth')}`],
           ['all', `👥 ${t('birthdayReminder.filterAll')}`],
           ['past', `📖 ${t('birthdayReminder.filterPast')}`],
+          ['missing', `❓ ${L2('No birthday', '没有生日')} (${missing.length})`],
         ].map(([key,label]) => (
           <button key={key} onClick={() => setFilter(key)} style={{
             padding:'6px 14px', borderRadius:20, fontSize:12, fontWeight:600, cursor:'pointer',
@@ -252,10 +292,59 @@ export default function BirthdayReminder() {
           {['BLACK','DIAMOND-P','DIAMOND','PLATINUM','GOLD','SILVER','BRONZE'].map(t => <option key={t} value={t}>{L2(t, TIER_ZH[t])}</option>)}
         </select>
         <input style={{ ...s.finput, width:180 }} placeholder={t('birthdayReminder.searchPlaceholder')} value={search} onChange={e => setSearch(e.target.value)} />
-        <span style={{ marginLeft:'auto', fontSize:12, color:'var(--muted)' }}>{filtered.length} {t('birthdayReminder.shown')}</span>
+        <span style={{ marginLeft:'auto', fontSize:12, color:'var(--muted)' }}>{filter === 'missing' ? missingShown.length : filtered.length} {t('birthdayReminder.shown')}</span>
       </div>
 
-      {/* Table */}
+      {filter === 'missing' ? (
+        <div>
+          {/* Count per tier — click a tier to show only that tier */}
+          <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginBottom:12 }}>
+            {TIER_ORDER.filter(tr => missingByTier[tr]).map(tr => (
+              <button key={tr} onClick={() => setTierF(tierF === tr ? 'ALL' : tr)}
+                style={{ ...s.card, padding:'8px 14px', cursor:'pointer', borderColor: tierF === tr ? 'var(--accent)' : 'var(--border)', textAlign:'left' }}>
+                <span style={{ ...s.badge, background:TIER_BG[tr], color:TIER_COLOR[tr] }}>{L2(tr, TIER_ZH[tr] || tr)}</span>
+                <span style={{ marginLeft:8, fontWeight:800, color:'#d29922' }}>{missingByTier[tr]}</span>
+                <span style={{ marginLeft:4, fontSize:11, color:'var(--muted)' }}>{L2(`of ${tierTotal(tr)} no birthday`, `/ ${tierTotal(tr)} 没有生日`)}</span>
+              </button>
+            ))}
+          </div>
+          <div style={{ ...s.card, overflow:'hidden' }}>
+            <div style={{ overflowX:'auto' }}>
+              <table style={s.tbl}>
+                <thead><tr>
+                  {['#', L2('Username','用户名'), L2('Tier','等级'), L2('Status','状态'), L2('Host','负责人'), L2('Last deposit','最后存款'), L2('Birthday','生日')].map(h => <th key={h} style={s.th}>{h}</th>)}
+                </tr></thead>
+                <tbody>
+                  {missingShown.length === 0 ? (
+                    <tr><td colSpan={7} style={{ ...s.td, textAlign:'center', padding:40, color:'var(--muted)' }}>{L2('🎉 Everyone here has a birthday.', '🎉 这里所有人都有生日了。')}</td></tr>
+                  ) : missingShown.map((v, i) => (
+                    <tr key={v.id} style={{ cursor:'pointer' }} onClick={() => navigate(`/vips/${v.id}`)}
+                      onMouseEnter={e => e.currentTarget.style.background = 'var(--surface2)'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                      <td style={{ ...s.td, color:'var(--muted)', fontSize:11 }}>{i+1}</td>
+                      <td style={{ ...s.td, fontWeight:700 }}>{v.username}{v.full_name && <div style={{ fontSize:11, color:'var(--muted)', fontWeight:400 }}>{v.full_name}</div>}</td>
+                      <td style={s.td}><span style={{ ...s.badge, background:TIER_BG[v.tier], color:TIER_COLOR[v.tier] }}>{L2(v.tier, TIER_ZH[v.tier] || v.tier)}</span> <span style={{ fontSize:11, color:'var(--muted)' }}>{v.currency}</span></td>
+                      <td style={{ ...s.td, fontSize:12 }}>{v.activity_status ? L2(v.activity_status, STATUS_ZH[v.activity_status] || v.activity_status) : '—'}</td>
+                      <td style={{ ...s.td, fontSize:12, color:'var(--muted)' }}>{v.host_assigned || '—'}</td>
+                      <td style={{ ...s.td, fontSize:12, color:'var(--muted)' }}>{v.last_deposit_date || '—'}</td>
+                      <td style={s.td} onClick={e => e.stopPropagation()}>
+                        <div style={{ display:'flex', gap:6, alignItems:'center' }}>
+                          <input type="date" value={bdayDraft[v.id] || ''} max={new Date().toISOString().slice(0, 10)}
+                            onChange={e => setBdayDraft(d => ({ ...d, [v.id]: e.target.value }))}
+                            onKeyDown={e => { if (e.key === 'Enter') saveBirthday(v) }}
+                            style={{ ...s.finput, width:150, padding:'5px 8px', colorScheme:'dark' }} />
+                          <button style={s.btnBlue} disabled={!bdayDraft[v.id] || bdaySaving === v.id} onClick={() => saveBirthday(v)}>
+                            {bdaySaving === v.id ? L2('Saving…', '保存中…') : L2('Save', '保存')}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      ) : (
       <div style={{ ...s.card, overflow:'hidden' }}>
         <div style={{ overflowX:'auto' }}>
           <table style={s.tbl}>
@@ -344,6 +433,7 @@ export default function BirthdayReminder() {
           </table>
         </div>
       </div>
+      )}
 
       {/* Gift Modal */}
       {modal && (
