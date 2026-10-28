@@ -1627,6 +1627,30 @@ export default function Campaigns() {
   const pendingPay = Math.max(0,totalReward-paidOut)
   const chaseList = campType==='leaderboard' ? lbRanked : [...players].sort((a,b)=>playerDeposit(b)-playerDeposit(a))
   const chaseHosts = ['all', ...Array.from(new Set(chaseList.map(p => p.host_assigned).filter(Boolean))).sort()]
+  // Progress sort = same numbers as the Progress column: highest tier / level reached first,
+  // then % toward the next one (entry date's figures in daily settlement)
+  const progressScore = (p) => {
+    const e = dailyEntries[p.id]
+    const toward = (dep, to, tier) => {
+      const d = parseFloat(tier?.depositThreshold) || 0, t = parseFloat(tier?.turnoverThreshold) || 0
+      return Math.min(d > 0 ? Math.min(1, dep / d) : 1, t > 0 ? Math.min(1, to / t) : 1)
+    }
+    if (selected?.is_multi_level && campaignLevels.length > 0) {
+      const dep = isDailyMode ? (parseFloat(e?.deposit_amount) || 0) : playerDeposit(p)
+      const ths = campaignLevels.map(l => parseFloat(l.deposit_threshold) || 0).sort((x, y) => x - y)
+      const done = ths.filter(th => dep >= th).length
+      const next = ths[done]
+      return done * 1000 + (next ? Math.min(1, dep / next) * 100 : 100)
+    }
+    if (campType === 'dual_tier') {
+      const dep = isDailyMode ? (parseFloat(e?.deposit_amount) || 0) : playerDeposit(p)
+      const to = isDailyMode ? (parseFloat(e?.turnover_amount) || 0) : (parseFloat(p.valid_bet) || 0)
+      const idx = calcDualTierReward(dep, to, rewardTiers).tierIndex
+      const next = rewardTiers[idx + 1]
+      return (idx + 1) * 1000 + (next ? toward(dep, to, next) * 100 : 100)
+    }
+    return depTarget > 0 ? playerDeposit(p) / depTarget : 0
+  }
   const filteredChaseList = (() => {
     const filtered = chaseList.filter(p => {
       const matchesHost = hostFilter === 'all' || p.host_assigned === hostFilter
@@ -1646,12 +1670,10 @@ export default function Campaigns() {
         const tB = isDailyMode ? (parseFloat(dailyEntries[b.id]?.turnover_amount) || 0) : (parseFloat(b.valid_bet) || 0)
         return sm * (tA - tB)
       }
-      if (chaseSort === 'progress') {
-        const pA = depTarget > 0 ? playerDeposit(a) / depTarget : 0
-        const pB = depTarget > 0 ? playerDeposit(b) / depTarget : 0
-        return sm * (pA - pB)
-      }
-      return sm * (playerDeposit(a) - playerDeposit(b))
+      if (chaseSort === 'progress') return sm * (progressScore(a) - progressScore(b))
+      const dA = isDailyMode ? (parseFloat(dailyEntries[a.id]?.deposit_amount) || 0) : playerDeposit(a)
+      const dB = isDailyMode ? (parseFloat(dailyEntries[b.id]?.deposit_amount) || 0) : playerDeposit(b)
+      return sm * (dA - dB)
     })
   })()
   const filteredPayoutList = (() => {
