@@ -1494,7 +1494,11 @@ export default function Campaigns() {
     const campName = selected?.campaign_name || 'this campaign'
     const cur = campCurrency === 'SGD' ? 'SGD ' : 'RM'
     const num = v => Math.round(Number(v) || 0).toLocaleString('en-US')
-    const dep = playerDeposit(p), vb = parseFloat(p.valid_bet) || 0
+    // Daily campaign: each day stands alone → use the selected entry date's figures and payout, not the campaign total
+    const dayEntry = isDailyMode ? dailyEntries[p.id] : null
+    const dep = isDailyMode ? (parseFloat(dayEntry?.deposit_amount) || 0) : playerDeposit(p)
+    const vb = isDailyMode ? (parseFloat(dayEntry?.turnover_amount) || 0) : (parseFloat(p.valid_bet) || 0)
+    const isPaid = isDailyMode ? dayEntry?.payout_status === 'paid' : p.payout_status === 'paid'
     let reward = 0, gap = 0, nextReward = 0
     if (selected?.is_multi_level && campType === 'fixed_reward') {
       const metric = multiMetricsByPlayer[p.id]
@@ -1503,6 +1507,7 @@ export default function Campaigns() {
     } else if (campType === 'dual_tier') {
       const result = calcDualTierReward(dep, vb, rewardTiers)
       if (result.tierIndex >= 0) reward = (Number(result.creditAmount) || 0) + (Number(result.wcashAmount) || 0)
+      if (dayEntry && (Number(dayEntry.credit_reward) || Number(dayEntry.wcash_reward))) reward = (Number(dayEntry.credit_reward) || 0) + (Number(dayEntry.wcash_reward) || 0)
       const next = (rewardTiers || [])[result.tierIndex + 1]
       if (next) {
         const dg = Math.max(0, (parseFloat(next.depositThreshold) || 0) - dep), tg = Math.max(0, (parseFloat(next.turnoverThreshold) || 0) - vb)
@@ -1519,7 +1524,7 @@ export default function Campaigns() {
     }
     const today = new Date().toISOString().slice(0, 10)
     const ended = selected?.status === 'ended' || (selected?.end_date && selected.end_date < today)
-    let stage = ended ? 'ended' : p.payout_status === 'paid' && reward > 0 ? 'paid' : reward > 0 ? 'won' : (dep > 0 || vb > 0) ? 'near' : 'intro'
+    let stage = ended ? 'ended' : isPaid && reward > 0 ? 'paid' : reward > 0 ? 'won' : (dep > 0 || vb > 0) ? 'near' : 'intro'
     if (extra?.stage) stage = extra.stage
     const daysLeft = selected?.end_date ? Math.max(0, Math.round((new Date(selected.end_date + 'T00:00:00Z') - new Date(today + 'T00:00:00Z')) / 86400000) + 1) : ''
     const mult = Number(selected?.turnover_multiplier) || 0
