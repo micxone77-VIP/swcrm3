@@ -1228,6 +1228,11 @@ export default function Campaigns() {
         if (error) { alert(L2('Batch upsert failed: ','批量写入失败：') + error.message); setDailyLoading(false); return }
       }
       await loadDailyEntries(selected.id, entryDate)
+      // Award streak bonuses for players who just completed a streak with this date
+      if (selected?.streak_enabled) {
+        for (const username of matched) await checkAndAwardStreak(playersByUsername[username].id, entryDate)
+        await loadStreakBonuses(selected.id)
+      }
     } else {
       // Non-daily: update campaign_players.total_deposit + valid_bet one by one
       // (uses existing updatePlayer path so sync_manual_campaign_player_progress fires)
