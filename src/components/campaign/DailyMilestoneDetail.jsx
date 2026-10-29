@@ -38,6 +38,7 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
   const T = (en, zh) => L(lang, en, zh)
   const myName = profile?.full_name || ''
   const [camp, setCamp] = useState(initial)
+  const [editName, setEditName] = useState(null) // null = not editing the title
   const cfg = useMemo(() => ({ ...defaultDailyConfig(), ...(camp.challenge_config || {}) }), [camp])
 
   const [players, setPlayers] = useState([])
@@ -309,6 +310,14 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
     XLSX.writeFile(wb, `${camp.campaign_code || 'campaign'}_payout_${settle}.xlsx`)
   }
 
+  async function saveName() {
+    const name = (editName || '').trim()
+    if (!name) return flash(T('Title cannot be empty', '标题不能为空'))
+    const { error } = await supabase.from('campaigns').update({ campaign_name: name }).eq('id', camp.id)
+    if (error) return flash(error.message)
+    setCamp(c => ({ ...c, campaign_name: name })); setEditName(null); onChanged && onChanged()
+  }
+
   async function saveRules() {
     const clean = cleanDailyConfig(draft)
     const { error } = await supabase.from('campaigns').update({ challenge_config: clean }).eq('id', camp.id)
@@ -462,7 +471,20 @@ export default function DailyMilestoneDetail({ campaign: initial, onClose, onCha
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
           <div style={{ fontSize: 34 }}>⚡</div>
           <div style={{ flex: 1, minWidth: 260 }}>
-            <div style={{ fontSize: 26, fontWeight: 800 }}>{camp.campaign_name}</div>
+            {editName === null ? (
+              <div style={{ fontSize: 26, fontWeight: 800 }}>{camp.campaign_name}
+                <button title={T('Edit title', '修改标题')} onClick={() => setEditName(camp.campaign_name || '')}
+                  style={{ marginLeft: 10, background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, opacity: 0.7, verticalAlign: 'middle' }}>✏️</button>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <input autoFocus value={editName} onChange={e => setEditName(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') saveName(); if (e.key === 'Escape') setEditName(null) }}
+                  style={{ flex: 1, fontSize: 22, fontWeight: 800, padding: '4px 10px', background: 'var(--surface2)', color: 'var(--text)', border: '1px solid var(--accent)', borderRadius: 8 }} />
+                <button style={btn} onClick={saveName}>{T('Save', '保存')}</button>
+                <button style={sec} onClick={() => setEditName(null)}>{T('Cancel', '取消')}</button>
+              </div>
+            )}
             <div style={{ fontSize: 14, color: 'var(--muted)' }}>
               {T('Daily Milestone', '每日流水里程碑')} · {camp.start_date} → {camp.end_date} · {players.length} {T('players', '位玩家')} · {camp.status}
             </div>
