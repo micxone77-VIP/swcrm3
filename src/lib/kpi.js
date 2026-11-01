@@ -10,7 +10,6 @@
 // exactly as used below.
 
 import { supabase } from './supabase'
-import { formatMoney } from './format'
 
 // source: 'auto' = calculated from DB, 'manual' = user fills in
 export const KPI_FRAMEWORK = [
@@ -40,7 +39,7 @@ export const KPI_FRAMEWORK = [
       {
         key: 'total_turnover', label: 'VIP 总流水', labelEn: 'Total VIP Turnover',
         weight: 20, target: 150000000, unit: 'RM', source: 'auto',
-        fmt: (v) => formatMoney(v, 'MYR'),
+        fmt: (v) => `RM ${Math.round(Number(v) || 0).toLocaleString('en-US')}`, // full amount, not 139.13M
         icon: '💰', desc: '目标 ≥ RM 1.5亿/月', descEn: 'Target ≥ RM 150M / month',
       },
       {
