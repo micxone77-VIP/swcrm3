@@ -1459,11 +1459,20 @@ export default function Campaigns() {
     const ended = selected?.status === 'ended' || (selected?.end_date && selected.end_date < today)
     let stage = ended ? 'ended' : isPaid && reward > 0 ? 'paid' : reward > 0 ? 'won' : (dep > 0 || vb > 0) ? 'near' : 'intro'
     if (extra?.stage) stage = extra.stage
+    // Daily campaign: a streak bonus that finishes on this date goes in the same message as the day's reward
+    const dayStreak = isDailyMode && entryDate && ['paid', 'won'].includes(stage)
+      ? (streakBonuses[p.id] || []).filter(sb => sb.period_end === entryDate)
+        .reduce((s, sb) => s + (parseFloat(sb.bonus_amount) || 0), 0)
+      : 0
+    const dayReward = reward
+    reward += dayStreak
     const daysLeft = selected?.end_date ? Math.max(0, Math.round((new Date(selected.end_date + 'T00:00:00Z') - new Date(today + 'T00:00:00Z')) / 86400000) + 1) : ''
     const mult = Number(selected?.turnover_multiplier) || 0
     const vars = l => ({
       username: p.username || '', agent: myName, campaign: campName, start: selected?.start_date || '', end: selected?.end_date || '', days_left: daysLeft, cur,
-      gap: gap > 0 ? num(gap) : '', next_reward: nextReward > 0 ? cur + num(nextReward) : '', reward: reward > 0 ? cur + num(reward) : '',
+      gap: gap > 0 ? num(gap) : '', next_reward: nextReward > 0 ? cur + num(nextReward) : '',
+      reward: reward <= 0 ? '' : !dayStreak ? cur + num(reward)
+        : `${cur}${num(reward)} (${cur}${num(dayReward)} ${l === 'zh' ? '奖励 + ' : l === 'my' ? 'ganjaran + ' : 'reward + '}${cur}${num(dayStreak)} ${l === 'zh' ? '连续奖励' : 'streak bonus'})`,
       turnover: mult && reward > 0 ? cur + num(reward * mult) : '', tier_list: tierList(selected, campaignLevels, l),
       streak: extra?.streak ?? '', streak_n: selected?.streak_days || '', streak_pct: selected?.streak_bonus_pct != null ? Number(selected.streak_bonus_pct) : '',
     })
@@ -2997,9 +3006,15 @@ export default function Campaigns() {
                       const pendingStreakBonus = playerStreakBonuses.filter(r => r.payout_status !== 'paid').reduce((s,r) => s + (parseFloat(r.bonus_amount)||0), 0)
                       const waAgent = p.host_assigned || null
                       const waTurnoverMult = selected?.turnover_multiplier ? Number(selected.turnover_multiplier) : null
-                      const waTurnoverReq = waTurnoverMult && creditReward > 0 ? rmFmt(creditReward * waTurnoverMult, campCurrency) : null
-                      const waMsgText = buildWaMsgText(p.username, selected?.campaign_name||'Campaign', rmFmt(creditReward,campCurrency), waLang, waAgent, waTurnoverReq, selected)
-                      const waUrl = p.whatsapp ? waHref(p.whatsapp, buildWaMsg(p.username, selected?.campaign_name||'Campaign', rmFmt(creditReward,campCurrency), waLang, waAgent, waTurnoverReq, selected)) : null
+                      // Daily campaign: a streak bonus that finishes on this date goes in the same Paid message (one WhatsApp, not two)
+                      const dayStreak = isDailyMode && entryDate
+                        ? playerStreakBonuses.filter(r => r.period_end === entryDate).reduce((s,r) => s + (parseFloat(r.bonus_amount)||0), 0) : 0
+                      const waReward = creditReward + dayStreak
+                      const waRewardText = !dayStreak ? rmFmt(creditReward,campCurrency)
+                        : `${rmFmt(waReward,campCurrency)} (${rmFmt(creditReward,campCurrency)} ${waLang==='cn'?'奖励':waLang==='my'?'ganjaran':'reward'} + ${rmFmt(dayStreak,campCurrency)} ${waLang==='cn'?'连续奖励':'streak bonus'})`
+                      const waTurnoverReq = waTurnoverMult && waReward > 0 ? rmFmt(waReward * waTurnoverMult, campCurrency) : null
+                      const waMsgText = buildWaMsgText(p.username, selected?.campaign_name||'Campaign', waRewardText, waLang, waAgent, waTurnoverReq, selected)
+                      const waUrl = p.whatsapp ? waHref(p.whatsapp, buildWaMsg(p.username, selected?.campaign_name||'Campaign', waRewardText, waLang, waAgent, waTurnoverReq, selected)) : null
                       return <tr key={p.id}>
                         <td style={{...s.td,color:'var(--muted)',fontSize:11}}>{i+1}</td>
                         <td style={{...s.td,fontWeight:700}}>{p.username}<CopyBtn text={p.username} /></td>
@@ -3018,7 +3033,7 @@ export default function Campaigns() {
                           : campType==='dual_tier'
                             ? <span>{rmFmt(dualReward.creditAmount,campCurrency)} Credit<br/><span style={{fontSize:10,color:'var(--muted)'}}>+ {rmFmt(dualReward.wcashAmount,campCurrency)} WCash</span></span>
                             : rmFmt(creditReward,campCurrency)
-                        }</td>
+                        }{dayStreak > 0 && <><br/><span style={{fontSize:10,color:'#f97316',fontWeight:700}}>🔥 + {rmFmt(dayStreak,campCurrency)} {L2('streak bonus','连续奖励')}</span></>}</td>
                         <td style={s.td}>
                           <button onClick={()=> isDailyMode ? updateDailyPayout(p.id, paid?'pending':'paid') : updatePlayer(p.id,{payout_status:paid?'pending':'paid',payout_date:paid?null:new Date().toISOString(),reward_amount:paid?0:creditReward+wcashReward})} style={{...s.tag(paid?'#3fb950':'#f59e0b',paid?'rgba(63,185,80,.15)':'rgba(245,158,11,.15)'),cursor:'pointer'}}>{paid?L2('✅ Paid','✅ 已派'):L2('⏳ Pending','⏳ 待处理')}</button>
                           {selected?.streak_enabled && pendingStreakBonus > 0 && (
