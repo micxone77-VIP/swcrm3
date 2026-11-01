@@ -1,5 +1,6 @@
 // src/components/vip/ProviderActivityCard.jsx — 供应商活动 card for VIP360 Gaming tab
-// (latest two months with a switch; early in a month it opens on last month's full figures).
+// (switch per month + "All months"; early in a month it opens on last month's full figures).
+// onMonth(month | 'ALL') tells VIP360 which month is shown so Player Type / Strengths follow it.
 // Data: provider_player_monthly (back office 10.3 Provider Report Detail, month-to-date,
 // loaded by C:\Project\Gaming Report\_tools\upload.mjs). Amounts are from the player's side:
 // negative win/loss = player lost.
@@ -36,9 +37,10 @@ const isFullMonth = (r) => {
   return Number(r.period_end.slice(8, 10)) === new Date(y, m, 0).getDate()
 }
 
-export default function ProviderActivityCard({ username, currency = 'MYR' }) {
+export default function ProviderActivityCard({ username, currency = 'MYR', onMonth }) {
   const [allRows, setAllRows] = useState([])
-  const [month, setMonth] = useState(null)
+  const [month, setMonthState] = useState(null)
+  const setMonth = m => { setMonthState(m); onMonth && onMonth(m) }
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState(null)
   const { lang } = useLanguage()
@@ -53,14 +55,14 @@ export default function ProviderActivityCard({ username, currency = 'MYR' }) {
       .eq('username', username)
       .eq('currency', currency)
       .order('period_month', { ascending: false })
-      .limit(300)
+      .limit(1000)
       .then(({ data, error }) => {
         if (cancelled) return
         if (error) { console.error('ProviderActivityCard load error', error); setErr(error.message) }
-        // Keep the two latest months. Open on the latest one, except in its first 7 days, when it
-        // holds only a few days: then open on last month's full figures (the switch shows both).
-        const months = [...new Set((data || []).map(r => r.period_month))].slice(0, 2)
-        const kept = (data || []).filter(r => months.includes(r.period_month))
+        // Open on the latest month, except in its first 7 days, when it holds only a few days:
+        // then open on last month's full figures (the switch shows every month + All months).
+        const months = [...new Set((data || []).map(r => r.period_month))]
+        const kept = data || []
         const latestEnd = kept.find(r => r.period_month === months[0])?.period_end
         const earlyInMonth = latestEnd && Number(latestEnd.slice(8, 10)) <= 7
         setAllRows(kept)
@@ -73,7 +75,15 @@ export default function ProviderActivityCard({ username, currency = 'MYR' }) {
   if (loading) return <div style={{ ...box, marginBottom: 20, color: 'var(--muted)', fontSize: 13 }}>{L2('Loading provider activity…', '载入供应商活动中…')}</div>
   if (err) return <div style={{ ...box, marginBottom: 20, color: '#f87171', fontSize: 13 }}>{L2('Provider activity error', '供应商活动错误')}: {err}</div>
   const months = [...new Set(allRows.map(r => r.period_month))]
-  const rows = allRows.filter(r => r.period_month === month)
+  const isAll = month === 'ALL'
+  // All months = each provider's months added together
+  const rows = !isAll ? allRows.filter(r => r.period_month === month) : Object.values(allRows.reduce((acc, r) => {
+    const a = acc[r.provider] || (acc[r.provider] = { provider: r.provider, period_month: r.period_month, period_start: r.period_start, period_end: r.period_end, bet_count: 0, valid_turnover: 0, win_loss: 0, bonus: 0, rebate: 0, total_win_loss: 0 })
+    for (const k of ['bet_count', 'valid_turnover', 'win_loss', 'bonus', 'rebate', 'total_win_loss']) a[k] += parseFloat(r[k]) || 0
+    if (r.period_start < a.period_start) a.period_start = r.period_start
+    if (r.period_end > a.period_end) a.period_end = r.period_end
+    return acc
+  }, {}))
   if (!rows.length) return (
     <div style={{ ...box, marginBottom: 20, color: 'var(--muted)', fontSize: 13 }}>
       {L2('🎯 Provider Activity — no back office provider data for this player yet.', '🎯 供应商活动 — 暂无此玩家的后台供应商数据。')}
@@ -87,15 +97,16 @@ export default function ProviderActivityCard({ username, currency = 'MYR' }) {
   const totNet = sorted.reduce((s, r) => s + num(r.total_win_loss), 0)
   const totBets = sorted.reduce((s, r) => s + (r.bet_count || 0), 0)
   const top = sorted[0]
-  const { period_start, period_end } = sorted[0]
+  const period_start = sorted.reduce((m, r) => (r.period_start < m ? r.period_start : m), sorted[0].period_start)
+  const period_end = sorted.reduce((m, r) => (r.period_end > m ? r.period_end : m), sorted[0].period_end)
   const period = `${fmtDate(period_start, lang)} – ${fmtDate(period_end, lang)}`
-  const full = isFullMonth(sorted[0])
+  const full = isAll || isFullMonth(sorted[0])
 
   return (
     <div style={{ ...box, marginBottom: 20 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
         <div style={label}>
-          {L2('🎯 Provider Activity', '🎯 供应商活动')} — {monthLabel(month, lang)}{full ? '' : L2(' · so far', ' · 至今')}
+          {L2('🎯 Provider Activity', '🎯 供应商活动')} — {isAll ? L2(`All months (${months.length})`, `全部月份（${months.length}）`) : monthLabel(month, lang)}{full ? '' : L2(' · so far', ' · 至今')}
         </div>
         <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10 }}>{period} · {L2('back office', '后台数据')}</div>
       </div>
@@ -114,6 +125,12 @@ export default function ProviderActivityCard({ username, currency = 'MYR' }) {
               </button>
             )
           })}
+          <button onClick={() => setMonth('ALL')}
+            style={{ fontSize: 12, fontWeight: 600, padding: '4px 12px', borderRadius: 6, cursor: 'pointer',
+              border: `1px solid ${isAll ? 'var(--brand)' : 'var(--border)'}`,
+              background: isAll ? 'var(--brand)' : 'var(--surface)', color: isAll ? '#fff' : 'var(--muted)' }}>
+            {L2('All months', '全部月份')}
+          </button>
         </div>
       )}
 

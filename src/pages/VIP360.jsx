@@ -24,6 +24,7 @@ import InteractionTimeline from '../components/vip/InteractionTimeline'
 import { autoText } from '../lib/profileAutoText'
 import ProviderActivityCard from '../components/vip/ProviderActivityCard'
 import CopyBtn from '../components/CopyBtn'
+import { fetchPaidCampaignRewards } from '../lib/vipCampaignRewards'
 
 const TIERS = ['BRONZE','SILVER','GOLD','PLATINUM','DIAMOND','DIAMOND-P','BLACK']
 const PERIODS = [
@@ -106,6 +107,8 @@ const [calLoading, setCalLoading] = useState(false)
 const [gaming, setGaming] = useState([])          // provider_player_stats rows
 const [gamingLabel, setGamingLabel] = useState(null) // player_gaming_labels row
 const [gamingLoading, setGamingLoading] = useState(false)
+const [gamingLabels, setGamingLabels] = useState([]) // every month's player_gaming_labels row, newest first
+const [gamingMonth, setGamingMonth] = useState(null) // month shown in Provider Activity ('2026-10-01' | 'ALL')
 const [gamingAI, setGamingAI] = useState(null)
 const [gamingAILoading, setGamingAILoading] = useState(false)
 
@@ -114,6 +117,8 @@ const [vipExpenses, setVipExpenses] = useState([])
 const [bonusTotals, setBonusTotals] = useState({})   // BO bonuses per currency (vip_bonus_txns)
 const onBonusTotals = useCallback(t => setBonusTotals(t), [])
 const [spendCopied, setSpendCopied] = useState(false)
+const [campRewards, setCampRewards] = useState(null) // paid campaign rewards (src/lib/vipCampaignRewards.js), null = loading
+const [campRewardsFor, setCampRewardsFor] = useState(null)
 const [expensesLoading, setExpensesLoading] = useState(false)
 const [expensesFor, setExpensesFor] = useState(null) // username the expenses were loaded for (stops re-fetch loop when a VIP has 0 records)
 
@@ -241,12 +246,12 @@ Promise.all([
     .select('*')
     .eq('username', vip.username)
     .order('snapshot_month', { ascending: false })
-    .limit(1)
-    .maybeSingle(),
+    .limit(24),
 ]).then(([provRes, labelRes]) => {
   const rows = provRes.data || []
   setGaming(rows.filter(r => r.period_month === rows[0]?.period_month))
-  if (labelRes.data) setGamingLabel(labelRes.data)
+  setGamingLabels(labelRes.data || [])
+  if (labelRes.data?.[0]) setGamingLabel(labelRes.data[0])
   setGamingLoading(false)
 })
 }, [tab, vip?.username, gaming.length, gamingLoading])
@@ -302,6 +307,17 @@ supabase.from('department_expenses')
   }, err => { console.error('department_expenses load error', err); setVipExpenses([]) })
   .finally(() => setExpensesLoading(false))
 }, [tab, vip?.username, expensesFor])
+
+// Paid campaign rewards for Dept Spending
+useEffect(() => {
+if (tab !== 'spending' || !vip?.username || campRewardsFor === vip.username) return
+const uname = vip.username
+setCampRewardsFor(uname)
+setCampRewards(null)
+fetchPaidCampaignRewards(uname)
+  .then(rows => setCampRewards(rows))
+  .catch(err => { console.error('campaign rewards load error', err); setCampRewards([]) })
+}, [tab, vip?.username, campRewardsFor])
 
 // Period-filtered monthly data
 const now = new Date()
@@ -709,15 +725,21 @@ const CAT_LABEL = lang === 'zh' ? { live:'真人娱乐', slots:'老虎机', spor
 const PT_ZH = { 'Slots King':'老虎机之王','Live Casino VIP':'真人娱乐VIP','Sports Punter':'体育投注玩家','Slots + Live':'老虎机 + 真人','Live + Sports':'真人 + 体育','Multi-Platform':'多平台','Casual':'休闲' }
 const CAT_ICON  = { live:'🎲', slots:'🎰', sports:'⚽', other:'🃏' }
 
-// Category totals from label
-const gl = gamingLabel
-// Which month the label is from: "Oct 2026 · month to date (to 24 Oct)" or "Sep 2026 · no games this month yet"
+// Label = the month picked in Provider Activity; "All months" uses the latest full month
 const nowMYT = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 7)
+const pickAll = gamingMonth === 'ALL'
+const gl = !gamingMonth ? gamingLabel
+  : pickAll ? (gamingLabels.find(x => x.snapshot_month < nowMYT) || gamingLabels[0] || null)
+  : (gamingLabels.find(x => x.snapshot_month === gamingMonth.slice(0, 7)) || null)
+// Which month the label is from: "Oct 2026 · month to date (to 24 Oct)", "Oct 2026 · full month" or "Sep 2026 · no games this month yet"
 const glMonthName = gl?.snapshot_month ? new Date(gl.snapshot_month + '-01T00:00:00Z').toLocaleDateString(lang === 'zh' ? 'zh-CN' : 'en-GB', { month: 'short', year: 'numeric', timeZone: 'UTC' }) : ''
 const glIsMTD = gl?.snapshot_month === nowMYT
+const glWarn = !glIsMTD && !gamingMonth
 const glTo = gl?.data_to ? new Date(gl.data_to + 'T00:00:00Z').toLocaleDateString(lang === 'zh' ? 'zh-CN' : 'en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' }) : ''
 const glPeriod = !gl ? '' : glIsMTD
   ? L2(`${glMonthName} · month to date${glTo ? ` (to ${glTo})` : ''}`, `${glMonthName} · 本月至今${glTo ? `（至 ${glTo}）` : ''}`)
+  : pickAll ? L2(`${glMonthName} · latest full month (All months view)`, `${glMonthName} · 最近完整月份（全部月份视图）`)
+  : gamingMonth ? L2(`${glMonthName} · full month`, `${glMonthName} · 整月`)
   : L2(`${glMonthName} · no games this month yet`, `${glMonthName} · 本月还没有游戏记录`)
 const catOf = (c, p) => c || getCat(p)
 const PLAYER_TYPE_COLOR = {
@@ -733,7 +755,7 @@ const ptColor = gl ? (PLAYER_TYPE_COLOR[gl.player_type] || 'var(--muted)') : 'va
 
 return (
 <div>
-  <ProviderActivityCard username={vip.username} currency={vip.currency} />
+  <ProviderActivityCard username={vip.username} currency={vip.currency} onMonth={setGamingMonth} />
   {gamingLoading ? (
     <LoadingState message={L2('Loading gaming data…', '载入游戏数据中…')} />
   ) : gaming.length === 0 ? (
@@ -751,7 +773,7 @@ return (
                 <span style={{ fontSize:28 }}>{gl.player_type_icon}</span>
                 <span style={{ fontSize:18, fontWeight:800, color: ptColor }}>{lang === 'zh' ? (PT_ZH[gl.player_type] || gl.player_type) : gl.player_type}</span>
               </div>
-              <div style={{ fontSize:12, color: glIsMTD ? 'var(--muted)' : 'var(--warning, #d29922)', marginBottom:8 }}>
+              <div style={{ fontSize:12, color: glWarn ? 'var(--warning, #d29922)' : 'var(--muted)', marginBottom:8 }}>
                 📅 {glPeriod} · {L2(`${gl.active_providers} active provider${gl.active_providers !== 1 ? 's':''}`, `${gl.active_providers} 个活跃供应商`)}</div>
               {/* Category bars */}
               {[
@@ -771,14 +793,14 @@ return (
               ))}
             </div>
           ) : (
-            <div style={{ fontSize:13, color:'var(--muted)' }}>{L2('Label not yet computed. Run the SQL migration first.', '标签尚未计算。请先运行SQL迁移。')}</div>
+            <div style={{ fontSize:13, color:'var(--muted)' }}>{gamingMonth ? L2('No games in this month.', '这个月没有游戏记录。') : L2('Label not yet computed. Run the SQL migration first.', '标签尚未计算。请先运行SQL迁移。')}</div>
           )}
         </div>
 
         {/* Good at / Bad at */}
         <div style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:10, padding:'16px 18px' }}>
           <div style={{ fontSize:11, fontWeight:700, color:'var(--muted)', letterSpacing:'.5px', textTransform:'uppercase', marginBottom:4 }}>{L2('Strengths & Weaknesses', '强项与弱项')}</div>
-          {gl && <div style={{ fontSize:12, color: glIsMTD ? 'var(--muted)' : 'var(--warning, #d29922)', marginBottom:10 }}>📅 {glPeriod}</div>}
+          {gl && <div style={{ fontSize:12, color: glWarn ? 'var(--warning, #d29922)' : 'var(--muted)', marginBottom:10 }}>📅 {glPeriod}</div>}
           {gl?.best_provider && (
             <div style={{ marginBottom:12 }}>
               <div style={{ fontSize:11, color:'var(--success)', fontWeight:700, marginBottom:4 }}>{L2('✅ Best at (player wins)', '✅ 强项（玩家赢）')}</div>
@@ -1417,20 +1439,29 @@ const totals = vipExpenses.reduce((acc, e) => {
   return acc
 }, {})
 const TYPE_COLOR = { online: 'var(--info)', offline: '#f59e0b' }
+// Paid campaign rewards are in the player's own currency
+const vipCur = String(vip.currency || 'MYR').toUpperCase()
+const campTotals = campRewards?.length ? { [vipCur]: campRewards.reduce((s, r) => s + r.total, 0) } : {}
+const allCurs = [...new Set([...Object.keys(totals), ...Object.keys(bonusTotals), ...Object.keys(campTotals)])]
+const allIn = cur => (totals[cur] || 0) + (bonusTotals[cur] || 0) + (campTotals[cur] || 0)
+const hasExtra = Object.keys(bonusTotals).length > 0 || Object.keys(campTotals).length > 0
 
 return (
 <div>
   <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
     <SectionLabel>{L2('Department Spending on', '部门开支 —')} {vip.username}</SectionLabel>
     {/* 📋 copy a plain-text summary for Telegram submissions */}
-    {!expensesLoading && (vipExpenses.length > 0 || Object.keys(bonusTotals).length > 0) && (
+    {!expensesLoading && (vipExpenses.length > 0 || hasExtra) && (
       <button
         onClick={() => {
-          const curs = [...new Set([...Object.keys(totals), ...Object.keys(bonusTotals)])]
           const lines = ['Previous Bonus & Service :']
-          curs.forEach(cur => {
-            lines.push(`All-in spending (${cur})`, money2((totals[cur] || 0) + (bonusTotals[cur] || 0), cur), `💼 Expenses ${money2(totals[cur] || 0, cur)} + 🎁 Bonuses ${money2(bonusTotals[cur] || 0, cur)}`)
+          allCurs.forEach(cur => {
+            lines.push(`All-in spending (${cur})`, money2(allIn(cur), cur), `💼 Expenses ${money2(totals[cur] || 0, cur)} + 🎁 Bonuses ${money2(bonusTotals[cur] || 0, cur)} + 🎯 Campaigns ${money2(campTotals[cur] || 0, cur)}`)
           })
+          if (campRewards?.length) {
+            lines.push('')
+            ;[...campRewards].reverse().forEach(r => lines.push(`${r.start || ''} ${r.name} - ${money2(r.total, vipCur)}${r.streak > 0 ? ` (incl. streak ${money2(r.streak, vipCur)})` : ''}`))
+          }
           const rows = [...vipExpenses].sort((x, y) => String(x.month || x.created_at || '').localeCompare(String(y.month || y.created_at || '')))
           if (rows.length) {
             lines.push('')
@@ -1444,14 +1475,14 @@ return (
       </button>
     )}
   </div>
-  {/* All-in = Dept expenses + BO bonuses */}
-  {!expensesLoading && Object.keys(bonusTotals).length > 0 && (
+  {/* All-in = Dept expenses + BO bonuses + paid campaign rewards */}
+  {!expensesLoading && hasExtra && (
     <div style={{ display:'flex', gap:12, marginBottom:16, flexWrap:'wrap' }}>
-      {[...new Set([...Object.keys(totals), ...Object.keys(bonusTotals)])].map(cur => (
+      {allCurs.map(cur => (
         <div key={cur} style={{ background:'linear-gradient(135deg,rgba(255,107,0,.16),rgba(255,107,0,.05))', border:'1px solid rgba(255,107,0,.4)', borderRadius:10, padding:'14px 20px', minWidth:220 }}>
           <div style={{ fontSize:11, fontWeight:700, color:'var(--muted)', letterSpacing:'.5px', textTransform:'uppercase', marginBottom:6 }}>{L2('All-in spending', '总投入')} ({cur})</div>
-          <div style={{ fontSize:24, fontWeight:800, color:'#FF8C00' }}>{money2((totals[cur] || 0) + (bonusTotals[cur] || 0), cur)}</div>
-          <div style={{ fontSize:11, color:'var(--muted)', marginTop:3 }}>💼 {L2('Expenses', '开支')} {money2(totals[cur] || 0, cur)} + 🎁 {L2('Bonuses', '奖励')} {money2(bonusTotals[cur] || 0, cur)}</div>
+          <div style={{ fontSize:24, fontWeight:800, color:'#FF8C00' }}>{money2(allIn(cur), cur)}</div>
+          <div style={{ fontSize:11, color:'var(--muted)', marginTop:3 }}>💼 {L2('Expenses', '开支')} {money2(totals[cur] || 0, cur)} + 🎁 {L2('Bonuses', '奖励')} {money2(bonusTotals[cur] || 0, cur)} + 🎯 {L2('Campaigns', '活动')} {money2(campTotals[cur] || 0, cur)}</div>
         </div>
       ))}
     </div>
@@ -1525,6 +1556,46 @@ return (
       </div>
     </div>
   )}
+  {/* 🎯 Campaign rewards marked Paid (all campaign types) */}
+  <div style={{ marginTop:24 }}>
+    <SectionLabel>{L2('🎯 Campaign rewards (paid)', '🎯 活动奖励（已派）')}</SectionLabel>
+    {campRewards === null ? (
+      <div style={{ fontSize:13, color:'var(--muted)', padding:'8px 0' }}>{L2('Loading campaign rewards…', '载入活动奖励中…')}</div>
+    ) : campRewards.length === 0 ? (
+      <div style={{ fontSize:13, color:'var(--muted)', padding:'8px 0' }}>{L2('No campaign rewards marked paid for this player.', '此玩家暂无已标记派发的活动奖励。')}</div>
+    ) : (
+      <div style={{ overflowX:'auto' }}>
+        <table style={{ width:'100%', borderCollapse:'collapse', fontSize:13 }}>
+          <thead>
+            <tr>
+              {[['Campaign','活动'],['Dates','日期'],['Reward','奖励'],['Streak bonus','连续奖励'],['Total paid','已派合计']].map(([h, hz], i) => (
+                <th key={h} style={{ padding:'9px 12px', textAlign: i >= 2 ? 'right' : 'left', background:'var(--surface)', color:'var(--muted)', fontWeight:600, fontSize:11, borderBottom:'1px solid var(--border)', whiteSpace:'nowrap' }}>{L2(h, hz)}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {campRewards.map(r => (
+              <tr key={r.campaign_id}>
+                <td style={{ padding:'9px 12px', borderBottom:'1px solid var(--border)', fontWeight:600 }}>{r.name}</td>
+                <td style={{ padding:'9px 12px', borderBottom:'1px solid var(--border)', color:'var(--muted)', fontSize:12, whiteSpace:'nowrap' }}>{r.start}{r.end && r.end !== r.start ? ` → ${r.end}` : ''}</td>
+                <td style={{ padding:'9px 12px', borderBottom:'1px solid var(--border)', textAlign:'right', whiteSpace:'nowrap' }}>{r.reward > 0 ? money2(r.reward, vipCur) : '—'}</td>
+                <td style={{ padding:'9px 12px', borderBottom:'1px solid var(--border)', textAlign:'right', whiteSpace:'nowrap' }}>{r.streak > 0 ? money2(r.streak, vipCur) : '—'}</td>
+                <td style={{ padding:'9px 12px', borderBottom:'1px solid var(--border)', textAlign:'right', fontWeight:700, whiteSpace:'nowrap' }}>{money2(r.total, vipCur)}</td>
+              </tr>
+            ))}
+            <tr>
+              <td colSpan={4} style={{ padding:'9px 12px', textAlign:'right', fontWeight:700, color:'var(--muted)' }}>{L2('Total', '合计')}</td>
+              <td style={{ padding:'9px 12px', textAlign:'right', fontWeight:800, color:'#FF8C00', whiteSpace:'nowrap' }}>{money2(campTotals[vipCur] || 0, vipCur)}</td>
+            </tr>
+          </tbody>
+        </table>
+        <div style={{ fontSize:11, color:'var(--muted)', marginTop:6 }}>
+          {L2('Only rewards marked Paid in each campaign. If you also paste the same reward under BO bonuses below, it is counted twice.', '只计算各活动中已标记派发的奖励。如果下面的BO奖励也粘贴了同一笔奖励，会被重复计算。')}
+          {Object.keys(bonusTotals).length > 0 && <span style={{ color:'var(--warning, #d29922)' }}> {L2('⚠️ This player has BO bonuses too: check for duplicates.', '⚠️ 此玩家也有BO奖励记录：请检查是否重复。')}</span>}
+        </div>
+      </div>
+    )}
+  </div>
   <VipBonusSpending username={vip.username} vipId={vip.id} currency={String(vip.currency || 'MYR').toUpperCase()} onTotals={onBonusTotals} />
   <CashVoucherClaims username={vip.username} onChange={() => setExpensesFor(null)} />
 </div>
