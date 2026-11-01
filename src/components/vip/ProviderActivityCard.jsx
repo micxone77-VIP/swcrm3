@@ -1,4 +1,5 @@
-// src/components/vip/ProviderActivityCard.jsx — 本月供应商活动 card for VIP360 Gaming tab
+// src/components/vip/ProviderActivityCard.jsx — 供应商活动 card for VIP360 Gaming tab
+// (latest two months with a switch; early in a month it opens on last month's full figures).
 // Data: provider_player_monthly (back office 10.3 Provider Report Detail, month-to-date,
 // loaded by C:\Project\Gaming Report\_tools\upload.mjs). Amounts are from the player's side:
 // negative win/loss = player lost.
@@ -24,8 +25,20 @@ function Kpi({ title, value, sub, color }) {
   )
 }
 
+// "2026-10-01" → "Oct 2026" / "2026年10月"
+const monthLabel = (iso, lang) => {
+  const [y, m] = iso.split('-').map(Number)
+  return lang === 'zh' ? `${y}年${m}月` : new Date(y, m - 1, 1).toLocaleString('en-US', { month: 'short', year: 'numeric' })
+}
+// The upload is month-to-date: a month is complete once period_end is its last day.
+const isFullMonth = (r) => {
+  const [y, m] = r.period_month.split('-').map(Number)
+  return Number(r.period_end.slice(8, 10)) === new Date(y, m, 0).getDate()
+}
+
 export default function ProviderActivityCard({ username, currency = 'MYR' }) {
-  const [rows, setRows] = useState([])
+  const [allRows, setAllRows] = useState([])
+  const [month, setMonth] = useState(null)
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState(null)
   const { lang } = useLanguage()
@@ -44,9 +57,14 @@ export default function ProviderActivityCard({ username, currency = 'MYR' }) {
       .then(({ data, error }) => {
         if (cancelled) return
         if (error) { console.error('ProviderActivityCard load error', error); setErr(error.message) }
-        // Latest month only (the newest upload is month-to-date).
-        const latest = data?.[0]?.period_month
-        setRows((data || []).filter(r => r.period_month === latest))
+        // Keep the two latest months. Open on the latest one, except in its first 7 days, when it
+        // holds only a few days: then open on last month's full figures (the switch shows both).
+        const months = [...new Set((data || []).map(r => r.period_month))].slice(0, 2)
+        const kept = (data || []).filter(r => months.includes(r.period_month))
+        const latestEnd = kept.find(r => r.period_month === months[0])?.period_end
+        const earlyInMonth = latestEnd && Number(latestEnd.slice(8, 10)) <= 7
+        setAllRows(kept)
+        setMonth(months.length > 1 && earlyInMonth ? months[1] : months[0] || null)
         setLoading(false)
       })
     return () => { cancelled = true }
@@ -54,6 +72,8 @@ export default function ProviderActivityCard({ username, currency = 'MYR' }) {
 
   if (loading) return <div style={{ ...box, marginBottom: 20, color: 'var(--muted)', fontSize: 13 }}>{L2('Loading provider activity…', '载入供应商活动中…')}</div>
   if (err) return <div style={{ ...box, marginBottom: 20, color: '#f87171', fontSize: 13 }}>{L2('Provider activity error', '供应商活动错误')}: {err}</div>
+  const months = [...new Set(allRows.map(r => r.period_month))]
+  const rows = allRows.filter(r => r.period_month === month)
   if (!rows.length) return (
     <div style={{ ...box, marginBottom: 20, color: 'var(--muted)', fontSize: 13 }}>
       {L2('🎯 Provider Activity — no back office provider data for this player yet.', '🎯 供应商活动 — 暂无此玩家的后台供应商数据。')}
@@ -69,13 +89,33 @@ export default function ProviderActivityCard({ username, currency = 'MYR' }) {
   const top = sorted[0]
   const { period_start, period_end } = sorted[0]
   const period = `${fmtDate(period_start, lang)} – ${fmtDate(period_end, lang)}`
+  const full = isFullMonth(sorted[0])
 
   return (
     <div style={{ ...box, marginBottom: 20 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
-        <div style={label}>{L2('🎯 Provider Activity — This Month', '🎯 供应商活动 — 本月')}</div>
+        <div style={label}>
+          {L2('🎯 Provider Activity', '🎯 供应商活动')} — {monthLabel(month, lang)}{full ? '' : L2(' · so far', ' · 至今')}
+        </div>
         <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10 }}>{period} · {L2('back office', '后台数据')}</div>
       </div>
+
+      {months.length > 1 && (
+        <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
+          {months.map(m => {
+            const on = m === month
+            const mFull = isFullMonth(allRows.find(r => r.period_month === m))
+            return (
+              <button key={m} onClick={() => setMonth(m)}
+                style={{ fontSize: 12, fontWeight: 600, padding: '4px 12px', borderRadius: 6, cursor: 'pointer',
+                  border: `1px solid ${on ? 'var(--brand)' : 'var(--border)'}`,
+                  background: on ? 'var(--brand)' : 'var(--surface)', color: on ? '#fff' : 'var(--muted)' }}>
+                {monthLabel(m, lang)}{mFull ? '' : L2(' · so far', ' · 至今')}
+              </button>
+            )
+          })}
+        </div>
+      )}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, marginBottom: 14 }}>
         <Kpi title={L2('Valid Turnover', '有效流水')} value={formatMoney(totTurnover, currency)} sub={L2(`${totBets.toLocaleString()} bets`, `${totBets.toLocaleString()} 笔投注`)} />
