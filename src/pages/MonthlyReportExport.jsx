@@ -1,18 +1,11 @@
 // src/pages/MonthlyReportExport.jsx — One-click Monthly PPT Report Generator
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
-import { fetchPPTData, generateMonthlyPPT } from '../lib/pptReportGenerator'
+import { fetchPPTData, generateMonthlyPPT, sumCur, fmtCur } from '../lib/pptReportGenerator'
 import { generateServiceReport } from '../lib/serviceReportGenerator'
 import { useLanguage } from '../contexts/LanguageContext'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-const fmt = (n, sym = 'RM') => {
-  if (n == null || isNaN(n)) return '—'
-  const a = Math.abs(n), s = n < 0 ? '-' : ''
-  if (a >= 1e6) return `${s}${sym} ${(a / 1e6).toFixed(2)}M`
-  if (a >= 1e3) return `${s}${sym} ${(a / 1e3).toFixed(1)}K`
-  return `${s}${sym} ${Math.round(a).toLocaleString()}`
-}
 const pct = n => (n == null || isNaN(n)) ? '—' : `${Number(n).toFixed(1)}%`
 
 // Generate last 12 months options
@@ -123,13 +116,16 @@ export default function MonthlyReportExport() {
     const tiers = ['DIAMOND', 'PLATINUM', 'GOLD', 'SILVER', 'BRONZE', 'BLACK']
 
     const activeVips = rows.filter(r => (r.total_deposit || 0) > 0 || (r.monthly_valid_bet || 0) > 0).length
-    const totalDeposit = rows.reduce((s, r) => s + (r.total_deposit || 0), 0)
-    const prevDeposit = pRows.reduce((s, r) => s + (r.total_deposit || 0), 0)
-    const depositChg = prevDeposit > 0 ? ((totalDeposit - prevDeposit) / prevDeposit * 100) : null
+    // Never add MYR and SGD together: totals per currency; % change and Hold% for MYR
+    const myr = list => list.filter(r => (r.currency || 'MYR') === 'MYR')
+    const totalDeposit = sumCur(rows, r => r.total_deposit)
+    const myrDeposit = myr(rows).reduce((s, r) => s + (r.total_deposit || 0), 0)
+    const prevDeposit = myr(pRows).reduce((s, r) => s + (r.total_deposit || 0), 0)
+    const depositChg = prevDeposit > 0 ? ((myrDeposit - prevDeposit) / prevDeposit * 100) : null
 
-    const totalWL = rows.reduce((s, r) => s + (r.win_loss || 0), 0)
-    const totalBet = rows.reduce((s, r) => s + (r.monthly_valid_bet || 0), 0)
-    const holdPct = totalBet > 0 ? (totalWL / totalBet * 100) : null
+    const totalWL = sumCur(rows, r => r.win_loss)
+    const myrBet = myr(rows).reduce((s, r) => s + (r.monthly_valid_bet || 0), 0)
+    const holdPct = myrBet > 0 ? ((totalWL.MYR || 0) / myrBet * 100) : null
 
     const reactLogs = previewData.reactLogs || []
     const reactivated = reactLogs.length
@@ -137,14 +133,14 @@ export default function MonthlyReportExport() {
     const reactivationRate = allVips > 0 ? (reactivated / allVips * 100) : null
 
     const campaigns = (previewData.campaigns || []).length
-    const totalExp = (previewData.expenses || []).reduce((s, e) => s + (e.amount || 0), 0)
+    const totalExp = sumCur(previewData.expenses || [], e => e.amount)
 
     const tierBreakdown = tiers.map(tier => {
       const tierRows = rows.filter(r => (r.tier || '').toUpperCase() === tier)
-      return { tier, count: tierRows.length, deposit: tierRows.reduce((s, r) => s + (r.total_deposit || 0), 0) }
+      return { tier, count: tierRows.length, deposit: sumCur(tierRows, r => r.total_deposit) }
     }).filter(t => t.count > 0)
 
-    return { activeVips, totalDeposit, depositChg, holdPct, reactivated, reactivationRate, campaigns, totalExp, tierBreakdown, allVips }
+    return { activeVips, totalDeposit, totalWL, depositChg, holdPct, reactivated, reactivationRate, campaigns, totalExp, tierBreakdown, allVips }
   })() : null
 
   const selectedLabel = monthOptions.find(o => o.val === month)?.label || month
@@ -159,7 +155,7 @@ export default function MonthlyReportExport() {
           <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: '#FFFFFF' }}>{L2('Monthly PPT Report','每月 PPT 报告')}</h1>
         </div>
         <p style={{ margin: 0, fontSize: 13, color: '#8B9BB8' }}>
-          {L2('Generate a 33-slide VIP Operations PowerPoint report for any month.','为任意月份生成 33 页 VIP 运营 PowerPoint 报告。')}
+          {L2('Generate the VIP Operations PowerPoint report for any month.','为任意月份生成 VIP 运营 PowerPoint 报告。')}
         </p>
       </div>
 
@@ -245,15 +241,15 @@ export default function MonthlyReportExport() {
 
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
             <KpiTile icon="👥" label={L2('Active VIPs','活跃 VIP')} value={kpis.activeVips.toLocaleString()} sub={L2(`of ${kpis.allVips} total`, `共 ${kpis.allVips} 名`)} color="#FFFFFF" />
-            <KpiTile icon="💰" label={L2('Total Deposit','总存款')} value={fmt(kpis.totalDeposit)}
-              sub={kpis.depositChg != null ? `${kpis.depositChg >= 0 ? '▲' : '▼'} ${Math.abs(kpis.depositChg).toFixed(1)}% ${L2('vs prev month','较上月')}` : undefined}
+            <KpiTile icon="💰" label={L2('Total Deposit','总存款')} value={fmtCur(kpis.totalDeposit)}
+              sub={kpis.depositChg != null ? `MYR ${kpis.depositChg >= 0 ? '▲' : '▼'} ${Math.abs(kpis.depositChg).toFixed(1)}% ${L2('vs prev month','较上月')}` : undefined}
               color={kpis.depositChg != null ? (kpis.depositChg >= 0 ? '#3FB950' : '#F85149') : '#FFFFFF'} />
-            <KpiTile icon="📈" label={L2('GGR (Win/Loss)','GGR（输赢）')} value={fmt(previewData.currRows.reduce((s, r) => s + (r.win_loss || 0), 0))}
-              sub={kpis.holdPct != null ? `Hold% ${pct(kpis.holdPct)}` : undefined} color="#4A90E2" />
+            <KpiTile icon="📈" label={L2('GGR (House Win/Loss)','GGR（公司输赢）')} value={fmtCur(kpis.totalWL)}
+              sub={kpis.holdPct != null ? `MYR Hold% ${pct(kpis.holdPct)}` : undefined} color="#4A90E2" />
             <KpiTile icon="🔄" label={L2('Reactivated','已重新激活')} value={kpis.reactivated.toLocaleString()}
               sub={kpis.reactivationRate != null ? L2(`Rate: ${pct(kpis.reactivationRate)}`, `比率：${pct(kpis.reactivationRate)}`) : undefined} color="#F59E0B" />
             <KpiTile icon="📢" label={L2('Campaigns','活动')} value={kpis.campaigns} sub={L2('this month','本月')} color="#4A90E2" />
-            <KpiTile icon="💳" label={L2('Total Expenses','总开支')} value={fmt(kpis.totalExp)} sub={L2('dept. expenses','部门开支')} color="#D29922" />
+            <KpiTile icon="💳" label={L2('Total Expenses','总开支')} value={fmtCur(kpis.totalExp)} sub={L2('dept. expenses','部门开支')} color="#D29922" />
           </div>
 
           {/* Tier breakdown */}
@@ -272,7 +268,7 @@ export default function MonthlyReportExport() {
                     }}>
                       <span style={{ fontSize: 11, fontWeight: 700, color: tierColors[t.tier] || '#FFFFFF' }}>{t.tier}</span>
                       <span style={{ fontSize: 13, fontWeight: 700, color: '#FFFFFF' }}>{t.count} {L2('VIPs','位 VIP')}</span>
-                      <span style={{ fontSize: 10, color: '#8B9BB8' }}>{fmt(t.deposit)}</span>
+                      <span style={{ fontSize: 10, color: '#8B9BB8' }}>{fmtCur(t.deposit)}</span>
                     </div>
                   )
                 })}
@@ -323,16 +319,16 @@ export default function MonthlyReportExport() {
 
       {/* ─── Slide coverage map ─── */}
       <div style={{ background: '#162040', border: '1px solid #2A3F6F', borderRadius: 10, padding: '18px 20px', marginBottom: 24 }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: '#FFFFFF', marginBottom: 4 }}>{L2('Slide Coverage — 33 Slides','幻灯片覆盖 — 33 页')}</div>
+        <div style={{ fontSize: 13, fontWeight: 700, color: '#FFFFFF', marginBottom: 4 }}>{L2('Slide Coverage','幻灯片覆盖')}</div>
         <div style={{ fontSize: 12, color: '#8B9BB8', marginBottom: 14 }}>
           <span style={{ color: '#3FB950', marginRight: 16 }}>● {L2('Auto','自动')} (26)</span>
           <span style={{ color: '#D29922', marginRight: 16 }}>● {L2('Approximate','近似')} (3)</span>
-          <span style={{ color: '#4A90E2' }}>● {L2('Placeholder','占位')} (4)</span>
+          <span style={{ color: '#4A90E2' }}>● {L2('Placeholder','占位')} (3)</span>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
           {[
             { num: 1,  label: 'Cover Page', zh: '封面', type: 'auto' },
-            { num: 2,  label: 'Diamond + Platinum VIP Total KPIs', zh: '钻石 + 白金 VIP 总 KPI', type: 'auto' },
+            { num: 2,  label: 'VIP Total KPIs (Gold & above)', zh: 'VIP 总 KPI（黄金及以上）', type: 'auto' },
             { num: 3,  label: 'Tier Active Rate Overview', zh: '等级活跃率概览', type: 'auto' },
             { num: 4,  label: '3-Month Retention Trend', zh: '3个月留存趋势', type: 'auto' },
             { num: 5,  label: 'Deposit Behavior Quality', zh: '存款行为质量', type: 'approx' },
@@ -345,22 +341,21 @@ export default function MonthlyReportExport() {
             { num: 13, label: 'Priority Retention List', zh: '优先留存名单', type: 'auto' },
             { num: 14, label: 'Platinum Performance Table', zh: '白金表现表', type: 'auto' },
             { num: 15, label: 'Department Expenses Summary', zh: '部门开支汇总', type: 'auto' },
-            { num: '16-17', label: 'Campaign Report', zh: '活动报告', type: 'auto' },
-            { num: '18-19', label: 'Festival Campaign ROI', zh: '节日活动投资回报', type: 'auto' },
-            { num: 20, label: 'Monthly Retrospective', zh: '每月回顾', type: 'placeholder' },
-            { num: 21, label: 'Churn Rule Calibration', zh: '流失规则校准', type: 'auto' },
-            { num: 22, label: 'Retention Analysis Detail', zh: '留存分析详情', type: 'auto' },
-            { num: 23, label: 'Score Divergence', zh: '评分偏差', type: 'placeholder' },
-            { num: 24, label: 'GGR Concentration (Pareto)', zh: 'GGR 集中度（帕累托）', type: 'auto' },
-            { num: 25, label: '5-Period Intra-Month Trend', zh: '月内5期趋势', type: 'auto' },
-            { num: 26, label: 'Action Plan', zh: '行动计划', type: 'auto' },
-            { num: 27, label: 'Strategic Direction', zh: '战略方向', type: 'placeholder' },
-            { num: 28, label: 'Upcoming Campaigns', zh: '即将进行的活动', type: 'auto' },
-            { num: 29, label: 'Hold% Analysis by Tier', zh: '按等级 Hold% 分析', type: 'auto' },
-            { num: 30, label: 'Expense Report by Platform', zh: '按平台开支报告', type: 'auto' },
-            { num: 31, label: 'Next Month Budget', zh: '下月预算', type: 'placeholder' },
-            { num: 32, label: '3-Month Member Health Summary', zh: '3个月会员健康汇总', type: 'auto' },
-            { num: 33, label: 'Closing Page', zh: '结束页', type: 'auto' },
+            { num: '16+', label: 'Campaign Report (one slide per campaign)', zh: '活动报告（每个活动一页）', type: 'auto' },
+            { num: '·', label: 'All Campaigns Summary + Campaign ROI', zh: '全部活动汇总 + 活动投资回报', type: 'auto' },
+            { num: '·', label: 'Monthly Retrospective', zh: '每月回顾', type: 'placeholder' },
+            { num: '·', label: 'Churn Rule Calibration', zh: '流失规则校准', type: 'auto' },
+            { num: '·', label: 'Retention Analysis Detail', zh: '留存分析详情', type: 'auto' },
+            { num: '·', label: 'GGR Concentration (Pareto)', zh: 'GGR 集中度（帕累托）', type: 'auto' },
+            { num: '·', label: '5-Period Intra-Month Trend', zh: '月内5期趋势', type: 'auto' },
+            { num: '·', label: 'Action Plan', zh: '行动计划', type: 'auto' },
+            { num: '·', label: 'Strategic Direction', zh: '战略方向', type: 'placeholder' },
+            { num: '·', label: 'Upcoming Campaigns', zh: '即将进行的活动', type: 'auto' },
+            { num: '·', label: 'Hold% Analysis by Tier', zh: '按等级 Hold% 分析', type: 'auto' },
+            { num: '·', label: 'Expense Report by Platform', zh: '按平台开支报告', type: 'auto' },
+            { num: '·', label: 'Next Month Budget', zh: '下月预算', type: 'placeholder' },
+            { num: '·', label: '3-Month Member Health Summary', zh: '3个月会员健康汇总', type: 'auto' },
+            { num: '·', label: 'Closing Page', zh: '结束页', type: 'auto' },
           ].map((s, i) => (
             <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <div style={{ width: 32, textAlign: 'right', fontSize: 10, color: '#4A90E2', fontWeight: 700, flexShrink: 0 }}>
