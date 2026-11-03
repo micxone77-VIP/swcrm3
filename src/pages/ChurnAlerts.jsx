@@ -97,6 +97,19 @@ const P_SORT = {
   contact: { get:v=>v.last_contact?new Date(v.last_contact).getTime():0, first:'asc' },
 }
 
+// No Deposit tab: quick day ranges, status colours and clickable columns
+const ND_RANGES = [['3-6',3,6],['7-14',7,14],['15-30',15,30],['31+',31,Infinity]]
+const ND_STATUS_COLOR = { Active:'#3fb950', Resting:'#38BDF8', 'At Risk':'#d29922', Churn:'#f85149', Dormant:'var(--muted)' }
+const ND_SORT = {
+  username: { get:v=>String(v.username||'').toLowerCase(), first:'asc' },
+  tier: { get:v=>TIER_ORDER.indexOf(v.tier), first:'asc' },
+  host: { get:v=>String(v.host_assigned||'').toLowerCase(), first:'asc' },
+  days: { get:v=>v.days_inactive, first:'desc' },
+  bet: { get:v=>v.last_bet_date||'', first:'asc' },
+  dep: { get:v=>v.dep_90d??-1, first:'desc' },
+  contact: { get:v=>v.last_contacted?new Date(v.last_contacted).getTime():0, first:'asc' },
+}
+
 export default function ChurnAlerts() {
   const navigate=useNavigate(); const {profile}=useAuth(); const {t,lang}=useLanguage(); const L2=(en,zh)=>(lang==='zh'?zh:en); const now=new Date()
   const [month,setMonth]=useUrlParamNumber('month',now.getMonth()); const [year,setYear]=useUrlParamNumber('year',now.getFullYear()); const [tab,setTab]=useUrlParam('tab','priority')
@@ -106,6 +119,8 @@ export default function ChurnAlerts() {
   const [dHostF,setDHostF]=useState('ALL'),[pHostF,setPHostF]=useState('ALL'),[gHostF,setGHostF]=useState('ALL'),[contactedSet,setContactedSet]=useState(new Set()),[dUncontactedOnly,setDUncontactedOnly]=useState(false),[pUncontactedOnly,setPUncontactedOnly]=useState(false),[gUncontactedOnly,setGUncontactedOnly]=useState(false)
   const [churnWaModal,setChurnWaModal]=useState(null),[priorityHostF,setPriorityHostF]=useState('ALL'),[priorityError,setPriorityError]=useState(false)
   const [pLevelF,setPLevelF]=useUrlParam('plevel','P1'),[pSort,setPSort]=useUrlParam('psort','call')
+  // One URL value per filter: 'nd' is a day range ('3-6') or dates ('date:from:to')
+  const [ndRange,setNdRange]=useUrlParam('nd','3-6'),[ndSort,setNdSort]=useUrlParam('ndsort','days:desc'),[ndTier,setNdTier]=useUrlParam('ndtier','ALL'),[ndHost,setNdHost]=useUrlParam('ndhost','ALL'),[dep90By,setDep90By]=useState({})
   // Market filter (MY / SG / KH) — based on the player's account currency; applies to every tab + stat cards
   const [mktF,setMktF]=useUrlParam('mkt','ALL')
   const mktOf=c=>{const u=String(c||'MYR').toUpperCase();return u==='SGD'?'SG':u.startsWith('KH')?'KH':'MY'}
@@ -123,6 +138,7 @@ export default function ChurnAlerts() {
     const readWarnings=()=>fetchAll(()=>supabase.from('v_vip_early_warning').select('username,reasons,dep_this_week,dep_prev_week,win_loss_last3,tracked_win_loss,days_since_active').order('username'))
     // These two views can take 5-6s (limit 8s), so try once more before giving up
     const scores=await readScores().catch(readScores)
+    setDep90By(Object.fromEntries(scores.map(p=>[p.username,Number(p.dep_90d)||0])))
     const [warnings,members,ruleRows]=await Promise.all([
       readWarnings().catch(readWarnings),
       fetchAll(()=>supabase.from('vip_members').select('id,username,whatsapp,phone,days_inactive,last_deposit_date,last_bet_date,activity_status').eq('is_excluded',false).order('username')),
@@ -174,7 +190,7 @@ export default function ChurnAlerts() {
   const clickPSort=key=>{if(key==='call')return setPSort('call');setPSort(`${key}:${pSortKey===key?(pSortDir==='desc'?'asc':'desc'):P_SORT[key].first}`)}
   return <div style={s.page}><div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-end',marginBottom:18}}><div><div style={s.title}>{t('sidebar.nav.churnAlerts')}</div><div style={s.sub}>{t('churnAlerts.subtitle')}</div></div></div>
     <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:10,marginBottom:18}}><StatCard icon="😴" label={L2('Resting (betting, no deposit)','休息中 (投注未存款)')} value={st.resting} color="#38BDF8"/><StatCard icon="⚠️" label={L2('At Risk','有风险')} value={st.atRisk} color="#d29922"/><StatCard icon="🔥" label={L2('Churn','流失')} value={st.churn} color="#f85149"/><StatCard icon="💤" label={L2('Dormant','休眠')} value={st.dormant}/></div>
-    <div style={s.card}><div style={{display:'flex',gap:8,padding:12,borderBottom:'1px solid var(--border)',flexWrap:'wrap'}}>{[['priority',L2('🔥 Priority','🔥 优先')],['churn',L2('📉 Churn','📉 流失')],['reactivated',L2('♻️ Reactivated','♻️ 已召回')],['dormant',L2('💤 Dormant','💤 休眠')],['diamond',L2('💎 Diamond','💎 钻石')],['platinum',L2('🔷 Platinum','🔷 白金')],['gold',L2('🥇 Gold','🥇 黄金')]].map(([key,label])=><button key={key} style={{...s.btnSm,background:tab===key?'var(--accent)':'var(--surface2)',color:tab===key?'#fff':'var(--text)'}} onClick={()=>setTab(key)}>{label}</button>)}<div style={{marginLeft:'auto',display:'flex',gap:6,alignItems:'center'}}><span style={{fontSize:12,color:'var(--muted)',fontWeight:600}}>{L2('Market:','市场：')}</span>{['ALL',...mktList].map(m=>{const on=mktF===m;const n=m==='ALL'?vipsAll.length:vipsAll.filter(v=>mktOf(v.currency)===m).length;return <button key={m} title={L2(`${n} VIPs`,`${n} 位VIP`)} style={{...s.btnSm,background:on?'#1f6feb':'var(--surface2)',color:on?'#fff':'var(--text)',border:on?'1px solid #1f6feb':'1px solid var(--border)',fontWeight:on?700:500}} onClick={()=>setMktF(m)}>{m==='ALL'?L2('All','全部'):m==='MY'?'🇲🇾 MY':m==='SG'?'🇸🇬 SG':'🇰🇭 KH'}</button>})}</div></div>
+    <div style={s.card}><div style={{display:'flex',gap:8,padding:12,borderBottom:'1px solid var(--border)',flexWrap:'wrap'}}>{[['priority',L2('🔥 Priority','🔥 优先')],['nodeposit',L2('📅 No Deposit','📅 未存款')],['churn',L2('📉 Churn','📉 流失')],['reactivated',L2('♻️ Reactivated','♻️ 已召回')],['dormant',L2('💤 Dormant','💤 休眠')],['diamond',L2('💎 Diamond','💎 钻石')],['platinum',L2('🔷 Platinum','🔷 白金')],['gold',L2('🥇 Gold','🥇 黄金')]].map(([key,label])=><button key={key} style={{...s.btnSm,background:tab===key?'var(--accent)':'var(--surface2)',color:tab===key?'#fff':'var(--text)'}} onClick={()=>setTab(key)}>{label}</button>)}<div style={{marginLeft:'auto',display:'flex',gap:6,alignItems:'center'}}><span style={{fontSize:12,color:'var(--muted)',fontWeight:600}}>{L2('Market:','市场：')}</span>{['ALL',...mktList].map(m=>{const on=mktF===m;const n=m==='ALL'?vipsAll.length:vipsAll.filter(v=>mktOf(v.currency)===m).length;return <button key={m} title={L2(`${n} VIPs`,`${n} 位VIP`)} style={{...s.btnSm,background:on?'#1f6feb':'var(--surface2)',color:on?'#fff':'var(--text)',border:on?'1px solid #1f6feb':'1px solid var(--border)',fontWeight:on?700:500}} onClick={()=>setMktF(m)}>{m==='ALL'?L2('All','全部'):m==='MY'?'🇲🇾 MY':m==='SG'?'🇸🇬 SG':'🇰🇭 KH'}</button>})}</div></div>
       {tab==='priority'&&<div>{priorityLoading?<div style={{padding:30}}>{L2('Loading…','载入中…')}</div>:priorityError?<div style={{padding:30}}>{L2('Could not load the call list.','无法载入通话名单。')} <button style={s.btnSm} onClick={loadPriorityContacts}>{L2('Try again','重试')}</button></div>:<>
         <div style={{display:'flex',gap:8,padding:'10px 14px',borderBottom:'1px solid var(--border)',alignItems:'center',flexWrap:'wrap'}}>
           <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
@@ -223,6 +239,52 @@ export default function ChurnAlerts() {
         {!pRows.length&&<tr><td colSpan="11" style={{...s.td,textAlign:'center'}}>{L2('No players at this priority.','这个优先级没有玩家。')}</td></tr>}
         </tbody></table></div>
       </>}</div>}
+      {tab==='nodeposit'&&(()=>{
+        const isDates=ndRange.startsWith('date:')
+        const [,ndFrom='',ndTo='']=isDates?ndRange.split(':'):[]
+        const setDates=(from,to)=>setNdRange(from||to?`date:${from}:${to}`:'3-6')
+        const [sortKey,sortDir]=ndSort.split(':')
+        const clickSort=key=>setNdSort(`${key}:${sortKey===key?(sortDir==='desc'?'asc':'desc'):ND_SORT[key].first}`)
+        const base=vips.filter(v=>v.last_deposit_date&&v.days_inactive!=null&&(ndTier==='ALL'||v.tier===ndTier)&&(ndHost==='ALL'||v.host_assigned===ndHost)&&(!mineOnly||v.host_assigned===myName))
+        const inRange=([,min,max])=>v=>v.days_inactive>=min&&v.days_inactive<=max
+        const range=ND_RANGES.find(r=>r[0]===ndRange)||ND_RANGES[0]
+        const rows=base.filter(isDates?v=>(!ndFrom||v.last_deposit_date>=ndFrom)&&(!ndTo||v.last_deposit_date<=ndTo):inRange(range)).map(v=>({...v,dep_90d:dep90By[v.username]}))
+        if(ND_SORT[sortKey]){const get=ND_SORT[sortKey].get,dir=sortDir==='desc'?-1:1;rows.sort((a,b)=>{const x=get(a),y=get(b);return(x<y?-1:x>y?1:0)*dir})}
+        const hosts=[...new Set(vips.filter(v=>v.host_assigned).map(v=>v.host_assigned))].sort()
+        const fmtDate=d=>d?new Date(d).toLocaleDateString(lang==='zh'?'zh-CN':'en-MY',{day:'2-digit',month:'short'}):null
+        return <div>
+          <div style={{display:'flex',gap:8,padding:'10px 14px',borderBottom:'1px solid var(--border)',alignItems:'center',flexWrap:'wrap'}}>
+            {ND_RANGES.map(r=>{const on=!isDates&&range[0]===r[0];return<button key={r[0]} style={{...s.btnSm,fontWeight:700,background:on?'var(--accent)':'var(--surface2)',color:on?'#fff':'var(--text)'}} onClick={()=>setNdRange(r[0])}>{r[0]}{L2(' days','天')} ({base.filter(inRange(r)).length})</button>})}
+            <span style={{width:1,alignSelf:'stretch',background:'var(--border)',margin:'0 4px'}}/>
+            <span style={{fontSize:12,color:'var(--muted)'}}>{L2('Last deposit from','最后存款从')}</span>
+            <input type="date" aria-label={L2('Last deposit from','最后存款从')} style={{...s.input,width:'auto',padding:'4px 8px',fontSize:12,borderColor:isDates?'var(--accent)':'var(--border)'}} value={ndFrom} onChange={e=>setDates(e.target.value,ndTo)}/>
+            <span style={{fontSize:12,color:'var(--muted)'}}>{L2('to','到')}</span>
+            <input type="date" aria-label={L2('Last deposit to','最后存款到')} style={{...s.input,width:'auto',padding:'4px 8px',fontSize:12,borderColor:isDates?'var(--accent)':'var(--border)'}} value={ndTo} onChange={e=>setDates(ndFrom,e.target.value)}/>
+            {isDates&&<button style={s.btnSm} onClick={()=>setNdRange('3-6')}>{L2('Clear dates','清除日期')}</button>}
+          </div>
+          <div style={{display:'flex',gap:8,padding:'10px 14px',borderBottom:'1px solid var(--border)',alignItems:'center',flexWrap:'wrap'}}>
+            <select aria-label={L2('Tier','等级')} value={ndTier} onChange={e=>setNdTier(e.target.value)} style={s.sel}><option value="ALL">{L2('All Tiers','全部等级')}</option>{TIER_ORDER.map(x=><option key={x} value={x}>{lang==='zh'?(TIER_ZH[x]||x):x}</option>)}</select>
+            <select aria-label={L2('Host','负责人')} value={ndHost} onChange={e=>setNdHost(e.target.value)} style={s.sel}><option value="ALL">{L2('All hosts','全部负责人')}</option>{hosts.map(h=><option key={h} value={h}>{h}</option>)}</select>
+            <label style={{display:'flex',gap:6,fontSize:12,alignItems:'center',color:'var(--text)',marginLeft:'auto',cursor:'pointer'}}><input type="checkbox" checked={mineOnly} onChange={e=>setMineOnly(e.target.checked)}/>{L2('Mine only','仅我的')}</label>
+          </div>
+          <ListCount total={rows.length} label="VIPs" labelZh="位VIP" />
+          <div style={{overflowX:'auto'}}><table style={s.tbl}><thead><tr>{[['#'],[L2('Player','玩家'),'username'],[L2('Tier','等级'),'tier'],[L2('Host','负责人'),'host'],[L2('Phone / WA','电话 / WA')],[L2('Status','状态')],[L2('Days','天数'),'days'],[L2('Last Deposit','最后存款')],[L2('Last Bet','最后投注'),'bet'],[L2('90d Deposit','90天存款'),'dep'],[L2('Last Contact','最后联系'),'contact'],[L2('Actions','操作')]].map(([h,key])=>{const on=key&&sortKey===key;return<th key={h} style={{...s.th,...(key?{cursor:'pointer',userSelect:'none'}:{}),...(on?{color:'var(--accent)'}:{})}} title={key?L2('Click to sort, click again to reverse','点击排序，再点一次反向'):undefined} onClick={key?()=>clickSort(key):undefined}>{h}{key&&<span style={{marginLeft:4,opacity:on?1:.4}}>{on?(sortDir==='desc'?'▼':'▲'):'↕'}</span>}</th>})}</tr></thead>
+          <tbody>{rows.map((v,rowIdx)=><tr key={v.id}>
+            <td style={{...s.td,color:'var(--muted)',fontSize:12,width:36}}>{rowIdx+1}</td>
+            <td style={s.td}><span style={{display:'inline-flex',alignItems:'center',gap:4}}><button style={{background:'none',border:0,padding:0,cursor:'pointer',color:'var(--text)',fontWeight:700}} onClick={()=>navigate(`/vips/${v.id}`)}>{v.username}</button><CopyBtn text={v.username} /></span></td>
+            <td style={s.td}>{lang==='zh'?(TIER_ZH[v.tier]||v.tier):v.tier}</td>
+            <td style={s.td}>{v.host_assigned||'—'}</td>
+            <td style={{...s.td,fontSize:12,color:'var(--muted)'}}>{v.whatsapp||v.phone||'—'}<CopyBtn text={v.whatsapp||v.phone} kind="phone" /></td>
+            <td style={{...s.td,fontWeight:700,fontSize:12,whiteSpace:'nowrap',color:ND_STATUS_COLOR[v.activity_status]||'var(--muted)'}}>{L2(v.activity_status,v.activity_status==='Active'?'活跃':STATUS_ZH[v.activity_status]||v.activity_status)}</td>
+            <td style={{...s.td,fontVariantNumeric:'tabular-nums',fontWeight:700}}>{v.days_inactive}{L2('d','天')}</td>
+            <td style={{...s.td,whiteSpace:'nowrap'}}>{fmtDate(v.last_deposit_date)}</td>
+            <td style={{...s.td,whiteSpace:'nowrap'}}>{fmtDate(v.last_bet_date)||'—'}</td>
+            <td style={{...s.td,fontVariantNumeric:'tabular-nums',whiteSpace:'nowrap'}}>{v.dep_90d!=null?formatMoney(v.dep_90d,v.currency):'—'}</td>
+            <td style={{...s.td,whiteSpace:'nowrap'}}>{fmtDate(v.last_contacted)||L2('Never','从未')}</td>
+            <td style={s.td}><div style={{display:'flex',gap:5,flexWrap:'wrap'}}><button style={{background:'#25D366',color:'#fff',border:'none',padding:'4px 10px',borderRadius:6,fontSize:12,fontWeight:700,cursor:'pointer'}} onClick={()=>setChurnWaModal({...v,days_since_deposit:v.days_inactive})}>💬 WA</button><button style={s.btnSm} onClick={()=>navigate(`/vips/${v.id}`)}>{L2('Open','打开')}</button>{canReactivate(v)&&<button style={{...s.btnSm,background:'#3fb950',color:'#fff',border:0,fontWeight:700}} onClick={()=>setReactivateModal(v)}>{L2('✅ Reactivate','✅ 召回')}</button>}</div></td>
+          </tr>)}{!rows.length&&<tr><td colSpan="12" style={{...s.td,textAlign:'center',color:'var(--muted)'}}>{loading?L2('Loading…','载入中…'):L2('No players match these filters.','没有符合筛选条件的玩家。')}</td></tr>}</tbody></table></div>
+        </div>
+      })()}
       {tab==='reactivated'&&<ListCount total={reactRows.length} label="VIPs" labelZh="位VIP" />}
       {tab==='reactivated'&&<div style={{overflowX:'auto'}}><table style={s.tbl}><thead><tr>{['#',L2('Player','玩家'),L2('Tier','等级'),L2('Host','负责人'),L2('Recovery','召回存款'),L2('Currency','货币'),L2('Notes','备注')].map(h=><th key={h} style={s.th}>{h}</th>)}</tr></thead><tbody>{reactRows.map((v,rowIdx)=><tr key={v.username}><td style={{...s.td,color:'var(--muted)',fontSize:12,width:36}}>{rowIdx+1}</td><td style={s.td}>{v.username}<CopyBtn text={v.username} /></td><td style={s.td}>{lang==='zh'?(TIER_ZH[v.tier]||v.tier||'—'):(v.tier||'—')}</td><td style={s.td}>{v.host_name||'—'}</td><td style={s.td}>{formatMoney(v.reactivation_deposit||0,v.currency||'')}</td><td style={s.td}>{v.currency||'—'}</td><td style={s.td}>{v.notes||'—'}</td></tr>)}{!reactRows.length&&<tr><td colSpan="7" style={{...s.td,textAlign:'center'}}>{L2('No reactivated VIPs for this month.','本月没有召回的VIP。')}</td></tr>}</tbody></table></div>}
       {tab==='churn'&&(()=>{const churnVips=vips.filter(v=>v.churn_risk==='HIGH'||v.churn_risk==='MEDIUM').sort((a,b)=>(a.churn_risk==='HIGH'?0:1)-(b.churn_risk==='HIGH'?0:1)||(b.days_inactive||0)-(a.days_inactive||0));return<div><ListCount total={churnVips.length} label="VIPs" labelZh="位VIP" /><div style={{overflowX:'auto'}}><table style={s.tbl}><thead><tr>{['#',L2('Player','玩家'),L2('Tier','等级'),L2('Host','负责人'),L2('Phone / WA','电话 / WA'),L2('Risk','风险'),L2('Days Inactive','不活跃天数'),L2('Last Deposit','最后存款'),L2('Last Contact','最后联系'),L2('Actions','操作')].map(h=><th key={h} style={s.th}>{h}</th>)}</tr></thead><tbody>{churnVips.map((v,rowIdx)=><tr key={v.id}><td style={{...s.td,color:'var(--muted)',fontSize:12,width:36}}>{rowIdx+1}</td><td style={s.td}><span style={{display:'inline-flex',alignItems:'center',gap:4}}><button style={{background:'none',border:0,padding:0,cursor:'pointer',color:'var(--text)',fontWeight:700}} onClick={()=>navigate(`/vips/${v.id}`)}>{v.username}<CopyBtn text={v.username} /></button><button title={L2('Copy username','复制用户名')} onClick={e=>{e.stopPropagation();navigator.clipboard.writeText(v.username)}} style={{background:'none',border:'none',color:'var(--muted)',cursor:'pointer',fontSize:12,padding:'0 2px',lineHeight:1,opacity:.6}} onMouseEnter={e=>e.currentTarget.style.opacity=1} onMouseLeave={e=>e.currentTarget.style.opacity=.6}>⎘</button></span></td><td style={s.td}>{lang==='zh'?(TIER_ZH[v.tier]||v.tier):v.tier}</td><td style={s.td}>{v.host_assigned||'—'}</td><td style={{...s.td,fontSize:12,color:'var(--muted)'}}>{v.whatsapp||v.phone||'—'}<CopyBtn text={v.whatsapp||v.phone} kind="phone" /></td><td style={s.td}><span style={{padding:'2px 8px',borderRadius:12,fontSize:11,fontWeight:700,background:RISK_BG[v.churn_risk]||'transparent',color:RISK_COLOR[v.churn_risk]||'var(--muted)'}}>{L2(v.churn_risk,RISK_ZH[v.churn_risk]||v.churn_risk)}</span></td><td style={{...s.td,fontVariantNumeric:'tabular-nums',color:'#f85149',fontWeight:700}}>{v.days_inactive||0}{L2('d','天')}</td><td style={s.td}>{v.last_deposit_date||'—'}<LastBet date={v.last_bet_date} status={v.activity_status}/></td><td style={{...s.td,fontSize:12,color:'var(--muted)'}}>{v.last_contacted?new Date(v.last_contacted).toLocaleDateString(lang==='zh'?'zh-CN':'en-MY',{day:'2-digit',month:'short'}):L2('Never','从未')}</td><td style={s.td}><div style={{display:'flex',gap:5,flexWrap:'wrap'}}><button style={{background:'#25D366',color:'#fff',border:'none',padding:'4px 10px',borderRadius:6,fontSize:12,fontWeight:700,cursor:'pointer'}} onClick={()=>setChurnWaModal({...v,reasons:[v.churn_risk==='HIGH'?'HIGH churn risk':'MEDIUM churn risk'],days_since_deposit:v.days_inactive})}>💬 WA</button><button style={s.btnSm} onClick={()=>navigate(`/vips/${v.id}`)}>{L2('Open','打开')}</button>{canReactivate(v)&&<button style={{...s.btnSm,background:'#3fb950',color:'#fff',border:0,fontWeight:700}} onClick={()=>setReactivateModal(v)}>{L2('✅ Reactivate','✅ 召回')}</button>}</div></td></tr>)}{!churnVips.length&&<tr><td colSpan="10" style={{...s.td,textAlign:'center',color:'var(--muted)'}}>{L2('No high/medium risk VIPs at this time.','目前没有高/中风险VIP。')}</td></tr>}</tbody></table></div></div>})()}
