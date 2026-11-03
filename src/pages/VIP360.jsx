@@ -25,6 +25,7 @@ import { autoText } from '../lib/profileAutoText'
 import ProviderActivityCard from '../components/vip/ProviderActivityCard'
 import CopyBtn from '../components/CopyBtn'
 import { fetchPaidCampaignRewards } from '../lib/vipCampaignRewards'
+import PlayerNgrHistory from '../components/PlayerNgrHistory'
 
 const TIERS = ['BRONZE','SILVER','GOLD','PLATINUM','DIAMOND','DIAMOND-P','BLACK']
 const PERIODS = [
@@ -674,6 +675,7 @@ color: period===p.value ? '#fff' : 'var(--muted)', cursor:'pointer',
 ))}
 </div>
 </div>
+<PlayerNgrHistory username={vip.username} currency={vip.currency} />
 {monthly.length === 0 ? (
 <EmptyState icon="💰" title={L2('No financial data', '暂无财务数据')} message={L2('No monthly totals found for this VIP.', '未找到此VIP的月度汇总。')} />
 ) : (

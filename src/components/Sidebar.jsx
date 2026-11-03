@@ -45,6 +45,7 @@ const NAV_GROUPS = [
     { to: '/analytics',     label: 'Analytics', zh: '分析',      icon: '📈', permKey: 'analytics'      },
     { to: '/tier-analytics',label: 'Tier Analytics', zh: '等级分析', icon: '🔬', permKey: 'tier-analytics' },
     { to: '/profiling',     label: 'Player Insights', zh: '玩家洞察',icon: '🧠', permKey: 'profiling'      },
+    { to: '/player-ngr',    label: 'Player NGR', zh: '玩家 NGR',    icon: '💵', permKey: 'player-ngr'     },
     { to: '/period-report', label: 'Reports', zh: '报告',        icon: '📅', permKey: 'period-report'  },
     { to: '/monthly-report',label: 'Monthly PPT', zh: '月度PPT',    icon: '📊', permKey: 'monthly-report' },
   ] },

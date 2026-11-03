@@ -41,6 +41,7 @@ const Analytics = lazyPage(() => import('./pages/Analytics'))
 const KPIProgress = lazyPage(() => import('./pages/KPIProgress'))
 const PeriodReport = lazyPage(() => import('./pages/PeriodReport'))
 const TierAnalytics = lazyPage(() => import('./pages/TierAnalytics'))
+const PlayerNGR = lazyPage(() => import('./pages/PlayerNGR'))
 const PlayerProfiling = lazyPage(() => import('./pages/PlayerProfiling'))
 const AskData = lazyPage(() => import('./pages/AskData'))
 const ManageUsers = lazyPage(() => import('./pages/ManageUsers'))
@@ -105,6 +106,7 @@ export default function App() {
       <Route path="analytics"      element={<RequireRole permKey="analytics"><Analytics /></RequireRole>} />
       <Route path="tier-analytics" element={<RequireRole permKey="tier-analytics"><TierAnalytics /></RequireRole>} />
       <Route path="profiling"      element={<RequireRole permKey="profiling"><PlayerProfiling /></RequireRole>} />
+      <Route path="player-ngr"     element={<RequireRole permKey="player-ngr"><PlayerNGR /></RequireRole>} />
       <Route path="period-report"  element={<RequireRole permKey="period-report"><PeriodReport /></RequireRole>} />
       <Route path="monthly-report" element={<RequireRole permKey="monthly-report"><MonthlyReportExport /></RequireRole>} />
 
