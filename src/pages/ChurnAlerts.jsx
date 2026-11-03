@@ -54,7 +54,13 @@ function buildPriorityReasons(status, days, e, currency) {
   }
   if (has('Lost ')) out.push({ en:`Lost ${money(e.win_loss_last3)} in 3 days, still playing: care call, no promo`, zh:`3天输 ${money(e.win_loss_last3)}，仍在玩：关怀为主，不推优惠` })
   if (has('Won ')) out.push({ en:`Won ${money(e.win_loss_last3)} then stopped ${e.days_since_active} days: invite back`, zh:`赢 ${money(e.win_loss_last3)} 后停了 ${e.days_since_active} 天：邀请回来` })
-  if (has('Tracked net loss')) out.push({ en:`Net loss ${money(e.tracked_win_loss)} since ${e.tracked_since}: big-loss gift eligible`, zh:`自 ${e.tracked_since} 净输 ${money(e.tracked_win_loss)}：符合大额亏损礼物` })
+  if (has('Tracked net loss')) {
+    // The view has no date column; the start date is only in its reason text
+    const since = String(e.reasons).match(/Tracked net loss \S+ since (\d{4}-\d{2}-\d{2})/)?.[1]
+    out.push(since
+      ? { en:`Net loss ${money(e.tracked_win_loss)} since ${since}: big-loss gift eligible`, zh:`自 ${since} 净输 ${money(e.tracked_win_loss)}：符合大额亏损礼物` }
+      : { en:`Net loss ${money(e.tracked_win_loss)}: big-loss gift eligible`, zh:`净输 ${money(e.tracked_win_loss)}：符合大额亏损礼物` })
+  }
   return out
 }
 
@@ -104,10 +110,11 @@ export default function ChurnAlerts() {
   // Score = value x return. Its "reach" discount is left out on purpose, so players who don't reply are not pushed down.
   async function loadPriorityContacts(){setPriorityLoading(true);setPriorityError(false);try{
     const readScores=()=>fetchAll(()=>supabase.from('v_vip_priority').select('vip_id,username,tier,host_assigned,currency,dep_90d,days_since_deposit,value_score,return_score,last_contact_date,days_since_contact,attempts_since_reply,unreachable').order('username'))
-    // The first read on a new connection can take about 6s (limit 8s), so try once more before giving up
+    const readWarnings=()=>fetchAll(()=>supabase.from('v_vip_early_warning').select('username,reasons,dep_this_week,dep_prev_week,win_loss_last3,tracked_win_loss,days_since_active').order('username'))
+    // These two views can take 5-6s (limit 8s), so try once more before giving up
     const scores=await readScores().catch(readScores)
     const [warnings,members,ruleRows]=await Promise.all([
-      fetchAll(()=>supabase.from('v_vip_early_warning').select('username,reasons,dep_this_week,dep_prev_week,win_loss_last3,tracked_win_loss,tracked_since,days_since_active').order('username')),
+      readWarnings().catch(readWarnings),
       fetchAll(()=>supabase.from('vip_members').select('id,username,whatsapp,phone,days_inactive,last_deposit_date,last_bet_date,activity_status').eq('is_excluded',false).order('username')),
       supabase.from('crm_rules').select('rule_key,value').in('rule_key',['p1_score','p2_score','p3_score','contact_cooldown_days']).then(r=>{if(r.error)throw r.error;return r.data||[]}),
     ])
