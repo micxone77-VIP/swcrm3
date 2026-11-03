@@ -12,6 +12,7 @@ import { MONTHS, MONTHS_CN } from '../lib/constants'
 import { useUrlParam, useUrlParamNumber } from '../hooks/useUrlParam'
 import { useLanguage } from '../contexts/LanguageContext'
 import CopyBtn from '../components/CopyBtn'
+import MonthlyKpiBoard from '../components/MonthlyKpiBoard'
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 const s = {
@@ -132,6 +133,7 @@ export default function KPIProgress() {
   const [view,  setView]  = useUrlParam('view', 'mine') // 'mine' | 'compare'
 
   // Data
+  const [showOld,    setShowOld]    = useState(false)
   const [autoData,   setAutoData]   = useState({})
   const [myManual,   setMyManual]   = useState({})
   const [allUsers,   setAllUsers]   = useState([])
@@ -263,7 +265,7 @@ export default function KPIProgress() {
           <div style={s.sub}>{t('kpi.performanceTracking')} · {MN[month]} {year}</div>
         </div>
         <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
-          {isAdmin && (
+          {isAdmin && showOld && (
             <div style={{ display:'flex', background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, overflow:'hidden' }}>
               {[['mine', t('kpi.tabMine')],['compare', t('kpi.tabCompare')]].map(([v,l]) => (
                 <button key={v} onClick={() => setView(v)}
@@ -284,8 +286,14 @@ export default function KPIProgress() {
         </div>
       </div>
 
+      <div style={{ height:12 }} />
+      <MonthlyKpiBoard month={monthStr} />
+      <button onClick={() => setShowOld(v => !v)} style={{ background:'var(--surface2)', color:'var(--text)', border:'1px solid var(--border)', padding:'8px 14px', borderRadius:8, fontSize:12, fontWeight:600, cursor:'pointer', marginBottom:16 }}>
+        {showOld ? L2('▲ Hide other KPI items','▲ 隐藏其他 KPI 项目') : L2('▼ Show other KPI items (Diamond coverage, SOP, manual scores…)','▼ 显示其他 KPI 项目（钻石覆盖率、SOP、手动评分…）')}
+      </button>
+
       {/* ── MY KPI VIEW ── */}
-      {view === 'mine' && (
+      {showOld && view === 'mine' && (
         <>
           {/* Score summary */}
           <div style={{ ...s.card, marginBottom:16 }}>
@@ -393,7 +401,7 @@ export default function KPIProgress() {
       )}
 
       {/* ── COMPARE VIEW (Admin only) ── */}
-      {view === 'compare' && isAdmin && (
+      {showOld && view === 'compare' && isAdmin && (
         <>
           <div style={{ ...s.card, marginBottom:16 }}>
             <div style={{ padding:'18px 24px' }}>
