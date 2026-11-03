@@ -10,24 +10,27 @@ const td = { padding:'8px 10px', borderBottom:'1px solid var(--border)', fontVar
 export default function PlayerNgrHistory({ username, currency }) {
   const { lang } = useLanguage()
   const L2 = (en, zh) => (lang === 'zh' ? zh : en)
-  const [rows, setRows] = useState(null)
+  const [res, setRes] = useState(null)
   const [error, setError] = useState(false)
 
   useEffect(() => {
     let live = true
-    setRows(null); setError(false)
+    setRes(null); setError(false)
     fetchPlayerNgr(username, currency || 'MYR').catch(() => fetchPlayerNgr(username, currency || 'MYR'))
-      .then(r => { if (live) setRows(r) })
+      .then(r => { if (live) setRes(r) })
       .catch(e => { console.error('PlayerNgrHistory load error', e); if (live) setError(true) })
     return () => { live = false }
   }, [username, currency])
 
   const cur = currency || 'MYR'
+  const rows = res?.rows
+  const total = f => (rows || []).reduce((n, r) => n + f(r), 0)
+  const ngrColor = n => (n < 0 ? '#f85149' : n > 0 ? '#3fb950' : 'var(--muted)')
   return <div style={{ marginBottom:20 }}>
     <div style={{ fontSize:13, fontWeight:700, color:'var(--text)' }}>{L2('Personal NGR','个人 NGR')}</div>
-    <div style={{ fontSize:12, color:'var(--muted)', margin:'2px 0 8px' }}>{L2('Player loss − bonus − rebate − offline spending. Campaign rewards not deducted.','玩家输额 − 奖励 − 返水 − 线下开支。活动奖励未扣除。')}</div>
+    <div style={{ fontSize:12, color:'var(--muted)', margin:'2px 0 8px' }}>{L2('Player loss − bonus − rebate − offline spending. Campaign rewards are paid as bonus, so they are already in Bonus.','玩家输额 − 奖励 − 返水 − 线下开支。活动奖励以奖励发放，已包含在奖励内。')}</div>
     {error ? <div style={{ fontSize:13, color:'var(--muted)' }}>{L2('Could not load NGR.','无法载入 NGR。')}</div>
-      : !rows ? <div style={{ fontSize:13, color:'var(--muted)' }}>{L2('Loading…','载入中…')}</div>
+      : !res ? <div style={{ fontSize:13, color:'var(--muted)' }}>{L2('Loading…','载入中…')}</div>
       : !rows.length ? <div style={{ fontSize:13, color:'var(--muted)' }}>{L2('No NGR data yet.','暂无 NGR 数据。')}</div>
       : <div style={{ overflowX:'auto' }}><table style={{ width:'100%', borderCollapse:'collapse', fontSize:13 }}>
         <thead><tr>
@@ -44,8 +47,17 @@ export default function PlayerNgrHistory({ username, currency }) {
           <td style={td}>{formatMoney(r.bonus - r.cancelled, cur)}</td>
           <td style={td}>{formatMoney(r.rebate, cur)}</td>
           <td style={td}>{r.offline > 0 ? formatMoney(r.offline, cur) : '—'}</td>
-          <td style={{ ...td, fontWeight:800, color: r.ngr < 0 ? '#f85149' : r.ngr > 0 ? '#3fb950' : 'var(--muted)' }}>{formatMoney(r.ngr, cur)}</td>
+          <td style={{ ...td, fontWeight:800, color: ngrColor(r.ngr) }}>{formatMoney(r.ngr, cur)}</td>
         </tr>)}</tbody>
+        <tfoot><tr style={{ fontWeight:800 }}>
+          <td style={{ ...td, textAlign:'left' }}>{L2('Total','总计')}</td>
+          <td style={td}>{formatMoney(total(r => r.win_loss), cur)}</td>
+          <td style={td}>{formatMoney(total(r => r.bonus - r.cancelled), cur)}</td>
+          <td style={td}>{formatMoney(total(r => r.rebate), cur)}</td>
+          <td style={td}>{total(r => r.offline) > 0 ? formatMoney(total(r => r.offline), cur) : '—'}</td>
+          <td style={{ ...td, color: ngrColor(total(r => r.ngr)) }}>{formatMoney(total(r => r.ngr), cur)}</td>
+        </tr></tfoot>
       </table></div>}
+    {res?.earlierSpend > 0 && <div style={{ fontSize:12, color:'var(--muted)', marginTop:6 }}>{L2(`Not in this total: ${formatMoney(res.earlierSpend, cur)} offline spending before game data starts.`,`未计入总计：游戏数据开始前的线下开支 ${formatMoney(res.earlierSpend, cur)}。`)}</div>}
   </div>
 }

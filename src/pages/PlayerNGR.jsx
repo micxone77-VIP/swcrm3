@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import { formatMoney } from '../lib/format'
-import { fetchMonthNgr, fetchNgrMonths } from '../lib/playerNgr'
+import { fetchAllMonthsNgr, fetchMonthNgr, fetchNgrMonths } from '../lib/playerNgr'
 import { ListCount } from '../components/ui'
 import CopyBtn from '../components/CopyBtn'
 import { useLanguage } from '../contexts/LanguageContext'
@@ -59,9 +59,12 @@ export default function PlayerNGR() {
   const [error, setError] = useState(false)
   const [loading, setLoading] = useState(true)
   const [reload, setReload] = useState(0)
+  const [progress, setProgress] = useState(null)
 
   // A month still running is not a fair default, so open on the last finished one
   const month = monthF || months[1] || months[0] || ''
+  const isAll = month === 'ALL'
+  const allMonths = isAll ? months : null
 
   useEffect(() => {
     let live = true
@@ -72,16 +75,19 @@ export default function PlayerNGR() {
   }, [reload])
 
   useEffect(() => {
-    if (!month) return undefined
+    if (!month || (isAll && !months.length)) return undefined
     let live = true
-    setLoading(true); setError(false)
+    setLoading(true); setError(false); setProgress(null)
     // The Gold+ views can take 3-6s (limit 8s), so try once more before giving up
-    fetchMonthNgr(month).catch(() => fetchMonthNgr(month))
+    const read = isAll
+      ? fetchAllMonthsNgr(months, (i, n) => { if (live) setProgress([i, n]); return live })
+      : fetchMonthNgr(month).catch(() => fetchMonthNgr(month))
+    read
       .then(r => { if (live) setData(r) })
       .catch(e => { console.error('PlayerNGR load error', e); if (live) { setError(true); setData(null) } })
-      .finally(() => { if (live) setLoading(false) })
+      .finally(() => { if (live) { setLoading(false); setProgress(null) } })
     return () => { live = false }
-  }, [month, reload])
+  }, [month, allMonths, reload])
 
   const allRows = useMemo(() => data?.rows || [], [data])
   const hosts = useMemo(() => [...new Set(allRows.filter(r => r.host).map(r => r.host))].sort(), [allRows])
@@ -121,7 +127,7 @@ export default function PlayerNGR() {
 
     <div style={s.card}>
       <div style={{display:'flex',gap:8,padding:12,borderBottom:'1px solid var(--border)',alignItems:'center',flexWrap:'wrap'}}>
-        <select aria-label={L2('Month','月份')} style={s.sel} value={month} onChange={e=>setMonthF(e.target.value)}>{months.map(m=><option key={m} value={m}>{m}</option>)}</select>
+        <select aria-label={L2('Month','月份')} style={s.sel} value={month} onChange={e=>setMonthF(e.target.value)}><option value="ALL">{L2('All months (total)','全部月份（总计）')}</option>{months.map(m=><option key={m} value={m}>{m}</option>)}</select>
         <select aria-label={L2('Tier','等级')} style={s.sel} value={tierF} onChange={e=>setTierF(e.target.value)}><option value="ALL">{L2('All Tiers','全部等级')}</option>{tiers.map(x=><option key={x} value={x}>{L2(x,TIER_ZH[x]||x)}</option>)}</select>
         <select aria-label={L2('Host','负责人')} style={s.sel} value={hostF} onChange={e=>setHostF(e.target.value)}><option value="ALL">{L2('All hosts','全部负责人')}</option>{hosts.map(h=><option key={h} value={h}>{h}</option>)}</select>
         <input aria-label={L2('Search player','搜索玩家')} placeholder={L2('Search player','搜索玩家')} style={{...s.sel,width:170}} value={search} onChange={e=>setSearch(e.target.value)}/>
@@ -133,15 +139,17 @@ export default function PlayerNGR() {
       </div>
 
       <div style={{padding:'10px 14px',borderBottom:'1px solid var(--border)',fontSize:12,color:'var(--muted)',lineHeight:1.6}}>
-        {data&&(data.providerWhole
+        {data&&!loading&&(isAll
+          ? L2(`All months added up: ${months[months.length-1]} to ${latest}, month not finished. ${(data.providerMonths||[]).join(', ')||'No month'} from the provider report, other months from the daily import.`,`全部月份相加：${months[months.length-1]} 至 ${latest}，本月未结束。${(data.providerMonths||[]).join('、')||'没有月份'}来自供应商报告，其他月份来自每日导入。`)
+          : data.providerWhole
           ? L2(`${month}: figures from the back office provider report (full month).`,`${month}：数据来自后台供应商报告（整月）。`)
           : L2(`${month}: figures from the daily import${isPartial?`, up to ${latest}, month not finished`:''}. No full-month provider report, so some bets may be missing.`,`${month}：数据来自每日导入${isPartial?`，截至 ${latest}，本月未结束`:''}。没有整月供应商报告，可能缺少部分投注。`))}
-        {' '}{L2('Online expenses, campaign rewards and company fees are not deducted.','线上开支、活动奖励和公司费用未扣除。')}
+        {' '}{L2('Campaign rewards are paid as bonus, so they are already in Bonus. Online expenses and company fees are not deducted.','活动奖励以奖励发放，已包含在奖励内。线上开支和公司费用未扣除。')}
         {gapCount>0&&<span style={{color:'#d29922'}}> {L2(`⚠ ${gapCount} player(s): the daily import shows a different win/loss.`,`⚠ ${gapCount} 位玩家：每日导入的输赢不同。`)}</span>}
       </div>
 
       {error ? <div style={{padding:30,color:'var(--text)'}}>{L2('Could not load NGR.','无法载入 NGR。')} <button style={s.btnSm} onClick={()=>setReload(n=>n+1)}>{L2('Try again','重试')}</button></div>
-        : loading ? <div style={{padding:30,color:'var(--text)'}}>{L2('Loading…','载入中…')}</div>
+        : loading ? <div style={{padding:30,color:'var(--text)'}}>{progress?L2(`Loading month ${progress[0]} of ${progress[1]}…`,`载入第 ${progress[0]} / ${progress[1]} 个月…`):L2('Loading…','载入中…')}</div>
         : <>
           <ListCount total={rows.length} label="VIPs" labelZh="位VIP" />
           <div style={{overflowX:'auto'}}><table style={s.tbl}>

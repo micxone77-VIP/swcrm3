@@ -5,7 +5,7 @@
 //   provider report (provider_player_monthly) when it covers the WHOLE month: some daily rows miss bets
 //   otherwise the daily CSV (vip_monthly_totals), without win/loss on no-bet days (stale rows)
 // Offline spending = department_expenses with expense_type 'offline' (not in BO bonus or rebate).
-// Online expenses and campaign rewards are NOT deducted.
+// Online expenses are NOT deducted. Campaign rewards are paid as BO bonus, so they are already in bonus.
 import { supabase } from './supabase'
 import { fetchAll } from './depositProfile'
 import { fetchMembersFor, findMembersByNames } from './allPlayers'
@@ -119,9 +119,33 @@ export async function fetchMonthNgr(month) {
   return { rows, providerWhole, providerEnd }
 }
 
-// One player, every month → [{ month, currency, ...figures }], newest first
+// Every month added up per player. Months load one at a time: each read is heavy (limit 8s).
+export async function fetchAllMonthsNgr(months, onMonth) {
+  const byPlayer = {}
+  const providerMonths = []
+  const oldestFirst = [...months].reverse()
+  for (let i = 0; i < oldestFirst.length; i++) {
+    if (onMonth && onMonth(i + 1, oldestFirst.length) === false) return null
+    const month = oldestFirst[i]
+    const res = await fetchMonthNgr(month).catch(() => fetchMonthNgr(month))
+    if (res.providerWhole) providerMonths.push(month)
+    res.rows.forEach(r => {
+      const t = byPlayer[key(r.username)]
+      if (!t) { byPlayer[key(r.username)] = { ...r, dailyWinLoss: r.dailyWinLoss || 0 }; return }
+      ;['bet', 'win_loss', 'bonus', 'cancelled', 'rebate', 'offline', 'ngr_before_spend', 'ngr'].forEach(f => { t[f] += r[f] })
+      t.dailyWinLoss += r.dailyWinLoss || 0
+      t.gap = t.gap || r.gap
+      t.spendOtherCurrency = t.spendOtherCurrency || r.spendOtherCurrency
+    })
+  }
+  return { rows: Object.values(byPlayer), providerMonths }
+}
+
+// One player → { rows: [{ month, currency, ...figures }] newest first, earlierSpend }
+// Only months with game data count; earlierSpend = offline spending before that (no game loss to set against)
 export async function fetchPlayerNgr(username, currency) {
-  const [totals, stale, spendRes, provider] = await Promise.all([
+  const [{ months: dataMonths }, totals, stale, spendRes, provider] = await Promise.all([
+    fetchNgrMonths(),
     fetchAll(() => supabase.from('vip_monthly_totals').select(TOTALS_COLS).eq('username', username).order('snapshot_month')),
     fetchAll(() => supabase.from('vip_daily_snapshots').select(STALE_COLS).eq('username', username).or('monthly_valid_bet.is.null,monthly_valid_bet.lte.0').neq('win_loss', 0).order('snapshot_date')),
     fetchAll(() => supabase.from('department_expenses').select(SPEND_COLS).ilike('vip_username', username).eq('expense_type', 'offline').order('month')),
@@ -136,7 +160,9 @@ export async function fetchPlayerNgr(username, currency) {
     if (String(r.period_end).slice(0, 10) >= monthEnd(m)) addProvider(providerBy, m, r)
   })
   const months = [...new Set([...Object.keys(dailyBy), ...Object.keys(spendBy), ...Object.keys(providerBy)])].sort().reverse()
-  return months
-    .map(month => ({ month, currency, ...buildRow(dailyBy[month], staleBy[month] || 0, providerBy[month], spendBy[month], currency) }))
-    .filter(r => r.bet > 0 || r.offline > 0 || r.ngr !== 0)
+  const all = months.map(month => ({ month, currency, ...buildRow(dailyBy[month], staleBy[month] || 0, providerBy[month], spendBy[month], currency) }))
+  return {
+    rows: all.filter(r => dataMonths.includes(r.month) && (r.bet > 0 || r.offline > 0 || r.ngr !== 0)),
+    earlierSpend: all.filter(r => !dataMonths.includes(r.month)).reduce((n, r) => n + r.offline, 0),
+  }
 }
