@@ -302,13 +302,14 @@ export async function onRequestPost({ request, env }) {
 
     // Every lookup runs with the caller's own login, so database security (RLS) applies
     const db = makeDb(env, token)
-    const [profile, dataDate] = await Promise.all([
+    const [profile, dataDate, depositLogs] = await Promise.all([
       db.rows(`profiles?select=full_name,email,role&id=eq.${authUser.id}&limit=1`).then(r => r[0] || {}).catch(() => ({})),
       db.rows('vip_daily_snapshots_all?select=snapshot_date&order=snapshot_date.desc&limit=1').then(r => r[0]?.snapshot_date || '').catch(() => ''),
+      db.rpc('ai_readonly_query', { p_sql: "select min((created_at at time zone 'UTC')::date) as first, max((created_at at time zone 'UTC')::date) as last, string_agg(distinct currency, ', ') as currencies from vip_deposit_logs" }).then(r => r?.rows?.[0] || null).catch(() => null),
     ])
 
     const messages = [
-      { role: 'system', content: buildSystemPrompt({ language, profile, dataDate }) },
+      { role: 'system', content: buildSystemPrompt({ language, profile, dataDate, depositLogs }) },
       ...history.slice(-6).map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: String(m.content || '').slice(0, 4000) })),
       { role: 'user', content: question.trim() },
     ]
@@ -415,6 +416,8 @@ birthday_engine(username,tier,birthday,gift_type,budget_rm,gift_status,sent_date
 reactivation_logs(username,tier,currency,reactivated_month,days_was_inactive,prev_last_deposit,new_deposit_date,reactivation_deposit,host_name)
 tier_change_logs(username,old_tier,new_tier,changed_at,import_month,source)
 provider_player_monthly(period_month,provider,username,currency,bet_count,turnover,valid_turnover,win_loss,bonus,rebate)
+vip_deposit_logs(login,tier,currency,status,created_at,confirmed_amount,payment_method,day_of_week,hour_of_day) — one row per deposit, the ONLY place with payment method. payment_method values: 'Crypto', 'Payment Gateway', 'Bank - Online Banking', 'Bank - Cash Deposit Machine', 'Bank - ATM', 'CS Submit'. login = username (join vip_members_all m on m.username = l.login for host_assigned). Deposit date = (created_at at time zone 'UTC')::date
+v_vip_deposit_profile(login,tier,host_assigned,last_deposit_at,dep_count,dep_total,dep_30d,avg_ticket,max_ticket,avg_gap_days,trend_pct,peak_day_name,peak_hour,main_method,uses_crypto,uses_bank,deposit_style,segment,data_as_of) — one row per player, summary of vip_deposit_logs; Gold+ host_assigned only
 v_bonus_dependency(month,username,tier,host_assigned,deposit_days,bonus_days,natural_days,deposit_total,bonus_total,bonus_cost_pct,dependency_class)
 vip_profiles(username,preferred_games,deposit_pattern,deposit_trigger,preferred_contact_time,preferred_contact_channel,interests,personality_tags,relationship_level,family_tags)
 retention_metrics(month,tier,total_members,metric_type,week1_pct,week2_pct,week3_pct,week4_pct,monthly_pct)
@@ -435,7 +438,7 @@ const TOOLS = [
     { ...FILTER_PROPS,
       group_by: { type: 'string', enum: ['tier', 'currency', 'status', 'host', 'lifecycle', 'value_band', 'behaviour', 'preference', 'churn_risk'] } }),
   tool('player_detail',
-    'Everything about ONE player: status and 30-day money, auto profile (games, deposit style, peak time, offer suggestion, reply rate), manual profile (interests, family, notes), next step, last 10 interactions, campaigns joined, tier changes.',
+    'Everything about ONE player: status and 30-day money, auto profile (games, deposit style, peak time, offer suggestion, reply rate), deposit_profile (main payment method such as Crypto; only up to its data_as_of date), manual profile (interests, family, notes), next step, last 10 interactions, campaigns joined, tier changes.',
     { username: { type: 'string' } }, ['username']),
   tool('player_history',
     'Day-by-day or month-by-month deposit / turnover / win-loss / withdrawal for one or more players.',
@@ -593,7 +596,7 @@ async function runTool(name, a, db, ctx = {}) {
         const like = await db.rpc('ai_players', { p: { search: u, limit: 8, sort: 'dep_90d' } })
         return { error: `No player "${u}"`, did_you_mean: (like?.rows || []).map(r => `${r.username} (${r.tier})`) }
       }
-      const [auto, manual, nextStep, timeline, campaigns, tiers, survey] = await Promise.all([
+      const [auto, manual, nextStep, timeline, campaigns, tiers, survey, depositProfile] = await Promise.all([
         safe(db.rpc('get_vip_profile_auto', { p_username: u })),
         safe(db.rows(`vip_profiles?select=preferred_games,deposit_pattern,deposit_trigger,preferred_contact_time,preferred_contact_channel,interests,personality_tags,host_notes,relationship_level,family_tags,family_notes&username=eq.${enc(u)}`)),
         safe(db.rows(`v_vip_next_step?select=stage_label,next_action,attempts_since_reply,last_outcome,last_contact_date&username=eq.${enc(u)}`)),
@@ -601,8 +604,9 @@ async function runTool(name, a, db, ctx = {}) {
         safe(db.rows(`campaign_players?select=status,total_deposit,reward_amount,payout_status,enrolled_at,campaigns(campaign_name,status,start_date,end_date)&username=eq.${enc(u)}&order=enrolled_at.desc&limit=10`)),
         safe(db.rows(`tier_change_logs?select=old_tier,new_tier,changed_at&username=eq.${enc(u)}&order=changed_at.desc&limit=5`)),
         safe(db.rows(`vip_survey_responses?select=survey_name,submitted_at,reported_tier,reason_less_use,drop_reasons,benefit_feeling,preferred_rewards,manager_wants,return_drivers,deposit_factor,other_platforms,better_elsewhere,channel,improve_one&username=eq.${enc(u)}&order=submitted_at.desc&limit=3`)),
+        safe(db.rows(`v_vip_deposit_profile?select=main_method,uses_crypto,uses_bank,deposit_style,segment,dep_30d,avg_ticket,max_ticket,avg_gap_days,peak_day_name,peak_hour,last_deposit_at,data_as_of&login=eq.${enc(u)}`)),
       ])
-      return { player: stats.rows[0], period: [stats.period_from, stats.period_to], auto_profile: auto, manual_profile: manual?.[0] || manual,
+      return { player: stats.rows[0], deposit_profile: depositProfile?.[0] || depositProfile, period: [stats.period_from, stats.period_to], auto_profile: auto, manual_profile: manual?.[0] || manual,
                next_step: nextStep?.[0] || nextStep, last_10_interactions: timeline, campaigns, tier_changes: tiers, survey_answers: survey }
     }
 
@@ -854,7 +858,7 @@ async function runAgent(messages, db, env) {
 
 // ─── System prompt ────────────────────────────────────────────────────────────
 
-function buildSystemPrompt({ language, profile, dataDate }) {
+function buildSystemPrompt({ language, profile, dataDate, depositLogs }) {
   const lang = language === 'zh' ? 'Simplified Chinese (keep usernames, tiers and currency codes as they are)' : 'English'
   const name = profile.full_name || 'unknown'
   return `You are the data analyst and VIP-retention advisor inside sureWin's VIP CRM (Kuala Lumpur VIP department).
@@ -876,6 +880,8 @@ BUSINESS RULES (must follow)
 - win_loss / wl is from the PLAYER's side: negative = player lost (company won), positive = player won.
 - A real deposit day = deposit > 0 AND valid bet > 0 that day. Deposits on days with no bets are not counted.
 - Status (same on every page): Active = deposited within 3 days; Resting = no recent deposit but bet within 2 days; At Risk = 3+ days without deposit; Churn = 7+ days; Dormant = 15+ days. churn_risk: LOW = Active/Resting, MEDIUM = At Risk, HIGH = Churn/Dormant.
+- Payment method (Crypto, Payment Gateway, Bank …) is HOW a player deposited, not a platform. Crypto is NOT KHUSD: a Malaysian player paying by Crypto is still MYR. Never use the currencies filter for a payment method question. Only vip_deposit_logs has it, so use ask_sql (or player_detail for one player), and find_players / summarize_players cannot filter by it.
+- Payment method data currently covers ${depositLogs ? `${depositLogs.first} to ${depositLogs.last}, currency ${depositLogs.currencies}` : 'an unknown period'}, and it is not refreshed by the daily import. If the question is about any date outside this, or another currency, say plainly that the method data does not reach it, and give the latest data you do have. NEVER answer "none" or "no deposits" for a period or currency it does not cover. The daily data for that period shows only total deposits, without the method.
 - Value band = 90-day deposit band V1 Minimal … V5 Top (Gold+ only).
 - Upgrades are by valid bet in the calendar month (same numbers for SGD): Bronze→Silver 100,000; Silver→Gold 500,000; Bronze→Gold 600,000; Gold→Platinum 2,000,000; Platinum→Diamond 6,000,000; Gold straight to Diamond 8,000,000. Deposit is NOT an upgrade rule. For upgrade questions use find_players (upgrade_ready, or sort gap_to_next ascending) and report month_vb, next_tier, gap_to_next and qualifies_for exactly as given — do NOT compare or subtract numbers yourself. Only players with qualifies_for set have reached a higher tier.
 - Never invent a threshold or rule. If a number is not listed here, get it with the rules tool or say it is not set.
