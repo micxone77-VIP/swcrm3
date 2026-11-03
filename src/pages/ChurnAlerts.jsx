@@ -87,6 +87,16 @@ function ReactivateModal({ vip, month, onClose, onSaved }) {
 }
 
 // ── Main Component ────────────────────────────────────────────────────────────
+// Priority tab: columns you can click to sort. 'first' is the direction of the first click
+const P_SORT = {
+  username: { get:v=>String(v.username||'').toLowerCase(), first:'asc' },
+  tier: { get:v=>TIER_ORDER.indexOf(v.tier), first:'asc' },
+  host: { get:v=>String(v.host||'').toLowerCase(), first:'asc' },
+  days: { get:v=>v.days_since_deposit??Infinity, first:'desc' },
+  dep: { get:v=>v.dep_90d, first:'desc' },
+  contact: { get:v=>v.last_contact?new Date(v.last_contact).getTime():0, first:'asc' },
+}
+
 export default function ChurnAlerts() {
   const navigate=useNavigate(); const {profile}=useAuth(); const {t,lang}=useLanguage(); const L2=(en,zh)=>(lang==='zh'?zh:en); const now=new Date()
   const [month,setMonth]=useUrlParamNumber('month',now.getMonth()); const [year,setYear]=useUrlParamNumber('year',now.getFullYear()); const [tab,setTab]=useUrlParam('tab','priority')
@@ -95,7 +105,7 @@ export default function ChurnAlerts() {
   const [mineOnly,setMineOnly]=useUrlParamBool('mine',false),[riskF,setRiskF]=useUrlParam('risk','ALL'),[tierF,setTierF]=useUrlParam('tier','ALL'),[reactTierF,setReactTierF]=useUrlParam('reactTier','ALL'),[sortCol,setSortCol]=useUrlParam('sort','days_inactive'),[sortAsc,setSortAsc]=useUrlParamBool('asc',false),[stats,setStats]=useState({high:0,medium:0,dormant:0,atRisk:0})
   const [dHostF,setDHostF]=useState('ALL'),[pHostF,setPHostF]=useState('ALL'),[gHostF,setGHostF]=useState('ALL'),[contactedSet,setContactedSet]=useState(new Set()),[dUncontactedOnly,setDUncontactedOnly]=useState(false),[pUncontactedOnly,setPUncontactedOnly]=useState(false),[gUncontactedOnly,setGUncontactedOnly]=useState(false)
   const [churnWaModal,setChurnWaModal]=useState(null),[priorityHostF,setPriorityHostF]=useState('ALL'),[priorityError,setPriorityError]=useState(false)
-  const [pLevelF,setPLevelF]=useUrlParam('plevel','P1')
+  const [pLevelF,setPLevelF]=useUrlParam('plevel','P1'),[pSort,setPSort]=useUrlParam('psort','call')
   // Market filter (MY / SG / KH) — based on the player's account currency; applies to every tab + stat cards
   const [mktF,setMktF]=useUrlParam('mkt','ALL')
   const mktOf=c=>{const u=String(c||'MYR').toUpperCase();return u==='SGD'?'SG':u.startsWith('KH')?'KH':'MY'}
@@ -159,6 +169,9 @@ export default function ChurnAlerts() {
   const canReactivate=v=>['Churn','Dormant'].includes(v.activity_status)&&!reactivatedSet.has(v.username)
   const pAll=priorityList.filter(v=>(priorityHostF==='ALL'||v.host===priorityHostF)&&(!mineOnly||v.host===myName))
   const pRows=pAll.filter(v=>v.level===pLevelF)
+  const [pSortKey,pSortDir]=pSort.split(':')
+  if(P_SORT[pSortKey]){const get=P_SORT[pSortKey].get,dir=pSortDir==='desc'?-1:1;pRows.sort((a,b)=>{const x=get(a),y=get(b);return(x<y?-1:x>y?1:0)*dir})}
+  const clickPSort=key=>{if(key==='call')return setPSort('call');setPSort(`${key}:${pSortKey===key?(pSortDir==='desc'?'asc':'desc'):P_SORT[key].first}`)}
   return <div style={s.page}><div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-end',marginBottom:18}}><div><div style={s.title}>{t('sidebar.nav.churnAlerts')}</div><div style={s.sub}>{t('churnAlerts.subtitle')}</div></div></div>
     <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:10,marginBottom:18}}><StatCard icon="😴" label={L2('Resting (betting, no deposit)','休息中 (投注未存款)')} value={st.resting} color="#38BDF8"/><StatCard icon="⚠️" label={L2('At Risk','有风险')} value={st.atRisk} color="#d29922"/><StatCard icon="🔥" label={L2('Churn','流失')} value={st.churn} color="#f85149"/><StatCard icon="💤" label={L2('Dormant','休眠')} value={st.dormant}/></div>
     <div style={s.card}><div style={{display:'flex',gap:8,padding:12,borderBottom:'1px solid var(--border)',flexWrap:'wrap'}}>{[['priority',L2('🔥 Priority','🔥 优先')],['churn',L2('📉 Churn','📉 流失')],['reactivated',L2('♻️ Reactivated','♻️ 已召回')],['dormant',L2('💤 Dormant','💤 休眠')],['diamond',L2('💎 Diamond','💎 钻石')],['platinum',L2('🔷 Platinum','🔷 白金')],['gold',L2('🥇 Gold','🥇 黄金')]].map(([key,label])=><button key={key} style={{...s.btnSm,background:tab===key?'var(--accent)':'var(--surface2)',color:tab===key?'#fff':'var(--text)'}} onClick={()=>setTab(key)}>{label}</button>)}<div style={{marginLeft:'auto',display:'flex',gap:6,alignItems:'center'}}><span style={{fontSize:12,color:'var(--muted)',fontWeight:600}}>{L2('Market:','市场：')}</span>{['ALL',...mktList].map(m=>{const on=mktF===m;const n=m==='ALL'?vipsAll.length:vipsAll.filter(v=>mktOf(v.currency)===m).length;return <button key={m} title={L2(`${n} VIPs`,`${n} 位VIP`)} style={{...s.btnSm,background:on?'#1f6feb':'var(--surface2)',color:on?'#fff':'var(--text)',border:on?'1px solid #1f6feb':'1px solid var(--border)',fontWeight:on?700:500}} onClick={()=>setMktF(m)}>{m==='ALL'?L2('All','全部'):m==='MY'?'🇲🇾 MY':m==='SG'?'🇸🇬 SG':'🇰🇭 KH'}</button>})}</div></div>
@@ -174,7 +187,7 @@ export default function ChurnAlerts() {
           </label>
         </div>
         <ListCount total={pRows.length} label="VIPs" labelZh="位VIP" />
-        <div style={{overflowX:'auto'}}><table style={s.tbl}><thead><tr>{['#',L2('Priority','优先级'),L2('Player','玩家'),L2('Tier','等级'),L2('Host','负责人'),L2('Phone / WA','电话 / WA'),L2('Days','天数'),L2('90d Deposit','90天存款'),L2('Last Contact','最后联系'),L2('Reason','原因'),L2('Actions','操作')].map(h=><th key={h} style={s.th}>{h}</th>)}</tr></thead>
+        <div style={{overflowX:'auto'}}><table style={s.tbl}><thead><tr>{[['#'],[L2('Priority','优先级'),'call'],[L2('Player','玩家'),'username'],[L2('Tier','等级'),'tier'],[L2('Host','负责人'),'host'],[L2('Phone / WA','电话 / WA')],[L2('Days','天数'),'days'],[L2('90d Deposit','90天存款'),'dep'],[L2('Last Contact','最后联系'),'contact'],[L2('Reason','原因')],[L2('Actions','操作')]].map(([h,key])=>{const on=key&&pSortKey===key;return<th key={h} style={{...s.th,...(key?{cursor:'pointer',userSelect:'none'}:{}),...(on?{color:'var(--accent)'}:{})}} title={key?(key==='call'?L2('Click for call order','点击恢复通话顺序'):L2('Click to sort, click again to reverse','点击排序，再点一次反向')):undefined} onClick={key?()=>clickPSort(key):undefined}>{h}{key&&<span style={{marginLeft:4,opacity:on?1:.4}}>{on&&key!=='call'?(pSortDir==='desc'?'▼':'▲'):on?'▲':'↕'}</span>}</th>})}</tr></thead>
         <tbody>{pRows.map((v,rowIdx)=><tr key={v.id} style={{opacity:v.recent?.6:1}}>
           <td style={{...s.td,color:'var(--muted)',fontSize:12,width:36}}>{rowIdx+1}</td>
           <td style={s.td}><span style={{...s.badge,background:PRIORITY_COLOR[v.level],color:'#fff'}}>{v.level}</span><div style={{fontSize:11,color:'var(--muted)',marginTop:3,whiteSpace:'nowrap'}}>{L2(v.activity_status,STATUS_ZH[v.activity_status]||v.activity_status)}</div></td>
