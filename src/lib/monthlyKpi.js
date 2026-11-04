@@ -56,12 +56,15 @@ export async function loadRetention(month) {
   if (!base.length || !cur.length) return null
   const lost = base.filter(r => !paidNow.has(key(r.username)))
   const baseBy = countBy(base, r => r.currency), lostBy = countBy(lost, r => r.currency)
+  const vipBy = countBy(prev.filter(r => KPI_TIERS.has(r.tier) && !excluded.has(key(r.username))), r => r.currency)
   const byCur = Object.keys(baseBy).sort().map(c => ({ currency: c, base: baseBy[c], kept: baseBy[c] - (lostBy[c] || 0) }))
   return {
     base: base.length,
     kept: base.length - lost.length,
     pct: Math.round((base.length - lost.length) / base.length * 1000) / 10,
     byCur,
+    vipMonth: shiftMonth(month, -1),
+    vipTotals: Object.keys(vipBy).sort().map(c => ({ currency: c, count: vipBy[c] })),
     lost: lost.map(r => ({ id: r.vip_id, username: r.username, tier: r.tier, host: r.host_assigned, currency: r.currency || 'MYR', lastDeposit: num(r.total_deposit) })).sort((a, b) => b.lastDeposit - a.lastDeposit),
   }
 }

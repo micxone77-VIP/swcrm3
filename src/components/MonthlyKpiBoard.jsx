@@ -111,7 +111,7 @@ export default function MonthlyKpiBoard({ month }) {
 
     <Item n="①" title={L2('VIP monthly retention','VIP 月留存率')} weight={WEIGHT.retention} on
       how={L2('Platinum, Diamond and Black who deposited last month and deposited again this month.','上月有存款的 Platinum、Diamond 和 Black 玩家，本月再次存款。')}
-      val={value(state.retention, d => <><div style={big}>{d.pct}%</div><div style={small}>{d.kept} / {d.base} · {L2('target','目标')} {targets.retention}% · {status(d.pct, targets.retention)}</div><div style={small}>{d.byCur.map(c => `${c.currency} ${c.kept}/${c.base}`).join(' · ')}</div></>)}
+      val={value(state.retention, d => <><div style={big}>{d.pct}%</div><div style={small}>{d.kept} / {d.base} · {L2('target','目标')} {targets.retention}% · {status(d.pct, targets.retention)}</div><div style={small}>{d.byCur.map(c => `${c.currency} ${c.kept}/${c.base}`).join(' · ')}</div><div style={small}>{L2(`Total VIPs in ${d.vipMonth}`,`${d.vipMonth} VIP 总数`)}: {d.vipTotals.map(c => `${c.currency} ${c.count}`).join(' · ')}</div></>)}
       listKey={ret?.lost?.length ? 'lost' : null} listLabel={L2(`See ${ret?.lost?.length || 0} who did not deposit again`,`查看 ${ret?.lost?.length || 0} 位未再存款的玩家`)}
       list={ret && <PlayerList navigate={navigate} heads={[L2('Player','玩家'),L2('Tier','等级'),L2('Host','负责人'),L2('Deposit last month','上月存款')]} rows={ret.lost} render={r => [r.tier, r.host || '—', money(r.lastDeposit, r.currency)]} />} />
 
