@@ -3,11 +3,9 @@
 // Only totals are saved from this file, never usernames or hosts. The hub receives the score + items (see index.ts).
 // deno-lint-ignore-file no-explicit-any
 
-const WEIGHT = { retention: 20, ngr: 20, recovered: 30, upgrades: 30 }
-const TIER_RANK: Record<string, number> = { BRONZE: 1, SILVER: 2, GOLD: 3, PLATINUM: 4, DIAMOND: 5, 'DIAMOND-P': 6, BLACK: 7 }
-const FIRST_VIP_RANK = TIER_RANK.GOLD
+const WEIGHT = { retention: 20, ngr: 20, recovered: 30, turnover: 30 }
 const KPI_TIERS = new Set(['PLATINUM', 'DIAMOND', 'DIAMOND-P', 'BLACK']) // Marcus, 2026-11-04: Gold is not in the KPI
-export const KPI_VERSION = 3 // Raise this when a rule changes, so copies saved under the old rule are recalculated
+export const KPI_VERSION = 4 // Raise this when a rule changes, so copies saved under the old rule are recalculated
 const CONTACT_DAYS = 14
 const DAY = 86400000
 
@@ -51,7 +49,7 @@ async function findMembersByNames(db: any, names: string[], select: string) {
 }
 
 async function loadRules(db: any) {
-  const { data, error } = await db.from('crm_rules').select('rule_key,value').in('rule_key', ['churn_days', 'kpi_retention_target', 'kpi_recovered_target', 'kpi_upgrades_target', 'kpi_ngr_target_myr', 'kpi_ngr_target_sgd'])
+  const { data, error } = await db.from('crm_rules').select('rule_key,value').in('rule_key', ['churn_days', 'kpi_retention_target', 'kpi_recovered_target', 'kpi_turnover_target_myr', 'kpi_turnover_target_sgd', 'kpi_ngr_target_myr', 'kpi_ngr_target_sgd'])
   if (error) throw new Error(error.message)
   const rule: Record<string, number> = {}
   ;(data || []).forEach((r: any) => { rule[r.rule_key] = Number(r.value) })
@@ -60,8 +58,7 @@ async function loadRules(db: any) {
     targets: {
       retention: rule.kpi_retention_target ?? 85,
       recovered: rule.kpi_recovered_target ?? null,
-      upgrades: rule.kpi_upgrades_target ?? 4,
-      upgradesSet: rule.kpi_upgrades_target ?? null, // the 4 above is only the old page's number: the hub sees "not set"
+      turnover: { MYR: rule.kpi_turnover_target_myr ?? null, SGD: rule.kpi_turnover_target_sgd ?? null },
       ngr: { MYR: rule.kpi_ngr_target_myr ?? null, SGD: rule.kpi_ngr_target_sgd ?? null },
     },
   }
@@ -131,12 +128,13 @@ async function loadNgr(db: any, month: string) {
     const before = -winLoss - bonus - rebate + cancelled
     const ngr = before - offline
     if (!(bet > 0 || offline > 0 || ngr !== 0)) return
-    const t = by[currency] || (by[currency] = { currency, ngr: 0, ngr_before_offline: 0, offline: 0, players: 0 })
+    const t = by[currency] || (by[currency] = { currency, ngr: 0, ngr_before_offline: 0, offline: 0, players: 0, valid_bet: 0, bet_players: 0 })
     t.ngr += ngr; t.ngr_before_offline += before; t.offline += offline; t.players++
+    t.valid_bet += bet; if (bet > 0) t.bet_players++
   })
   return {
     source: providerWhole ? 'provider_report' : 'daily_import',
-    by_currency: Object.values(by).sort((a: any, b: any) => a.currency.localeCompare(b.currency)).map((t: any) => ({ ...t, ngr: money(t.ngr), ngr_before_offline: money(t.ngr_before_offline), offline: money(t.offline) })),
+    by_currency: Object.values(by).sort((a: any, b: any) => a.currency.localeCompare(b.currency)).map((t: any) => ({ ...t, ngr: money(t.ngr), ngr_before_offline: money(t.ngr_before_offline), offline: money(t.offline), valid_bet: money(t.valid_bet) })),
   }
 }
 
@@ -183,16 +181,6 @@ async function loadRecovered(db: any, month: string, churnDays: number) {
   return { count: players.length, came_back: eligible.length, by_currency: Object.keys(byCur).sort().map(c => ({ currency: c, count: byCur[c], amount: money(amountBy[c] || 0) })) }
 }
 
-async function loadUpgrades(db: any, month: string) {
-  const logs = await retry(() => fetchAll(() => db.from('tier_change_logs').select('id,username,old_tier,new_tier').eq('import_month', shiftMonth(month, 1)).order('username').order('id')))
-  const ups = logs.filter(l => (TIER_RANK[l.new_tier] || 0) > (TIER_RANK[l.old_tier] || 0) && KPI_TIERS.has(l.new_tier))
-  const members = await retry(() => fetchMembersFor(db, ups.map(l => l.username), 'username,is_excluded'))
-  const memberBy = Object.fromEntries(members.map(m => [key(m.username), m]))
-  const rows = ups.filter(l => !memberBy[key(l.username)]?.is_excluded)
-  const newToVip = rows.filter(l => (TIER_RANK[l.old_tier] || 0) < FIRST_VIP_RANK).length
-  return { vip_to_vip: rows.length - newToVip, new_to_vip: newToVip }
-}
-
 const rateOf = (actual: number, target: number | null) => (target ? Math.min(1, actual / target) : null)
 
 // One month → the breakdown saved in the CRM. Any failed part throws, so a half-calculated month is never saved.
@@ -201,7 +189,6 @@ export async function buildPayload(db: any, month: string, dataDate: string) {
   const { targets } = rules
   const retention = await loadRetention(db, month)
   const recovered = await loadRecovered(db, month, rules.churnDays)
-  const upgrades = await loadUpgrades(db, month)
   const ngr = await retry(() => loadNgr(db, month))
   const thisMonth = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 7)
   const unfinished = month >= thisMonth
@@ -218,13 +205,15 @@ export async function buildPayload(db: any, month: string, dataDate: string) {
   const itemScore = (rate: number | null) => (rate === null ? null : Math.round(rate * 1000) / 10)
   const ngrOf = (c: string) => ngr.by_currency.find((t: any) => t.currency === c) as any
   const myr = ngrOf('MYR'), sgd = ngrOf('SGD')
+  const ngrPart = (t: any) => (t ? { currency: t.currency, ngr: t.ngr, ngr_before_offline: t.ngr_before_offline, offline: t.offline, players: t.players } : null)
+  const turnoverPart = (t: any) => (t ? { currency: t.currency, turnover: t.valid_bet, players: t.bet_players } : null)
   const recoveredRate = rateOf(recovered.count, targets.recovered)
   const amountIn = (c: string) => recovered.by_currency.find(t => t.currency === c)?.amount ?? 0
   const items = [
     { key: 'retention_rate', label: '① VIP 月留存率', weight: WEIGHT.retention, actual: retention?.pct ?? null, target: targets.retention, excellent: null, unit: '%', is_scored: true, score: itemScore(rateOf(retention?.pct ?? 0, targets.retention)), detail: { kept: retention?.kept ?? null, base: retention?.base ?? null, by_currency: retention?.by_currency ?? [] } },
-    { key: 'ngr_total', label: '② VIP 月 NGR 总额', weight: WEIGHT.ngr, actual: myr?.ngr ?? null, target: targets.ngr.MYR, excellent: null, unit: 'RM', is_scored: false, score: null, note: '已扣除线下开支,不要再扣一次。SGD 单独列在 detail,不可与 RM 相加。', detail: { source: ngr.source, myr: myr ?? null, sgd: sgd ?? null, target_sgd: targets.ngr.SGD } },
+    { key: 'ngr_total', label: '② VIP 月 NGR 总额', weight: WEIGHT.ngr, actual: myr?.ngr ?? null, target: targets.ngr.MYR, excellent: null, unit: 'RM', is_scored: false, score: null, note: '已扣除线下开支,不要再扣一次。SGD 单独列在 detail,不可与 RM 相加。', detail: { source: ngr.source, myr: ngrPart(myr), sgd: ngrPart(sgd), target_sgd: targets.ngr.SGD } },
     { key: 'churn_recovery', label: '③ 流失 VIP 挽回数', weight: WEIGHT.recovered, actual: recovered.count, target: targets.recovered, excellent: null, unit: '人', is_scored: recoveredRate !== null, score: itemScore(recoveredRate), ...(recoveredRate === null ? { note: '目标未定,只显示不计分' } : {}), detail: { recovered_count: recovered.count, came_back_count: recovered.came_back, recovery_amount_rm: amountIn('MYR'), recovery_amount_sgd: amountIn('SGD') } },
-    { key: 'new_promotion', label: '④ 新晋升 VIP 数', weight: WEIGHT.upgrades, actual: unfinished ? null : upgrades.vip_to_vip, target: targets.upgradesSet, excellent: null, unit: '人', is_scored: false, score: null, note: unfinished ? '本月升级要到月底后才记录,目标未定' : '目标未定,只显示不计分', ...(unfinished ? {} : { detail: { vip_to_vip: upgrades.vip_to_vip, new_to_vip: upgrades.new_to_vip } }) },
+    { key: 'vip_turnover', label: '④ VIP 月有效流水', weight: WEIGHT.turnover, actual: myr?.valid_bet ?? null, target: targets.turnover.MYR, excellent: null, unit: 'RM', is_scored: false, score: null, note: '只显示不计分。SGD 单独列在 detail,不可与 RM 相加。', detail: { source: ngr.source, myr: turnoverPart(myr), sgd: turnoverPart(sgd), target_sgd: targets.turnover.SGD } },
   ]
 
   return {
@@ -244,7 +233,7 @@ export async function buildPayload(db: any, month: string, dataDate: string) {
       retention: { weight: WEIGHT.retention, target_pct: targets.retention, pct: retention?.pct ?? null, kept: retention?.kept ?? null, base: retention?.base ?? null, by_currency: retention?.by_currency ?? [] },
       ngr: { weight: WEIGHT.ngr, source: ngr.source, targets: targets.ngr, by_currency: ngr.by_currency },
       recovered: { weight: WEIGHT.recovered, target: targets.recovered, ...recovered },
-      upgrades: { weight: WEIGHT.upgrades, target: targets.upgrades, status: unfinished ? 'pending' : 'recorded', ...upgrades },
+      turnover: { weight: WEIGHT.turnover, source: ngr.source, targets: targets.turnover, by_currency: ngr.by_currency.map(turnoverPart) },
     },
   }
 }

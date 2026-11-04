@@ -3,7 +3,8 @@
 //   ① Retention: those tiers last month who deposited last month and deposited again this month
 //   ② NGR: Player NGR totals, one per currency (lib/playerNgr)
 //   ③ Recovered: no deposit for churn_days+ (crm_rules), deposited this month, host contacted them in the 14 days before
-//   ④ Upgrades: tier moved up, by the month of the betting that earned it (back office records it the month after)
+//   ④ Valid turnover: total valid bets, one per currency, from the same rows as ② (hub request, 2026-11-04)
+//   Extra, not a KPI: upgrades, tier moved up, by the month of the betting that earned it (back office records it the month after)
 import { supabase } from './supabase'
 import { fetchAll } from './depositProfile'
 import { fetchMembersFor } from './allPlayers'
@@ -33,7 +34,7 @@ const countBy = (rows, cur) => rows.reduce((m, r) => { const c = cur(r) || 'MYR'
 
 // Targets live in crm_rules (kpi_* keys); no row = no target yet. Retention and upgrades keep the old page's numbers.
 export async function loadKpiRules() {
-  const { data, error } = await supabase.from('crm_rules').select('rule_key,value').in('rule_key', ['churn_days', 'kpi_retention_target', 'kpi_recovered_target', 'kpi_upgrades_target', 'kpi_ngr_target_myr', 'kpi_ngr_target_sgd'])
+  const { data, error } = await supabase.from('crm_rules').select('rule_key,value').in('rule_key', ['churn_days', 'kpi_retention_target', 'kpi_recovered_target', 'kpi_turnover_target_myr', 'kpi_turnover_target_sgd', 'kpi_ngr_target_myr', 'kpi_ngr_target_sgd'])
   if (error) throw error
   const rule = {}
   ;(data || []).forEach(r => { rule[r.rule_key] = Number(r.value) })
@@ -42,7 +43,7 @@ export async function loadKpiRules() {
     targets: {
       retention: rule.kpi_retention_target ?? 85,
       recovered: rule.kpi_recovered_target ?? null,
-      upgrades: rule.kpi_upgrades_target ?? 4,
+      turnover: { MYR: rule.kpi_turnover_target_myr ?? null, SGD: rule.kpi_turnover_target_sgd ?? null },
       ngr: { MYR: rule.kpi_ngr_target_myr ?? null, SGD: rule.kpi_ngr_target_sgd ?? null },
     },
   }
@@ -73,8 +74,8 @@ export async function loadNgrKpi(month) {
   const { rows, providerWhole } = await fetchMonthNgr(month).catch(() => fetchMonthNgr(month))
   const by = {}
   rows.filter(r => KPI_TIERS.has(r.monthTier || r.tier)).forEach(r => {
-    const t = by[r.currency] || (by[r.currency] = { currency: r.currency, ngr: 0, before: 0, offline: 0, players: 0 })
-    t.ngr += r.ngr; t.before += r.ngr_before_spend; t.offline += r.offline; t.players++
+    const t = by[r.currency] || (by[r.currency] = { currency: r.currency, ngr: 0, before: 0, offline: 0, players: 0, bet: 0, betPlayers: 0 })
+    t.ngr += r.ngr; t.before += r.ngr_before_spend; t.offline += r.offline; t.players++; t.bet += r.bet; if (r.bet > 0) t.betPlayers++
   })
   return { byCur: Object.values(by).sort((a, b) => a.currency.localeCompare(b.currency)), providerWhole }
 }

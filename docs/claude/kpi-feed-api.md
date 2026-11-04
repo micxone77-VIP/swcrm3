@@ -33,7 +33,8 @@ x-api-key: <your key>
       "detail": { "source": "daily_import", "myr": { "currency": "MYR", "ngr": 215473.04, "ngr_before_offline": 215473.04, "offline": 0, "players": 236 }, "sgd": { "currency": "SGD", "ngr": 27083.16, "ngr_before_offline": 27083.16, "offline": 0, "players": 7 }, "target_sgd": null } },
     { "key": "churn_recovery", "label": "③ 流失 VIP 挽回数", "weight": 30, "actual": 6, "target": null, "excellent": null, "unit": "人", "is_scored": false, "score": null, "note": "...",
       "detail": { "recovered_count": 6, "came_back_count": 29, "recovery_amount_rm": 0, "recovery_amount_sgd": 0 } },
-    { "key": "new_promotion", "label": "④ 新晋升 VIP 数", "weight": 30, "actual": null, "target": null, "excellent": null, "unit": "人", "is_scored": false, "score": null, "note": "..." }
+    { "key": "vip_turnover", "label": "④ VIP 月有效流水", "weight": 30, "actual": 12345678.9, "target": null, "excellent": null, "unit": "RM", "is_scored": false, "score": null, "note": "...",
+      "detail": { "source": "daily_import", "myr": { "currency": "MYR", "turnover": 12345678.9, "players": 60 }, "sgd": { "currency": "SGD", "turnover": 123456.7, "players": 2 }, "target_sgd": null } }
   ]
 }
 ```
@@ -48,7 +49,7 @@ The figures above are an example. Always read them from the answer.
 | `is_complete` | `false` = not all 4 KPIs are in the score yet |
 | `month_status` | `in_progress` = month not finished, numbers will still move. `ended` = month is over |
 | `data_through` | Latest daily data these numbers include |
-| `items[].key` | Stable ID: `retention_rate`, `ngr_total`, `churn_recovery`, `new_promotion` |
+| `items[].key` | Stable ID: `retention_rate`, `ngr_total`, `churn_recovery`, `vip_turnover` |
 | `items[].weight` | Weight in % |
 | `items[].actual` | Actual figure. `null` = not available yet |
 | `items[].target` | Target. `null` = not set yet |
@@ -60,13 +61,13 @@ The total follows your formula: sum(weight × score) / sum(weight), using only i
 
 ## Important
 
-- **All 4 KPIs count Platinum, Diamond and Black only.** Gold is not included. A player's tier is the one they had in that month. ④ counts upgrades into these tiers.
+- **All 4 KPIs count Platinum, Diamond and Black only.** Gold is not included. A player's tier is the one they had in that month.
 - **② NGR already has offline spending deducted.** Do not deduct offline costs from it again. `detail.myr.ngr_before_offline` and `detail.myr.offline` show the two parts (same for `sgd`).
 - **② `actual` is MYR only.** SGD is a different platform and is in `detail.sgd`. Never add the two together.
 - **② `detail.source`:** `provider_report` = full-month provider report. `daily_import` = daily data, some bets may be missing.
 - **③ `recovery_amount_*`** = deposits by recovered players from the day they came back to the end of the month.
 - **③ `came_back_count`** = VIPs who came back after 7+ days without a deposit, with or without contact. Only those a host contacted in the 14 days before count as recovered.
-- **④** is recorded in the month after the betting that earned it, so `actual` stays `null` until the month has ended. `detail.vip_to_vip` is the main figure and `detail.new_to_vip` counts new entries into VIP.
+- **④ `vip_turnover`** = total valid bets this month, higher is better. `actual` is MYR only; SGD is in `detail.sgd`. Never add the two together. It replaced `new_promotion`, which is no longer sent. `detail.source` works the same as in ②.
 - A finished month can still change, for example when the provider report arrives.
 
 ## Errors

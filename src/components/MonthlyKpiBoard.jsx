@@ -6,7 +6,7 @@ import { loadKpiRules, loadNgrKpi, loadRecovered, loadRetention, loadUpgrades } 
 import { useLanguage } from '../contexts/LanguageContext'
 import CopyBtn from './CopyBtn'
 
-const WEIGHT = { retention: 20, ngr: 20, recovered: 30, upgrades: 30 }
+const WEIGHT = { retention: 20, ngr: 20, recovered: 30, turnover: 30 }
 const GOOD = '#3fb950', BAD = '#f85149', WARN = '#d29922'
 const card = { background:'var(--surface)', border:'1px solid var(--border)', borderRadius:12, marginBottom:16, overflow:'hidden' }
 const row = { padding:'16px 20px', borderBottom:'1px solid var(--border)' }
@@ -42,7 +42,7 @@ export default function MonthlyKpiBoard({ month }) {
     setState({}); setOpen(null)
     const run = async () => {
       let r = rules
-      try { r = await loadKpiRules(); if (live) setRules(r) } catch (e) { console.error('KPI rules error', e); r = r || { churnDays: 7, targets: { retention: 85, recovered: null, upgrades: 4, ngr: {} } }; if (live) setRules(r) }
+      try { r = await loadKpiRules(); if (live) setRules(r) } catch (e) { console.error('KPI rules error', e); r = r || { churnDays: 7, targets: { retention: 85, recovered: null, turnover: {}, ngr: {} } }; if (live) setRules(r) }
       const steps = [['retention', () => loadRetention(month)], ['recovered', () => loadRecovered(month, r.churnDays)], ['upgrades', () => loadUpgrades(month)], ['ngr', () => loadNgrKpi(month)]]
       for (const [k, f] of steps) {
         if (!live) return
@@ -81,8 +81,8 @@ export default function MonthlyKpiBoard({ month }) {
       <div style={{ flex:'1 1 320px', minWidth:0 }}>
         <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
           <span style={{ fontSize:15, fontWeight:700, color:'var(--text)' }}>{n} {title}</span>
-          <span style={{ fontSize:12, color:'var(--accent)', fontWeight:700 }}>[{weight}%]</span>
-          <span style={chip(on)}>{on ? L2('Scored','计分') : L2('Not scored yet','未定/不计分')}</span>
+          {weight != null && <span style={{ fontSize:12, color:'var(--accent)', fontWeight:700 }}>[{weight}%]</span>}
+          {weight != null ? <span style={chip(on)}>{on ? L2('Scored','计分') : L2('Not scored yet','未定/不计分')}</span> : <span style={chip(false)}>{L2('Info only, not a KPI','仅供参考，非 KPI')}</span>}
         </div>
         <div style={small}>{how}</div>
         {foot && <div style={small}>{foot}</div>}
@@ -127,10 +127,15 @@ export default function MonthlyKpiBoard({ month }) {
       listKey={rec?.players?.length ? 'recovered' : null} listLabel={L2(`See ${rec?.players?.length || 0} recovered players`,`查看 ${rec?.players?.length || 0} 位挽回玩家`)}
       list={rec && <PlayerList navigate={navigate} heads={[L2('Player','玩家'),L2('Tier','等级'),L2('Host','负责人'),L2('Days away','离开天数'),L2('Contacted','联系日期'),L2('Deposited','存款日期')]} rows={rec.players} render={r => [r.tier, r.host || '—', r.gap == null ? `${rules?.churnDays ?? 7}+` : r.gap, r.contactedOn, r.backOn]} />} />
 
-    <Item n="④" title={L2('Newly upgraded VIPs','新晋升 VIP 数')} weight={WEIGHT.upgrades} on={false}
+    <Item n="④" title={L2('VIP monthly valid turnover','VIP 月有效流水')} weight={WEIGHT.turnover} on={false}
+      how={L2('Total valid bets of Platinum, Diamond and Black this month. MYR and SGD are kept separate.','本月 Platinum、Diamond 和 Black 的有效投注总额。MYR 和 SGD 分开计算。')}
+      foot={ngr && !ngr.providerWhole ? L2('From the daily import: no full-month provider report yet, so some bets may be missing.','来自每日导入：尚无整月供应商报告，可能缺少部分投注。') : null}
+      val={value(state.ngr, d => <>{d.byCur.map(c => { const t = targets.turnover?.[c.currency]; return <div key={c.currency} style={{ marginBottom:4 }}><div style={big}>{money(c.bet, c.currency)}</div><div style={small}>{c.currency} · {c.betPlayers} {L2('players','位玩家')}{t == null ? <> · {status(c.bet, null)}</> : <> · {L2('target','目标')} {money(t, c.currency)} · {status(c.bet, t)}</>}</div></div> })}</>)} />
+
+    <Item n="➕" title={L2('Newly upgraded VIPs','新晋升 VIP 数')} weight={null} on={false}
       how={L2('Tier moved up, counted in the month of the betting that earned it (recorded the month after).','等级上升，计入达成投注的月份（下个月才记录）。')}
       foot={unfinished ? L2('Upgrades for this month appear after it ends.','本月的升级要到月底后才出现。') : null}
-      val={value(state.upgrades, d => <><div style={big}>{d.vipToVip.length}</div><div style={small}>{L2('VIP to VIP','VIP 升 VIP')} · {L2('target','目标')} {targets.upgrades} · {status(d.vipToVip.length, targets.upgrades)}</div><div style={small}>{L2(`+ ${d.newToVip.length} new into VIP`,`+ ${d.newToVip.length} 位新进 VIP`)}</div></>)}
+      val={value(state.upgrades, d => <><div style={big}>{d.vipToVip.length}</div><div style={small}>{L2('VIP to VIP','VIP 升 VIP')}</div><div style={small}>{L2(`+ ${d.newToVip.length} new into VIP`,`+ ${d.newToVip.length} 位新进 VIP`)}</div></>)}
       listKey={upg && upg.vipToVip.length + upg.newToVip.length ? 'upgrades' : null} listLabel={L2(`See ${upg ? upg.vipToVip.length + upg.newToVip.length : 0} upgraded players`,`查看 ${upg ? upg.vipToVip.length + upg.newToVip.length : 0} 位升级玩家`)}
       list={upg && <PlayerList navigate={navigate} heads={[L2('Player','玩家'),L2('Host','负责人'),L2('From','从'),L2('To','到'),L2('Recorded','记录日期')]} rows={[...upg.vipToVip, ...upg.newToVip]} render={r => [r.host || '—', r.from, r.to, r.recordedOn]} />} />
   </div>
