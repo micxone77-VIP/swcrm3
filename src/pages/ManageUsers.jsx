@@ -205,6 +205,8 @@ export default function ManageUsers() {
   const [allVIPs,      setAllVIPs]      = useState([])
   const [assignSearch, setAssignSearch] = useState('')
   const [assigning,    setAssigning]    = useState(false)
+  const [bulkTier,     setBulkTier]     = useState('GOLD')
+  const [bulkMsg,      setBulkMsg]      = useState(null) // { text, ok, undoIds, hostName }
 
   useEffect(() => { loadUsers(); loadExcluded() }, [])
 
@@ -321,6 +323,7 @@ export default function ManageUsers() {
   async function openAssign(user) {
     setSelected(user)
     setAssignSearch('')
+    setBulkMsg(null)
     const { data } = await supabase.from('vip_members')
       .select('id, username, full_name, tier, host_assigned')
       .eq('is_excluded', false).order('vip_score', { ascending: false })
@@ -348,6 +351,51 @@ export default function ManageUsers() {
     setAssigning(false)
   }
 
+  // Bulk: 100 ids per request. onlyFrom = only touch rows still on that host (null = rows with no host)
+  async function setHostForIds(ids, hostValue, onlyFrom) {
+    const done = []
+    for (let i = 0; i < ids.length; i += 100) {
+      let q = supabase.from('vip_members').update({ host_assigned: hostValue }).in('id', ids.slice(i, i + 100))
+      q = onlyFrom ? q.eq('host_assigned', onlyFrom) : q.is('host_assigned', null)
+      const { data, error } = await q.select('id')
+      if (error) return { done, error: error.message }
+      done.push(...(data || []).map(r => r.id))
+    }
+    return { done, error: null }
+  }
+
+  async function reloadAssignList() {
+    const { data } = await supabase.from('vip_members')
+      .select('id, username, full_name, tier, host_assigned')
+      .eq('is_excluded', false).order('vip_score', { ascending: false })
+    setAllVIPs(data || [])
+  }
+
+  async function bulkRemoveTier(tier) {
+    const hostName = selected.full_name || selected.username
+    const ids = assignedToSelected.filter(v => v.tier === tier).map(v => v.id)
+    if (!ids.length) return
+    if (!window.confirm(L2(`Remove ${hostName} as host from all ${ids.length} ${tier} players? They will have no host and will drop out of Alerts.`, `确定将 ${hostName} 从全部 ${ids.length} 位 ${tier} 玩家移除？他们将没有负责人，也不再出现在提醒中。`))) return
+    setAssigning(true); setBulkMsg(null)
+    const { done, error } = await setHostForIds(ids, null, hostName)
+    await reloadAssignList()
+    setBulkMsg(error
+      ? { ok:false, text:L2(`Stopped after ${done.length} of ${ids.length}: ${error}`, `已处理 ${ids.length} 位中的 ${done.length} 位后停止：${error}`), undoIds:done, hostName }
+      : { ok:true, text:L2(`✅ Removed ${hostName} from ${done.length} ${tier} players.`, `✅ 已将 ${hostName} 从 ${done.length} 位 ${tier} 玩家移除。`), undoIds:done, hostName })
+    setAssigning(false)
+  }
+
+  async function undoBulkRemove() {
+    const { undoIds, hostName } = bulkMsg
+    setAssigning(true)
+    const { done, error } = await setHostForIds(undoIds, hostName, null)
+    await reloadAssignList()
+    setBulkMsg(error
+      ? { ok:false, text:L2(`Undo stopped after ${done.length} of ${undoIds.length}: ${error}`, `撤销在 ${undoIds.length} 位中的 ${done.length} 位后停止：${error}`) }
+      : { ok:true, text:L2(`↩️ Gave ${done.length} players back to ${hostName}.`, `↩️ 已将 ${done.length} 位玩家交还给 ${hostName}。`) })
+    setAssigning(false)
+  }
+
   // ── modal helpers ─────────────────────────────────────────────────────────
   function openCreate() {
     setSelected(null)
@@ -369,7 +417,7 @@ export default function ManageUsers() {
   }
 
   function closeModal() {
-    setModal(null); setSelected(null)
+    setModal(null); setSelected(null); setBulkMsg(null)
     setMsg({ text:'', ok:true })
     setSetPwMode(false); setNewPassword(''); setNewPassword2('')
   }
@@ -382,6 +430,11 @@ export default function ManageUsers() {
   const assignedToSelected = allVIPs.filter(v =>
     v.host_assigned === (selected?.full_name || selected?.username)
   )
+
+  const bulkTiers = ['GOLD', 'PLATINUM', 'DIAMOND', 'DIAMOND-P', 'BLACK']
+    .map(tier => ({ tier, count: assignedToSelected.filter(v => v.tier === tier).length }))
+    .filter(b => b.count > 0)
+  const bulkPick = bulkTiers.find(b => b.tier === bulkTier) || bulkTiers[0]
 
   if (!isAdmin) return (
     <div style={{ ...s.page, display:'flex', alignItems:'center', justifyContent:'center', minHeight:'60vh' }}>
@@ -674,6 +727,27 @@ export default function ManageUsers() {
                 placeholder={L2('🔍 Search VIP username or name...','🔍 搜索 VIP 用户名或姓名...')}
                 value={assignSearch} onChange={e => setAssignSearch(e.target.value)} />
             </div>
+            {(bulkPick || bulkMsg) && (
+              <div style={{ padding:'12px 20px', borderBottom:'1px solid var(--border)' }}>
+                {bulkPick && (
+                  <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
+                    <span style={{ fontSize:12, fontWeight:600, color:'var(--muted)' }}>{L2('Bulk remove from this host:','从此负责人批量移除：')}</span>
+                    <select style={{ ...s.finput, width:'auto' }} value={bulkPick.tier} onChange={e => setBulkTier(e.target.value)} disabled={assigning}>
+                      {bulkTiers.map(b => <option key={b.tier} value={b.tier}>{b.tier} ({b.count})</option>)}
+                    </select>
+                    <button style={s.btnDanger} onClick={() => bulkRemoveTier(bulkPick.tier)} disabled={assigning}>
+                      {L2(`Remove all ${bulkPick.count} ${bulkPick.tier}`, `移除全部 ${bulkPick.count} 位 ${bulkPick.tier}`)}
+                    </button>
+                  </div>
+                )}
+                {bulkMsg && (
+                  <div style={{ ...(bulkMsg.ok ? s.ok : s.err), marginTop: bulkPick ? 10 : 0 }}>
+                    {bulkMsg.text}
+                    {bulkMsg.undoIds?.length > 0 && <button style={{ ...s.btnSm, marginLeft:10 }} onClick={undoBulkRemove} disabled={assigning}>{L2('Undo','撤销')}</button>}
+                  </div>
+                )}
+              </div>
+            )}
             <ListCount total={filteredVIPs.length} label="VIPs" labelZh="位VIP" />
             <div style={{ maxHeight:420, overflowY:'auto' }}>
               <table style={s.tbl}>
