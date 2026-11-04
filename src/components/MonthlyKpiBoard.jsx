@@ -6,7 +6,7 @@ import { loadKpiRules, loadNgrKpi, loadRecovered, loadRetention, loadUpgrades } 
 import { useLanguage } from '../contexts/LanguageContext'
 import CopyBtn from './CopyBtn'
 
-const WEIGHT = 25
+const WEIGHT = { retention: 20, ngr: 20, recovered: 30, upgrades: 30 }
 const GOOD = '#3fb950', BAD = '#f85149', WARN = '#d29922'
 const card = { background:'var(--surface)', border:'1px solid var(--border)', borderRadius:12, marginBottom:16, overflow:'hidden' }
 const row = { padding:'16px 20px', borderBottom:'1px solid var(--border)' }
@@ -15,7 +15,7 @@ const linkBtn = { background:'none', border:0, padding:0, color:'var(--accent)',
 const th = { padding:'6px 10px', color:'var(--muted)', fontWeight:600, fontSize:11, textAlign:'left', borderBottom:'1px solid var(--border)', whiteSpace:'nowrap' }
 const td = { padding:'6px 10px', borderBottom:'1px solid var(--border)', fontSize:12, whiteSpace:'nowrap' }
 
-const scoreOf = (actual, target) => (target ? Math.min(1, actual / target) * WEIGHT : null)
+const scoreOf = (actual, target) => (target ? Math.min(1, actual / target) : null)
 
 function PlayerList({ heads, rows, render, navigate }) {
   return <div style={{ overflowX:'auto', marginTop:10, maxHeight:320, overflowY:'auto' }}><table style={{ width:'100%', borderCollapse:'collapse' }}>
@@ -62,10 +62,10 @@ export default function MonthlyKpiBoard({ month }) {
 
   // Only ① and ③ count for now, and only once they have a target. Scaled to 100.
   const scored = [
-    state.retention ? scoreOf(ret?.pct ?? 0, targets.retention) : null,
-    state.recovered ? scoreOf(rec?.count ?? 0, targets.recovered) : null,
-  ].filter(v => v !== null)
-  const total = scored.length ? Math.round(scored.reduce((a, b) => a + b, 0) / (scored.length * WEIGHT) * 1000) / 10 : null
+    state.retention ? { rate: scoreOf(ret?.pct ?? 0, targets.retention), weight: WEIGHT.retention } : null,
+    state.recovered ? { rate: scoreOf(rec?.count ?? 0, targets.recovered), weight: WEIGHT.recovered } : null,
+  ].filter(v => v && v.rate !== null)
+  const total = scored.length ? Math.round(scored.reduce((a, v) => a + v.rate * v.weight, 0) / scored.reduce((a, v) => a + v.weight, 0) * 1000) / 10 : null
 
   const value = (s, render) => (!s ? <span style={{ color:'var(--muted)', fontSize:14 }}>{L2('Loading…','载入中…')}</span>
     : s.error ? <span style={{ color:BAD, fontSize:13 }}>{L2('Could not load.','无法载入。')} <button style={linkBtn} onClick={() => setReload(n => n + 1)}>{L2('Try again','重试')}</button></span>
@@ -76,12 +76,12 @@ export default function MonthlyKpiBoard({ month }) {
   const big = { fontSize:24, fontWeight:800, color:'var(--text)' }
   const small = { fontSize:12, color:'var(--muted)', marginTop:4, lineHeight:1.5 }
 
-  const Item = ({ n, title, on, how, val, foot, listKey, listLabel, list }) => <div style={row}>
+  const Item = ({ n, title, weight, on, how, val, foot, listKey, listLabel, list }) => <div style={row}>
     <div style={{ display:'flex', justifyContent:'space-between', gap:16, flexWrap:'wrap', alignItems:'flex-start' }}>
       <div style={{ flex:'1 1 320px', minWidth:0 }}>
         <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
           <span style={{ fontSize:15, fontWeight:700, color:'var(--text)' }}>{n} {title}</span>
-          <span style={{ fontSize:12, color:'var(--accent)', fontWeight:700 }}>[{WEIGHT}%]</span>
+          <span style={{ fontSize:12, color:'var(--accent)', fontWeight:700 }}>[{weight}%]</span>
           <span style={chip(on)}>{on ? L2('Scored','计分') : L2('Not scored yet','未定/不计分')}</span>
         </div>
         <div style={small}>{how}</div>
@@ -90,7 +90,7 @@ export default function MonthlyKpiBoard({ month }) {
       </div>
       <div style={{ textAlign:'right' }}>{val}</div>
     </div>
-    {open === listKey && list}
+    {listKey && open === listKey && list}
   </div>
 
   const money = (n, c) => formatMoney(n, c)
@@ -109,25 +109,25 @@ export default function MonthlyKpiBoard({ month }) {
       </div>
     </div>
 
-    <Item n="①" title={L2('VIP monthly retention','VIP 月留存率')} on
+    <Item n="①" title={L2('VIP monthly retention','VIP 月留存率')} weight={WEIGHT.retention} on
       how={L2('Gold+ who deposited last month and deposited again this month.','上月有存款的 Gold+ 玩家，本月再次存款。')}
       val={value(state.retention, d => <><div style={big}>{d.pct}%</div><div style={small}>{d.kept} / {d.base} · {L2('target','目标')} {targets.retention}% · {status(d.pct, targets.retention)}</div><div style={small}>{d.byCur.map(c => `${c.currency} ${c.kept}/${c.base}`).join(' · ')}</div></>)}
       listKey={ret?.lost?.length ? 'lost' : null} listLabel={L2(`See ${ret?.lost?.length || 0} who did not deposit again`,`查看 ${ret?.lost?.length || 0} 位未再存款的玩家`)}
       list={ret && <PlayerList navigate={navigate} heads={[L2('Player','玩家'),L2('Tier','等级'),L2('Host','负责人'),L2('Deposit last month','上月存款')]} rows={ret.lost} render={r => [r.tier, r.host || '—', money(r.lastDeposit, r.currency)]} />} />
 
-    <Item n="②" title={L2('VIP monthly NGR total','VIP 月 NGR 总额')} on={false}
+    <Item n="②" title={L2('VIP monthly NGR total','VIP 月 NGR 总额')} weight={WEIGHT.ngr} on={false}
       how={L2('Player loss − bonus − rebate − offline spending. MYR and SGD are kept separate.','玩家输额 − 奖励 − 返水 − 线下开支。MYR 和 SGD 分开计算。')}
       foot={ngr && !ngr.providerWhole ? L2('From the daily import: no full-month provider report yet, so some bets may be missing.','来自每日导入：尚无整月供应商报告，可能缺少部分投注。') : null}
       val={value(state.ngr, d => <>{d.byCur.map(c => <div key={c.currency} style={{ marginBottom:4 }}><div style={{ ...big, color: c.ngr < 0 ? BAD : GOOD }}>{money(c.ngr, c.currency)}</div><div style={small}>{c.currency} · {c.players} {L2('players','位玩家')}{ngrPart(c)}</div></div>)}<button style={linkBtn} onClick={() => navigate(`/player-ngr?month=${month}`)}>{L2('Open Player NGR','打开玩家 NGR')}</button></>)} />
 
-    <Item n="③" title={L2('Churned VIPs recovered','流失 VIP 挽回数')} on
+    <Item n="③" title={L2('Churned VIPs recovered','流失 VIP 挽回数')} weight={WEIGHT.recovered} on
       how={L2(`No deposit for ${rules?.churnDays ?? 7}+ days, deposited again this month, and a host contacted them in the 14 days before.`,`${rules?.churnDays ?? 7} 天以上未存款，本月再次存款，且负责人在此前 14 天内联系过。`)}
       foot={rec ? L2(`${rec.cameBack} came back in total. Those without contact are not counted.`,`共 ${rec.cameBack} 位回来，没有联系记录的不计入。`) : null}
       val={value(state.recovered, d => <><div style={big}>{d.count}</div><div style={small}>{status(d.count, targets.recovered)}{targets.recovered != null ? ` · ${L2('target','目标')} ${targets.recovered}` : ''}</div><div style={small}>{d.byCur.map(c => `${c.currency} ${c.count}`).join(' · ')}</div></>)}
       listKey={rec?.players?.length ? 'recovered' : null} listLabel={L2(`See ${rec?.players?.length || 0} recovered players`,`查看 ${rec?.players?.length || 0} 位挽回玩家`)}
       list={rec && <PlayerList navigate={navigate} heads={[L2('Player','玩家'),L2('Tier','等级'),L2('Host','负责人'),L2('Days away','离开天数'),L2('Contacted','联系日期'),L2('Deposited','存款日期')]} rows={rec.players} render={r => [r.tier, r.host || '—', r.gap == null ? `${rules?.churnDays ?? 7}+` : r.gap, r.contactedOn, r.backOn]} />} />
 
-    <Item n="④" title={L2('Newly upgraded VIPs','新晋升 VIP 数')} on={false}
+    <Item n="④" title={L2('Newly upgraded VIPs','新晋升 VIP 数')} weight={WEIGHT.upgrades} on={false}
       how={L2('Tier moved up, counted in the month of the betting that earned it (recorded the month after).','等级上升，计入达成投注的月份（下个月才记录）。')}
       foot={unfinished ? L2('Upgrades for this month appear after it ends.','本月的升级要到月底后才出现。') : null}
       val={value(state.upgrades, d => <><div style={big}>{d.vipToVip.length}</div><div style={small}>{L2('VIP to VIP','VIP 升 VIP')} · {L2('target','目标')} {targets.upgrades} · {status(d.vipToVip.length, targets.upgrades)}</div><div style={small}>{L2(`+ ${d.newToVip.length} new into VIP`,`+ ${d.newToVip.length} 位新进 VIP`)}</div></>)}
