@@ -2,7 +2,7 @@
 // Read-only link for the other hub: GET ?month=YYYY-MM with the hub's key. Guide: docs/claude/kpi-feed-api.md
 // No login, so verify_jwt is off and the key is checked here. Only the key's hash is stored (kpi_feed_settings).
 // The first fetch after a new daily import calculates the month and saves it; later fetches return the saved copy.
-// The hub gets the final score ONLY. The KPI breakdown stays in kpi_feed_snapshots, inside the CRM.
+// The hub gets the final score + the 4 KPI totals, in the format its team asked for. No player names or lists.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { buildPayload } from './kpi.ts'
@@ -16,7 +16,7 @@ const headers = {
 }
 const reply = (status: number, body: Record<string, unknown>) => new Response(JSON.stringify(body), { status, headers })
 // deno-lint-ignore no-explicit-any
-const scoreOnly = (month: string, payload: any, calculatedAt: string) => reply(200, { ok: true, month, score: payload.score.value, updated_at: new Date(calculatedAt).toISOString() })
+const answer = (month: string, payload: any, calculatedAt: string) => reply(200, { ok: true, month, score: payload.score.value, updated_at: new Date(calculatedAt).toISOString(), is_complete: payload.score.complete, month_status: payload.month_status, data_through: payload.data_date, items: payload.items ?? [] })
 
 async function sha256(text: string) {
   const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))
@@ -49,18 +49,18 @@ Deno.serve(async (req: Request) => {
 
   const { data: saved, error: savedErr } = await db.from('kpi_feed_snapshots').select('data_date,payload,calculated_at').eq('month', month).maybeSingle()
   if (savedErr) console.error('saved', savedErr.message)
-  if (saved && saved.data_date === dataDate) return scoreOnly(month, saved.payload, saved.calculated_at)
+  if (saved && saved.data_date === dataDate && saved.payload?.items) return answer(month, saved.payload, saved.calculated_at)
 
   try {
     const payload = await buildPayload(db, month, dataDate)
     const calculatedAt = new Date().toISOString()
     const { error } = await db.from('kpi_feed_snapshots').upsert({ month, data_date: dataDate, payload, calculated_at: calculatedAt })
     if (error) console.error('save', error.message)
-    return scoreOnly(month, payload, calculatedAt)
+    return answer(month, payload, calculatedAt)
   } catch (e) {
     console.error('calculate', String(e))
     // Better the last saved score than nothing: updated_at shows how old it is
-    if (saved) return scoreOnly(month, saved.payload, saved.calculated_at)
+    if (saved) return answer(month, saved.payload, saved.calculated_at)
     return reply(503, { ok: false, error: 'calculation_failed' })
   }
 })

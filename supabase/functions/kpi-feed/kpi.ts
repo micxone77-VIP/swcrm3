@@ -1,6 +1,6 @@
 // The 4 monthly VIP KPIs for the hub. Server copy of src/lib/monthlyKpi.js + src/lib/playerNgr.js + the score in
 // src/components/MonthlyKpiBoard.jsx: a rule changed there must be changed here too, or the hub and the page disagree.
-// Only totals are saved from this file, never usernames or hosts. The hub receives score.value only (see index.ts).
+// Only totals are saved from this file, never usernames or hosts. The hub receives the score + items (see index.ts).
 // deno-lint-ignore-file no-explicit-any
 
 const WEIGHT = { retention: 20, ngr: 20, recovered: 30, upgrades: 30 }
@@ -59,6 +59,7 @@ async function loadRules(db: any) {
       retention: rule.kpi_retention_target ?? 85,
       recovered: rule.kpi_recovered_target ?? null,
       upgrades: rule.kpi_upgrades_target ?? 4,
+      upgradesSet: rule.kpi_upgrades_target ?? null, // the 4 above is only the old page's number: the hub sees "not set"
       ngr: { MYR: rule.kpi_ngr_target_myr ?? null, SGD: rule.kpi_ngr_target_sgd ?? null },
     },
   }
@@ -140,7 +141,7 @@ async function loadRecovered(db: any, month: string, churnDays: number) {
   const start = `${month}-01`, end = monthLast(month)
   const windowStart = addDays(start, -(churnDays - 1))
   const [deposits, contacts] = await Promise.all([
-    retry(() => fetchAll(() => db.from('vip_daily_snapshots').select('username,snapshot_date,currency').gte('snapshot_date', windowStart).lte('snapshot_date', end).gt('total_deposit', 0).gt('monthly_valid_bet', 0).order('username').order('snapshot_date'))),
+    retry(() => fetchAll(() => db.from('vip_daily_snapshots').select('username,snapshot_date,currency,total_deposit').gte('snapshot_date', windowStart).lte('snapshot_date', end).gt('total_deposit', 0).gt('monthly_valid_bet', 0).order('username').order('snapshot_date'))),
     retry(() => fetchAll(() => db.from('contact_logs').select('username,logged_at').gte('logged_at', `${addDays(start, -(CONTACT_DAYS + 1))}T00:00:00Z`).lte('logged_at', `${addDays(end, 1)}T23:59:59Z`).order('username').order('logged_at'))),
   ])
   const datesBy: Record<string, { dates: string[]; currency: string }> = {}
@@ -169,7 +170,14 @@ async function loadRecovered(db: any, month: string, churnDays: number) {
     return (contactBy[key(r.username)] || []).some(d => d >= from && d <= r.backOn)
   })
   const byCur = countBy(players, r => r.currency)
-  return { count: players.length, came_back: eligible.length, by_currency: Object.keys(byCur).sort().map(c => ({ currency: c, count: byCur[c] })) }
+  // Deposited by recovered players from the day they came back to the end of the month, one total per currency
+  const amountBy: Record<string, number> = {}
+  const backOn = new Map(players.map(r => [r.username, r]))
+  deposits.forEach(d => {
+    const r = backOn.get(d.username)
+    if (r && d.snapshot_date >= r.backOn) amountBy[r.currency || 'MYR'] = (amountBy[r.currency || 'MYR'] || 0) + num(d.total_deposit)
+  })
+  return { count: players.length, came_back: eligible.length, by_currency: Object.keys(byCur).sort().map(c => ({ currency: c, count: byCur[c], amount: money(amountBy[c] || 0) })) }
 }
 
 async function loadUpgrades(db: any, month: string) {
@@ -203,10 +211,24 @@ export async function buildPayload(db: any, month: string, dataDate: string) {
   const value = parts.length ? Math.round(parts.reduce((a, p) => a + (p.rate as number) * p.weight, 0) / parts.reduce((a, p) => a + p.weight, 0) * 1000) / 10 : null
   const counted = parts.map(p => p.name)
 
+  // The 4 lines the hub shows. Item score = rate × 100, capped at 100 like the page. MYR and SGD are never added.
+  const itemScore = (rate: number | null) => (rate === null ? null : Math.round(rate * 1000) / 10)
+  const ngrOf = (c: string) => ngr.by_currency.find((t: any) => t.currency === c) as any
+  const myr = ngrOf('MYR'), sgd = ngrOf('SGD')
+  const recoveredRate = rateOf(recovered.count, targets.recovered)
+  const amountIn = (c: string) => recovered.by_currency.find(t => t.currency === c)?.amount ?? 0
+  const items = [
+    { key: 'retention_rate', label: '① VIP 月留存率', weight: WEIGHT.retention, actual: retention?.pct ?? null, target: targets.retention, excellent: null, unit: '%', is_scored: true, score: itemScore(rateOf(retention?.pct ?? 0, targets.retention)), detail: { kept: retention?.kept ?? null, base: retention?.base ?? null, by_currency: retention?.by_currency ?? [] } },
+    { key: 'ngr_total', label: '② VIP 月 NGR 总额', weight: WEIGHT.ngr, actual: myr?.ngr ?? null, target: targets.ngr.MYR, excellent: null, unit: 'RM', is_scored: false, score: null, note: '已扣除线下开支,不要再扣一次。SGD 单独列在 detail,不可与 RM 相加。', detail: { source: ngr.source, myr: myr ?? null, sgd: sgd ?? null, target_sgd: targets.ngr.SGD } },
+    { key: 'churn_recovery', label: '③ 流失 VIP 挽回数', weight: WEIGHT.recovered, actual: recovered.count, target: targets.recovered, excellent: null, unit: '人', is_scored: recoveredRate !== null, score: itemScore(recoveredRate), ...(recoveredRate === null ? { note: '目标未定,只显示不计分' } : {}), detail: { recovered_count: recovered.count, came_back_count: recovered.came_back, recovery_amount_rm: amountIn('MYR'), recovery_amount_sgd: amountIn('SGD') } },
+    { key: 'new_promotion', label: '④ 新晋升 VIP 数', weight: WEIGHT.upgrades, actual: unfinished ? null : upgrades.vip_to_vip, target: targets.upgradesSet, excellent: null, unit: '人', is_scored: false, score: null, note: unfinished ? '本月升级要到月底后才记录,目标未定' : '目标未定,只显示不计分', ...(unfinished ? {} : { detail: { vip_to_vip: upgrades.vip_to_vip, new_to_vip: upgrades.new_to_vip } }) },
+  ]
+
   return {
     month,
     month_status: unfinished ? 'in_progress' : 'ended',
     data_date: dataDate,
+    items,
     score: {
       value,
       max: 100,
