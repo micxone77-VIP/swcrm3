@@ -5,7 +5,7 @@
 // The hub gets the final score + the 4 KPI totals, in the format its team asked for. No player names or lists.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { buildPayload } from './kpi.ts'
+import { buildPayload, KPI_VERSION } from './kpi.ts'
 
 const headers = {
   'Content-Type': 'application/json',
@@ -49,7 +49,7 @@ Deno.serve(async (req: Request) => {
 
   const { data: saved, error: savedErr } = await db.from('kpi_feed_snapshots').select('data_date,payload,calculated_at').eq('month', month).maybeSingle()
   if (savedErr) console.error('saved', savedErr.message)
-  if (saved && saved.data_date === dataDate && saved.payload?.items) return answer(month, saved.payload, saved.calculated_at)
+  if (saved && saved.data_date === dataDate && saved.payload?.version === KPI_VERSION) return answer(month, saved.payload, saved.calculated_at)
 
   try {
     const payload = await buildPayload(db, month, dataDate)

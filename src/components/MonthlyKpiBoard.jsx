@@ -100,7 +100,7 @@ export default function MonthlyKpiBoard({ month }) {
     <div style={{ padding:'14px 20px', borderBottom:'2px solid var(--accent)', display:'flex', justifyContent:'space-between', gap:12, flexWrap:'wrap', alignItems:'center' }}>
       <div>
         <div style={{ fontSize:14, fontWeight:800, color:'var(--accent)' }}>{L2(`VIP Monthly KPI · ${month}`,`VIP 月度 KPI · ${month}`)}</div>
-        <div style={{ fontSize:12, color:'var(--muted)', marginTop:2 }}>{L2('Calculated automatically from CRM data.','由 CRM 数据自动计算。')}{unfinished ? ' ' + L2('Month not finished, numbers will still move.','本月未结束，数字还会变动。') : ''}</div>
+        <div style={{ fontSize:12, color:'var(--muted)', marginTop:2 }}>{L2('Platinum, Diamond and Black only. Calculated automatically from CRM data.','只计 Platinum、Diamond 和 Black。由 CRM 数据自动计算。')}{unfinished ? ' ' + L2('Month not finished, numbers will still move.','本月未结束，数字还会变动。') : ''}</div>
       </div>
       <div style={{ textAlign:'right' }}>
         <div style={{ fontSize:11, color:'var(--muted)' }}>{L2('Score','得分')}</div>
@@ -110,7 +110,7 @@ export default function MonthlyKpiBoard({ month }) {
     </div>
 
     <Item n="①" title={L2('VIP monthly retention','VIP 月留存率')} weight={WEIGHT.retention} on
-      how={L2('Gold+ who deposited last month and deposited again this month.','上月有存款的 Gold+ 玩家，本月再次存款。')}
+      how={L2('Platinum, Diamond and Black who deposited last month and deposited again this month.','上月有存款的 Platinum、Diamond 和 Black 玩家，本月再次存款。')}
       val={value(state.retention, d => <><div style={big}>{d.pct}%</div><div style={small}>{d.kept} / {d.base} · {L2('target','目标')} {targets.retention}% · {status(d.pct, targets.retention)}</div><div style={small}>{d.byCur.map(c => `${c.currency} ${c.kept}/${c.base}`).join(' · ')}</div></>)}
       listKey={ret?.lost?.length ? 'lost' : null} listLabel={L2(`See ${ret?.lost?.length || 0} who did not deposit again`,`查看 ${ret?.lost?.length || 0} 位未再存款的玩家`)}
       list={ret && <PlayerList navigate={navigate} heads={[L2('Player','玩家'),L2('Tier','等级'),L2('Host','负责人'),L2('Deposit last month','上月存款')]} rows={ret.lost} render={r => [r.tier, r.host || '—', money(r.lastDeposit, r.currency)]} />} />

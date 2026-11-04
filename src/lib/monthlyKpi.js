@@ -1,5 +1,6 @@
 // src/lib/monthlyKpi.js — the 4 monthly VIP KPIs, each loaded on its own so one failed read only affects its card.
-//   ① Retention: Gold+ who deposited last month and deposited again this month
+// Only Platinum, Diamond and Black count (Marcus, 2026-11-04), by the tier the player had in that month.
+//   ① Retention: those tiers last month who deposited last month and deposited again this month
 //   ② NGR: Player NGR totals, one per currency (lib/playerNgr)
 //   ③ Recovered: no deposit for churn_days+ (crm_rules), deposited this month, host contacted them in the 14 days before
 //   ④ Upgrades: tier moved up, by the month of the betting that earned it (back office records it the month after)
@@ -10,6 +11,7 @@ import { fetchMonthNgr } from './playerNgr'
 
 const TIER_RANK = { BRONZE:1, SILVER:2, GOLD:3, PLATINUM:4, DIAMOND:5, 'DIAMOND-P':6, BLACK:7 }
 const FIRST_VIP_RANK = TIER_RANK.GOLD
+const KPI_TIERS = new Set(['PLATINUM', 'DIAMOND', 'DIAMOND-P', 'BLACK'])
 const CONTACT_DAYS = 14
 const DAY = 86400000
 
@@ -50,7 +52,7 @@ export async function loadRetention(month) {
   const read = m => fetchAll(() => supabase.from('vip_monthly_totals').select('vip_id,username,total_deposit,currency,host_assigned,tier').eq('snapshot_month', m).order('username'))
   const [prev, cur, excluded] = await Promise.all([retry(() => read(shiftMonth(month, -1))), retry(() => read(month)), retry(fetchExcluded)])
   const paidNow = new Set(cur.filter(r => num(r.total_deposit) > 0).map(r => key(r.username)))
-  const base = prev.filter(r => num(r.total_deposit) > 0 && !excluded.has(key(r.username)))
+  const base = prev.filter(r => KPI_TIERS.has(r.tier) && num(r.total_deposit) > 0 && !excluded.has(key(r.username)))
   if (!base.length || !cur.length) return null
   const lost = base.filter(r => !paidNow.has(key(r.username)))
   const baseBy = countBy(base, r => r.currency), lostBy = countBy(lost, r => r.currency)
@@ -67,7 +69,7 @@ export async function loadRetention(month) {
 export async function loadNgrKpi(month) {
   const { rows, providerWhole } = await fetchMonthNgr(month).catch(() => fetchMonthNgr(month))
   const by = {}
-  rows.forEach(r => {
+  rows.filter(r => KPI_TIERS.has(r.monthTier || r.tier)).forEach(r => {
     const t = by[r.currency] || (by[r.currency] = { currency: r.currency, ngr: 0, before: 0, offline: 0, players: 0 })
     t.ngr += r.ngr; t.before += r.ngr_before_spend; t.offline += r.offline; t.players++
   })
@@ -79,21 +81,21 @@ export async function loadRecovered(month, churnDays) {
   // A gap of churnDays+ only needs the days just before each deposit, so this window is enough
   const windowStart = addDays(start, -(churnDays - 1))
   const [deposits, contacts] = await Promise.all([
-    retry(() => fetchAll(() => supabase.from('vip_daily_snapshots').select('username,snapshot_date,currency').gte('snapshot_date', windowStart).lte('snapshot_date', end).gt('total_deposit', 0).gt('monthly_valid_bet', 0).order('username').order('snapshot_date'))),
+    retry(() => fetchAll(() => supabase.from('vip_daily_snapshots').select('username,snapshot_date,currency,tier').gte('snapshot_date', windowStart).lte('snapshot_date', end).gt('total_deposit', 0).gt('monthly_valid_bet', 0).order('username').order('snapshot_date'))),
     retry(() => fetchAll(() => supabase.from('contact_logs').select('username,logged_at').gte('logged_at', `${addDays(start, -(CONTACT_DAYS + 1))}T00:00:00Z`).lte('logged_at', `${addDays(end, 1)}T23:59:59Z`).order('username').order('logged_at'))),
   ])
   const datesBy = {}
-  deposits.forEach(r => { (datesBy[r.username] = datesBy[r.username] || { dates: [], currency: r.currency }).dates.push(r.snapshot_date) })
+  deposits.forEach(r => { const d = datesBy[r.username] = datesBy[r.username] || { dates: [], currency: r.currency, tierOn: {} }; d.dates.push(r.snapshot_date); d.tierOn[r.snapshot_date] = r.tier })
   const contactBy = {}
   contacts.forEach(c => { (contactBy[key(c.username)] = contactBy[key(c.username)] || []).push(dateMYT(c.logged_at)) })
 
   const cameBack = []
-  Object.entries(datesBy).forEach(([username, { dates, currency }]) => {
+  Object.entries(datesBy).forEach(([username, { dates, currency, tierOn }]) => {
     const sorted = [...new Set(dates)].sort()
     for (let i = 0; i < sorted.length; i++) {
       if (sorted[i] < start) continue
       const gap = i > 0 ? daysBetween(sorted[i - 1], sorted[i]) : null // null: nothing in the window, so churnDays+
-      if (gap === null || gap >= churnDays) { cameBack.push({ username, currency, backOn: sorted[i], gap }); break }
+      if (gap === null || gap >= churnDays) { if (KPI_TIERS.has(tierOn[sorted[i]])) cameBack.push({ username, currency, backOn: sorted[i], gap, tier: tierOn[sorted[i]] }); break }
     }
   })
   const members = await retry(() => fetchMembersFor(cameBack.map(r => r.username), 'id,username,tier,host_assigned,is_excluded,registration_date'))
@@ -110,7 +112,7 @@ export async function loadRecovered(month, churnDays) {
     const hit = logs.filter(d => d >= from && d <= r.backOn).pop()
     if (!hit) return []
     const m = memberBy[key(r.username)]
-    return [{ id: m.id, username: r.username, tier: m.tier, host: m.host_assigned, currency: r.currency || 'MYR', backOn: r.backOn, gap: r.gap, contactedOn: hit }]
+    return [{ id: m.id, username: r.username, tier: r.tier, host: m.host_assigned, currency: r.currency || 'MYR', backOn: r.backOn, gap: r.gap, contactedOn: hit }]
   }).sort((a, b) => a.backOn.localeCompare(b.backOn))
   const byCur = countBy(players, r => r.currency)
   return { count: players.length, cameBack: eligible.length, byCur: Object.keys(byCur).sort().map(c => ({ currency: c, count: byCur[c] })), players }
@@ -118,7 +120,7 @@ export async function loadRecovered(month, churnDays) {
 
 export async function loadUpgrades(month) {
   const logs = await retry(() => fetchAll(() => supabase.from('tier_change_logs').select('id,username,old_tier,new_tier,changed_at').eq('import_month', shiftMonth(month, 1)).order('username').order('id')))
-  const ups = logs.filter(l => (TIER_RANK[l.new_tier] || 0) > (TIER_RANK[l.old_tier] || 0) && (TIER_RANK[l.new_tier] || 0) >= FIRST_VIP_RANK)
+  const ups = logs.filter(l => (TIER_RANK[l.new_tier] || 0) > (TIER_RANK[l.old_tier] || 0) && KPI_TIERS.has(l.new_tier))
   const members = await retry(() => fetchMembersFor(ups.map(l => l.username), 'id,username,host_assigned,currency,is_excluded'))
   const memberBy = Object.fromEntries(members.map(m => [key(m.username), m]))
   const rows = ups.filter(l => !memberBy[key(l.username)]?.is_excluded).map(l => {

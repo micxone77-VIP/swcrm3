@@ -60,6 +60,7 @@ The total follows your formula: sum(weight × score) / sum(weight), using only i
 
 ## Important
 
+- **All 4 KPIs count Platinum, Diamond and Black only.** Gold is not included. A player's tier is the one they had in that month. ④ counts upgrades into these tiers.
 - **② NGR already has offline spending deducted.** Do not deduct offline costs from it again. `detail.myr.ngr_before_offline` and `detail.myr.offline` show the two parts (same for `sgd`).
 - **② `actual` is MYR only.** SGD is a different platform and is in `detail.sgd`. Never add the two together.
 - **② `detail.source`:** `provider_report` = full-month provider report. `daily_import` = daily data, some bets may be missing.

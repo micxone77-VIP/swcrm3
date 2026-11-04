@@ -19,7 +19,7 @@ export const monthEnd = month => {
   return new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10)
 }
 
-const TOTALS_COLS = 'username,snapshot_month,monthly_valid_bet,win_loss,bonus_amount,total_rebate,currency'
+const TOTALS_COLS = 'username,snapshot_month,monthly_valid_bet,win_loss,bonus_amount,total_rebate,currency,tier'
 const STALE_COLS = 'username,snapshot_date,win_loss'
 const SPEND_COLS = 'vip_username,month,amount,currency,expense_type'
 const PROVIDER_COLS = 'username,period_month,period_end,currency,valid_turnover,win_loss,bonus,cancelled_bonus,rebate'
@@ -114,7 +114,7 @@ export async function fetchMonthNgr(month) {
     const k = key(m.username)
     const row = buildRow(dailyBy[k], staleBy[k] || 0, providerBy[k], spendBy[k], m.currency)
     if (!(row.bet > 0 || row.offline > 0 || row.ngr !== 0)) return
-    rows.push({ id: m.id, username: m.username, tier: m.tier, host: m.host_assigned, currency: m.currency || 'MYR', ...row })
+    rows.push({ id: m.id, username: m.username, tier: m.tier, monthTier: dailyBy[k]?.tier, host: m.host_assigned, currency: m.currency || 'MYR', ...row })
   })
   return { rows, providerWhole, providerEnd }
 }
