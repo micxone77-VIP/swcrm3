@@ -11,7 +11,7 @@ import { buildMultiLevelPlayerMetrics, buildPayoutRows, buildCampaignSummary, ca
 import * as XLSX from 'xlsx'
 import ChallengeDetail from '../components/campaign/ChallengeDetail'
 import CampaignImpact from '../components/campaign/CampaignImpact'
-import { fetchDailyFor, MEMBERS_ALL } from '../lib/allPlayers'
+import { fetchDailyFor, fetchMembersFor, MEMBERS_ALL } from '../lib/allPlayers'
 import CampaignMedia from '../components/campaign/CampaignMedia'
 import CampaignScorecard from '../components/campaign/CampaignScorecard'
 import { CampaignInfoButton } from '../components/campaign/CampaignGuide'
@@ -106,6 +106,7 @@ function bonusFmt(n, currency) {
   const prefix = CURRENCY_PREFIX[currency] || 'RM'
   return prefix+' '+num.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
+const PlayerName = ({ name }) => name ? <div style={{ fontSize:12, color:'var(--muted)', fontWeight:400, marginTop:2 }}>{name}</div> : null
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-MY',{day:'numeric',month:'short',year:'numeric'}) : '—'
 
 // ── Styles ────────────────────────────────────────────────────────────────────
@@ -342,6 +343,8 @@ export default function Campaigns() {
     }
   }, [selected?.id])
 
+  const nameOf = u => players.find(x => x.username === u)?.full_name
+
   async function loadPlayers(campId) {
     // Campaign players are the root dataset. Dependent player-level and reward
     // rows are scoped by those player IDs so another campaign can never leak
@@ -364,15 +367,12 @@ export default function Campaigns() {
 
     // Enrich each player with host_assigned from vip_members (best-effort; never blocks load)
     const usernames = [...new Set(campaignPlayers.map(p => p.username).filter(Boolean))]
-    let hostMap = {}
+    let hostMap = {}, nameMap = {}
     if (usernames.length > 0) {
-      const { data: hostRows } = await supabase
-        .from(MEMBERS_ALL)
-        .select('username, host_assigned')
-        .in('username', usernames)
-      ;(hostRows || []).forEach(r => { if (r.host_assigned) hostMap[r.username] = r.host_assigned })
+      const hostRows = await fetchMembersFor(usernames, 'username,host_assigned,full_name').catch(() => [])
+      ;(hostRows || []).forEach(r => { if (r.host_assigned) hostMap[r.username] = r.host_assigned; if (r.full_name) nameMap[r.username] = r.full_name })
     }
-    const enriched = campaignPlayers.map(p => ({ ...p, host_assigned: hostMap[p.username] || null }))
+    const enriched = campaignPlayers.map(p => ({ ...p, host_assigned: hostMap[p.username] || null, full_name: p.full_name || nameMap[p.username] || null }))
 
     setPlayers(enriched)
     if (enriched.length === 0) {
@@ -2506,6 +2506,7 @@ export default function Campaigns() {
                                     {p.tier && <span style={{ ...s.badge, background:TIER_BG[p.tier]||'transparent', color:TIER_COLOR[p.tier]||'var(--muted)', fontSize:10 }}>{p.tier}</span>}
                                     <button title={L2('Copy username','复制用户名')} onClick={()=>copyUsername(p.id, p.username)} style={{ marginLeft:2, background:'none', border:'none', cursor:'pointer', fontSize:11, color: copiedId===p.id ? '#3fb950' : 'var(--muted)', padding:'1px 4px', borderRadius:4 }}>{copiedId===p.id ? '✓' : '⎘'}</button>
                                   </div>
+                                  <PlayerName name={p.full_name} />
                                 </td>
                                 <td style={{ ...s.td, fontSize:12, color: p.host_assigned ? 'var(--text)' : 'var(--muted)' }}>{p.host_assigned || '—'}</td>
                                 <td style={{ ...s.td, fontSize:12, color:'var(--muted)', whiteSpace:'nowrap' }}>
@@ -2657,6 +2658,7 @@ export default function Campaigns() {
                                       {copiedId===p.id ? '✓' : '⎘'}
                                     </button>
                                   </div>
+                                  <PlayerName name={p.full_name} />
                                   {selected?.streak_enabled && (
                                     <div style={{ marginTop:4, display:'flex', gap:4, flexWrap:'wrap' }}>
                                       {playerStreaks.length === 0
@@ -2845,7 +2847,7 @@ export default function Campaigns() {
                           const waUrl = player?.whatsapp ? waHref(player.whatsapp, buildWaMsg(row.username, selected?.campaign_name||'Campaign', rewardFmt(row.rewardAmount,campCurrency), waLang, waMultiAgent, waMultiTurnover, selected)) : null
                           return <tr key={row.rewardId} style={{ background:paid?'rgba(63,185,80,.04)':'transparent' }}>
                             <td style={{ ...s.td, color:'var(--muted)', fontSize:11 }}>{i+1}</td>
-                            <td style={{ ...s.td, fontWeight:700 }}>{row.username}<CopyBtn text={row.username} /></td>
+                            <td style={{ ...s.td, fontWeight:700 }}>{row.username}<CopyBtn text={row.username} /><PlayerName name={player?.full_name} /></td>
                             <td style={s.td}>{row.tier && <span style={{ ...s.badge, background:TIER_BG[row.tier]||'transparent', color:TIER_COLOR[row.tier]||'var(--muted)' }}>{row.tier}</span>}</td>
                             <td style={{ ...s.td, fontWeight:600 }}>{row.levelName}</td>
                             <td style={{ ...s.td, color:'#3fb950', fontWeight:600 }}>{player ? rmFmt(playerDeposit(player), campCurrency) : '—'}</td>
@@ -3017,7 +3019,7 @@ export default function Campaigns() {
                       const waUrl = p.whatsapp ? waHref(p.whatsapp, buildWaMsg(p.username, selected?.campaign_name||'Campaign', waRewardText, waLang, waAgent, waTurnoverReq, selected)) : null
                       return <tr key={p.id}>
                         <td style={{...s.td,color:'var(--muted)',fontSize:11}}>{i+1}</td>
-                        <td style={{...s.td,fontWeight:700}}>{p.username}<CopyBtn text={p.username} /></td>
+                        <td style={{...s.td,fontWeight:700}}>{p.username}<CopyBtn text={p.username} /><PlayerName name={p.full_name} /></td>
                         <td style={s.td}>{isDailyMulti
                           ? <span style={{ fontSize:11, color:'#c9a961', fontWeight:600 }}>{lvlName}</span>
                           : (p.tier ? <span style={{ ...s.badge, background:TIER_BG[p.tier]||'transparent', color:TIER_COLOR[p.tier]||'var(--muted)' }}>{p.tier}</span> : '—')
@@ -3186,6 +3188,7 @@ export default function Campaigns() {
                                   <td style={{ ...s.td, fontWeight:700 }}>
                                     {sb.username}<CopyBtn text={sb.username} />
                                     {sb.tier && <span style={{ ...s.badge, background:TIER_BG[sb.tier]||'transparent', color:TIER_COLOR[sb.tier]||'var(--muted)', fontSize:10, marginLeft:4 }}>{sb.tier}</span>}
+                                    <PlayerName name={nameOf(sb.username)} />
                                   </td>
                                   <td style={{ ...s.td, color:'#f59e0b', fontWeight:700 }}>🔥 #{sb.streak_number}</td>
                                   <td style={{ ...s.td, fontSize:11, color:'var(--muted)' }}>{fmtDate(sb.period_start)} → {fmtDate(sb.period_end)}</td>
@@ -3308,7 +3311,7 @@ export default function Campaigns() {
                           return (
                             <tr key={p.id}>
                               <td style={{ ...s.td, color:'var(--muted)', fontSize:11 }}>{i+1}</td>
-                              <td style={{ ...s.td, fontWeight:700, whiteSpace:'nowrap' }}>{p.username}<CopyBtn text={p.username} title={L2('Copy username','复制用户名')} /></td>
+                              <td style={{ ...s.td, fontWeight:700, whiteSpace:'nowrap' }}>{p.username}<CopyBtn text={p.username} title={L2('Copy username','复制用户名')} /><PlayerName name={p.full_name} /></td>
                               <td style={s.td}>{p.tier ? <span style={{ ...s.badge, background:TIER_BG[p.tier]||'transparent', color:TIER_COLOR[p.tier]||'var(--muted)' }}>{p.tier}</span> : '—'}</td>
                               <td style={{ ...s.td, fontSize:12, color:'var(--muted)' }}>{p.host_assigned || '—'}</td>
                               <td style={{ ...s.td, fontSize:12, whiteSpace:'nowrap' }}>{p.whatsapp ? <>{p.whatsapp}<CopyBtn text={p.whatsapp} title={L2('Copy phone number','复制电话号码')} /></> : <span style={{ color:'var(--surface2)' }}>—</span>}</td>
@@ -3507,6 +3510,7 @@ export default function Campaigns() {
                                 <td style={{ ...s.td, fontWeight:700 }}>
                                   {sb.username}<CopyBtn text={sb.username} />
                                   {sb.tier && <span style={{ ...s.badge, background:TIER_BG[sb.tier]||'transparent', color:TIER_COLOR[sb.tier]||'var(--muted)', fontSize:10, marginLeft:4 }}>{sb.tier}</span>}
+                                  <PlayerName name={nameOf(sb.username)} />
                                 </td>
                                 <td style={{ ...s.td, fontSize:12, color:'var(--muted)' }}>{sb.host || '—'}</td>
                                 <td style={{ ...s.td, color:'#f59e0b', fontWeight:700 }}>🔥 #{sb.streak_number}</td>
@@ -3574,6 +3578,7 @@ export default function Campaigns() {
                               <div style={{ display:'flex', alignItems:'center', gap:6 }}>{p.username}<CopyBtn text={p.username} />
                                 {!achieved && currentRun.length > 0 && currentRun.length % streakDays === streakDays - 1 && <CampaignWaButton p={p} extra={{ stage:'streak', streak: currentRun.length }} />}
                               </div>
+                              <PlayerName name={p.full_name} />
                             </td>
                             <td style={s.td}>{p.tier ? <span style={{ ...s.badge, background:TIER_BG[p.tier]||'transparent', color:TIER_COLOR[p.tier]||'var(--muted)' }}>{p.tier}</span> : '—'}</td>
                             <td style={{ ...s.td, fontSize:12, color:'var(--muted)' }}>{p.host_assigned || '—'}</td>
@@ -3755,7 +3760,7 @@ export default function Campaigns() {
                                   style={{ accentColor:'var(--accent)', cursor:'pointer' }} />
                               </td>
                               <td style={{ ...s.td, color:'var(--muted)', fontSize:11 }}>{i+1}</td>
-                              <td style={{ ...s.td, fontWeight:700 }}>{p.username}<CopyBtn text={p.username} /></td>
+                              <td style={{ ...s.td, fontWeight:700 }}>{p.username}<CopyBtn text={p.username} /><PlayerName name={p.full_name} /></td>
                               <td style={{ ...s.td, color:'#3fb950' }}>
                                 {isDailyMode
                                   ? rmFmt(summaryData?.depositByPlayer?.[p.id] ?? null, campCurrency)
@@ -3913,7 +3918,7 @@ export default function Campaigns() {
                                   {allSRows.sort((a,b) => a.username.localeCompare(b.username) || a.streak_number - b.streak_number).map((sb,i) => (
                                     <tr key={i} onMouseEnter={e=>e.currentTarget.style.background='var(--surface2)'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
                                       <td style={{ ...s.td, color:'var(--muted)', fontSize:12, width:36 }}>{i + 1}</td>
-                                      <td style={{ ...s.td, fontWeight:700 }}>{sb.username}<CopyBtn text={sb.username} /></td>
+                                      <td style={{ ...s.td, fontWeight:700 }}>{sb.username}<CopyBtn text={sb.username} /><PlayerName name={nameOf(sb.username)} /></td>
                                       <td style={s.td}><span style={{ fontSize:12, fontWeight:700, color:'#f59e0b' }}>🔥 #{sb.streak_number}</span></td>
                                       <td style={{ ...s.td, color:'#c9a961', fontWeight:700 }}>{bonusFmt(sb.bonus_amount, campCurrency)}</td>
                                       <td style={s.td}>
@@ -3974,7 +3979,7 @@ export default function Campaigns() {
                           return (
                             <tr key={p.id} style={{ background:inTop?'rgba(167,139,250,.06)':'transparent' }}>
                               <td style={{ ...s.td, fontWeight:800 }}>{qualified?(rank<=3?['#1','#2','#3'][rank-1]:'#'+rank):'--'}</td>
-                              <td style={{ ...s.td, fontWeight:700 }}>{p.username}<CopyBtn text={p.username} /></td>
+                              <td style={{ ...s.td, fontWeight:700 }}>{p.username}<CopyBtn text={p.username} /><PlayerName name={p.full_name} /></td>
                               <td style={s.td}><span style={{ ...s.badge, background:TIER_BG[p.tier]||'', color:TIER_COLOR[p.tier]||'var(--muted)' }}>{p.tier}</span></td>
                               <td style={{ ...s.td, color:qualified?'#a78bfa':'var(--muted)', fontWeight:700 }}>
                                 <input type="number" style={{ ...s.editInput, width:90 }} defaultValue={vb||''} onBlur={e=>updatePlayer(p.id,{valid_bet:parseFloat(e.target.value)||0})} placeholder={L2('valid bet','有效投注')} />
