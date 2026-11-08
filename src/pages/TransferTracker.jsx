@@ -7,6 +7,8 @@ import { useUrlParam } from '../hooks/useUrlParam'
 import { formatMoney } from '../lib/format'
 import { CURRENCY_LIST_MAIN } from '../lib/constants'
 import CopyBtn from '../components/CopyBtn'
+import { useAuth } from '../hooks/useAuth'
+import TransferApplications from '../components/transfer/TransferApplications'
 
 const COST_TYPES = ['Cash Voucher', 'Bonus', 'Free Credit', 'Other']
 const COST_TYPE_ZH = { 'Cash Voucher':'现金券', 'Bonus':'奖金', 'Free Credit':'免费积分', 'Other':'其他' }
@@ -67,6 +69,8 @@ export default function TransferTracker() {
   const { t, lang } = useLanguage()
   const L2 = (en, zh) => (lang === 'zh' ? zh : en)
   const costTypeLabel = (c) => (lang === 'zh' ? (COST_TYPE_ZH[c] || c) : c)
+  const { profile } = useAuth()
+  const isAdmin = profile?.role === 'admin'
   const [players,   setPlayers]   = useState([])
   const [snapshots, setSnapshots] = useState({}) // {username: [snapshots]}
   const [costs,     setCosts]     = useState({})  // {username: [costs]}
@@ -244,12 +248,12 @@ export default function TransferTracker() {
           <select value={currency} onChange={e => setCurrency(e.target.value)} style={{ ...s.input, width: 'auto', padding: '7px 10px', fontWeight: 700, color: 'var(--accent)' }}>
             {CURRENCY_LIST_MAIN.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
-          {['overview','add','import','costs'].map(tab => (
+          {[...(isAdmin ? ['applications'] : []),'overview','add','import','costs'].map(tab => (
             <button key={tab} onClick={() => setActiveTab(tab)} style={{
               ...s.btn(activeTab===tab ? 'var(--accent)' : 'var(--surface2)', activeTab===tab ? '#fff' : 'var(--muted)'),
               border: '1px solid var(--border)',
             }}>
-              {tab === 'overview' ? L2('📋 Overview','📋 概览') : tab === 'add' ? L2('➕ Add Player','➕ 添加玩家') : tab === 'import' ? L2('📥 Import CSV','📥 导入 CSV') : L2('💰 Add Cost','💰 添加成本')}
+              {tab === 'applications' ? L2('📝 Applications','📝 转会申请') : tab === 'overview' ? L2('📋 Overview','📋 概览') : tab === 'add' ? L2('➕ Add Player','➕ 添加玩家') : tab === 'import' ? L2('📥 Import CSV','📥 导入 CSV') : L2('💰 Add Cost','💰 添加成本')}
             </button>
           ))}
         </div>
@@ -269,6 +273,14 @@ export default function TransferTracker() {
           </div>
         ))}
       </div>
+
+      {/* ── Applications Tab (admin only) ── */}
+      {activeTab === 'applications' && isAdmin && (
+        <TransferApplications onAddToTracker={(app) => {
+          setAddForm({ username: app.member_id || '', source_platform: app.platform_name, joined_date: '', notes: `Transfer application: ${app.full_name}` })
+          setActiveTab('add')
+        }} />
+      )}
 
       {/* ── Overview Tab ── */}
       {activeTab === 'overview' && (
