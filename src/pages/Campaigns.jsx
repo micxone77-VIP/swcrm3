@@ -1176,10 +1176,12 @@ export default function Campaigns() {
           .update({ total_deposit: dep, valid_bet: to, converted: qualified })
           .eq('id', p.id)
         // Sync campaign_period_deposit for all campaign types (including dual_tier)
-        await supabase.rpc('sync_manual_campaign_player_progress', {
+        // (supabase.rpc() has no .catch(): it returns { error } instead. The old .catch() crashed the import and left it on "Importing…")
+        const { error: syncErr } = await supabase.rpc('sync_manual_campaign_player_progress', {
           p_campaign_player_id: p.id,
           p_campaign_period_deposit: dep,
-        }).catch(e => console.error('progress sync failed for', username, e))
+        })
+        if (syncErr) console.error('progress sync failed for', username, syncErr)
       }
       await loadPlayers(selected.id)
     }
