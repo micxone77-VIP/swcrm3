@@ -1,5 +1,5 @@
-import { Suspense } from 'react'
-import { Navigate, Outlet } from 'react-router-dom'
+import { Suspense, useEffect, useState } from 'react'
+import { Navigate, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import Sidebar from './Sidebar'
 import ForcePasswordChange from './ForcePasswordChange'
@@ -8,6 +8,9 @@ import { useLanguage } from '../contexts/LanguageContext'
 export default function Layout() {
   const { user, profile, loading } = useAuth()
   const { lang } = useLanguage()
+  const [menuOpen, setMenuOpen] = useState(false)
+  const { pathname } = useLocation()
+  useEffect(() => { setMenuOpen(false) }, [pathname])
 
   if (loading) return (
     <div style={{
@@ -26,12 +29,20 @@ export default function Layout() {
   // Block entire app until host sets their own password on first login
   if (profile?.must_change_password) return <ForcePasswordChange />
 
+  // On phones (≤768px, see index.html) the menu hides behind the ☰ button in the top bar
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
-      <Sidebar />
-      <main style={{ flex: 1, overflowY: 'auto', background: 'var(--bg)' }}>
-        <Suspense fallback={<PageLoading />}><Outlet /></Suspense>
-      </main>
+      <div className={'app-sidebar' + (menuOpen ? ' open' : '')}><Sidebar /></div>
+      {menuOpen && <div className="app-backdrop" onClick={() => setMenuOpen(false)} />}
+      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+        <div className="app-topbar">
+          <button onClick={() => setMenuOpen(true)} aria-label={lang === 'zh' ? '打开菜单' : 'Open menu'} style={{ background: 'var(--surface2)', border: '1px solid var(--border)', color: 'var(--text)', borderRadius: 8, width: 40, height: 36, fontSize: 18, lineHeight: 1 }}>☰</button>
+          <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)' }}><span style={{ color: 'var(--brand)', fontWeight: 900 }}>Sure</span>Win CRM</div>
+        </div>
+        <main style={{ flex: 1, overflowY: 'auto', background: 'var(--bg)' }}>
+          <Suspense fallback={<PageLoading />}><Outlet /></Suspense>
+        </main>
+      </div>
     </div>
   )
 }

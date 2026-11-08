@@ -213,6 +213,26 @@
       main thead th, [role="dialog"] thead th { position: sticky; top: 0; z-index: 3; background-color: var(--surface); box-shadow: inset 0 -1px 0 var(--border); }
       /* A table inside a sideways-scrolling box: that box would block the sticky header, so it scrolls up/down too (max one screen) */
       main div[style*="overflow"]:has(> table) { max-height: calc(100vh - 96px); overflow: auto !important; }
+
+      /* ── Phone layout (≤768px): menu behind ☰, tables scroll sideways, popups fit the screen ── */
+      .app-sidebar { display: flex; flex-shrink: 0; }
+      .app-topbar, .app-backdrop { display: none; }
+      @media (max-width: 768px) {
+        .app-topbar { display: flex; align-items: center; gap: 12px; padding: 8px 12px; background: var(--surface); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+        .app-sidebar { position: fixed; top: 0; left: 0; bottom: 0; z-index: 900; transform: translateX(-100%); transition: transform .2s ease; }
+        .app-sidebar.open { transform: none; box-shadow: 0 0 24px rgba(0,0,0,.6); }
+        .app-sidebar aside { min-height: 0 !important; height: 100%; max-width: 85vw; }
+        .app-backdrop { display: block; position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 899; }
+        main div[style*="overflow"]:has(> table) { max-height: calc(100vh - 150px); }
+        /* Less side padding on pages */
+        main > div { padding-left: 12px !important; padding-right: 12px !important; }
+        /* Tables not already in a scroll box: the table itself scrolls sideways */
+        main table:not(div[style*="overflow"] > table) { display: block; max-width: 100%; overflow-x: auto; }
+        /* Popups (full-screen dark overlay + box): the box fits the screen and scrolls */
+        [style*="position: fixed"][style*="inset: 0"] > div { max-width: calc(100vw - 16px) !important; max-height: 92vh; overflow-y: auto; }
+        /* Stops iPhone zooming in when you tap a box */
+        input, select, textarea { font-size: 16px !important; }
+      }
     </style>
     <script>
       // Apply saved text size before the app renders (default: large)
