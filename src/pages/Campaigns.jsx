@@ -106,6 +106,13 @@ function bonusFmt(n, currency) {
   const prefix = CURRENCY_PREFIX[currency] || 'RM'
   return prefix+' '+num.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
+// Campaign activity group (Chase List): from the daily import for the campaign dates
+const CAMP_ACT = {
+  inactive:  { icon:'💤', en:'Not active',              zh:'未活跃',       color:'#f85149', bg:'rgba(248,81,73,.12)' },
+  playing:   { icon:'🎲', en:'Playing, no deposit',     zh:'有玩没存款',   color:'#d29922', bg:'rgba(210,153,34,.12)' },
+  deposited: { icon:'💰', en:'Deposited, below target', zh:'已存款未达标', color:'#58a6ff', bg:'rgba(88,166,255,.12)' },
+  hit:       { icon:'✅', en:'Hit target',              zh:'已达标',       color:'#3fb950', bg:'rgba(63,185,80,.12)' },
+}
 const PlayerName = ({ name }) => name ? <div style={{ fontSize:12, color:'var(--muted)', fontWeight:400, marginTop:2 }}>{name}</div> : null
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-MY',{day:'numeric',month:'short',year:'numeric'}) : '—'
 
@@ -212,6 +219,9 @@ export default function Campaigns() {
   const [dailyEntries, setDailyEntries] = useState({}) // player_id -> {turnover_amount, tier_achieved, credit_reward, wcash_reward}
   const [dailyLoading, setDailyLoading] = useState(false)
   const [summaryData, setSummaryData] = useState(null)
+  const [actFilter, setActFilter] = useState('all') // Chase List activity group filter
+  const [showInactiveList, setShowInactiveList] = useState(false)
+  const [inactiveCopied, setInactiveCopied] = useState(false)
   const [realFinancials, setRealFinancials] = useState(null) // real deposit/withdrawal/turnover from actual platform data, all campaign types
   const [realFinancialsLoading, setRealFinancialsLoading] = useState(false)
   const [summaryLoading, setSummaryLoading] = useState(false)
@@ -367,12 +377,12 @@ export default function Campaigns() {
 
     // Enrich each player with host_assigned from vip_members (best-effort; never blocks load)
     const usernames = [...new Set(campaignPlayers.map(p => p.username).filter(Boolean))]
-    let hostMap = {}, nameMap = {}
+    let hostMap = {}, nameMap = {}, lastBetMap = {}
     if (usernames.length > 0) {
-      const hostRows = await fetchMembersFor(usernames, 'username,host_assigned,full_name').catch(() => [])
-      ;(hostRows || []).forEach(r => { if (r.host_assigned) hostMap[r.username] = r.host_assigned; if (r.full_name) nameMap[r.username] = r.full_name })
+      const hostRows = await fetchMembersFor(usernames, 'username,host_assigned,full_name,last_bet_date').catch(() => [])
+      ;(hostRows || []).forEach(r => { if (r.host_assigned) hostMap[r.username] = r.host_assigned; if (r.full_name) nameMap[r.username] = r.full_name; if (r.last_bet_date) lastBetMap[r.username] = r.last_bet_date })
     }
-    const enriched = campaignPlayers.map(p => ({ ...p, host_assigned: hostMap[p.username] || null, full_name: p.full_name || nameMap[p.username] || null }))
+    const enriched = campaignPlayers.map(p => ({ ...p, host_assigned: hostMap[p.username] || null, full_name: p.full_name || nameMap[p.username] || null, last_bet_date: lastBetMap[p.username] || null }))
 
     setPlayers(enriched)
     if (enriched.length === 0) {
@@ -1411,11 +1421,13 @@ export default function Campaigns() {
       byPlayer[r.username].deposit += parseFloat(r.total_deposit) || 0
       byPlayer[r.username].withdrawal += parseFloat(r.total_withdrawal) || 0
       byPlayer[r.username].validBet += parseFloat(r.monthly_valid_bet) || 0
+      if (!byPlayer[r.username].lastBet || r.snapshot_date > byPlayer[r.username].lastBet) byPlayer[r.username].lastBet = r.snapshot_date
     })
+    const dataThrough = all.reduce((m, r) => (r.snapshot_date > m ? r.snapshot_date : m), '') || null
     const totals = Object.values(byPlayer).reduce((s, v) => ({
       deposit: s.deposit + v.deposit, withdrawal: s.withdrawal + v.withdrawal, validBet: s.validBet + v.validBet,
     }), { deposit: 0, withdrawal: 0, validBet: 0 })
-    setRealFinancials({ byPlayer, ...totals })
+    setRealFinancials({ byPlayer, dataThrough, ...totals })
     setRealFinancialsLoading(false)
   }
 
@@ -1576,6 +1588,34 @@ export default function Campaigns() {
   const pendingPay = Math.max(0,totalReward-paidOut)
   const chaseList = campType==='leaderboard' ? lbRanked : [...players].sort((a,b)=>playerDeposit(b)-playerDeposit(a))
   const chaseHosts = ['all', ...Array.from(new Set(chaseList.map(p => p.host_assigned).filter(Boolean))).sort()]
+  // Activity group during the campaign (daily import, campaign dates): hit target > deposited > played (valid bet, no deposit) > not active
+  const hitIds = new Set(achieved.map(p => p.id))
+  const actOf = p => {
+    if (!realFinancials) return null
+    if (hitIds.has(p.id)) return 'hit'
+    const r = realFinancials.byPlayer?.[p.username]
+    if (r?.deposit > 0) return 'deposited'
+    if (r?.validBet > 0) return 'playing'
+    return 'inactive'
+  }
+  const lastBetOf = p => realFinancials?.byPlayer?.[p.username]?.lastBet || p.last_bet_date || null
+  const daysSince = d => {
+    const ref = realFinancials?.dataThrough
+    if (!d || !ref) return null
+    return Math.max(0, Math.round((new Date(ref + 'T00:00:00Z') - new Date(String(d).slice(0, 10) + 'T00:00:00Z')) / 86400000))
+  }
+  const hostChaseList = chaseList.filter(p => hostFilter === 'all' || p.host_assigned === hostFilter)
+  const actCounts = hostChaseList.reduce((m, p) => { const g = actOf(p); if (g) m[g] = (m[g] || 0) + 1; return m }, {})
+  const inactiveList = hostChaseList.filter(p => actOf(p) === 'inactive')
+    .sort((a, b) => (daysSince(lastBetOf(b)) ?? 9999) - (daysSince(lastBetOf(a)) ?? 9999))
+  const actTag = p => {
+    const g = actOf(p); if (!g) return null
+    const a = CAMP_ACT[g], lb = lastBetOf(p), ds = daysSince(lb)
+    return <div style={{ marginTop:3, display:'flex', alignItems:'center', gap:6, flexWrap:'wrap' }}>
+      <span style={{ fontSize:10, fontWeight:700, padding:'1px 7px', borderRadius:10, background:a.bg, color:a.color, whiteSpace:'nowrap' }}>{a.icon} {L2(a.en, a.zh)}</span>
+      {g === 'inactive' && <span style={{ fontSize:10, color:'var(--muted)', whiteSpace:'nowrap' }}>{lb ? L2(`last bet ${fmtDate(lb)}${ds != null ? ` · ${ds}d ago` : ''}`, `最后投注 ${fmtDate(lb)}${ds != null ? ` · ${ds}天前` : ''}`) : L2('no bets on record', '没有投注记录')}</span>}
+    </div>
+  }
   // Progress sort = same numbers as the Progress column: highest tier / level reached first,
   // then % toward the next one (entry date's figures in daily settlement)
   const progressScore = (p) => {
@@ -1604,7 +1644,8 @@ export default function Campaigns() {
     const filtered = chaseList.filter(p => {
       const matchesHost = hostFilter === 'all' || p.host_assigned === hostFilter
       const matchesSearch = !chaseFilter.trim() || (p.username||'').toLowerCase().includes(chaseFilter.toLowerCase()) || (p.full_name||'').toLowerCase().includes(chaseFilter.toLowerCase())
-      return matchesHost && matchesSearch
+      const matchesAct = actFilter === 'all' || actOf(p) === actFilter
+      return matchesHost && matchesSearch && matchesAct
     })
     const sm = chaseSortDir === 'asc' ? 1 : -1
     return [...filtered].sort((a, b) => {
@@ -2409,6 +2450,55 @@ export default function Campaigns() {
                     ))}
                   </div>
                 )}
+                {/* Chase list activity groups during the campaign + not-active list to copy */}
+                <div style={{ padding:'6px 24px', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', gap:6, flexWrap:'wrap' }}>
+                  <span style={{ fontSize:11, color:'var(--muted)', marginRight:2 }}>{L2('In campaign:','活动期间：')}</span>
+                  {!realFinancials
+                    ? <span style={{ fontSize:11, color:'var(--muted)' }}>{realFinancialsLoading ? L2('Loading activity…','正在加载活跃数据…') : L2('No daily data for the campaign dates yet.','活动日期还没有每日数据。')}</span>
+                    : <>
+                      {['all', 'inactive', 'playing', 'deposited', 'hit'].map(g => (
+                        <button key={g} onClick={() => setActFilter(g)} style={{
+                          padding:'3px 12px', borderRadius:16, fontSize:12, fontWeight:600, border:'1px solid ' + (actFilter === g ? (g === 'all' ? 'var(--accent)' : CAMP_ACT[g].color) : 'var(--border)'), cursor:'pointer',
+                          background: actFilter === g ? (g === 'all' ? 'var(--accent)' : CAMP_ACT[g].bg) : 'var(--surface2)',
+                          color: actFilter === g ? (g === 'all' ? '#fff' : CAMP_ACT[g].color) : 'var(--muted)',
+                        }}>{g === 'all' ? `${L2('All','全部')} (${hostChaseList.length})` : `${CAMP_ACT[g].icon} ${L2(CAMP_ACT[g].en, CAMP_ACT[g].zh)} (${actCounts[g] || 0})`}</button>
+                      ))}
+                      <button onClick={() => { setShowInactiveList(v => !v); setInactiveCopied(false) }} style={{ marginLeft:'auto', padding:'3px 12px', borderRadius:6, fontSize:12, fontWeight:700, cursor:'pointer', border:'1px solid rgba(248,81,73,.35)', background: showInactiveList ? 'rgba(248,81,73,.18)' : 'rgba(248,81,73,.08)', color:'#f85149' }}>
+                        📋 {L2(`Not-active list (${inactiveList.length})`, `未活跃名单（${inactiveList.length}）`)} {showInactiveList ? '▲' : '▼'}
+                      </button>
+                      <span style={{ fontSize:10, color:'var(--muted)', width:'100%' }}>
+                        {L2(`From the daily import, ${fmtDate(selected?.start_date)} to ${realFinancials.dataThrough ? fmtDate(realFinancials.dataThrough) : '—'} (today shows after tomorrow's import). Not active = no bets at all in the campaign dates.`,
+                            `来自每日导入，${fmtDate(selected?.start_date)} 至 ${realFinancials.dataThrough ? fmtDate(realFinancials.dataThrough) : '—'}（今天的数据明天导入后显示）。未活跃 = 活动期间完全没有投注。`)}
+                      </span>
+                    </>}
+                </div>
+                {showInactiveList && realFinancials && (
+                  <div style={{ padding:'12px 24px', borderBottom:'1px solid var(--border)', background:'rgba(248,81,73,.04)' }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:10, flexWrap:'wrap', marginBottom:8 }}>
+                      <span style={{ fontSize:13, fontWeight:700 }}>💤 {L2(`Not active in this campaign${hostFilter !== 'all' ? ` · ${hostFilter}` : ''}: ${inactiveList.length} players`, `本活动未活跃${hostFilter !== 'all' ? ` · ${hostFilter}` : ''}：${inactiveList.length} 位`)}</span>
+                      <button disabled={!inactiveList.length} onClick={() => { navigator.clipboard.writeText(inactiveList.map(p => p.username).join('\n')).then(() => { setInactiveCopied(true); setTimeout(() => setInactiveCopied(false), 2000) }).catch(() => {}) }}
+                        style={{ padding:'5px 14px', borderRadius:6, fontSize:12, fontWeight:700, cursor: inactiveList.length ? 'pointer' : 'default', border:'none', background: inactiveCopied ? '#3fb950' : 'var(--accent)', color:'#fff', opacity: inactiveList.length ? 1 : .5 }}>
+                        {inactiveCopied ? L2(`✓ Copied ${inactiveList.length} usernames`, `✓ 已复制 ${inactiveList.length} 个用户名`) : L2('📋 Copy all usernames', '📋 复制全部用户名')}
+                      </button>
+                      <span style={{ fontSize:11, color:'var(--muted)' }}>{L2('One username per line, ready to paste into another campaign.', '每行一个用户名，可直接贴到其他活动。')}</span>
+                    </div>
+                    {inactiveList.length === 0
+                      ? <div style={{ fontSize:12, color:'var(--muted)' }}>{L2('Everyone has played during this campaign.', '所有玩家在活动期间都有投注。')}</div>
+                      : <div style={{ maxHeight:260, overflow:'auto', border:'1px solid var(--border)', borderRadius:8 }}>
+                        <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12 }}>
+                          <thead><tr>{[L2('Player','玩家'), L2('Tier','等级'), L2('Host','负责人'), L2('Last bet','最后投注'), L2('Days quiet','未活跃天数')].map(h => <th key={h} style={s.th}>{h}</th>)}</tr></thead>
+                          <tbody>{inactiveList.map(p => { const lb = lastBetOf(p), ds = daysSince(lb); return (
+                            <tr key={p.id}>
+                              <td style={s.td}><b>{p.username}</b><CopyBtn text={p.username} /><PlayerName name={p.full_name} /></td>
+                              <td style={s.td}>{p.tier || '—'}</td>
+                              <td style={s.td}>{p.host_assigned || '—'}</td>
+                              <td style={s.td}>{lb ? fmtDate(lb) : '—'}</td>
+                              <td style={{ ...s.td, fontWeight:700, color: ds == null ? 'var(--muted)' : ds >= 15 ? '#f85149' : ds >= 7 ? '#d29922' : 'var(--text)' }}>{ds == null ? '—' : L2(`${ds} days`, `${ds} 天`)}</td>
+                            </tr>) })}</tbody>
+                        </table>
+                      </div>}
+                  </div>
+                )}
                 {/* Chase list search + sort filter */}
                 <div style={{ padding:'8px 24px', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
                   <input
@@ -2509,6 +2599,7 @@ export default function Campaigns() {
                                     <button title={L2('Copy username','复制用户名')} onClick={()=>copyUsername(p.id, p.username)} style={{ marginLeft:2, background:'none', border:'none', cursor:'pointer', fontSize:11, color: copiedId===p.id ? '#3fb950' : 'var(--muted)', padding:'1px 4px', borderRadius:4 }}>{copiedId===p.id ? '✓' : '⎘'}</button>
                                   </div>
                                   <PlayerName name={p.full_name} />
+                                  {actTag(p)}
                                 </td>
                                 <td style={{ ...s.td, fontSize:12, color: p.host_assigned ? 'var(--text)' : 'var(--muted)' }}>{p.host_assigned || '—'}</td>
                                 <td style={{ ...s.td, fontSize:12, color:'var(--muted)', whiteSpace:'nowrap' }}>
@@ -2661,6 +2752,7 @@ export default function Campaigns() {
                                     </button>
                                   </div>
                                   <PlayerName name={p.full_name} />
+                                  {actTag(p)}
                                   {selected?.streak_enabled && (
                                     <div style={{ marginTop:4, display:'flex', gap:4, flexWrap:'wrap' }}>
                                       {playerStreaks.length === 0
