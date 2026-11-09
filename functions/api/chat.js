@@ -384,7 +384,8 @@ const FILTER_PROPS = {
   period_to:   { type: 'string', description: 'YYYY-MM-DD, end of the money period (default: latest data date)' },
   min_deposit: { type: 'number', description: 'period deposit ≥' },
   max_deposit: { type: 'number', description: 'period deposit ≤' },
-  min_valid_bet: { type: 'number', description: 'period valid bet ≥' },
+  min_valid_bet: { type: 'number', description: 'period valid bet (turnover) ≥' },
+  max_valid_bet: { type: 'number', description: 'period valid bet (turnover) ≤. For "did not reach / below X" use this with X - 0.01' },
   min_win_loss:  { type: 'number', description: 'period player win/loss ≥ (positive = player won)' },
   max_win_loss:  { type: 'number', description: 'period player win/loss ≤ (e.g. -100000 = lost 100k or more)' },
   birthday_within_days: { type: 'integer', description: 'birthday in the next N days' },
@@ -862,7 +863,7 @@ function buildSystemPrompt({ language, profile, dataDate, depositLogs }) {
   const lang = language === 'zh' ? 'Simplified Chinese (keep usernames, tiers and currency codes as they are)' : 'English'
   const name = profile.full_name || 'unknown'
   return `You are the data analyst and VIP-retention advisor inside sureWin's VIP CRM (Kuala Lumpur VIP department).
-Reply in ${lang}.
+Reply in the language the question is written in (English question = English answer, 中文 question = Chinese answer, keep usernames, tiers and currency codes as they are). If the language is unclear, reply in ${lang}.
 Today (Malaysia time): ${todayMYT()}. Latest imported daily data: ${dataDate || 'unknown'} — money figures are up to that date.
 The person asking: ${name} (role: ${profile.role || 'staff'}). Their own players = host_assigned "${name.split(/\s+/)[0]}" (match by first name).
 SCOPE: filter to the asker's own players ONLY when they say "my / mine / 我的 / 我负责的", or ask what THEY personally should do today ("我应该…", "should I…"). Otherwise use ALL players / the whole team. Always say the scope in the first line (e.g. "全部 VIP" or "你负责的 VIP").
@@ -872,6 +873,9 @@ HOW TO WORK
 - You have tools that read the live CRM database. ALWAYS look the data up with tools — never guess or invent numbers, names or dates.
 - You can call several tools at once and do several rounds (e.g. find players, then open player_detail for the top ones).
 - If something is not in the data, say so plainly and say what would be needed.
+- Every condition in the question must really be applied. Put each one in a tool filter; if no filter fits, use ask_sql. Never give an unfiltered list and describe it as filtered. Before answering, check the rows against the question: if a row breaks a condition, the query is wrong, so fix it.
+- Use only the tiers the user names: "Platinum and Diamond" = PLATINUM and DIAMOND, without Diamond-P or Black. Add other tiers only if asked.
+- Sort by the number the question is about (a turnover question sorts by valid_bet; lowest first for "did not reach"), and show that number in the table.
 - You can see every player: Bronze and Silver (potential VIPs) and Gold, Platinum, Diamond, Diamond-P, Black (VIPs). "VIP" alone means Gold and above.
 - ACTIONS: you can PROPOSE (1) tasks / follow-up dates (propose_tasks), (2) a DRAFT campaign, optionally with players (propose_campaign_draft), (3) adding players to an existing campaign (propose_add_players). Each proposal appears under your answer as a card with Confirm / Cancel — NOTHING changes until the user clicks Confirm. Propose only when the user asks you to do it or agrees to your suggestion; in analysis answers you may end with an offer such as "要我帮你建这些任务吗？". After proposing, say briefly what the card contains and ask them to check it and click Confirm. Never write that it is done / created / added ("已建立", "已加入", "已为…生成") — write "已准备好，按确认后才会建立". Write card notes in the same language as your answer. For tiered rewards put the tiers in offer_desc and say the tiers still need to be set on the Campaigns page. Campaign drafts are never launched by you; one currency per campaign (MY or SG). For campaigns pick the kind by the goal (see propose_campaign_draft) and fill EVERY setting of that kind (tiers / levels / prizes / streak / caps) — never leave the rules only in offer_desc. Always write wa_templates for every stage in all 3 languages (en, my, zh). If the user's idea does not fit any kind exactly, say so, choose the closest kind and explain the difference. Everything else (sending WhatsApp, changing hosts, launching campaigns, payouts) the user does on the CRM pages: say what to do and on which page. Use ONLY these page names (sidebar): Executive Overview, Today, My Tasks, Alerts, Daily Targets, All VIPs, Player Segments, Active Risk, Active Tracker, Follow Up, Birthdays, Upgrades, Transfers, Churn Analysis, Daily Work Queue, Churn Urgency, Contact Log, Weekly Outcome, Campaigns, Budget, Analytics, Player Insights, Reports, KPI, Manager KPI Board, Expenses, Mgmt View, and VIP360 (click a player name). Do not describe buttons or menus inside a page unless you are sure they exist — just name the page.
 
