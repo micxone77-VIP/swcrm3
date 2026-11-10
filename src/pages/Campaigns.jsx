@@ -2924,6 +2924,26 @@ export default function Campaigns() {
                   {selected?.is_multi_level ? (selected?.payout_mode === 'highest_only' ? L2('Payout mode: Highest level only — one reward per player. Mark paid only after it is actually issued.','派彩模式：只派最高级别 — 每位玩家一份奖励。确实发放后才标记为已派。') : L2('Payout mode: All levels — each unlocked level earns its own reward. Mark the individual reward paid only after it is actually issued.','派彩模式：所有级别 — 每个已解锁级别各自获得奖励。确实发放后才将该奖励标记为已派。')) : isDailyMode ? <><span>{L2('Showing players who qualified on','显示以下日期达标的玩家')}</span><input type="date" value={entryDate} min={selected?.start_date||undefined} max={selected?.end_date||undefined} onChange={e=>setEntryDate(e.target.value)} style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:6, padding:'3px 8px', fontSize:11, color:'#c9a961', fontWeight:700, cursor:'pointer' }} /></> : L2('Only showing players who reached the campaign target.','只显示已达到活动目标的玩家。')}
                 </div>
                 {selected?.is_multi_level && !isDailyMode && multiPayoutRows.length > 0 && <ListCount total={multiPayoutRows.length} label="players" labelZh="位玩家" />}
+                {selected?.is_multi_level && !isDailyMode && multiPayoutRows.length > 0 && (() => {
+                  // Payout list text for the BO team: one line per player (levels added up), biggest reward first
+                  const copyList = (onlyUnpaid, btn) => {
+                    const byUser = {}
+                    multiPayoutRows.filter(r => !onlyUnpaid || r.status !== 'paid').forEach(r => { byUser[r.username] = (byUser[r.username] || 0) + (parseFloat(r.rewardAmount) || 0) })
+                    const lines = Object.entries(byUser).filter(([, amt]) => amt > 0).sort((a, b) => b[1] - a[1]).map(([u, amt]) => `${u} - ${rewardFmt(amt, campCurrency)} Credit`)
+                    if (!lines.length) { alert(L2('Nothing to copy: every reward is already paid.', '没有可复制的：所有奖励都已派发。')); return }
+                    const today = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10)
+                    navigator.clipboard.writeText(`${selected?.campaign_name || 'Campaign'}\n${today}\n\n${lines.join('\n')}`).then(() => {
+                      const old = btn.textContent; btn.textContent = L2(`✅ Copied ${lines.length}`, `✅ 已复制 ${lines.length} 位`); setTimeout(() => { btn.textContent = old }, 1800)
+                    }).catch(() => alert(L2('Could not copy.', '复制失败。')))
+                  }
+                  const unpaidCount = new Set(multiPayoutRows.filter(r => r.status !== 'paid').map(r => r.username)).size
+                  const btn = { background:'rgba(88,166,255,.12)', color:'#58a6ff', border:'1px solid rgba(88,166,255,.3)', borderRadius:6, padding:'5px 12px', fontSize:12, fontWeight:700, cursor:'pointer' }
+                  return <div style={{ padding:'8px 24px', borderBottom:'1px solid var(--border)', display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
+                    <button style={btn} onClick={e => copyList(true, e.currentTarget)}>📋 {L2(`Copy payout list (unpaid ${unpaidCount})`, `复制派彩名单（未派 ${unpaidCount} 位）`)}</button>
+                    <button style={{ ...btn, background:'var(--surface2)', color:'var(--text)', border:'1px solid var(--border)' }} onClick={e => copyList(false, e.currentTarget)}>📋 {L2('Copy all', '复制全部')}</button>
+                    <span style={{ fontSize:11, color:'var(--muted)' }}>{L2('Campaign name, date, then "username - reward" per line.', '活动名称、日期，然后每行「用户名 - 奖励」。')}</span>
+                  </div>
+                })()}
                 {selected?.is_multi_level && !isDailyMode ? (
                   multiPayoutRows.length === 0 ? <div style={{ padding:32, textAlign:'center', color:'var(--muted)' }}>{L2('No unlocked rewards are ready for payout yet.','暂无可派彩的已解锁奖励。')}</div> : (
                     <table style={s.tbl}>
