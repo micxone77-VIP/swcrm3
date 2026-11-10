@@ -13,6 +13,7 @@ import { useUrlParam, useUrlParamNumber, useUrlParamBool, useUrlParamsRaw } from
 import CopyBtn from '../components/CopyBtn'
 import WinbackBonusModal from '../components/churn/WinbackBonusModal'
 import WinbackReport from '../components/churn/WinbackReport'
+import { loadPlayerCosts } from '../lib/playerCost'
 
 const RISK_COLOR = { HIGH:'#f85149', MEDIUM:'#d29922', LOW:'#3fb950' }
 const RISK_ZH    = { HIGH:'高', MEDIUM:'中', LOW:'低', CRITICAL:'严重' }
@@ -109,6 +110,7 @@ const ND_SORT = {
   days: { get:v=>v.days_inactive, first:'desc' },
   bet: { get:v=>v.last_bet_date||'', first:'asc' },
   dep: { get:v=>v.dep_90d??-1, first:'desc' },
+  cost: { get:v=>v.cost?.total??-1, first:'desc' },
   contact: { get:v=>v.last_contacted?new Date(v.last_contacted).getTime():0, first:'asc' },
 }
 
@@ -125,7 +127,7 @@ export default function ChurnAlerts() {
   const [churnWaModal,setChurnWaModal]=useState(null),[priorityHostF,setPriorityHostF]=useState('ALL'),[priorityError,setPriorityError]=useState(false)
   const [pLevelF,setPLevelF]=useUrlParam('plevel','P1'),[pSort,setPSort]=useUrlParam('psort','call')
   // One URL value per filter: 'nd' is a day range ('3-6') or dates ('date:from:to')
-  const [ndRange,setNdRange]=useUrlParam('nd','3-6'),[ndSort,setNdSort]=useUrlParam('ndsort','days:desc'),[ndTier,setNdTier]=useUrlParam('ndtier','ALL'),[ndHost,setNdHost]=useUrlParam('ndhost','ALL'),[dep90By,setDep90By]=useState({})
+  const [ndRange,setNdRange]=useUrlParam('nd','3-6'),[ndSort,setNdSort]=useUrlParam('ndsort','days:desc'),[ndTier,setNdTier]=useUrlParam('ndtier','ALL'),[ndHost,setNdHost]=useUrlParam('ndhost','ALL'),[dep90By,setDep90By]=useState({}),[costInfo,setCostInfo]=useState(null)
   // Market filter (MY / SG / KH) — based on the player's account currency; applies to every tab + stat cards
   const [mktF,setMktF]=useUrlParam('mkt','ALL')
   const mktOf=c=>{const u=String(c||'MYR').toUpperCase();return u==='SGD'?'SG':u.startsWith('KH')?'KH':'MY'}
@@ -135,6 +137,8 @@ export default function ChurnAlerts() {
   const mktList=['MY','SG','KH'].filter(m=>vipsAll.some(v=>mktOf(v.currency)===m))
   const monthStr=`${year}-${String(month+1).padStart(2,'0')}`
 
+  // Company cost so far per player (bonus + rebate + campaign + BO bonus + department spending), loaded the first time No Deposit opens
+  useEffect(()=>{if(tab!=='nodeposit'||costInfo||!vipsAll.length)return;setCostInfo({loading:true,costs:{},missing:[]});loadPlayerCosts(vipsAll).then(setCostInfo).catch(e=>{console.error(e);setCostInfo({costs:{},missing:['all']})})},[tab,vipsAll]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(()=>{loadAll()},[riskF,tierF,sortCol,sortAsc,month,year,mineOnly,dormantDays]); useEffect(()=>{loadPriorityContacts()},[])
   // Call list: CRM priority score (v_vip_priority) for every Gold+ player who is not Active.
   // Score = value x return. Its "reach" discount is left out on purpose, so players who don't reply are not pushed down.
@@ -256,7 +260,7 @@ export default function ChurnAlerts() {
         const base=vips.filter(v=>v.last_deposit_date&&v.days_inactive!=null&&(ndTier==='ALL'||v.tier===ndTier)&&(ndHost==='ALL'||v.host_assigned===ndHost)&&(!mineOnly||v.host_assigned===myName))
         const inRange=([,min,max])=>v=>v.days_inactive>=min&&v.days_inactive<=max
         const range=ND_RANGES.find(r=>r[0]===ndRange)||ND_RANGES[0]
-        const rows=base.filter(isDates?v=>(!ndFrom||v.last_deposit_date>=ndFrom)&&(!ndTo||v.last_deposit_date<=ndTo):inRange(range)).map(v=>({...v,dep_90d:dep90By[v.username]}))
+        const rows=base.filter(isDates?v=>(!ndFrom||v.last_deposit_date>=ndFrom)&&(!ndTo||v.last_deposit_date<=ndTo):inRange(range)).map(v=>({...v,dep_90d:dep90By[v.username],cost:costInfo?.costs?.[v.username]}))
         if(ND_SORT[sortKey]){const get=ND_SORT[sortKey].get,dir=sortDir==='desc'?-1:1;rows.sort((a,b)=>{const x=get(a),y=get(b);return(x<y?-1:x>y?1:0)*dir})}
         const hosts=[...new Set(vips.filter(v=>v.host_assigned).map(v=>v.host_assigned))].sort()
         const fmtDate=d=>d?new Date(d).toLocaleDateString(lang==='zh'?'zh-CN':'en-MY',{day:'2-digit',month:'short'}):null
@@ -277,7 +281,7 @@ export default function ChurnAlerts() {
           </div>
           {(()=>{const pick=rows.filter(canBonus);return pick.length>0&&<div style={{display:'flex',gap:8,padding:'8px 14px',alignItems:'center',flexWrap:'wrap',borderBottom:'1px solid var(--border)',background:wbSel.size?'rgba(168,85,247,.08)':'transparent'}}><span style={{fontSize:12,color:'var(--muted)'}}>{L2('Tick Churn / Dormant players to give the same win-back bonus to all of them.','勾选流失 / 休眠玩家，一次发放相同的召回奖金。')}</span>{wbSel.size>0&&<><button style={{...s.btnSm,background:'#a855f7',color:'#fff',border:0,fontWeight:700,fontSize:12}} onClick={()=>setWbModal(vips.filter(v=>wbSel.has(v.username)))}>{L2(`🎁 Give bonus to ${wbSel.size} selected`,`🎁 给已选 ${wbSel.size} 位发奖金`)}</button><button style={s.btnSm} onClick={()=>setWbSel(new Set())}>{L2('Clear','清除')}</button></>}</div>})()}
           <ListCount total={rows.length} label="VIPs" labelZh="位VIP" />
-          <div style={{overflowX:'auto'}}><table style={s.tbl}><thead><tr>{(()=>{const pick=rows.filter(canBonus);const all=pick.length>0&&pick.every(v=>wbSel.has(v.username));return<th style={{...s.th,width:28}}>{pick.length>0&&<input type="checkbox" title={L2('Select all Churn / Dormant players in this list','全选此列表中的流失 / 休眠玩家')} checked={all} onChange={e=>setWbSel(prev=>{const n=new Set(prev);pick.forEach(v=>e.target.checked?n.add(v.username):n.delete(v.username));return n})}/>}</th>})()}{[['#'],[L2('Player','玩家'),'username'],[L2('Tier','等级'),'tier'],[L2('Host','负责人'),'host'],[L2('Phone / WA','电话 / WA')],[L2('Status','状态')],[L2('Days','天数'),'days'],[L2('Last Deposit','最后存款')],[L2('Last Bet','最后投注'),'bet'],[L2('90d Deposit','90天存款'),'dep'],[L2('Last Contact','最后联系'),'contact'],[L2('Actions','操作')]].map(([h,key])=>{const on=key&&sortKey===key;return<th key={h} style={{...s.th,...(key?{cursor:'pointer',userSelect:'none'}:{}),...(on?{color:'var(--accent)'}:{})}} title={key?L2('Click to sort, click again to reverse','点击排序，再点一次反向'):undefined} onClick={key?()=>clickSort(key):undefined}>{h}{key&&<span style={{marginLeft:4,opacity:on?1:.4}}>{on?(sortDir==='desc'?'▼':'▲'):'↕'}</span>}</th>})}</tr></thead>
+          <div style={{overflowX:'auto'}}><table style={s.tbl}><thead><tr>{(()=>{const pick=rows.filter(canBonus);const all=pick.length>0&&pick.every(v=>wbSel.has(v.username));return<th style={{...s.th,width:28}}>{pick.length>0&&<input type="checkbox" title={L2('Select all Churn / Dormant players in this list','全选此列表中的流失 / 休眠玩家')} checked={all} onChange={e=>setWbSel(prev=>{const n=new Set(prev);pick.forEach(v=>e.target.checked?n.add(v.username):n.delete(v.username));return n})}/>}</th>})()}{[['#'],[L2('Player','玩家'),'username'],[L2('Tier','等级'),'tier'],[L2('Host','负责人'),'host'],[L2('Phone / WA','电话 / WA')],[L2('Status','状态')],[L2('Days','天数'),'days'],[L2('Last Deposit','最后存款')],[L2('Last Bet','最后投注'),'bet'],[L2('90d Deposit','90天存款'),'dep'],[L2('Cost so far','累计成本'),'cost'],[L2('Last Contact','最后联系'),'contact'],[L2('Actions','操作')]].map(([h,key])=>{const on=key&&sortKey===key;return<th key={h} style={{...s.th,...(key?{cursor:'pointer',userSelect:'none'}:{}),...(on?{color:'var(--accent)'}:{})}} title={key?L2('Click to sort, click again to reverse','点击排序，再点一次反向'):undefined} onClick={key?()=>clickSort(key):undefined}>{h}{key&&<span style={{marginLeft:4,opacity:on?1:.4}}>{on?(sortDir==='desc'?'▼':'▲'):'↕'}</span>}</th>})}</tr></thead>
           <tbody>{rows.map((v,rowIdx)=><tr key={v.id}>
             <td style={{...s.td,width:28}}>{canBonus(v)&&<input type="checkbox" checked={wbSel.has(v.username)} onChange={e=>setWbSel(prev=>{const n=new Set(prev);e.target.checked?n.add(v.username):n.delete(v.username);return n})}/>}</td>
             <td style={{...s.td,color:'var(--muted)',fontSize:12,width:36}}>{rowIdx+1}</td>
@@ -290,9 +294,11 @@ export default function ChurnAlerts() {
             <td style={{...s.td,whiteSpace:'nowrap'}}>{fmtDate(v.last_deposit_date)}</td>
             <td style={{...s.td,whiteSpace:'nowrap'}}>{fmtDate(v.last_bet_date)||'—'}</td>
             <td style={{...s.td,fontVariantNumeric:'tabular-nums',whiteSpace:'nowrap'}}>{v.dep_90d!=null?formatMoney(v.dep_90d,v.currency):'—'}</td>
+            <td style={{...s.td,fontVariantNumeric:'tabular-nums',whiteSpace:'nowrap'}} title={v.cost?[[L2('Bonus','奖金'),v.cost.bonus],[L2('Rebate','返水'),v.cost.rebate],[L2('Campaign rewards','活动奖励'),v.cost.campaign],[L2('BO bonus (angpow, birthday…)','后台红包（红包、生日…）'),v.cost.boBonus],[L2('Department spending','部门开销'),v.cost.spend]].map(([k,x])=>`${k}: ${formatMoney(x,v.currency)}`).join('\n'):undefined}>{costInfo?.loading?<span style={{color:'var(--muted)'}}>…</span>:v.cost?<><div style={{fontWeight:700,color:'#f0883e'}}>{formatMoney(v.cost.total,v.currency)}</div><div style={{fontSize:10,color:'var(--muted)'}}>{[[L2('B','奖'),v.cost.bonus+v.cost.boBonus],[L2('R','返'),v.cost.rebate],[L2('C','活'),v.cost.campaign],[L2('S','开'),v.cost.spend]].filter(([,x])=>x>0).map(([k,x])=>`${k} ${Math.round(x).toLocaleString('en-MY')}`).join(' · ')}</div></>:'—'}</td>
             <td style={{...s.td,whiteSpace:'nowrap'}}>{fmtDate(v.last_contacted)||L2('Never','从未')}</td>
             <td style={s.td}><div style={{display:'flex',gap:5,flexWrap:'wrap'}}><button style={{background:'#25D366',color:'#fff',border:'none',padding:'4px 10px',borderRadius:6,fontSize:12,fontWeight:700,cursor:'pointer'}} onClick={()=>setChurnWaModal({...v,days_since_deposit:v.days_inactive})}>💬 WA</button><button style={s.btnSm} onClick={()=>navigate(`/vips/${v.id}`)}>{L2('Open','打开')}</button>{canReactivate(v)&&<button style={{...s.btnSm,background:'#3fb950',color:'#fff',border:0,fontWeight:700}} onClick={()=>setReactivateModal(v)}>{L2('✅ Reactivate','✅ 召回')}</button>}{bonusBtn(v)}</div></td>
-          </tr>)}{!rows.length&&<tr><td colSpan="13" style={{...s.td,textAlign:'center',color:'var(--muted)'}}>{loading?L2('Loading…','载入中…'):L2('No players match these filters.','没有符合筛选条件的玩家。')}</td></tr>}</tbody></table></div>
+          </tr>)}{!rows.length&&<tr><td colSpan="14" style={{...s.td,textAlign:'center',color:'var(--muted)'}}>{loading?L2('Loading…','载入中…'):L2('No players match these filters.','没有符合筛选条件的玩家。')}</td></tr>}</tbody></table></div>
+          <div style={{padding:'8px 14px',fontSize:11,color:'var(--muted)',lineHeight:1.5}}>{L2('Cost so far = bonus + rebate (daily report, since Jun 2026) + paid campaign rewards + BO bonuses (angpow, birthday, check-in) + department spending tagged to the player (vouchers, service fees, gifts). Small line: B bonus · R rebate · C campaign · S spending. Hover the amount for the full breakdown. Each player in their own currency.','累计成本 = 奖金 + 返水（每日报表，2026年6月起）+ 已派活动奖励 + 后台红包（红包、生日、签到）+ 记在该玩家名下的部门开销（礼券、服务费、礼物）。小字：奖 奖金 · 返 返水 · 活 活动 · 开 开销。鼠标停在金额上看明细。每位玩家按自己的货币。')}{costInfo?.missing?.length>0&&<span style={{color:'#d29922'}}> {L2(`⚠️ Could not read: ${costInfo.missing.join(', ')} (not included).`,`⚠️ 无法读取：${costInfo.missing.join('、')}（未计入）。`)}</span>}</div>
         </div>
       })()}
       {tab==='reactivated'&&<ListCount total={reactRows.length} label="VIPs" labelZh="位VIP" />}
