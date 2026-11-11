@@ -1514,7 +1514,10 @@ export default function Campaigns() {
     if (!m || m.logged) return
     const info = STAGE_INFO[m.stage]
     // 'daily' = Daily Chase (the contact-type list in the database only allows daily / reward / inactive)
-    const ok = await logContact(m.p.id, 'daily', { channel: 'WhatsApp', note: `${info ? info.en : m.stage} message (${m.lang === 'zh' ? '中文' : m.lang.toUpperCase()}) — ${how}` })
+    // The log keeps the full message text, so nobody has to open the campaign to see what was sent
+    const head = `[${selected?.campaign_name || 'Campaign'}] ${info ? info.en : m.stage} message (${m.lang === 'zh' ? '中文' : m.lang.toUpperCase()}) — ${how}`
+    const body = String(m.text || '').trim()
+    const ok = await logContact(m.p.id, 'daily', { channel: 'WhatsApp', note: body ? `${head}\n\n${body}` : head })
     if (ok) setMsgPopup(x => (x ? { ...x, logged: true } : x))
   }
   function CampaignWaButton({ p, extra }) {
