@@ -81,15 +81,22 @@ export default function EmailModal({ players, onClose, onSent }) {
     return data
   }
 
+  // Test: one or more own addresses, separated by comma / space / semicolon (max 5)
   async function sendTest() {
-    if (!EMAIL_RE.test(testTo.trim())) { setErr(L2('Type your own email address for the test.', '请输入你自己的邮箱来测试。')); return }
+    const addrs = [...new Set(testTo.split(/[\s,;]+/).map(a => a.trim()).filter(Boolean))]
+    if (!addrs.length || addrs.some(a => !EMAIL_RE.test(a))) { setErr(L2('Type your own email address(es) for the test, separated by commas.', '请输入你自己的邮箱来测试，多个用逗号分开。')); return }
+    if (addrs.length > 5) { setErr(L2('Max 5 test addresses at once.', '测试最多一次 5 个邮箱。')); return }
     if (!subject.trim() || !body.trim()) { setErr(L2('Subject and message are required.', '主题和内容不能为空。')); return }
     setBusy(true); setErr(''); setProgress('')
-    try {
-      const d = await call([first.username], testTo.trim())
-      const r = d?.results?.[0]
-      setProgress(r?.status === 'sent' ? L2(`✅ Test sent to ${testTo.trim()} (filled in with ${first.username}'s details). Check the inbox and the spam folder.`, `✅ 测试已发送到 ${testTo.trim()}（用 ${first.username} 的资料填写）。请查看收件箱和垃圾邮件。`) : L2(`Test not sent: ${r?.reason || 'unknown'}`, `测试未发送：${r?.reason || '未知'}`))
-    } catch (e) { setErr(e.message) }
+    const ok = [], bad = []
+    for (const a of addrs) {
+      try {
+        const r = (await call([first.username], a))?.results?.[0]
+        if (r?.status === 'sent') ok.push(a); else bad.push(`${a}: ${r?.reason || L2('unknown', '未知')}`)
+      } catch (e) { bad.push(`${a}: ${e.message}`) }
+    }
+    if (ok.length) setProgress(L2(`✅ Test sent to ${ok.join(', ')} (filled in with ${first.username}'s details). Check the inbox and the spam folder.`, `✅ 测试已发送到 ${ok.join('、')}（用 ${first.username} 的资料填写）。请查看收件箱和垃圾邮件。`))
+    if (bad.length) setErr(L2('Test not sent: ', '测试未发送：') + bad.join(' · '))
     setBusy(false)
   }
 
@@ -167,10 +174,10 @@ export default function EmailModal({ players, onClose, onSent }) {
             </details>}
 
             <div style={{ display:'flex', gap:8, alignItems:'center', marginTop:12, flexWrap:'wrap' }}>
-              <input style={{ ...input, width:240, flex:'1 1 200px' }} type="email" placeholder={L2('Your email for a test', '你的邮箱（测试用）')} value={testTo} onChange={e => setTestTo(e.target.value)} />
+              <input style={{ ...input, width:240, flex:'1 1 200px' }} placeholder={L2('Your email(s) for a test, comma between', '测试邮箱（多个用逗号分开）')} value={testTo} onChange={e => setTestTo(e.target.value)} />
               <button style={btnSm} disabled={busy || !first} onClick={sendTest}>🧪 {L2('Send test to me', '发测试给我')}</button>
             </div>
-            <div style={{ fontSize:11, color:'var(--muted)', marginTop:6 }}>{L2('A test goes only to your address, marked [TEST], and is not saved in the Contact Log. Unsubscribed players are skipped automatically. Max 100 emails per hour (crm_rules).', '测试只发到你的邮箱（标题有 [TEST]），不记录到联系记录。已取消订阅的玩家会自动跳过。每小时最多 100 封（crm_rules）。')}</div>
+            <div style={{ fontSize:11, color:'var(--muted)', marginTop:6 }}>{L2('A test goes only to the address(es) typed here (up to 5, comma between), marked [TEST], and is not saved in the Contact Log. Unsubscribed players are skipped automatically. Max 100 emails per hour (crm_rules).', '测试只发到这里输入的邮箱（最多 5 个，用逗号分开，标题有 [TEST]），不记录到联系记录。已取消订阅的玩家会自动跳过。每小时最多 100 封（crm_rules）。')}</div>
 
             {err && <div style={{ color:'#f85149', fontSize:12, marginTop:10 }}>{err}</div>}
             {progress && <div style={{ color:'var(--muted)', fontSize:12, marginTop:10 }}>{progress}</div>}
