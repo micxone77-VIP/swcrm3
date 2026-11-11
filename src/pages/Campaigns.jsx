@@ -1527,7 +1527,7 @@ export default function Campaigns() {
   }
   // 📧 Email: the campaign's own message goes out by email. The email function already writes the Contact Log
   // (channel Email); here only the campaign's own contact list gets a row, so the chase shows it.
-  const emailSubject = () => `${selected?.campaign_name || 'sureWin'} · sureWin VIP`
+  const emailSubject = () => selected?.campaign_name || 'sureWin VIP'
   function emailFromPopup() {
     const m = msgPopup
     if (!m?.p?.email) return
@@ -1543,8 +1543,15 @@ export default function Campaigns() {
       if (r) perPlayer[p.username] = { body: `${r[bodyKey(l)]}\n\n{whatsapp}` }
     })
     const info = STAGE_INFO[bulkStage]
-    setEmailBox({ players: withMail, perPlayer, title: L2(`Email campaign players (${withMail.length})`, `发邮件给活动玩家（${withMail.length}）`),
+    setEmailBox({ players: withMail, perPlayer, preset: { subject: emailSubject(), body: '' }, title: L2(`Email campaign players (${withMail.length})`, `发邮件给活动玩家（${withMail.length}）`),
       how: `${bulkStage === 'auto' ? 'auto situation' : info ? info.en : bulkStage} (${l === 'zh' ? '中文' : l.toUpperCase()})` })
+  }
+  // Last campaign email to this player (date + time, MYT), shown under Last Contact
+  const emailedTag = list => {
+    const e = (list || []).find(c => String(c.notes || '').startsWith('📧 Email'))
+    if (!e) return null
+    const when = new Date(e.contacted_at).toLocaleString('en-MY', { timeZone:'Asia/Kuala_Lumpur', day:'numeric', month:'short', hour:'numeric', minute:'2-digit' })
+    return <div style={{ fontSize:10, fontWeight:700, color:'#58a6ff', marginBottom:3 }} title={e.notes}>📧 {L2(`Emailed ${when}`, `已发邮件 ${when}`)}</div>
   }
   async function logCampaignEmails(results, how) {
     const sent = (results || []).filter(r => r.status === 'sent').map(r => r.username)
@@ -1553,6 +1560,7 @@ export default function Campaigns() {
     const now = new Date().toISOString()
     const rows = sent.filter(u => byName[u]).map(u => ({ campaign_id: selected.id, campaign_player_id: byName[u].id, contacted_at: now, contact_type: 'daily', host: profile?.email || null, notes: `📧 Email: ${how}` }))
     if (rows.length) { const { error } = await supabase.from('campaign_player_contacts').insert(rows); if (error) console.error('campaign email log', error) }
+    await loadContacts(selected.id)
     setMsgPopup(x => (x && sent.includes(x.p.username) ? { ...x, logged: true } : x))
   }
   function CampaignWaButton({ p, extra }) {
@@ -2512,7 +2520,10 @@ export default function Campaigns() {
                 </div>
                 {/* 📧 Email the players shown below (host / activity / search filters apply), each with their own campaign message */}
                 {profile?.role !== 'readonly' && (() => {
-                  const mailable = filteredChaseList.filter(p => p.email)
+                  // Ticked players (checkbox column) win; nothing ticked = everyone shown
+                  const ticked = filteredChaseList.filter(p => selectedForRemoval.has(p.id))
+                  const target = ticked.length ? ticked : filteredChaseList
+                  const mailable = target.filter(p => p.email)
                   return (
                     <div style={{ padding:'6px 24px', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
                       <span style={{ fontSize:11, color:'var(--muted)' }}>📧 {L2('Email message:', '邮件讯息：')}</span>
@@ -2520,11 +2531,13 @@ export default function Campaigns() {
                         <option value="auto">{L2('🤖 Auto (each player\'s situation)', '🤖 自动（按每位玩家情况）')}</option>
                         {WA_STAGES.filter(st => st !== 'streak' || selected?.streak_enabled).map(st => <option key={st} value={st}>{STAGE_INFO[st].icon} {lang === 'zh' ? STAGE_INFO[st].zh : STAGE_INFO[st].en}{st === 'intro' ? L2(' · campaign intro', ' · 活动介绍') : ''}</option>)}
                       </select>
-                      <button disabled={!mailable.length} onClick={() => emailBulk(filteredChaseList)}
+                      <button disabled={!mailable.length} onClick={() => emailBulk(target)}
                         style={{ padding:'4px 14px', borderRadius:6, fontSize:12, fontWeight:700, border:'none', cursor: mailable.length ? 'pointer' : 'default', background:'#2f81f7', color:'#fff', opacity: mailable.length ? 1 : .5 }}>
-                        {L2(`📧 Email players shown (${mailable.length} of ${filteredChaseList.length} have email)`, `📧 发邮件给列表玩家（${filteredChaseList.length} 位中 ${mailable.length} 位有邮箱）`)}
+                        {ticked.length
+                          ? L2(`📧 Email ticked players (${mailable.length} of ${ticked.length} have email)`, `📧 发邮件给已勾选玩家（${ticked.length} 位中 ${mailable.length} 位有邮箱）`)
+                          : L2(`📧 Email players shown (${mailable.length} of ${filteredChaseList.length} have email)`, `📧 发邮件给列表玩家（${filteredChaseList.length} 位中 ${mailable.length} 位有邮箱）`)}
                       </button>
-                      <span style={{ fontSize:10, color:'var(--muted)' }}>{L2('Same text as the WhatsApp message, in the WhatsApp language picked for this campaign. Use 📣 for the campaign announcement.', '内容和 WhatsApp 讯息一样，语言跟这个活动选的 WhatsApp 语言。活动开始时用 📣 发介绍。')}</span>
+                      <span style={{ fontSize:10, color:'var(--muted)' }}>{L2('Tick players in the list to email only them (or use 📧 in a player\'s WA popup). Same text as the WhatsApp message, in the WhatsApp language picked for this campaign. Use 📣 for the campaign announcement.', '在列表勾选玩家就只发给他们（或在玩家的 WA 弹窗按 📧）。内容和 WhatsApp 讯息一样，语言跟这个活动选的 WhatsApp 语言。活动开始时用 📣 发介绍。')}</span>
                     </div>
                   )
                 })()}
@@ -2906,6 +2919,7 @@ export default function Campaigns() {
                                     }
                                     return <>
                                       {badge}
+                                      {emailedTag(playerContacts)}
                                       {contactLog === p.id ? (
                                         <div style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:8, minWidth:210 }}>
                                           <div style={{ fontSize:11, color:'var(--muted)', marginBottom:5, fontWeight:600 }}>{L2('Log contact','记录联系')}</div>
@@ -3231,6 +3245,7 @@ export default function Campaigns() {
                             }
                             return <>
                               {badge}
+                              {emailedTag(playerContacts)}
                               {contactLog === p.id ? (
                                 <div style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:8, minWidth:210 }}>
                                   <div style={{ fontSize:11, color:'var(--muted)', marginBottom:5, fontWeight:600 }}>{L2('Log contact','记录联系')}</div>
@@ -3502,6 +3517,7 @@ export default function Campaigns() {
                                   }
                                   return <>
                                     {badge}
+                                    {emailedTag(playerContacts)}
                                     {contactLog === p.id ? (
                                       <div style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:8, minWidth:210 }}>
                                         <div style={{ fontSize:11, color:'var(--muted)', marginBottom:5, fontWeight:600 }}>{L2('Log contact','记录联系')}</div>

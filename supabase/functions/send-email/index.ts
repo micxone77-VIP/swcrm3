@@ -130,7 +130,7 @@ Deno.serve(async (req: Request) => {
       const text = filled.replaceAll('{whatsapp}', `WhatsApp ${fmtWa(wa)}: https://wa.me/${wa}`)
       const unsubUrl = `${url}/functions/v1/email-unsubscribe?e=${b64url(to.toLowerCase())}&t=${await unsubToken(to, serviceKey)}`
       const footerText = `\n\n--\n${agent} · sureWin VIP Team\nWhatsApp ${fmtWa(wa)} (https://wa.me/${wa}) · ${SIG_MAIL} · www.swvip01.com\nDon't want these emails? Unsubscribe: ${unsubUrl}`
-      const html = `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.6;color:#222">${esc(filled).replace(/\*([^*\n]+)\*/g, '<b>$1</b>').replace(/\n/g, '<br>').replaceAll('{whatsapp}', `<span style="display:inline-block;margin-top:6px">${waButton(wa)}</span>`)}`
+      const html = `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.6;color:#222">${esc(filled).replace(/\*{1,2}([^*\n]+)\*{1,2}/g, '<b>$1</b>').replace(/\n/g, '<br>').replaceAll('{whatsapp}', `<span style="display:inline-block;margin-top:6px">${waButton(wa)}</span>`)}`
         + `<div style="margin:24px 0 0">${signatureHtml(agent, wa)}</div>`
         + `<div style="font-size:11px;color:#888;margin-top:10px">sureWin VIP department · <a href="${unsubUrl}" style="color:#888">Unsubscribe</a></div></div>`
       try {
