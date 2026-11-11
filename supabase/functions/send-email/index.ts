@@ -24,6 +24,33 @@ async function unsubToken(email: string, key: string) {
 }
 const b64url = (s: string) => btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 
+// sureWin email signature (same design as the webmail one, C:\Project\sureWin Email\signature.html).
+// The name is the sending agent; the WhatsApp number is the one picked in the email box (default: VIP main line).
+// Email / links are the VIP department's. Emoji as HTML entities.
+const MAIN_WA = '601155715603', SIG_MAIL = 'vip@surewinworld.com', SIG_WEB = 'https://www.swvip01.com/'
+const fmtWa = (d: string) => {
+  if (d.startsWith('60') && d.length >= 10) { const a = d.slice(2, 4), r = d.slice(4); return `+60 ${a}-${r.slice(0, r.length - 4)} ${r.slice(-4)}` }
+  if (d.startsWith('65') && d.length === 10) return `+65 ${d.slice(2, 6)} ${d.slice(6)}`
+  return `+${d}`
+}
+// Green WhatsApp button (text + colour only, shows in every mail app without loading images)
+const waButton = (d: string) => `<a href="https://wa.me/${d}" style="display:inline-block;padding:6px 14px;background-color:#25D366;border-radius:16px;color:#ffffff;font-weight:bold;font-size:13px;line-height:18px;text-decoration:none;white-space:nowrap;font-family:Arial,Helvetica,sans-serif;">&#128172; WhatsApp ${fmtWa(d)}</a>`
+const signatureHtml = (name: string, wa: string) => `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" bgcolor="#0f1a33" style="width:100%;max-width:480px;border-collapse:separate;background-color:#0f1a33;background-image:linear-gradient(135deg,#1d3157 0%,#0f1a33 60%,#0a1226 100%);border-radius:12px;font-family:Arial,Helvetica,sans-serif;">
+  <tr><td colspan="2" height="4" bgcolor="#fc7100" style="height:4px;background-color:#fc7100;background-image:linear-gradient(90deg,#fc7100 0%,#ffb217 50%,#fc7100 100%);border-radius:12px 12px 0 0;font-size:0;line-height:0;">&nbsp;</td></tr>
+  <tr>
+    <td width="92" valign="top" style="width:92px;padding:18px 0 14px 14px;"><a href="${SIG_WEB}" style="text-decoration:none;"><img src="https://surewin-vip-transfer.pages.dev/logo.png" width="76" height="76" alt="sureWin" style="display:block;width:76px;height:76px;border:2px solid #fc7100;border-radius:50%;color:#ffffff;font-size:14px;font-weight:bold;"></a></td>
+    <td valign="top" style="padding:16px 12px 14px 12px;">
+      <div style="margin:0;font-family:Georgia,'Times New Roman',serif;font-size:25px;line-height:30px;font-weight:bold;color:#ffffff;">${esc(name)}</div>
+      <div style="margin:0;padding:0 0 10px 0;font-size:11px;line-height:16px;font-weight:bold;letter-spacing:2px;color:#ffb217;white-space:nowrap;">SUREWIN VIP TEAM</div>
+      <div style="margin:0;padding:10px 0 0 0;border-top:1px solid #33456b;font-size:13px;line-height:22px;color:#ffffff;white-space:nowrap;"><a href="https://wa.me/${wa}" style="display:inline-block;padding:0 10px;background-color:#25D366;border-radius:11px;color:#ffffff;font-weight:bold;text-decoration:none;">&#128172; WhatsApp&nbsp; ${fmtWa(wa)}</a></div>
+      <div style="margin:0;font-size:13px;line-height:22px;color:#ffffff;white-space:nowrap;">&#9993;&#65039;&nbsp; <a href="mailto:${SIG_MAIL}" style="color:#ffffff;text-decoration:none;">${SIG_MAIL}</a></div>
+      <div style="margin:0 0 12px 0;font-size:13px;line-height:22px;color:#ffffff;white-space:nowrap;">&#127760;&nbsp; <a href="${SIG_WEB}" style="color:#ffffff;text-decoration:none;">www.swvip01.com</a></div>
+      <div style="margin:0;font-size:12px;line-height:30px;"><a href="https://t.me/+UjqC9MIlNEM5NTk1" style="display:inline-block;padding:0 13px;margin:0 6px 6px 0;background-color:#229ED9;border-radius:15px;color:#ffffff;font-weight:bold;text-decoration:none;white-space:nowrap;">&#10148; Sports VIP Telegram</a><a href="https://t.me/surewinmy" style="display:inline-block;padding:0 13px;margin:0 0 6px 0;background-color:#229ED9;border-radius:15px;color:#ffffff;font-weight:bold;text-decoration:none;white-space:nowrap;">&#10148; sureWin Telegram</a></div>
+    </td>
+  </tr>
+  <tr><td colspan="2" align="center" bgcolor="#0a1226" style="padding:8px 12px;background-color:#0a1226;border-radius:0 0 12px 12px;font-family:Georgia,'Times New Roman',serif;font-size:12px;line-height:18px;font-style:italic;color:#ffb217;">Where Winners Live Like Stars &nbsp;&#10022;&nbsp; &#36194;&#23478;&#30340;&#23562;&#36149;&#20043;&#36873;</td></tr>
+</table>`
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors })
   if (req.method !== 'POST') return json({ error: 'POST only' }, 405)
@@ -46,7 +73,7 @@ Deno.serve(async (req: Request) => {
   }
   if (!smtp.host || !smtp.user || !smtp.pass) return json({ error: 'Email is not set up yet: the SMTP secrets are missing in Supabase.', not_configured: true }, 503)
 
-  let body: { recipients?: string[]; subject?: string; body?: string; test_to?: string }
+  let body: { recipients?: string[]; subject?: string; body?: string; test_to?: string; wa_number?: string }
   try { body = await req.json() } catch { return json({ error: 'Invalid JSON' }, 400) }
   const subjectT = String(body.subject || '').trim()
   const bodyT = String(body.body || '').trim()
@@ -56,6 +83,8 @@ Deno.serve(async (req: Request) => {
   if (testTo && !EMAIL_RE.test(testTo)) return json({ error: 'Test address is not a valid email' }, 400)
   if (!names.length) return json({ error: 'No players given' }, 400)
   if (names.length > 25) return json({ error: 'Max 25 players per call' }, 400)
+  const wa = String(body.wa_number || '').replace(/\D/g, '') || MAIN_WA
+  if (wa.length < 8 || wa.length > 15) return json({ error: 'WhatsApp number is not valid' }, 400)
 
   const db = createClient(url, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } })
   const agent = String(prof.full_name || prof.username || 'VIP team').split(/\s+/)[0]
@@ -93,11 +122,13 @@ Deno.serve(async (req: Request) => {
       if (room <= 0) { skip(`hourly limit (${limit}) reached`); continue }
 
       const subject = fill(subjectT, m)
-      const text = fill(bodyT, m)
+      const filled = fill(bodyT, m)
+      const text = filled.replaceAll('{whatsapp}', `WhatsApp ${fmtWa(wa)}: https://wa.me/${wa}`)
       const unsubUrl = `${url}/functions/v1/email-unsubscribe?e=${b64url(to.toLowerCase())}&t=${await unsubToken(to, serviceKey)}`
-      const footerText = `\n\n--\nsureWin VIP department\nDon't want these emails? Unsubscribe: ${unsubUrl}`
-      const html = `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.6;color:#222">${esc(text).replace(/\n/g, '<br>')}`
-        + `<hr style="border:0;border-top:1px solid #ddd;margin:24px 0 8px"><div style="font-size:11px;color:#888">sureWin VIP department · <a href="${unsubUrl}" style="color:#888">Unsubscribe</a></div></div>`
+      const footerText = `\n\n--\n${agent} · sureWin VIP Team\nWhatsApp ${fmtWa(wa)} (https://wa.me/${wa}) · ${SIG_MAIL} · www.swvip01.com\nDon't want these emails? Unsubscribe: ${unsubUrl}`
+      const html = `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.6;color:#222">${esc(filled).replace(/\n/g, '<br>').replaceAll('{whatsapp}', `<span style="display:inline-block;margin-top:6px">${waButton(wa)}</span>`)}`
+        + `<div style="margin:24px 0 0">${signatureHtml(agent, wa)}</div>`
+        + `<div style="font-size:11px;color:#888;margin-top:10px">sureWin VIP department · <a href="${unsubUrl}" style="color:#888">Unsubscribe</a></div></div>`
       try {
         await client.send({ from: smtp.from!, to, subject: testTo ? `[TEST] ${subject}` : subject, content: text + footerText, html,
           headers: { 'List-Unsubscribe': `<${unsubUrl}>`, 'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click' } })
