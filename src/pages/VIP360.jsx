@@ -24,6 +24,7 @@ import InteractionTimeline from '../components/vip/InteractionTimeline'
 import { autoText } from '../lib/profileAutoText'
 import ProviderActivityCard from '../components/vip/ProviderActivityCard'
 import CopyBtn from '../components/CopyBtn'
+import EmailModal from '../components/EmailModal'
 import { fetchPaidCampaignRewards } from '../lib/vipCampaignRewards'
 import PlayerNgrHistory from '../components/PlayerNgrHistory'
 
@@ -71,6 +72,7 @@ const L2 = (en, zh) => (lang === 'zh' ? zh : en)
 const ago = d => timeAgo(d, lang)
 
 const [vip, setVip] = useState(null)
+const [emailOpen, setEmailOpen] = useState(false)
 const [potential, setPotential] = useState(null)   // Silver / Bronze player (potential_players) when not in the VIP list
 const [monthly, setMonthly] = useState([])
 const [daily, setDaily] = useState([])
@@ -484,6 +486,7 @@ const statusCfg = STATUS_CONFIG[vip.activity_status] || { color:'var(--muted)', 
 return (
 <div style={{ padding: '24px 28px' }}>
 <ToastContainer />
+{emailOpen && <EmailModal players={[vip]} onClose={() => setEmailOpen(false)} />}
 
 {/* ── Back ── */}
 <button onClick={() => navigate(-1)} style={{
@@ -618,7 +621,7 @@ color: m.isWL ? (m.wl <= 0 ? 'var(--success)' : 'var(--danger)') : 'var(--text)'
 <Field label={L2('Affiliate', '代理')}>{vip.affiliate_login ? vip.affiliate_login : vip.affiliate_updated_at ? L2('Direct (no affiliate)', '直客（无代理）') : '—'}</Field>
 <Field label={L2('Phone', '电话')}>{vip.phone}<CopyBtn text={vip.phone} kind="phone" /></Field>
 <Field label={L2('WhatsApp', 'WhatsApp')}>{vip.whatsapp}<CopyBtn text={vip.whatsapp} kind="phone" /></Field>
-<Field label={L2('Email', '电邮')}>{vip.email}</Field>
+<Field label={L2('Email', '电邮')}>{vip.email}{vip.email && profile?.role !== 'readonly' && <button onClick={() => setEmailOpen(true)} style={{ marginLeft:8, background:'rgba(47,129,247,.15)', color:'#58a6ff', border:'1px solid rgba(47,129,247,.35)', borderRadius:6, padding:'2px 8px', fontSize:11, fontWeight:700, cursor:'pointer' }}>📧 {L2('Email', '发邮件')}</button>}</Field>
 <Field label={L2('Telegram', 'Telegram')}>{vip.telegram ? `@${vip.telegram}` : '—'}</Field>
 <Field label={L2('Address', '地址')}>{vip.address}</Field>
 <Field label={L2('Remark', '备注')}>{vip.special_requests}</Field>
