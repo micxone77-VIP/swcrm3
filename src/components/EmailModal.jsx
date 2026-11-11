@@ -35,16 +35,21 @@ const fmtWa =v => {
   return d ? `+${d}` : ''
 }
 
-export default function EmailModal({ players, onClose, onSent }) {
+// preset    = { subject, body } to start with (e.g. the campaign message from the WhatsApp popup)
+// perPlayer = { username: { subject?, body } }: every player gets their own message (campaign bulk email);
+//             the template / message box is hidden then, only the subject can be changed
+// onSent(results) is called after a real send (not a test)
+export default function EmailModal({ players, onClose, onSent, preset, perPlayer, title }) {
   const { lang } = useLanguage()
   const L2 = (en, zh) => (lang === 'zh' ? zh : en)
   const list = (players || []).filter(p => p?.username)
   const withEmail = list.filter(p => EMAIL_RE.test(String(p.email || '').trim()))
   const noEmail = list.filter(p => !EMAIL_RE.test(String(p.email || '').trim()))
-  const [tpl, setTpl] = useState('checkin')
+  const [tpl, setTpl] = useState(preset || perPlayer ? 'custom' : 'checkin')
   const [tl, setTl] = useState('en')
-  const [subject, setSubject] = useState(TEMPLATES.checkin.en[0])
-  const [body, setBody] = useState(TEMPLATES.checkin.en[1])
+  const [subject, setSubject] = useState(preset?.subject ?? (perPlayer ? '' : TEMPLATES.checkin.en[0]))
+  const [body, setBody] = useState(preset?.body ?? (perPlayer ? '' : TEMPLATES.checkin.en[1]))
+  const own = perPlayer || null
   const [testTo, setTestTo] = useState('')
   const [busy, setBusy] = useState(false)
   const [progress, setProgress] = useState('')
@@ -72,7 +77,8 @@ export default function EmailModal({ players, onClose, onSent }) {
 
   async function call(recipients, test) {
     if (!waOk) throw new Error(L2('Pick or type a valid WhatsApp number first.', '请先选择或输入正确的 WhatsApp 号码。'))
-    const { data, error } = await supabase.functions.invoke('send-email', { body: { recipients, subject, body, wa_number: waNumber, ...(test ? { test_to: test } : {}) } })
+    const messages = own ? Object.fromEntries(recipients.filter(u => own[u]).map(u => [u, own[u]])) : undefined
+    const { data, error } = await supabase.functions.invoke('send-email', { body: { recipients, subject, body: own ? '' : body, wa_number: waNumber, ...(messages ? { messages } : {}), ...(test ? { test_to: test } : {}) } })
     if (error) {
       let msg = error.message
       try { const j = await error.context?.json?.(); if (j?.error) msg = j.error } catch { /* keep message */ }
@@ -86,7 +92,7 @@ export default function EmailModal({ players, onClose, onSent }) {
     const addrs = [...new Set(testTo.split(/[\s,;]+/).map(a => a.trim()).filter(Boolean))]
     if (!addrs.length || addrs.some(a => !EMAIL_RE.test(a))) { setErr(L2('Type your own email address(es) for the test, separated by commas.', '请输入你自己的邮箱来测试，多个用逗号分开。')); return }
     if (addrs.length > 5) { setErr(L2('Max 5 test addresses at once.', '测试最多一次 5 个邮箱。')); return }
-    if (!subject.trim() || !body.trim()) { setErr(L2('Subject and message are required.', '主题和内容不能为空。')); return }
+    if (!subject.trim() || (!own && !body.trim())) { setErr(L2('Subject and message are required.', '主题和内容不能为空。')); return }
     setBusy(true); setErr(''); setProgress('')
     const ok = [], bad = []
     for (const a of addrs) {
@@ -102,7 +108,7 @@ export default function EmailModal({ players, onClose, onSent }) {
 
   async function sendAll() {
     if (!withEmail.length) return
-    if (!subject.trim() || !body.trim()) { setErr(L2('Subject and message are required.', '主题和内容不能为空。')); return }
+    if (!subject.trim() || (!own && !body.trim())) { setErr(L2('Subject and message are required.', '主题和内容不能为空。')); return }
     if (!window.confirm(L2(`Send this email to ${withEmail.length} player(s)? This cannot be undone.`, `确定发送给 ${withEmail.length} 位玩家？发送后无法撤回。`))) return
     setBusy(true); setErr(''); const all = []
     try {
@@ -118,15 +124,15 @@ export default function EmailModal({ players, onClose, onSent }) {
       }
     } catch (e) { setErr(e.message) }
     setResults(all); setProgress(''); setBusy(false)
-    if (all.some(r => r.status === 'sent')) onSent?.()
+    if (all.some(r => r.status === 'sent')) onSent?.(all)
   }
 
   const count = s => (results || []).filter(r => r.status === s).length
 
   return (
-    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.6)', zIndex:1000, display:'flex', alignItems:'center', justifyContent:'center' }} onClick={busy ? undefined : onClose}>
+    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.6)', zIndex:1100, display:'flex', alignItems:'center', justifyContent:'center' }} onClick={busy ? undefined : onClose}>
       <div style={box} onClick={e => e.stopPropagation()}>
-        <div style={{ fontSize:17, fontWeight:700, marginBottom:4 }}>📧 {L2('Send email', '发送邮件')}</div>
+        <div style={{ fontSize:17, fontWeight:700, marginBottom:4 }}>📧 {title || L2('Send email', '发送邮件')}</div>
         <div style={{ fontSize:13, color:'var(--muted)', marginBottom:8 }}>
           {list.length === 1 ? <><b style={{ color:'var(--text)' }}>{list[0].username}</b> · {list[0].email || L2('no email saved', '没有邮箱')}</> : L2(`${withEmail.length} of ${list.length} selected players have an email`, `已选 ${list.length} 位，其中 ${withEmail.length} 位有邮箱`)}
         </div>
@@ -149,12 +155,12 @@ export default function EmailModal({ players, onClose, onSent }) {
           </div>
         ) : (
           <>
-            <div style={lbl}>{L2('Template', '模板')}</div>
+            {!own && <><div style={lbl}>{L2('Template', '模板')}</div>
             <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
               {[['checkin', L2('👋 Check-in', '👋 问候')], ['offer', L2('🎁 Offer', '🎁 优惠')], ['blank', L2('✏️ Blank', '✏️ 空白')]].map(([k, t]) => ['en', 'zh'].map(l => (
                 <button key={k + l} type="button" onClick={() => pick(k, l)} style={{ ...btnSm, padding:'5px 10px', fontWeight:700, background:tpl === k && tl === l ? 'var(--accent)' : 'var(--surface2)', color:tpl === k && tl === l ? '#fff' : 'var(--text)' }}>{t} {l === 'en' ? 'EN' : '中文'}</button>
               )))}
-            </div>
+            </div></>}
             <div style={lbl}>📱 {L2('WhatsApp number in this email (message end + signature)', '邮件里的 WhatsApp 号码（结尾 + 签名卡）')}</div>
             <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
               <select style={{ ...input, width:'auto', flex:'1 1 240px' }} value={waSel} onChange={e => setWaSel(e.target.value)}>
@@ -167,10 +173,16 @@ export default function EmailModal({ players, onClose, onSent }) {
             {!waOk && <div style={{ fontSize:11, color:'#f85149', marginTop:4 }}>{L2('Type the full number with country code, e.g. 60123456789', '请输入完整号码（含国家代码），例如 60123456789')}</div>}
             <div style={lbl}>{L2('Subject', '主题')}</div>
             <input style={input} value={subject} onChange={e => setSubject(e.target.value)} />
+            {own ? (
+              <div style={{ fontSize:12, color:'var(--muted)', background:'var(--surface2)', borderRadius:8, padding:'8px 12px', marginTop:10 }}>
+                {L2('Each player gets their own campaign message (the same text as the WhatsApp message, with their own numbers). The sureWin signature card and the WhatsApp button are added at the end.', '每位玩家收到自己的活动讯息（和 WhatsApp 讯息一样，带各自的数字）。结尾会加上 sureWin 签名卡和 WhatsApp 按钮。')}
+              </div>
+            ) : <>
             <div style={lbl}>{L2('Message', '内容')} <span style={{ fontSize:11 }}>{L2('· {name} = player first name, {agent} = your name, {username}, {whatsapp} = WhatsApp button', '· {name} = 玩家名字，{agent} = 你的名字，{username} = 用户名，{whatsapp} = WhatsApp 按钮')}</span></div>
             <textarea rows={9} style={{ ...input, resize:'vertical' }} value={body} onChange={e => setBody(e.target.value)} />
+            </>}
             {first && <details style={{ marginTop:8, fontSize:12 }}><summary style={{ cursor:'pointer', color:'var(--muted)' }}>{L2(`Preview for ${first.username}`, `预览（${first.username}）`)}</summary>
-              <div style={{ background:'var(--surface2)', borderRadius:8, padding:'10px 12px', marginTop:6, whiteSpace:'pre-wrap', lineHeight:1.5 }}><b>{preview(subject)}</b>{'\n\n'}{preview(body)}{'\n\n'}<span style={{ color:'var(--muted)', fontSize:11 }}>{L2(`-- + sureWin signature card (your name, WhatsApp ${fmtWa(waNumber)}, email, Telegram) · Unsubscribe`, `-- + sureWin 签名卡（你的名字、WhatsApp ${fmtWa(waNumber)}、邮箱、Telegram）· 取消订阅`)}</span></div>
+              <div style={{ background:'var(--surface2)', borderRadius:8, padding:'10px 12px', marginTop:6, whiteSpace:'pre-wrap', lineHeight:1.5 }}><b>{preview(subject)}</b>{'\n\n'}{preview(own ? (own[first.username]?.body || L2('(no message for this player)', '（这位玩家没有讯息）')) : body)}{'\n\n'}<span style={{ color:'var(--muted)', fontSize:11 }}>{L2(`-- + sureWin signature card (your name, WhatsApp ${fmtWa(waNumber)}, email, Telegram) · Unsubscribe`, `-- + sureWin 签名卡（你的名字、WhatsApp ${fmtWa(waNumber)}、邮箱、Telegram）· 取消订阅`)}</span></div>
             </details>}
 
             <div style={{ display:'flex', gap:8, alignItems:'center', marginTop:12, flexWrap:'wrap' }}>

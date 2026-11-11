@@ -73,11 +73,13 @@ Deno.serve(async (req: Request) => {
   }
   if (!smtp.host || !smtp.user || !smtp.pass) return json({ error: 'Email is not set up yet: the SMTP secrets are missing in Supabase.', not_configured: true }, 503)
 
-  let body: { recipients?: string[]; subject?: string; body?: string; test_to?: string; wa_number?: string }
+  // messages (optional): own subject / body per player, e.g. each campaign player's own campaign message
+  let body: { recipients?: string[]; subject?: string; body?: string; test_to?: string; wa_number?: string; messages?: Record<string, { subject?: string; body?: string }> }
   try { body = await req.json() } catch { return json({ error: 'Invalid JSON' }, 400) }
+  const own = (body.messages && typeof body.messages === 'object') ? body.messages : {}
   const subjectT = String(body.subject || '').trim()
   const bodyT = String(body.body || '').trim()
-  if (!subjectT || !bodyT) return json({ error: 'Subject and message are required' }, 400)
+  if (!subjectT || (!bodyT && !Object.keys(own).length)) return json({ error: 'Subject and message are required' }, 400)
   const names = [...new Set((body.recipients || []).map(u => String(u).trim()).filter(Boolean))]
   const testTo = body.test_to ? String(body.test_to).trim() : ''
   if (testTo && !EMAIL_RE.test(testTo)) return json({ error: 'Test address is not a valid email' }, 400)
@@ -120,13 +122,15 @@ Deno.serve(async (req: Request) => {
       if (!EMAIL_RE.test(to)) { skip('no valid email'); continue }
       if (!testTo && unsubSet.has(to.toLowerCase())) { skip('unsubscribed'); continue }
       if (room <= 0) { skip(`hourly limit (${limit}) reached`); continue }
+      const ownBody = String(own[u]?.body || '').trim()
+      if (!ownBody && !bodyT) { skip('no message for this player'); continue }
 
-      const subject = fill(subjectT, m)
-      const filled = fill(bodyT, m)
+      const subject = fill(String(own[u]?.subject || '').trim() || subjectT, m)
+      const filled = fill(ownBody || bodyT, m)
       const text = filled.replaceAll('{whatsapp}', `WhatsApp ${fmtWa(wa)}: https://wa.me/${wa}`)
       const unsubUrl = `${url}/functions/v1/email-unsubscribe?e=${b64url(to.toLowerCase())}&t=${await unsubToken(to, serviceKey)}`
       const footerText = `\n\n--\n${agent} · sureWin VIP Team\nWhatsApp ${fmtWa(wa)} (https://wa.me/${wa}) · ${SIG_MAIL} · www.swvip01.com\nDon't want these emails? Unsubscribe: ${unsubUrl}`
-      const html = `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.6;color:#222">${esc(filled).replace(/\n/g, '<br>').replaceAll('{whatsapp}', `<span style="display:inline-block;margin-top:6px">${waButton(wa)}</span>`)}`
+      const html = `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.6;color:#222">${esc(filled).replace(/\*([^*\n]+)\*/g, '<b>$1</b>').replace(/\n/g, '<br>').replaceAll('{whatsapp}', `<span style="display:inline-block;margin-top:6px">${waButton(wa)}</span>`)}`
         + `<div style="margin:24px 0 0">${signatureHtml(agent, wa)}</div>`
         + `<div style="font-size:11px;color:#888;margin-top:10px">sureWin VIP department · <a href="${unsubUrl}" style="color:#888">Unsubscribe</a></div></div>`
       try {

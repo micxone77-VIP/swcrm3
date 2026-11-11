@@ -19,6 +19,7 @@ import { ListCount } from '../components/ui'
 import { waMessage, tierList, STAGE_INFO, WA_STAGES } from '../lib/campaignWaTemplates'
 import CampaignWaEditor from '../components/campaign/CampaignWaEditor'
 import CopyBtn from '../components/CopyBtn'
+import EmailModal from '../components/EmailModal'
 import { calcDualTierReward, calcLevelTierForDeposit, calcReward } from '../lib/campaignRewardCalc'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -244,6 +245,9 @@ export default function Campaigns() {
   // Message box: { p, extra, autoStage, stage, lang, text, logged } — pick the situation + language, edit, copy / WhatsApp / log
   const [msgPopup, setMsgPopup] = useState(null)
   const [waCopied, setWaCopied] = useState(false)
+  // 📧 Campaign email: { players, preset?, perPlayer?, title, how } (one player from the message popup, or bulk from the Chase list)
+  const [emailBox, setEmailBox] = useState(null)
+  const [bulkStage, setBulkStage] = useState('intro')
   // All daily entries for streak/inactive tabs — loaded on demand
   const [allDailyEntries, setAllDailyEntries] = useState([])  // full flat list for campaign
   const [allDailyEntriesLoading, setAllDailyEntriesLoading] = useState(false)
@@ -377,12 +381,12 @@ export default function Campaigns() {
 
     // Enrich each player with host_assigned from vip_members (best-effort; never blocks load)
     const usernames = [...new Set(campaignPlayers.map(p => p.username).filter(Boolean))]
-    let hostMap = {}, nameMap = {}, lastBetMap = {}
+    let hostMap = {}, nameMap = {}, lastBetMap = {}, emailMap = {}
     if (usernames.length > 0) {
-      const hostRows = await fetchMembersFor(usernames, 'username,host_assigned,full_name,last_bet_date').catch(() => [])
-      ;(hostRows || []).forEach(r => { if (r.host_assigned) hostMap[r.username] = r.host_assigned; if (r.full_name) nameMap[r.username] = r.full_name; if (r.last_bet_date) lastBetMap[r.username] = r.last_bet_date })
+      const hostRows = await fetchMembersFor(usernames, 'username,host_assigned,full_name,last_bet_date,email').catch(() => [])
+      ;(hostRows || []).forEach(r => { if (r.host_assigned) hostMap[r.username] = r.host_assigned; if (r.full_name) nameMap[r.username] = r.full_name; if (r.last_bet_date) lastBetMap[r.username] = r.last_bet_date; if (r.email) emailMap[r.username] = r.email })
     }
-    const enriched = campaignPlayers.map(p => ({ ...p, host_assigned: hostMap[p.username] || null, full_name: p.full_name || nameMap[p.username] || null, last_bet_date: lastBetMap[p.username] || null }))
+    const enriched = campaignPlayers.map(p => ({ ...p, host_assigned: hostMap[p.username] || null, full_name: p.full_name || nameMap[p.username] || null, last_bet_date: lastBetMap[p.username] || null, email: emailMap[p.username] || p.email || null }))
 
     setPlayers(enriched)
     if (enriched.length === 0) {
@@ -1435,9 +1439,10 @@ export default function Campaigns() {
   // (not active yet → intro · some play → near · reached → won · paid → paid · campaign over → ended),
   // in EN / MY / 中文 from the campaign's own texts or the built-in ones (src/lib/campaignWaTemplates.js).
   // extra: { stage, streak } to force a stage (Streak tab), leaderboard { inTop, reward, gap }.
-  function buildCampaignWaMessage(p, extra) {
+  // forEmail: build the text even when the player has no WhatsApp number (email needs no number)
+  function buildCampaignWaMessage(p, extra, forEmail) {
     const rawNumber = (p.whatsapp || '').replace(/\D/g, '')
-    if (!rawNumber || rawNumber.length < 10) return null
+    if (!forEmail && (!rawNumber || rawNumber.length < 10)) return null
     const campName = selected?.campaign_name || 'this campaign'
     const cur = campCurrency === 'SGD' ? 'SGD ' : 'RM'
     const num = v => Math.round(Number(v) || 0).toLocaleString('en-US')
@@ -1519,6 +1524,36 @@ export default function Campaigns() {
     const body = String(m.text || '').trim()
     const ok = await logContact(m.p.id, 'daily', { channel: 'WhatsApp', note: body ? `${head}\n\n${body}` : head })
     if (ok) setMsgPopup(x => (x ? { ...x, logged: true } : x))
+  }
+  // 📧 Email: the campaign's own message goes out by email. The email function already writes the Contact Log
+  // (channel Email); here only the campaign's own contact list gets a row, so the chase shows it.
+  const emailSubject = () => `${selected?.campaign_name || 'sureWin'} · sureWin VIP`
+  function emailFromPopup() {
+    const m = msgPopup
+    if (!m?.p?.email) return
+    const info = STAGE_INFO[m.stage]
+    setEmailBox({ players: [m.p], preset: { subject: emailSubject(), body: `${m.text}\n\n{whatsapp}` }, how: `${info ? info.en : m.stage} (${m.lang === 'zh' ? '中文' : m.lang.toUpperCase()})` })
+  }
+  function emailBulk(list) {
+    const l = waLang === 'cn' ? 'zh' : waLang === 'my' ? 'my' : 'en'
+    const withMail = list.filter(p => p.email)
+    const perPlayer = {}
+    withMail.forEach(p => {
+      const r = buildCampaignWaMessage(p, bulkStage === 'auto' ? null : { stage: bulkStage }, true)
+      if (r) perPlayer[p.username] = { body: `${r[bodyKey(l)]}\n\n{whatsapp}` }
+    })
+    const info = STAGE_INFO[bulkStage]
+    setEmailBox({ players: withMail, perPlayer, title: L2(`Email campaign players (${withMail.length})`, `发邮件给活动玩家（${withMail.length}）`),
+      how: `${bulkStage === 'auto' ? 'auto situation' : info ? info.en : bulkStage} (${l === 'zh' ? '中文' : l.toUpperCase()})` })
+  }
+  async function logCampaignEmails(results, how) {
+    const sent = (results || []).filter(r => r.status === 'sent').map(r => r.username)
+    if (!sent.length || !selected?.id) return
+    const byName = Object.fromEntries(players.map(p => [p.username, p]))
+    const now = new Date().toISOString()
+    const rows = sent.filter(u => byName[u]).map(u => ({ campaign_id: selected.id, campaign_player_id: byName[u].id, contacted_at: now, contact_type: 'daily', host: profile?.email || null, notes: `📧 Email: ${how}` }))
+    if (rows.length) { const { error } = await supabase.from('campaign_player_contacts').insert(rows); if (error) console.error('campaign email log', error) }
+    setMsgPopup(x => (x && sent.includes(x.p.username) ? { ...x, logged: true } : x))
   }
   function CampaignWaButton({ p, extra }) {
     const result = buildCampaignWaMessage(p, extra)
@@ -2475,6 +2510,24 @@ export default function Campaigns() {
                       </span>
                     </>}
                 </div>
+                {/* 📧 Email the players shown below (host / activity / search filters apply), each with their own campaign message */}
+                {profile?.role !== 'readonly' && (() => {
+                  const mailable = filteredChaseList.filter(p => p.email)
+                  return (
+                    <div style={{ padding:'6px 24px', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
+                      <span style={{ fontSize:11, color:'var(--muted)' }}>📧 {L2('Email message:', '邮件讯息：')}</span>
+                      <select value={bulkStage} onChange={e => setBulkStage(e.target.value)} style={{ background:'var(--surface2)', border:'1px solid var(--border)', color:'var(--text)', padding:'3px 8px', borderRadius:6, fontSize:12 }}>
+                        <option value="auto">{L2('🤖 Auto (each player\'s situation)', '🤖 自动（按每位玩家情况）')}</option>
+                        {WA_STAGES.filter(st => st !== 'streak' || selected?.streak_enabled).map(st => <option key={st} value={st}>{STAGE_INFO[st].icon} {lang === 'zh' ? STAGE_INFO[st].zh : STAGE_INFO[st].en}{st === 'intro' ? L2(' · campaign intro', ' · 活动介绍') : ''}</option>)}
+                      </select>
+                      <button disabled={!mailable.length} onClick={() => emailBulk(filteredChaseList)}
+                        style={{ padding:'4px 14px', borderRadius:6, fontSize:12, fontWeight:700, border:'none', cursor: mailable.length ? 'pointer' : 'default', background:'#2f81f7', color:'#fff', opacity: mailable.length ? 1 : .5 }}>
+                        {L2(`📧 Email players shown (${mailable.length} of ${filteredChaseList.length} have email)`, `📧 发邮件给列表玩家（${filteredChaseList.length} 位中 ${mailable.length} 位有邮箱）`)}
+                      </button>
+                      <span style={{ fontSize:10, color:'var(--muted)' }}>{L2('Same text as the WhatsApp message, in the WhatsApp language picked for this campaign. Use 📣 for the campaign announcement.', '内容和 WhatsApp 讯息一样，语言跟这个活动选的 WhatsApp 语言。活动开始时用 📣 发介绍。')}</span>
+                    </div>
+                  )
+                })()}
                 {showInactiveList && realFinancials && (
                   <div style={{ padding:'12px 24px', borderBottom:'1px solid var(--border)', background:'rgba(248,81,73,.04)' }}>
                     <div style={{ display:'flex', alignItems:'center', gap:10, flexWrap:'wrap', marginBottom:8 }}>
@@ -4127,6 +4180,10 @@ export default function Campaigns() {
           </div>
         </div>
       )}
+      {emailBox && (
+        <EmailModal players={emailBox.players} preset={emailBox.preset} perPlayer={emailBox.perPlayer} title={emailBox.title}
+          onClose={() => setEmailBox(null)} onSent={results => logCampaignEmails(results, emailBox.how)} />
+      )}
       {msgPopup && (() => {
         const m = msgPopup
         const chip = on => ({ padding:'4px 10px', borderRadius:16, fontSize:12, cursor:'pointer', border:`1px solid ${on ? 'var(--accent)' : 'var(--border)'}`, background: on ? 'var(--accent)' : 'var(--surface2)', color: on ? '#fff' : 'var(--muted)', fontWeight: on ? 700 : 500 })
@@ -4165,6 +4222,7 @@ export default function Campaigns() {
                   onClick={() => { const href = waHref(m.p.whatsapp, encodeURIComponent(m.text)); if (href) window.open(href, '_blank'); logMsg('WhatsApp') }}>
                   {L2('💬 Open WhatsApp', '💬 打开 WhatsApp')}
                 </button>
+                {profile?.role !== 'readonly' && <button style={{ ...s.btnSm, opacity: m.p.email ? 1 : .5 }} disabled={!m.p.email} title={m.p.email || L2('No email saved for this player', '这位玩家没有邮箱')} onClick={emailFromPopup}>{L2('📧 Email', '📧 邮件')}</button>}
                 <button style={s.btnSm} disabled={m.logged} onClick={() => logMsg('sent manually')}>{L2('✅ Save log only', '✅ 只记录')}</button>
                 <button style={{ ...s.btnSm, marginLeft:'auto' }} onClick={close}>{L2('Close', '关闭')}</button>
               </div>
