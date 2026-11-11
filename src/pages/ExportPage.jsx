@@ -113,6 +113,7 @@ export default function ExportPage() {
   const [loadingCSV, setLoadingCSV]   = useState({})
   const [mailingImporting, setMailingImporting] = useState(false)
   const [mailingResult, setMailingResult] = useState(null)
+  const [mailingPreview, setMailingPreview] = useState(null) // changes found in the file, waiting for "Save"
   const [dateFrom,   setDateFrom]     = useState('')
   const [dateTo,     setDateTo]       = useState('')
   const [hosts,      setHosts]         = useState([])
@@ -198,7 +199,9 @@ export default function ExportPage() {
     const { data, error } = await supabase.from('vip_members').select('*').order('tier').order('username')
     if (error) { alert(L2('Export failed: ','导出失败：') + error.message); setLoadingCSV(p => ({...p, mailing:false})); return }
     const vips = data || []
-    downloadCSV(vips.map(v => ({
+    if (!vips.length) { alert(L2('No data to export.', '没有可导出的数据。')); setLoadingCSV(p => ({...p, mailing:false})); return }
+    // .xlsx (not CSV): when Excel saves a CSV it turns Chinese text / emoji into "?" (2026-11-11 incident)
+    const ws = XLSX.utils.json_to_sheet(vips.map(v => ({
       Tier:     v.tier || '',
       Username: v.username || '',
       Name:     v.full_name || '',
@@ -208,80 +211,103 @@ export default function ExportPage() {
       Race:     v.race || '',
       Telegram: v.telegram || '',
       Remark:   v.special_requests || '',
-    })), `VIP_Mailing_List_${new Date().toISOString().slice(0,10)}.csv`)
+    })))
+    // Phone as text so Excel never turns it into 6.01E+10
+    const range = XLSX.utils.decode_range(ws['!ref'])
+    for (let r = 1; r <= range.e.r; r++) { const c = ws[XLSX.utils.encode_cell({ r, c: 3 })]; if (c) { c.t = 's'; c.v = String(c.v); c.z = '@' } }
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Mailing List')
+    XLSX.writeFile(wb, `VIP_Mailing_List_${new Date().toISOString().slice(0,10)}.xlsx`)
     setLoadingCSV(p => ({...p, mailing:false}))
   }
 
+  // Mailing list import (2026-11-11): step 1 reads the file and compares it with what the CRM has now;
+  // only cells that really differ become changes. Cells Excel damaged ("?" where the CRM has Chinese
+  // text / emoji) are never saved. Step 2 (saveMailingChanges) writes only after "Save" is pressed.
+  const MAIL_FIELDS = [['Name', 'full_name'], ['Phone', 'phone'], ['Email', 'email'], ['Address', 'address'], ['Race', 'race'], ['Telegram', 'telegram'], ['Remark', 'special_requests']]
   async function importMailingList(file) {
     if (!file) return
     setMailingImporting(true)
     setMailingResult(null)
+    setMailingPreview(null)
     try {
       const buf = await file.arrayBuffer()
-      // raw: false forces all cells to return as formatted strings, which preserves
-      // phone numbers that Excel would otherwise silently convert to plain numbers
-      // (dropping leading zeros or switching to scientific notation).
+      // raw: false keeps phone numbers as text (no lost leading zeros / scientific notation)
       const wb = XLSX.read(buf, { type: 'array' })
       const sheet = wb.Sheets[wb.SheetNames[0]]
       const rows = XLSX.utils.sheet_to_json(sheet, { defval: '', raw: false })
 
-      let updated = 0, skippedBlank = 0, notFound = 0, errors = 0
-      const notFoundUsernames = []
-
+      // Read the file's values (same cleaning rules as before)
+      const fileRows = []
       for (const row of rows) {
-        // Tolerate minor header casing/whitespace differences without silently
-        // matching the wrong column.
         const get = (key) => {
           const k = Object.keys(row).find(rk => rk.trim().toLowerCase() === key.toLowerCase())
           return k ? String(row[k]).trim() : ''
         }
         const username = get('Username')
         if (!username) continue
-
-        const name     = get('Name')
-        const email    = get('Email')
-        const address  = get('Address')
-        const race     = get('Race')
-        const phone    = get('Phone')
-        const telegram = get('Telegram')
-        const remark   = get('Remark')
-
-        const payload = {}
-        // '(Name)' is the literal placeholder our own export uses for a blank
-        // name — never write that string into the database as if it were real.
-        if (name && name !== '(Name)') payload.full_name = name
-        if (email)    payload.email = email
-        if (address)  payload.address = address
-        if (race)     payload.race = race
-        // Phone: imported as text (raw: false above) so numbers like "60123456789"
-        // come through correctly. Strip anything clearly not a phone (e.g. Excel
-        // artefacts like "E+10" or single-digit placeholders).
-        if (phone && phone.length > 5 && !phone.includes('E+')) payload.phone = phone
-        if (telegram) payload.telegram = telegram.replace(/^@/, '') // strip leading @ if present
-        if (remark)   payload.special_requests = remark
-
-        if (Object.keys(payload).length === 0) { skippedBlank++; continue }
-
-        const { data: existing, error: findErr } = await supabase
-          .from('vip_members').select('id').eq('username', username).maybeSingle()
-        if (findErr) { errors++; continue }
-        if (!existing) { notFound++; notFoundUsernames.push(username); continue }
-
-        const { error: updateErr } = await supabase.from('vip_members').update(payload).eq('id', existing.id)
-        if (updateErr) {
-          errors++
-          console.error(`importMailingList: update failed for ${username}`, updateErr)
-        } else {
-          updated++
-        }
+        const vals = {}
+        const name = get('Name');         if (name && name !== '(Name)') vals.full_name = name
+        const email = get('Email');       if (email) vals.email = email
+        const address = get('Address');   if (address) vals.address = address
+        const race = get('Race');         if (race) vals.race = race
+        const phone = get('Phone');       if (phone && phone.length > 5 && !phone.includes('E+')) vals.phone = phone
+        const telegram = get('Telegram'); if (telegram) vals.telegram = telegram.replace(/^@/, '')
+        const remark = get('Remark');     if (remark) vals.special_requests = remark
+        fileRows.push({ username, vals })
       }
 
-      setMailingResult({ total: rows.length, updated, skippedBlank, notFound, errors, notFoundUsernames })
+      // What the CRM has now (chunks of 150 usernames)
+      const names = [...new Set(fileRows.map(r => r.username))]
+      const current = {}
+      for (let i = 0; i < names.length; i += 150) {
+        const { data, error } = await supabase.from('vip_members').select('id,username,' + MAIL_FIELDS.map(f => f[1]).join(',')).in('username', names.slice(i, i + 150))
+        if (error) throw error
+        ;(data || []).forEach(m => { current[m.username] = m })
+      }
+
+      // Excel damage: the file has "?" (or a broken-character sign) where the CRM has non-English characters
+      const nonAscii = s => /[^\x20-\x7e]/.test(s)
+      const plain = s => s.replace(/[^\x20-\x7e]/g, '').replace(/\?/g, '')
+      const damaged = (nv, cur) => nv.includes('�') || (nv.includes('?') && nonAscii(cur) && plain(nv) === plain(cur)) || (!cur && /\?{2,}/.test(nv))
+
+      const changes = [], protectedCells = [], notFoundUsernames = []
+      let unchanged = 0
+      for (const { username, vals } of fileRows) {
+        const cur = current[username]
+        if (!cur) { notFoundUsernames.push(username); continue }
+        const payload = {}, fields = []
+        for (const [label, col] of MAIL_FIELDS) {
+          if (!(col in vals)) continue
+          const nv = vals[col], cv = String(cur[col] ?? '').trim()
+          if (nv === cv) continue
+          if (damaged(nv, cv)) { protectedCells.push({ username, label }); continue }
+          payload[col] = nv
+          fields.push({ label, from: cv, to: nv })
+        }
+        if (fields.length) changes.push({ username, id: cur.id, payload, fields })
+        else unchanged++
+      }
+      setMailingPreview({ fileName: file.name, total: fileRows.length, changes, protectedCells, notFoundUsernames, unchanged })
     } catch (e) {
       alert(L2('Import failed: ','导入失败：') + e.message)
     } finally {
       setMailingImporting(false)
     }
+  }
+
+  async function saveMailingChanges() {
+    const pv = mailingPreview
+    if (!pv?.changes?.length) return
+    setMailingImporting(true)
+    let updated = 0, errors = 0
+    for (const ch of pv.changes) {
+      const { error } = await supabase.from('vip_members').update(ch.payload).eq('id', ch.id)
+      if (error) { errors++; console.error(`importMailingList: update failed for ${ch.username}`, error) } else updated++
+    }
+    setMailingResult({ updated, errors, fieldCount: pv.changes.reduce((s, c) => s + c.fields.length, 0), unchanged: pv.unchanged, protectedCount: pv.protectedCells.length, notFoundUsernames: pv.notFoundUsernames })
+    setMailingPreview(null)
+    setMailingImporting(false)
   }
 
   async function exportContacts() {
@@ -1416,20 +1442,53 @@ export default function ExportPage() {
             <div style={{ flex:1 }}>
               <div style={{ fontSize:13, fontWeight:700 }}>{L2('Import Completed Mailing List','导入已完成的邮寄名单')}</div>
               <div style={{ fontSize:11, color:'var(--muted)', marginTop:2 }}>
-                {L2('Upload the filled-in .xlsx or .csv back — updates Name, Phone, Email, Address, Race, Telegram, and Remark by matching Username. Blank cells are left untouched and never overwrite existing data.','上传填写好的 .xlsx 或 .csv — 按用户名匹配更新姓名、电话、邮箱、地址、种族、Telegram 和备注。空白单元格不会改动，也不会覆盖现有数据。')}
+                {L2('Upload the filled-in .xlsx or .csv back — updates Name, Phone, Email, Address, Race, Telegram, and Remark by matching Username. Blank cells are left untouched and never overwrite existing data. You see the real changes first and nothing is saved until you press Save. Save the file in Excel as .xlsx (a CSV saved by Excel loses Chinese text and emoji).','上传填写好的 .xlsx 或 .csv — 按用户名匹配更新姓名、电话、邮箱、地址、种族、Telegram 和备注。空白单元格不会改动，也不会覆盖现有数据。会先列出真正的改动，按「保存」才会写入。在 Excel 里请存成 .xlsx（Excel 存 CSV 会把中文和表情符号变成 ?）。')}
               </div>
+              {mailingPreview && (() => {
+                const pv = mailingPreview
+                const fieldCount = pv.changes.reduce((s, c) => s + c.fields.length, 0)
+                return (
+                  <div style={{ marginTop:8, fontSize:12, padding:'10px 12px', borderRadius:6, background:'var(--surface2)', border:'1px solid #14b8a6' }}>
+                    <div style={{ fontWeight:700, marginBottom:4 }}>📄 {pv.fileName}: {L2(`${pv.total} rows · ${pv.changes.length} players with real changes (${fieldCount} cells) · ${pv.unchanged} unchanged`, `${pv.total} 行 · ${pv.changes.length} 位有真正改动（${fieldCount} 格）· ${pv.unchanged} 位没变`)}</div>
+                    {pv.protectedCells.length > 0 && (
+                      <div style={{ color:'#d29922', marginBottom:4 }}>🛡️ {L2(`${pv.protectedCells.length} cell(s) NOT saved: Excel turned Chinese text / emoji into "?" there. Fix them in VIP360 if needed: `, `${pv.protectedCells.length} 格不会保存：Excel 把中文/表情符号变成了 "?"。如需修改请到 VIP360：`)}{pv.protectedCells.slice(0, 12).map(p => `${p.username} (${p.label})`).join(', ')}{pv.protectedCells.length > 12 ? '…' : ''}</div>
+                    )}
+                    {pv.notFoundUsernames.length > 0 && <div style={{ color:'var(--muted)', marginBottom:4 }}>{L2('Not found:','未找到：')} {pv.notFoundUsernames.slice(0,10).join(', ')}{pv.notFoundUsernames.length>10?'…':''}</div>}
+                    {pv.changes.length > 0 && (
+                      <div style={{ maxHeight:220, overflowY:'auto', border:'1px solid var(--border)', borderRadius:6, margin:'6px 0' }}>
+                        <table style={{ width:'100%', borderCollapse:'collapse', fontSize:11 }}>
+                          <thead><tr>{[L2('Player','玩家'), L2('Field','栏位'), L2('Now in CRM','目前'), L2('New','新的')].map(h => <th key={h} style={{ textAlign:'left', padding:'4px 8px', color:'var(--muted)', borderBottom:'1px solid var(--border)', position:'sticky', top:0, background:'var(--surface2)' }}>{h}</th>)}</tr></thead>
+                          <tbody>{pv.changes.flatMap(c => c.fields.map((f, i) => (
+                            <tr key={c.username + f.label}>
+                              <td style={{ padding:'3px 8px', fontWeight:700 }}>{i === 0 ? c.username : ''}</td>
+                              <td style={{ padding:'3px 8px' }}>{f.label}</td>
+                              <td style={{ padding:'3px 8px', color:'var(--muted)', maxWidth:200, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{f.label === 'Remark' ? (f.from ? '…' : '—') : (f.from || '—')}</td>
+                              <td style={{ padding:'3px 8px', color:'#3fb950', maxWidth:200, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{f.label === 'Remark' ? L2('(changed)', '（已改）') : f.to}</td>
+                            </tr>
+                          )))}</tbody>
+                        </table>
+                      </div>
+                    )}
+                    <div style={{ display:'flex', gap:8, marginTop:6 }}>
+                      <button disabled={mailingImporting || !pv.changes.length} onClick={saveMailingChanges}
+                        style={{ background:'#14b8a6', color:'#fff', border:'none', padding:'6px 14px', borderRadius:6, fontSize:12, fontWeight:700, cursor: pv.changes.length ? 'pointer' : 'default', opacity: pv.changes.length ? 1 : .5 }}>
+                        {mailingImporting ? L2('Saving…','保存中…') : L2(`💾 Save ${pv.changes.length} player(s)`, `💾 保存 ${pv.changes.length} 位`)}
+                      </button>
+                      <button disabled={mailingImporting} onClick={() => setMailingPreview(null)} style={{ background:'var(--surface)', color:'var(--text)', border:'1px solid var(--border)', padding:'6px 14px', borderRadius:6, fontSize:12, cursor:'pointer' }}>{L2('Cancel','取消')}</button>
+                    </div>
+                  </div>
+                )
+              })()}
               {mailingResult && (
                 <div style={{ marginTop:8, fontSize:12, padding:'8px 12px', borderRadius:6, background:'var(--surface2)' }}>
-                  ✅ {L2(`${mailingResult.updated} updated · ${mailingResult.skippedBlank} had nothing new to add · ${mailingResult.notFound} username${mailingResult.notFound===1?'':'s'} not found`, `已更新 ${mailingResult.updated} · ${mailingResult.skippedBlank} 条无新内容 · ${mailingResult.notFound} 个用户名未找到`)}
-                  {mailingResult.errors > 0 && <span style={{ color:'#f85149' }}> · {L2(`${mailingResult.errors} failed (columns may not exist yet — see setup note below)`, `${mailingResult.errors} 条失败（栏位可能尚不存在 — 请参阅下方设置说明）`)}</span>}
-                  {mailingResult.notFoundUsernames.length > 0 && (
-                    <div style={{ marginTop:4, color:'var(--muted)' }}>{L2('Not found:','未找到：')} {mailingResult.notFoundUsernames.slice(0,10).join(', ')}{mailingResult.notFoundUsernames.length>10?'…':''}</div>
-                  )}
+                  ✅ {L2(`Saved ${mailingResult.updated} player(s), ${mailingResult.fieldCount} cell(s) changed · ${mailingResult.unchanged} unchanged`, `已保存 ${mailingResult.updated} 位，改了 ${mailingResult.fieldCount} 格 · ${mailingResult.unchanged} 位没变`)}
+                  {mailingResult.protectedCount > 0 && <span style={{ color:'#d29922' }}> · {L2(`${mailingResult.protectedCount} damaged cell(s) skipped`, `跳过 ${mailingResult.protectedCount} 个损坏的格子`)}</span>}
+                  {mailingResult.errors > 0 && <span style={{ color:'#f85149' }}> · {L2(`${mailingResult.errors} failed`, `${mailingResult.errors} 条失败`)}</span>}
                 </div>
               )}
             </div>
             <label style={{ background:'#14b8a6', color:'#fff', padding:'8px 16px', borderRadius:8, fontSize:12, fontWeight:700, cursor: mailingImporting ? 'default' : 'pointer', opacity: mailingImporting ? 0.6 : 1 }}>
-              {mailingImporting ? L2('Importing…','导入中…') : L2('Choose File','选择文件')}
+              {mailingImporting ? L2('Working…','处理中…') : L2('Choose File','选择文件')}
               <input type="file" accept=".xlsx,.xls,.csv" style={{ display:'none' }} disabled={mailingImporting}
                 onChange={e => { if (e.target.files[0]) importMailingList(e.target.files[0]); e.target.value = '' }} />
             </label>
