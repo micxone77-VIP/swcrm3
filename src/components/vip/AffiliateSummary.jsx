@@ -11,7 +11,7 @@ import CopyBtn from '../CopyBtn'
 
 // Same grouping as v_affiliate_vip_summary
 const affOf = m => m.affiliate_login || (m.affiliate_updated_at ? '(direct)' : '(unknown)')
-const COST_PARTS = [['bonus', 'Bonus', '奖金'], ['rebate', 'Rebate', '返水'], ['campaign', 'Campaign', '活动奖励'], ['boBonus', 'BO bonus', '后台红包'], ['spend', 'Spending', '部门开销']]
+const COST_PARTS = [['bonus', 'Bonus', '奖金'], ['rebate', 'Rebate', '返水'], ['campaign', 'Campaign', '活动奖励'], ['boBonus', 'BO bonus', '后台红包'], ['spend', 'Spending', '部门开销'], ['spendOffline', 'of which Offline', '其中线下']]
 
 const th = { textAlign: 'right', padding: '10px 12px', color: 'var(--muted)', fontWeight: 600, whiteSpace: 'nowrap', cursor: 'pointer', userSelect: 'none' }
 const td = { padding: '9px 12px', textAlign: 'right', whiteSpace: 'nowrap' }
@@ -60,7 +60,7 @@ export default function AffiliateSummary() {
       g.members.push({ ...m, cost: c })
       if (c) {
         const cur = String(m.currency || 'MYR').toUpperCase()
-        const t = g.cur[cur] || (g.cur[cur] = { total: 0, bonus: 0, rebate: 0, campaign: 0, boBonus: 0, spend: 0 })
+        const t = g.cur[cur] || (g.cur[cur] = { total: 0, bonus: 0, rebate: 0, campaign: 0, boBonus: 0, spend: 0, spendOffline: 0 })
         Object.keys(t).forEach(k => { t[k] += Number(c[k]) || 0 })
       }
     })
@@ -76,6 +76,7 @@ export default function AffiliateSummary() {
       : sortKey === 'trend' ? (Number(r.normal_month) > 0 ? Number(r.dep_30d) / Number(r.normal_month) : -1)
       : sortKey === 'risk' ? Number(r.silent) + Number(r.declining)
       : sortKey === 'cost' ? costTotal(r.affiliate)
+      : sortKey === 'offline' ? Object.values(byAff[r.affiliate]?.cur || {}).reduce((s, t) => s + t.spendOffline, 0)
       : sortKey === 'cost_per_vip' ? costTotal(r.affiliate) / Math.max(Number(r.vips) || 1, 1)
       : Number(r[sortKey] || 0)
     return [...f].sort((a, b) => {
@@ -229,6 +230,7 @@ export default function AffiliateSummary() {
               <th style={th} onClick={() => sortBy('growing')}>{L2('📈 Growing', '📈 增长')}{arrow('growing')}</th>
               <th style={th} onClick={() => sortBy('cost')}>{L2('💸 Cost so far', '💸 累计成本')}{arrow('cost')}</th>
               <th style={th} onClick={() => sortBy('cost_per_vip')}>{L2('Cost / VIP', '每位成本')}{arrow('cost_per_vip')}</th>
+              <th style={th} onClick={() => sortBy('offline')} title={L2('Department expenses marked Offline (already inside Cost so far)', '标记为线下的部门开销（已包含在累计成本内）')}>{L2('🏬 Offline spending', '🏬 线下开销')}{arrow('offline')}</th>
             </tr>
           </thead>
           <tbody>
@@ -272,10 +274,11 @@ export default function AffiliateSummary() {
                   <td style={{ ...td, color: Number(r.growing) > 0 ? SEGMENTS.Growing.color : 'var(--muted)', fontWeight: 700 }}>{r.growing}</td>
                   <td style={{ ...td, fontWeight: 700, color: '#f0883e' }}>{!costInfo ? '…' : lines.length ? lines.map(([c, t]) => <div key={c}>{formatMoney(t.total, c)}</div>) : '—'}</td>
                   <td style={td}>{!costInfo ? '…' : lines.length ? lines.map(([c, t]) => <div key={c}>{formatMoney(t.total / Math.max((g?.members || []).filter(m => String(m.currency || 'MYR').toUpperCase() === c).length, 1), c)}</div>) : '—'}</td>
+                  <td style={{ ...td, fontWeight: 700 }}>{!costInfo ? '…' : lines.some(([, t]) => t.spendOffline > 0) ? lines.filter(([, t]) => t.spendOffline > 0).map(([c, t]) => <div key={c}>{formatMoney(t.spendOffline, c)}</div>) : <span style={{ color: 'var(--muted)' }}>0</span>}</td>
                 </tr>
                 {isOpen && (
                   <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                    <td colSpan={14} style={{ padding: '10px 16px 16px', background: 'var(--surface2)' }}>
+                    <td colSpan={15} style={{ padding: '10px 16px 16px', background: 'var(--surface2)' }}>
                       <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
                         <b style={{ fontSize: 13 }}>{L2(`${g?.members.length || 0} VIPs under this affiliate`, `此代理下 ${g?.members.length || 0} 位VIP`)}</b>
                         {lines.map(([c, t]) => <span key={c} style={{ fontSize: 12, color: 'var(--muted)' }}>{COST_PARTS.map(([k, en, zh]) => `${L2(en, zh)} ${formatMoney(t[k], c)}`).join(' · ')}</span>)}
