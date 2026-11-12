@@ -51,6 +51,11 @@ const signatureHtml = (name: string, wa: string) => `<table role="presentation" 
   <tr><td colspan="2" align="center" bgcolor="#0a1226" style="padding:8px 12px;background-color:#0a1226;border-radius:0 0 12px 12px;font-family:Georgia,'Times New Roman',serif;font-size:12px;line-height:18px;font-style:italic;color:#ffb217;">Where Winners Live Like Stars &nbsp;&#10022;&nbsp; &#36194;&#23478;&#30340;&#23562;&#36149;&#20043;&#36873;</td></tr>
 </table>`
 
+// denomailer can throw "BadResource" from the socket outside our await (seen 2026-11-12 on a 20-player
+// batch): without this the whole worker dies (503) and nothing is logged.
+addEventListener('unhandledrejection', (e) => { console.error('unhandled', (e as PromiseRejectionEvent).reason); e.preventDefault() })
+addEventListener('error', (e) => { console.error('event loop error', (e as ErrorEvent).message); e.preventDefault() })
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors })
   if (req.method !== 'POST') return json({ error: 'POST only' }, 405)
@@ -107,13 +112,20 @@ Deno.serve(async (req: Request) => {
   const fill = (t: string, m: { username: string; full_name?: string | null }) =>
     t.replaceAll('{name}', (m.full_name || m.username).split(/\s+/)[0]).replaceAll('{username}', m.username).replaceAll('{agent}', agent)
 
-  const client = new SMTPClient({ connection: { hostname: smtp.host, port: smtp.port, tls: true, auth: { username: smtp.user, password: smtp.pass } } })
+  // One SMTP connection per email: reusing one connection for several emails crashed denomailer (2026-11-12)
+  const newClient = () => new SMTPClient({ connection: { hostname: smtp.host!, port: smtp.port, tls: true, auth: { username: smtp.user!, password: smtp.pass! } } })
   const results: { username: string; status: string; reason?: string }[] = []
   const logs: Record<string, unknown>[] = []
   const contacts: Record<string, unknown>[] = []
   const myt = new Date(Date.now() + 8 * 3600_000)
 
-  try {
+  // Logs are saved right after each email, so a crash later in the batch never loses what was already sent
+  const flush = async () => {
+    if (logs.length) { const { error } = await db.from('email_logs').insert(logs.splice(0)); if (error) console.error('email_logs', error) }
+    if (contacts.length) { const { error } = await db.from('contact_logs').insert(contacts.splice(0)); if (error) console.error('contact_logs', error) }
+  }
+
+  {
     for (const u of names) {
       const m = byName[u]
       const to = testTo || String(m?.email || '').trim()
@@ -133,6 +145,7 @@ Deno.serve(async (req: Request) => {
       const html = `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.6;color:#222">${esc(filled).replace(/\*{1,2}([^*\n]+)\*{1,2}/g, '<b>$1</b>').replace(/\n/g, '<br>').replaceAll('{whatsapp}', `<span style="display:inline-block;margin-top:6px">${waButton(wa)}</span>`)}`
         + `<div style="margin:24px 0 0">${signatureHtml(agent, wa)}</div>`
         + `<div style="font-size:11px;color:#888;margin-top:10px">sureWin VIP department · <a href="${unsubUrl}" style="color:#888">Unsubscribe</a></div></div>`
+      const client = newClient()
       try {
         await client.send({ from: smtp.from!, to, subject: testTo ? `[TEST] ${subject}` : subject, content: text + footerText, html,
           headers: { 'List-Unsubscribe': `<${unsubUrl}>`, 'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click' } })
@@ -148,13 +161,12 @@ Deno.serve(async (req: Request) => {
         const reason = String((e as Error)?.message || e).slice(0, 300)
         results.push({ username: u, status: 'failed', reason })
         logs.push({ username: u, to_email: to, subject, status: 'failed', reason, sent_by: prof.id, sender_name: agent })
+      } finally {
+        try { await client.close() } catch { /* already closed */ }
       }
+      await flush()
     }
-  } finally {
-    try { await client.close() } catch { /* already closed */ }
   }
-
-  if (logs.length) { const { error } = await db.from('email_logs').insert(logs); if (error) console.error('email_logs', error) }
-  if (contacts.length) { const { error } = await db.from('contact_logs').insert(contacts); if (error) console.error('contact_logs', error) }
+  await flush()
   return json({ results, sent: results.filter(r => r.status === 'sent').length, hourly_limit: limit, room_left: room })
 })

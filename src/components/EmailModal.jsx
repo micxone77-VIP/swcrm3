@@ -113,16 +113,21 @@ export default function EmailModal({ players, onClose, onSent, preset, perPlayer
     setBusy(true); setErr(''); const all = []
     try {
       const names = withEmail.map(p => p.username)
-      for (let i = 0; i < names.length; i += 20) {
-        setProgress(L2(`Sending ${Math.min(i + 20, names.length)} / ${names.length}…`, `发送中 ${Math.min(i + 20, names.length)} / ${names.length}…`))
-        const d = await call(names.slice(i, i + 20))
+      const N = 5
+      for (let i = 0; i < names.length; i += N) {
+        setProgress(L2(`Sending ${Math.min(i + N, names.length)} / ${names.length}…`, `发送中 ${Math.min(i + N, names.length)} / ${names.length}…`))
+        const d = await call(names.slice(i, i + N))
         all.push(...(d?.results || []))
-        if ((d?.room_left ?? 1) <= 0 && i + 20 < names.length) {
-          names.slice(i + 20).forEach(u => all.push({ username: u, status: 'skipped', reason: L2(`hourly limit (${d.hourly_limit}) reached, try again in an hour`, `已达每小时上限（${d.hourly_limit}），一小时后再试`) }))
+        if ((d?.room_left ?? 1) <= 0 && i + N < names.length) {
+          names.slice(i + N).forEach(u => all.push({ username: u, status: 'skipped', reason: L2(`hourly limit (${d.hourly_limit}) reached, try again in an hour`, `已达每小时上限（${d.hourly_limit}），一小时后再试`) }))
           break
         }
       }
-    } catch (e) { setErr(e.message) }
+    } catch (e) {
+      setErr(e.message)
+      const done = new Set(all.map(r => r.username))
+      withEmail.filter(p => !done.has(p.username)).forEach(p => all.push({ username: p.username, status: 'failed', reason: L2(`not sent (stopped: ${e.message}). Check the Contact Log before sending again.`, `未发送（中断：${e.message}）。再发之前请先查看联系记录。`) }))
+    }
     setResults(all); setProgress(''); setBusy(false)
     if (all.some(r => r.status === 'sent')) onSent?.(all)
   }
