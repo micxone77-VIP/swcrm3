@@ -3024,11 +3024,6 @@ export default function Campaigns() {
                           const payoutLabel = paid ? L2('✅ Paid','✅ 已派') : row.status === 'approved' ? L2('🟦 Approved','🟦 已批准') : L2('⏳ Pending','⏳ 待处理')
                           const player = players.find(p=>p.id===row.playerId)
                           const note = campaignRewards.find(r=>r.id===row.rewardId)?.notes || ''
-                          const waMultiAgent = player?.host_assigned || null
-                          const waMultiMult = selected?.turnover_multiplier ? Number(selected.turnover_multiplier) : null
-                          const waMultiTurnover = waMultiMult && row.rewardAmount > 0 ? rewardFmt(row.rewardAmount * waMultiMult, campCurrency) : null
-                          const waMultiText = buildWaMsgText(row.username, selected?.campaign_name||'Campaign', rewardFmt(row.rewardAmount,campCurrency), waLang, waMultiAgent, waMultiTurnover, selected)
-                          const waUrl = player?.whatsapp ? waHref(player.whatsapp, buildWaMsg(row.username, selected?.campaign_name||'Campaign', rewardFmt(row.rewardAmount,campCurrency), waLang, waMultiAgent, waMultiTurnover, selected)) : null
                           return <tr key={row.rewardId} style={{ background:paid?'rgba(63,185,80,.04)':'transparent' }}>
                             <td style={{ ...s.td, color:'var(--muted)', fontSize:11 }}>{i+1}</td>
                             <td style={{ ...s.td, fontWeight:700 }}>{row.username}<CopyBtn text={row.username} /><PlayerName name={player?.full_name} /></td>
@@ -3041,9 +3036,7 @@ export default function Campaigns() {
                             <td style={{...s.td,minWidth:130}}>
                               <div style={{fontSize:12,color:'var(--muted)',marginBottom:4}}>{player?.whatsapp||'—'}<CopyBtn text={player?.whatsapp} kind="phone" /></div>
                               <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
-                                {waUrl && <a href={waUrl} target="_blank" rel="noreferrer" style={{ display:'inline-flex', alignItems:'center', gap:4, background:'rgba(37,211,102,.15)', color:'#25d366', border:'1px solid rgba(37,211,102,.3)', borderRadius:6, padding:'3px 8px', fontSize:11, fontWeight:700, textDecoration:'none' }}>📲 WA</a>}
-                                <button onClick={()=>navigator.clipboard.writeText(waMultiText).catch(()=>{})} style={{ background:'rgba(88,166,255,.12)', color:'#58a6ff', border:'1px solid rgba(88,166,255,.3)', borderRadius:6, padding:'3px 8px', fontSize:11, fontWeight:700, cursor:'pointer' }}>📋 {L2('Copy','复制')}</button>
-                                {!waUrl && <span style={{fontSize:10,color:'var(--muted)'}}>{L2('No number','无号码')}</span>}
+                                {player?.whatsapp ? <button onClick={()=>openMsg(player, null)} title={L2('Choose message (intro / near / won / paid…), language, copy, WhatsApp, email, log', '选择讯息（介绍 / 接近 / 达标 / 已派…）、语言、复制、WhatsApp、邮件、记录')} style={{ display:'inline-flex', alignItems:'center', gap:4, background:'rgba(37,211,102,.15)', color:'#25d366', border:'1px solid rgba(37,211,102,.3)', borderRadius:6, padding:'3px 8px', fontSize:11, fontWeight:700, cursor:'pointer' }}>💬 WA</button> : <span style={{fontSize:10,color:'var(--muted)'}}>{L2('No number','无号码')}</span>}
                               </div>
                             </td>
                             <td style={s.td}><input defaultValue={note} onBlur={async e=>{const v=e.target.value;if(v!==note){const {error}=await supabase.from('campaign_rewards').update({notes:v}).eq('id',row.rewardId);if(error)console.error(error)}}} style={{ ...s.editInput,width:140 }} placeholder={L2('Add note...','添加备注...')} /></td>
@@ -3199,8 +3192,6 @@ export default function Campaigns() {
                       const waRewardText = !dayStreak ? rmFmt(creditReward,campCurrency)
                         : `${rmFmt(waReward,campCurrency)} (${rmFmt(creditReward,campCurrency)} ${waLang==='cn'?'奖励':waLang==='my'?'ganjaran':'reward'} + ${rmFmt(dayStreak,campCurrency)} ${waLang==='cn'?'连续奖励':'streak bonus'})`
                       const waTurnoverReq = waTurnoverMult && waReward > 0 ? rmFmt(waReward * waTurnoverMult, campCurrency) : null
-                      const waMsgText = buildWaMsgText(p.username, selected?.campaign_name||'Campaign', waRewardText, waLang, waAgent, waTurnoverReq, selected)
-                      const waUrl = p.whatsapp ? waHref(p.whatsapp, buildWaMsg(p.username, selected?.campaign_name||'Campaign', waRewardText, waLang, waAgent, waTurnoverReq, selected)) : null
                       return <tr key={p.id}>
                         <td style={{...s.td,color:'var(--muted)',fontSize:11}}>{i+1}</td>
                         <td style={{...s.td,fontWeight:700}}>{p.username}<CopyBtn text={p.username} /><PlayerName name={p.full_name} /></td>
@@ -3294,9 +3285,7 @@ export default function Campaigns() {
                         <td style={{...s.td,minWidth:130}}>
                           <div style={{fontSize:12,color:'var(--muted)',marginBottom:4}}>{p.whatsapp||<span style={{color:'var(--surface2)'}}>—</span>}<CopyBtn text={p.whatsapp} kind="phone" /></div>
                           <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
-                            {waUrl && <a href={waUrl} target="_blank" rel="noreferrer" style={{ display:'inline-flex', alignItems:'center', gap:4, background:'rgba(37,211,102,.15)', color:'#25d366', border:'1px solid rgba(37,211,102,.3)', borderRadius:6, padding:'3px 8px', fontSize:11, fontWeight:700, textDecoration:'none' }}>📲 WA</a>}
-                            <button onClick={()=>navigator.clipboard.writeText(waMsgText).catch(()=>{})} style={{ background:'rgba(88,166,255,.12)', color:'#58a6ff', border:'1px solid rgba(88,166,255,.3)', borderRadius:6, padding:'3px 8px', fontSize:11, fontWeight:700, cursor:'pointer' }}>📋 {L2('Copy','复制')}</button>
-                            {!waUrl && <span style={{fontSize:10,color:'var(--muted)'}}>{L2('No number','无号码')}</span>}
+                            {p?.whatsapp ? <button onClick={()=>openMsg(p, null)} title={L2('Choose message (intro / near / won / paid…), language, copy, WhatsApp, email, log', '选择讯息（介绍 / 接近 / 达标 / 已派…）、语言、复制、WhatsApp、邮件、记录')} style={{ display:'inline-flex', alignItems:'center', gap:4, background:'rgba(37,211,102,.15)', color:'#25d366', border:'1px solid rgba(37,211,102,.3)', borderRadius:6, padding:'3px 8px', fontSize:11, fontWeight:700, cursor:'pointer' }}>💬 WA</button> : <span style={{fontSize:10,color:'var(--muted)'}}>{L2('No number','无号码')}</span>}
                           </div>
                         </td>
                         <td style={s.td}><input defaultValue={p.notes||''} onBlur={e=>{if(e.target.value!==(p.notes||''))updatePlayer(p.id,{notes:e.target.value})}} style={{...s.editInput,width:140}} placeholder={L2('Add note...','添加备注...')}/></td>
