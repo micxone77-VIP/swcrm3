@@ -102,7 +102,7 @@ Deno.serve(async (req: Request) => {
     .eq('status', 'sent').gte('created_at', new Date(Date.now() - 3600_000).toISOString())
   let room = Math.max(limit - (sentHour || 0), 0)
 
-  const { data: members, error: mErr } = await db.from('vip_members_all').select('username,full_name,email,tier').in('username', names)
+  const { data: members, error: mErr } = await db.from('vip_members_all').select('id,username,full_name,email,tier').in('username', names)
   if (mErr) return json({ error: mErr.message }, 500)
   const byName = Object.fromEntries((members || []).map(m => [m.username, m]))
   const emails = (members || []).map(m => String(m.email || '').trim().toLowerCase()).filter(Boolean)
@@ -153,7 +153,10 @@ Deno.serve(async (req: Request) => {
         results.push({ username: u, status: 'sent' })
         logs.push({ username: u, to_email: to, subject, body: text, status: 'sent', reason: testTo ? 'test' : null, sent_by: prof.id, sender_name: agent })
         if (!testTo) contacts.push({
-          username: u, tier: m.tier || null, channel: 'Email', outcome: 'Contacted', direction: 'outbound', topic: 'email',
+          // vip_id links the player (Contact Log shows the affiliate from it); notes = the full email, shown in the Notes column
+          username: u, vip_id: m.id, tier: m.tier || null, channel: 'Email', notes: `📧 Email: ${subject}
+
+${text}`, outcome: 'Contacted', direction: 'outbound', topic: 'email',
           message_summary: `Email: ${subject}`.slice(0, 500), host_name: agent, host_id: prof.id, logged_at: new Date().toISOString(),
           log_month: myt.toISOString().slice(0, 7), log_week: String(Math.ceil(myt.getUTCDate() / 7)),
         })
