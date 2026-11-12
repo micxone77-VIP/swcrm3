@@ -32,6 +32,7 @@ const fmtMoney = (n, currency = 'MYR') => formatMoney(n, currency)
 function PnlBadge({ value, currency = 'MYR' }) {
   const { t } = useLanguage()
   if (value === null || value === undefined) return <span style={{ color: 'var(--muted)' }}>—</span>
+  if (Math.abs(value) < 0.005) return <span style={{ color: 'var(--muted)', fontWeight: 700, fontSize: 12 }}>{fmtMoney(0, currency)}</span>
   const profit = value > 0
   return (
     <span style={{ fontWeight: 700, color: profit ? '#3fb950' : '#f85149', background: profit ? 'rgba(63,185,80,.12)' : 'rgba(248,81,73,.12)', padding: '3px 10px', borderRadius: 6, fontSize: 12 }}>
@@ -74,6 +75,8 @@ export default function TransferTracker() {
   const [players,   setPlayers]   = useState([])
   const [snapshots, setSnapshots] = useState({}) // {username: [snapshots]}
   const [costs,     setCosts]     = useState({})  // {username: [costs]}
+  const [daily,     setDaily]     = useState({})  // {username: {dep, wd, wl, days, first, last, currency, months, inCrm}} from the daily report
+  const [dataTo,    setDataTo]    = useState('')  // latest daily report date
   const [loading,   setLoading]   = useState(true)
   const [activeTab, setActiveTab] = useUrlParam('tab', 'overview') // 'overview' | 'add' | 'import' | 'costs'
   const [currency,  setCurrency]  = useUrlParam('currency', 'MYR')
@@ -115,20 +118,63 @@ export default function TransferTracker() {
       const costMap = {}
       ;(cs||[]).forEach(c => { if (!costMap[c.username]) costMap[c.username] = []; costMap[c.username].push(c) })
       setCosts(costMap)
+
+      // Daily report data since each player joined (same daily CSV as the rest of the CRM, all tiers).
+      // Only days with valid bet > 0 count (CRM rule: older deposit / withdrawal / W-L only trusted on bet days).
+      const minStart = ps.map(startOf).sort()[0]
+      const rows = []
+      for (let from = 0; ; from += 1000) {
+        const { data, error } = await supabase.from('vip_daily_snapshots_all')
+          .select('username,snapshot_date,total_deposit,total_withdrawal,win_loss,monthly_valid_bet,currency')
+          .in('username', usernames).gte('snapshot_date', minStart).gt('monthly_valid_bet', 0)
+          .order('snapshot_date', { ascending: true }).range(from, from + 999)
+        if (error) { console.error('transfer daily', error); break }
+        rows.push(...(data || []))
+        if (!data || data.length < 1000) break
+      }
+      const { data: lastDay } = await supabase.from('vip_daily_snapshots_all').select('snapshot_date').order('snapshot_date', { ascending: false }).limit(1)
+      const startBy = Object.fromEntries(ps.map(p => [p.username, startOf(p)]))
+      const dMap = {}
+      rows.forEach(r => {
+        if (r.snapshot_date < startBy[r.username]) return
+        const d = dMap[r.username] || (dMap[r.username] = { dep: 0, wd: 0, wl: 0, days: 0, first: r.snapshot_date, last: r.snapshot_date, currency: r.currency, months: {} })
+        const dep = parseFloat(r.total_deposit) || 0, wd = parseFloat(r.total_withdrawal) || 0, wl = parseFloat(r.win_loss) || 0
+        d.dep += dep; d.wd += wd; d.wl += wl; d.days++; d.last = r.snapshot_date; d.currency = r.currency || d.currency
+        const m = r.snapshot_date.slice(0, 7)
+        const mm = d.months[m] || (d.months[m] = { dep: 0, wd: 0, wl: 0, days: 0 })
+        mm.dep += dep; mm.wd += wd; mm.wl += wl; mm.days++
+      })
+      // Currency for players with no play days yet
+      const { data: mem } = await supabase.from('vip_members_all').select('username,currency').in('username', usernames)
+      ;(mem || []).forEach(m => { if (!dMap[m.username]) dMap[m.username] = { dep: 0, wd: 0, wl: 0, days: 0, currency: m.currency, months: {}, inCrm: true }; else dMap[m.username].inCrm = true })
+      setDaily(dMap)
+      setDataTo(lastDay?.[0]?.snapshot_date || '')
     }
     setLoading(false)
   }
 
+  // Start date = joined date (a date in the future is a typo → the day the player was added)
+  function startOf(p) {
+    const added = String(p.created_at || '').slice(0, 10)
+    const today = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10)
+    return p.joined_date && p.joined_date <= today ? p.joined_date : added
+  }
+
   // ── Computed P&L per player ────────────────────────────────────────────────
+  // Figures per player: daily report totals since joining; an old imported snapshot only when there is no daily data
+  function figures(username) {
+    const d = daily[username]
+    if (d?.inCrm || d?.days) return { dep: d.dep, wd: d.wd, wl: d.wl, days: d.days, last: d.last, currency: d.currency || 'MYR', src: 'daily' }
+    const sn = (snapshots[username] || [])[0]
+    if (sn) return { dep: parseFloat(sn.total_deposit) || 0, wd: parseFloat(sn.total_withdrawal) || 0, wl: parseFloat(sn.win_loss) || 0, last: sn.snapshot_date, currency, src: 'csv' }
+    return null
+  }
+  // Our P&L = what the player lost to us (win/loss is the player's: negative = player lost) minus our costs
   function calcPnl(username) {
-    const latestSnap = (snapshots[username] || [])[0]
-    const totalCost  = (costs[username] || []).reduce((s, c) => s + (parseFloat(c.amount)||0), 0)
-    if (!latestSnap) return null
-    // Platform profit = withdrawal - deposit - win_loss_for_player - our_costs
-    // win_loss: positive = player won (our loss), negative = player lost (our gain)
-    const netDeposit = (latestSnap.total_deposit||0) - (latestSnap.total_withdrawal||0)
-    const platformPnl = netDeposit + (latestSnap.win_loss||0) - totalCost
-    return platformPnl
+    const f = figures(username)
+    if (!f) return null
+    const totalCost = (costs[username] || []).reduce((s, c) => s + (parseFloat(c.amount)||0), 0)
+    return -f.wl - totalCost
   }
 
   // ── Add player ─────────────────────────────────────────────────────────────
@@ -230,9 +276,11 @@ export default function TransferTracker() {
 
   // ── Summary stats ──────────────────────────────────────────────────────────
   const totalPlayers  = players.length
-  const totalProfit   = players.reduce((s, p) => s + (calcPnl(p.username)||0), 0)
-  const profitCount   = players.filter(p => (calcPnl(p.username)||0) > 0).length
-  const lossCount     = players.filter(p => (calcPnl(p.username)||0) < 0).length
+  // Summary counts only the players of the picked currency (MYR and SGD are never added together)
+  const curPlayers    = players.filter(p => figures(p.username)?.currency === currency)
+  const totalProfit   = curPlayers.reduce((s, p) => s + (calcPnl(p.username)||0), 0)
+  const profitCount   = curPlayers.filter(p => (calcPnl(p.username)||0) > 0).length
+  const lossCount     = curPlayers.filter(p => (calcPnl(p.username)||0) < 0).length
 
   if (loading) return <div style={{ padding: 40, color: 'var(--muted)', textAlign: 'center' }}>{L2('Loading…','载入中…')}</div>
 
@@ -263,7 +311,7 @@ export default function TransferTracker() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 20 }}>
         {[
           { label: L2('Total Players','玩家总数'),    value: totalPlayers,  color: '#58a6ff' },
-          { label: L2('Net P&L (All)','净盈亏（全部）'),     value: <PnlBadge value={totalProfit} currency={currency} />, color: totalProfit >= 0 ? '#3fb950' : '#f85149' },
+          { label: L2(`Net P&L (${currency} players: ${curPlayers.length})`,`净盈亏（${currency} 玩家：${curPlayers.length}）`),     value: <PnlBadge value={totalProfit} currency={currency} />, color: totalProfit >= 0 ? '#3fb950' : '#f85149' },
           { label: t('transferTracker.statProfitCount'),          value: profitCount,   color: '#3fb950' },
           { label: t('transferTracker.statLossCount'),          value: lossCount,     color: '#f85149' },
         ].map((st, i) => (
@@ -289,33 +337,44 @@ export default function TransferTracker() {
             <span style={{ fontSize: 14, fontWeight: 700 }}>{t('transferTracker.playerListTitle')}</span>
             <span style={{ fontSize: 12, color: 'var(--muted)' }}>{totalPlayers} {L2('players','名玩家')}</span>
           </div>
+          <div style={{ padding: '8px 20px', fontSize: 11, color: 'var(--muted)', borderBottom: '1px solid var(--border)', background: 'rgba(88,166,255,.04)' }}>
+            {L2(`Automatic from the daily report (data up to ${dataTo || '—'}): totals from each player's start date, play days only (valid bet > 0). Net P&L = what the player lost to us − our costs (+ Cost). BO bonus and rebate are not taken off. Each player in their own currency.`,
+              `自动取自每日报表（数据到 ${dataTo || '—'}）：从每位玩家的起算日累计，只算有投注的天数（有效投注 > 0）。净盈亏 = 玩家输给我们的 − 我们的成本（+ 成本）。BO 奖金和返水未扣除。每位玩家用自己的货币。`)}
+          </div>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ background: 'var(--surface2)' }}>
-                  {[ '#', L2('Username','用户名'), t('transferTracker.colSourcePlatform'), t('transferTracker.colLatestDeposit'), t('transferTracker.colLatestWithdrawal'), t('common.winLoss'), t('transferTracker.colOurCost'), t('transferTracker.colNetProfit'), t('transferTracker.colLastSnapshot'), t('common.actions') ].map(h => (
+                  {[ '#', L2('Username','用户名'), t('transferTracker.colSourcePlatform'), L2('Since','起算日'), L2('Deposit','存款'), L2('Withdrawal','提款'), L2('Player W/L','玩家输赢'), t('transferTracker.colOurCost'), t('transferTracker.colNetProfit'), L2('Play days / last','游戏天数 / 最后'), t('common.actions') ].map(h => (
                     <th key={h} style={s.th}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {players.length === 0 ? (
-                  <tr><td colSpan={10} style={{ ...s.td, textAlign: 'center', color: 'var(--muted)', padding: 32 }}>{t('transferTracker.noPlayersYet')}</td></tr>
+                  <tr><td colSpan={11} style={{ ...s.td, textAlign: 'center', color: 'var(--muted)', padding: 32 }}>{t('transferTracker.noPlayersYet')}</td></tr>
                 ) : players.map((p, rowIdx) => {
-                  const latestSnap = (snapshots[p.username]||[])[0]
+                  const f          = figures(p.username)
+                  const cur        = f?.currency || currency
                   const totalCost  = (costs[p.username]||[]).reduce((s,c) => s + (parseFloat(c.amount)||0), 0)
                   const pnl        = calcPnl(p.username)
+                  const start      = startOf(p)
                   return (
                     <tr key={p.username} style={{ cursor: 'pointer' }} onClick={() => setSelected(selected?.username === p.username ? null : p)}>
                       <td style={{ ...s.td, color: 'var(--muted)', fontSize: 12, width: 36 }}>{rowIdx + 1}</td>
                       <td style={s.td}><span style={{ fontWeight: 700 }}>{p.username}<CopyBtn text={p.username} /></span></td>
                       <td style={s.td}><span style={{ background: 'rgba(88,166,255,.15)', color: '#58a6ff', padding: '2px 8px', borderRadius: 5, fontSize: 11, fontWeight: 700 }}>{p.source_platform}</span></td>
-                      <td style={s.td}>{latestSnap ? fmtMoney(latestSnap.total_deposit, currency) : '—'}</td>
-                      <td style={s.td}>{latestSnap ? fmtMoney(latestSnap.total_withdrawal, currency) : '—'}</td>
-                      <td style={s.td}>{latestSnap ? <span style={{ color: (latestSnap.win_loss||0) > 0 ? '#f85149' : '#3fb950' }}>{fmtMoney(latestSnap.win_loss, currency)}</span> : '—'}</td>
-                      <td style={s.td}>{totalCost > 0 ? <span style={{ color: '#f59e0b' }}>{fmtMoney(totalCost, currency)}</span> : '—'}</td>
-                      <td style={s.td}><PnlBadge value={pnl} currency={currency} /></td>
-                      <td style={s.td}><span style={{ fontSize: 11, color: 'var(--muted)' }}>{latestSnap?.snapshot_date || '—'}</span></td>
+                      <td style={s.td}><span style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }} title={p.joined_date && p.joined_date !== start ? L2(`Joined date ${p.joined_date} is in the future, using the day added`, `加入日期 ${p.joined_date} 在未来，改用添加日期`) : undefined}>{start}{p.joined_date && p.joined_date !== start ? ' ⚠️' : ''}</span></td>
+                      {!f ? (
+                        <td colSpan={5} style={{ ...s.td, fontSize: 11, color: '#d29922' }}>{L2('Not found in the daily report (check the username in BO)', '每日报表里找不到（请在 BO 核对用户名）')}</td>
+                      ) : <>
+                        <td style={s.td}>{fmtMoney(f.dep, cur)}</td>
+                        <td style={s.td}>{fmtMoney(f.wd, cur)}</td>
+                        <td style={s.td}><span style={{ color: f.wl > 0 ? '#f85149' : '#3fb950' }}>{fmtMoney(f.wl, cur)}</span></td>
+                        <td style={s.td}>{totalCost > 0 ? <span style={{ color: '#f59e0b' }}>{fmtMoney(totalCost, cur)}</span> : '—'}</td>
+                        <td style={s.td}><PnlBadge value={pnl} currency={cur} /></td>
+                      </>}
+                      <td style={s.td}><span style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{f?.src === 'csv' ? `CSV ${f.last}` : f ? (f.days ? `${f.days} ${L2('days', '天')} · ${f.last}` : L2('no play yet', '尚未游戏')) : '—'}</span></td>
                       <td style={{ ...s.td }} onClick={e => e.stopPropagation()}>
                         <div style={{ display: 'flex', gap: 6 }}>
                           <button onClick={async () => {
@@ -345,8 +404,28 @@ export default function TransferTracker() {
                 {/* Snapshots history */}
                 <div>
                   <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', marginBottom: 8 }}>📥 {t('transferTracker.depositWithdrawalHistory')}</div>
-                  {(snapshots[selected.username]||[]).length === 0 ? (
-                    <div style={{ fontSize: 12, color: 'var(--muted)', fontStyle: 'italic' }}>{t('transferTracker.noSnapshotData')}</div>
+                  {Object.keys(daily[selected.username]?.months || {}).length > 0 ? (() => {
+                    const dd = daily[selected.username], cur = dd.currency || currency
+                    return <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                      <thead>
+                        <tr style={{ background: 'var(--surface2)' }}>
+                          {[L2('Month','月份'), L2('Play days','游戏天数'), t('common.deposit'), t('common.withdrawal'), L2('Player W/L','玩家输赢')].map(h => <th key={h} style={{ ...s.th, fontSize: 10 }}>{h}</th>)}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {Object.entries(dd.months).sort((a, b) => b[0].localeCompare(a[0])).map(([m, v]) => (
+                          <tr key={m}>
+                            <td style={{ ...s.td, fontSize: 11 }}>{m}</td>
+                            <td style={{ ...s.td, fontSize: 11 }}>{v.days}</td>
+                            <td style={{ ...s.td, fontSize: 11 }}>{fmtMoney(v.dep, cur)}</td>
+                            <td style={{ ...s.td, fontSize: 11 }}>{fmtMoney(v.wd, cur)}</td>
+                            <td style={{ ...s.td, fontSize: 11, color: v.wl > 0 ? '#f85149' : '#3fb950' }}>{fmtMoney(v.wl, cur)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  })() : (snapshots[selected.username]||[]).length === 0 ? (
+                    <div style={{ fontSize: 12, color: 'var(--muted)', fontStyle: 'italic' }}>{daily[selected.username]?.inCrm ? L2(`No play days since ${startOf(selected)}.`, `自 ${startOf(selected)} 起没有游戏记录。`) : t('transferTracker.noSnapshotData')}</div>
                   ) : (
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                       <thead>
