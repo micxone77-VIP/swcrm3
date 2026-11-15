@@ -1251,8 +1251,9 @@ export default function CSVImport() {
         .select('username, tier, total_deposit, total_withdrawal, monthly_valid_bet, win_loss, bet_count, deposit_count, bonus_count, bonus_amount, total_rebate, has_promo, currency, host_assigned, valid_bet_month')
         .in('tier', ['SILVER', 'BRONZE']).eq('is_excluded', false).order('username'))
       let potSaved = 0
-      for (let i = 0; i < pots.length; i += 500) {
-        const batch = pots.slice(i, i + 500).map(v => {
+      // 100 rows per batch: each row fires 4 triggers, and 500 rows can pass the 8s statement timeout
+      for (let i = 0; i < pots.length; i += 100) {
+        const batch = pots.slice(i, i + 100).map(v => {
           const sameMonth = (v.valid_bet_month || '') === snapshotMonth
           return {
             username: v.username, snapshot_date: dateStr, tier: v.tier,
