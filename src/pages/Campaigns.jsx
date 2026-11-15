@@ -16,7 +16,7 @@ import CampaignMedia from '../components/campaign/CampaignMedia'
 import CampaignScorecard from '../components/campaign/CampaignScorecard'
 import { CampaignInfoButton } from '../components/campaign/CampaignGuide'
 import { ListCount } from '../components/ui'
-import { waMessage, tierList, STAGE_INFO, WA_STAGES } from '../lib/campaignWaTemplates'
+import { waMessage, tierList, STAGE_INFO, WA_STAGES, giftText } from '../lib/campaignWaTemplates'
 import CampaignWaEditor from '../components/campaign/CampaignWaEditor'
 import CopyBtn from '../components/CopyBtn'
 import EmailModal from '../components/EmailModal'
@@ -1451,7 +1451,7 @@ export default function Campaigns() {
     const dep = isDailyMode ? (parseFloat(dayEntry?.deposit_amount) || 0) : playerDeposit(p)
     const vb = isDailyMode ? (parseFloat(dayEntry?.turnover_amount) || 0) : (parseFloat(p.valid_bet) || 0)
     const isPaid = isDailyMode ? dayEntry?.payout_status === 'paid' : p.payout_status === 'paid'
-    let reward = 0, gap = 0, nextReward = 0
+    let reward = 0, gap = 0, nextReward = 0, rewardGift = null, nextGift = null
     if (selected?.is_multi_level && campType === 'fixed_reward') {
       const metric = multiMetricsByPlayer[p.id]
       reward = metric?.qualifiedRewardTotal || 0
@@ -1459,12 +1459,14 @@ export default function Campaigns() {
     } else if (campType === 'dual_tier') {
       const result = calcDualTierReward(dep, vb, rewardTiers)
       if (result.tierIndex >= 0) reward = (Number(result.creditAmount) || 0) + (Number(result.wcashAmount) || 0)
+      if (result.tierIndex >= 0) rewardGift = (rewardTiers || [])[result.tierIndex]?.gift || null
       if (dayEntry && (Number(dayEntry.credit_reward) || Number(dayEntry.wcash_reward))) reward = (Number(dayEntry.credit_reward) || 0) + (Number(dayEntry.wcash_reward) || 0)
       const next = (rewardTiers || [])[result.tierIndex + 1]
       if (next) {
         const dg = Math.max(0, (parseFloat(next.depositThreshold) || 0) - dep), tg = Math.max(0, (parseFloat(next.turnoverThreshold) || 0) - vb)
         gap = dg > 0 ? dg : tg
         nextReward = (parseFloat(next.creditAmount) || 0) + (parseFloat(next.wcashAmount) || 0)
+        nextGift = next.gift || null
       }
     } else if (campType === 'leaderboard') {
       reward = extra?.inTop ? (extra?.reward || 0) : 0
@@ -1489,8 +1491,9 @@ export default function Campaigns() {
     const mult = Number(selected?.turnover_multiplier) || 0
     const vars = l => ({
       username: p.username || '', agent: myName, campaign: campName, start: selected?.start_date || '', end: selected?.end_date || '', days_left: daysLeft, cur,
-      gap: gap > 0 ? num(gap) : '', next_reward: nextReward > 0 ? cur + num(nextReward) : '',
-      reward: reward <= 0 ? '' : !dayStreak ? cur + num(reward)
+      gap: gap > 0 ? num(gap) : '', next_reward: nextGift ? giftText(nextGift, l) : nextReward > 0 ? cur + num(nextReward) : '',
+      // Gift levels (gold bar): the player hears the gift name, not our RM cost
+      reward: reward <= 0 ? '' : rewardGift ? giftText(rewardGift, l) : !dayStreak ? cur + num(reward)
         : `${cur}${num(reward)} (${cur}${num(dayReward)} ${l === 'zh' ? '奖励 + ' : l === 'my' ? 'ganjaran + ' : 'reward + '}${cur}${num(dayStreak)} ${l === 'zh' ? '连续奖励' : 'streak bonus'})`,
       turnover: mult && reward > 0 ? cur + num(reward * mult) : '', tier_list: tierList(selected, campaignLevels, l),
       streak: extra?.streak ?? '', streak_n: selected?.streak_days || '', streak_pct: selected?.streak_bonus_pct != null ? Number(selected.streak_bonus_pct) : '',

@@ -87,6 +87,8 @@ export function unknownVars(text) {
 }
 
 const n = v => Math.round(Number(v) || 0).toLocaleString('en-US')
+// Gift name of a reward level: reward_tiers[i].gift = { en, my, zh } (or plain text), e.g. "5g gold bar"
+export const giftText = (g, lang = 'en') => (g ? `🥇 ${typeof g === 'string' ? g : (g[lang] || g.en || '')}` : '')
 const W = {
   dep: { en: 'Deposit', my: 'Deposit', zh: '存款' }, to: { en: 'turnover', my: 'turnover', zh: '流水' },
   daily: { en: '(every day counted on its own)', my: '(setiap hari dikira semula)', zh: '（每天独立计算）' },
@@ -105,7 +107,8 @@ export function tierList(c, levels = [], lang = 'en') {
   if (type === 'dual_tier') {
     for (const r of c.reward_tiers || []) {
       const cond = [Number(r.depositThreshold) > 0 ? `${t('dep')} ${cur}${n(r.depositThreshold)}` : null, Number(r.turnoverThreshold) > 0 ? `${t('to')} ${cur}${n(r.turnoverThreshold)}` : null].filter(Boolean).join(' + ')
-      const pay = [Number(r.creditAmount) > 0 ? `${cur}${n(r.creditAmount)} Credit` : null, Number(r.wcashAmount) > 0 ? `${cur}${n(r.wcashAmount)} WCash` : null].filter(Boolean).join(' + ')
+      // A level with a gift (e.g. gold bar) shows the gift name; its RM amount is only our cost
+      const pay = r.gift ? giftText(r.gift, lang) : [Number(r.creditAmount) > 0 ? `${cur}${n(r.creditAmount)} Credit` : null, Number(r.wcashAmount) > 0 ? `${cur}${n(r.wcashAmount)} WCash` : null].filter(Boolean).join(' + ')
       lines.push(`• ${cond} → ${pay}`)
     }
     lines.push(t(c.settlement_frequency === 'daily' ? 'daily' : 'total'))
