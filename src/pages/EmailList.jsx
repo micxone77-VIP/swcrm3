@@ -2,7 +2,7 @@
 // check every row (bad / duplicate / unsubscribed / emailed recently, matched to a CRM player or new),
 // then send through the normal email box (send-email edge function, "leads").
 // Rows that match a CRM player also go into that player's Contact Log; new people only into email_logs.
-import { useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import * as XLSX from 'xlsx'
 import { supabase } from '../lib/supabase'
 import { useLanguage } from '../contexts/LanguageContext'
@@ -52,6 +52,92 @@ function guessCols(head) {
   }
 }
 
+// 📜 Sent history: every email the CRM sent (email_logs), newest first. Tests are left out.
+// Admin / read-only see all; a host sees their own (RLS on email_logs).
+function SentHistory({ L2 }) {
+  const [days, setDays] = useState(30)
+  const [listOnly, setListOnly] = useState(false)
+  const [q, setQ] = useState('')
+  const [logs, setLogs] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const [open, setOpen] = useState(null)
+
+  async function load() {
+    setBusy(true); setErr('')
+    try {
+      const since = new Date(Date.now() - Number(days) * 86400000).toISOString()
+      const all = []
+      for (let from = 0; from < 5000; from += 1000) {
+        let qy = supabase.from('email_logs').select('id,created_at,to_email,username,subject,body,sender_name,reason').eq('status', 'sent').gte('created_at', since)
+        qy = listOnly ? qy.eq('reason', 'list') : qy.or('reason.is.null,reason.neq.test')
+        const { data, error } = await qy.order('created_at', { ascending:false }).range(from, from + 999)
+        if (error) throw error
+        all.push(...(data || []))
+        if (!data || data.length < 1000) break
+      }
+      setLogs(all)
+    } catch (e) { setErr(e.message) }
+    setBusy(false)
+  }
+  useEffect(() => { load() }, [days, listOnly]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const myt = t => new Date(new Date(t).getTime() + 8 * 3600000).toISOString().slice(0, 16).replace('T', ' ')
+  const s = q.trim().toLowerCase()
+  const shown = (logs || []).filter(l => !s || [l.to_email, l.username, l.subject, l.sender_name].some(v => String(v || '').toLowerCase().includes(s)))
+
+  function exportHistory() {
+    const data = shown.map(l => ({ 'Sent (MYT)': myt(l.created_at), Email: l.to_email, 'CRM username': l.username || '', From: l.reason === 'list' ? 'List' : 'CRM', Subject: l.subject, 'Sent by': l.sender_name || '' }))
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data), 'Sent emails')
+    XLSX.writeFile(wb, `sent_emails_${new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10)}.xlsx`)
+  }
+
+  return (
+    <div style={card}>
+      <div style={{ display:'flex', gap:10, flexWrap:'wrap', alignItems:'center', marginBottom:10 }}>
+        <select style={input} value={days} onChange={e => setDays(Number(e.target.value))}>
+          {[7, 30, 90, 365].map(d => <option key={d} value={d}>{L2(`Last ${d} days`, `最近 ${d} 天`)}</option>)}
+        </select>
+        <label style={{ fontSize:12, display:'flex', gap:6, alignItems:'center', cursor:'pointer' }}><input type="checkbox" checked={listOnly} onChange={e => setListOnly(e.target.checked)} />{L2('Only emails sent from a list', '只看名单发送的邮件')}</label>
+        <input style={{ ...input, flex:'1 1 220px' }} placeholder={L2('Search email, username, subject, sender…', '搜索邮箱、用户名、主题、发送人…')} value={q} onChange={e => setQ(e.target.value)} />
+        <button style={btn} disabled={busy} onClick={load}>🔄 {L2('Refresh', '刷新')}</button>
+        <button style={btn} disabled={!shown.length} onClick={exportHistory}>⬇ {L2('Download (.xlsx)', '下载 (.xlsx)')}</button>
+      </div>
+      {err && <div style={{ fontSize:13, color:'#f85149', marginBottom:8 }}>{err}</div>}
+      {busy ? <div style={{ fontSize:13, color:'var(--muted)' }}>⏳ {L2('Loading…', '加载中…')}</div> : (
+        <>
+          <div style={{ fontSize:12, color:'var(--muted)', marginBottom:8 }}>{L2(`${shown.length} email(s) sent. Click a row to read the message.`, `已发送 ${shown.length} 封。点一行可以看内容。`)}</div>
+          <div style={{ overflowX:'auto' }}>
+            <table style={{ width:'100%', borderCollapse:'collapse' }}>
+              <thead><tr>
+                <th style={th}>{L2('Sent (MYT)', '发送时间')}</th><th style={th}>{L2('Email', '邮箱')}</th><th style={th}>{L2('CRM player', 'CRM 玩家')}</th>
+                <th style={th}>{L2('Subject', '主题')}</th><th style={th}>{L2('Sent by', '发送人')}</th>
+              </tr></thead>
+              <tbody>
+                {shown.slice(0, 1000).map(l => (
+                  <Fragment key={l.id}>
+                    <tr onClick={() => setOpen(open === l.id ? null : l.id)} style={{ cursor:'pointer', background: open === l.id ? 'var(--surface2)' : undefined }}>
+                      <td style={{ ...td, whiteSpace:'nowrap', color:'var(--muted)' }}>{myt(l.created_at)}</td>
+                      <td style={td}>{l.to_email}<CopyBtn text={l.to_email} /></td>
+                      <td style={td}>{l.username ? <><b>{l.username}</b><CopyBtn text={l.username} /></> : <span style={{ color:'var(--muted)' }}>🆕 {L2('Not in CRM', '不在 CRM')}</span>}</td>
+                      <td style={td}>{l.subject}{l.reason === 'list' && <span style={{ marginLeft:6, fontSize:10, color:'#2f81f7', fontWeight:700 }}>{L2('LIST', '名单')}</span>}</td>
+                      <td style={td}>{l.sender_name || '—'}</td>
+                    </tr>
+                    {open === l.id && <tr><td colSpan={5} style={{ ...td, whiteSpace:'pre-wrap', background:'var(--surface2)', lineHeight:1.5 }}>{l.body || L2('(no message saved)', '（没有保存内容）')}</td></tr>}
+                  </Fragment>
+                ))}
+              </tbody>
+            </table>
+            {shown.length > 1000 && <div style={{ fontSize:11, color:'var(--muted)', marginTop:6 }}>{L2(`Showing the first 1,000 of ${shown.length}. Download to see all.`, `只显示前 1,000 行（共 ${shown.length}）。下载可看全部。`)}</div>}
+            {!shown.length && <div style={{ fontSize:13, color:'var(--muted)', padding:'10px 0' }}>{L2('No emails sent in this period.', '这段时间没有发送邮件。')}</div>}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 export default function EmailList() {
   const { lang } = useLanguage()
   const L2 = (en, zh) => (lang === 'zh' ? zh : en)
@@ -65,6 +151,7 @@ export default function EmailList() {
   const [err, setErr] = useState('')
   const [filter, setFilter] = useState('all')
   const [emailOpen, setEmailOpen] = useState(false)
+  const [view, setView] = useState('send')
 
   function applyTable(aoa, name) {
     const all = (aoa || []).map(r => (r || []).map(v => (v == null ? '' : String(v).trim())))
@@ -198,7 +285,13 @@ export default function EmailList() {
   return (
     <div style={{ padding:'24px 28px', maxWidth:1400 }}>
       <div style={{ fontSize:22, fontWeight:800, marginBottom:4 }}>📧 {L2('Email a List', '名单群发邮件')}</div>
-      <div style={{ fontSize:13, color:'var(--muted)', marginBottom:16 }}>{L2('Send an email to a list from a Google Sheet or a CSV / Excel file, also to people not in the CRM yet. Rows that match a CRM player also go into their Contact Log.', '从 Google Sheet 或 CSV / Excel 名单发送邮件，包括还不在 CRM 的人。对得上 CRM 玩家的，也会记录到该玩家的联系记录。')}</div>
+      <div style={{ fontSize:13, color:'var(--muted)', marginBottom:12 }}>{L2('Send an email to a list from a Google Sheet or a CSV / Excel file, also to people not in the CRM yet. Rows that match a CRM player also go into their Contact Log.', '从 Google Sheet 或 CSV / Excel 名单发送邮件，包括还不在 CRM 的人。对得上 CRM 玩家的，也会记录到该玩家的联系记录。')}</div>
+      <div style={{ display:'flex', gap:6, marginBottom:14 }}>
+        {[['send', L2('📧 Send', '📧 发送')], ['history', L2('📜 Sent history', '📜 发送记录')]].map(([k, t]) => (
+          <button key={k} type="button" onClick={() => setView(k)} style={{ ...btn, background: view === k ? 'var(--accent)' : 'var(--surface2)', color: view === k ? '#fff' : 'var(--text)' }}>{t}</button>
+        ))}
+      </div>
+      {view === 'history' ? <SentHistory L2={L2} /> : <>
 
       <div style={card}>
         <div style={{ fontWeight:700, marginBottom:8 }}>1. {L2('Load the list', '读取名单')}</div>
@@ -277,6 +370,7 @@ export default function EmailList() {
           </div>
         </div>
       )}
+      </>}
 
       {emailOpen && (
         <EmailModal
