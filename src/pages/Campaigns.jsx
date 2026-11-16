@@ -2837,9 +2837,10 @@ export default function Campaigns() {
                               if (allDone) pr = { pct:100, color:'#3fb950', bg:'rgba(63,185,80,.15)', label:L2('✅ ALL LEVELS','✅ 全部级别') }
                               else if (nextLvl) pr = getProgress(dep, parseFloat(nextLvl.deposit_threshold)||0)
                               else pr = { pct:0, color:'#8b949e', bg:'rgba(139,148,158,.15)', label:L2('IN PROGRESS','进行中') }
-                            } else if (isDailyMode && campType==='dual_tier') {
-                              const currentDeposit = dailyEntry?.deposit_amount || 0
-                              const currentTurnover = dailyEntry?.turnover_amount || 0
+                            } else if (campType==='dual_tier') {
+                              // Daily settlement: that day's figures. Whole-period: campaign totals (deposit + turnover)
+                              const currentDeposit = isDailyMode ? (dailyEntry?.deposit_amount || 0) : playerDeposit(p)
+                              const currentTurnover = isDailyMode ? (dailyEntry?.turnover_amount || 0) : (parseFloat(p.valid_bet) || 0)
                               if (dualReward.tierIndex >= 0) {
                                 // At least one tier reached — show which one explicitly, and progress
                                 // toward the NEXT tier so achieving tier 1 or 2 doesn't look like "behind".
