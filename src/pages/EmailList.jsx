@@ -2,10 +2,14 @@
 // check every row (bad / duplicate / unsubscribed / emailed recently, matched to a CRM player or new),
 // then send through the normal email box (send-email edge function, "leads").
 // Rows that match a CRM player also go into that player's Contact Log; new people only into email_logs.
-import { Fragment, useEffect, useMemo, useState } from 'react'
+// 2026-11-16: pick rows (next 100 not sent), and after each batch the CRM marks the Google Sheet
+// (CRM Email / Emailed at / Emailed by) through the sheet-mark edge function + Marcus's Apps Script.
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import * as XLSX from 'xlsx'
 import { supabase } from '../lib/supabase'
 import { useLanguage } from '../contexts/LanguageContext'
+import { useAuth } from '../hooks/useAuth'
+import { SHEET_SCRIPT } from '../lib/sheetScript'
 import CopyBtn from '../components/CopyBtn'
 import EmailModal from '../components/EmailModal'
 
@@ -37,7 +41,65 @@ function sheetCsvUrls(link) {
   const id = String(link).match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/)?.[1]
   if (!id) return null
   const gid = String(link).match(/[#&?]gid=(\d+)/)?.[1] || '0'
-  return [`https://docs.google.com/spreadsheets/d/${id}/export?format=csv&gid=${gid}`, `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv&gid=${gid}`]
+  return { id, gid, urls: [`https://docs.google.com/spreadsheets/d/${id}/export?format=csv&gid=${gid}`, `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv&gid=${gid}`] }
+}
+const mytNow = () => new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 16).replace('T', ' ')
+
+// ⚙ Sheet marking setup (admin): copy the Google script, paste the Web app link, test it
+function SheetSetup({ L2, sheet }) {
+  const [open, setOpen] = useState(false)
+  const [cfg, setCfg] = useState(null)
+  const [url, setUrl] = useState('')
+  const [msg, setMsg] = useState('')
+  const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    supabase.from('sheet_hook_settings').select('script_url,token,updated_by,updated_at').eq('id', true).maybeSingle()
+      .then(({ data }) => { setCfg(data || null); setUrl(data?.script_url || '') })
+  }, [])
+  if (!cfg) return null
+  const ok = !!cfg.script_url
+  async function copyScript() {
+    try { await navigator.clipboard.writeText(SHEET_SCRIPT.replace('__TOKEN__', cfg.token)); setMsg(L2('✅ Script copied. Paste it in Apps Script (step 2).', '✅ 脚本已复制。请贴到 Apps Script（第 2 步）。')) }
+    catch { setMsg(L2('Could not copy. Allow clipboard access and try again.', '无法复制，请允许剪贴板权限后再试。')) }
+  }
+  async function save() {
+    const u = url.trim()
+    if (u && !/^https:\/\/script\.google\.com\/macros\/s\/[^/]+\/exec$/.test(u)) { setMsg(L2('The link should look like https://script.google.com/macros/s/…/exec', '链接应该像 https://script.google.com/macros/s/…/exec')); return }
+    setBusy(true)
+    const { error } = await supabase.from('sheet_hook_settings').update({ script_url: u || null, updated_at: new Date().toISOString() }).eq('id', true)
+    setBusy(false)
+    if (error) { setMsg(error.message); return }
+    setCfg(c => ({ ...c, script_url: u || null })); setMsg(L2('✅ Saved. Press Test.', '✅ 已保存，请按测试。'))
+  }
+  async function test() {
+    setBusy(true); setMsg('')
+    const { data, error } = await supabase.functions.invoke('sheet-mark', { body: { action: 'ping', ...(sheet ? { sheetId: sheet.id, gid: sheet.gid } : {}) } })
+    setBusy(false)
+    if (error || !data?.ok) { setMsg('❌ ' + (data?.error === 'not_set_up' ? L2('Save the Web app link first.', '请先保存 Web app 链接。') : (data?.error || error?.message))); return }
+    setMsg(data.tab ? L2(`✅ Working. The CRM can write to "${data.sheet}" → tab "${data.tab}".`, `✅ 正常。CRM 可以写入「${data.sheet}」→ 分页「${data.tab}」。`) : L2(`✅ Working (Google account ${data.account}). Load a sheet and press Test again to check that sheet.`, `✅ 正常（Google 账号 ${data.account}）。读取表格后再按测试，可检查那个表格。`))
+  }
+  const step = { fontSize:12, lineHeight:1.6, margin:'2px 0' }
+  return (
+    <div style={{ ...card, padding:'10px 18px' }}>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', cursor:'pointer' }} onClick={() => setOpen(o => !o)}>
+        <div style={{ fontSize:13, fontWeight:700 }}>⚙ {L2('Sheet marking setup (admin)', '表格标记设置（管理员）')} · <span style={{ color: ok ? '#3fb950' : '#d29922' }}>{ok ? L2('On: sent rows are marked in the Google Sheet', '已开启：已发送的行会标记在 Google Sheet') : L2('Off: not set up yet', '未开启：还没设置')}</span></div>
+        <span style={{ fontSize:12, color:'var(--muted)' }}>{open ? '▲' : '▼'}</span>
+      </div>
+      {open && <div style={{ marginTop:10 }}>
+        <div style={step}>1. <button style={{ ...btn, padding:'4px 10px' }} onClick={copyScript}>📋 {L2('Copy the script', '复制脚本')}</button></div>
+        <div style={step}>2. {L2('Open any Google Sheet with your Google account → Extensions → Apps Script. Delete what is there, paste, press 💾 Save.', '用你的 Google 账号打开任何一个 Google Sheet → 扩展程序 → Apps Script。删除原有内容，贴上，按 💾 保存。')}</div>
+        <div style={step}>3. {L2('Deploy → New deployment → ⚙ Select type: Web app. Execute as: Me. Who has access: Anyone. Press Deploy and allow access (Advanced → Go to … if Google warns).', '部署 → 新建部署 → ⚙ 选择类型：Web 应用。执行身份：我。谁可以访问：任何人。按部署并允许权限（如果 Google 警告：高级 → 前往…）。')}</div>
+        <div style={step}>4. {L2('Copy the Web app link (ends with /exec), paste it here, Save, then Test.', '复制 Web 应用链接（结尾是 /exec），贴在这里，保存，然后测试。')}</div>
+        <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginTop:6 }}>
+          <input style={{ ...input, flex:'1 1 420px' }} placeholder="https://script.google.com/macros/s/…/exec" value={url} onChange={e => setUrl(e.target.value)} />
+          <button style={btn} disabled={busy} onClick={save}>💾 {L2('Save', '保存')}</button>
+          <button style={btn} disabled={busy || !ok} onClick={test}>🧪 {L2('Test', '测试')}</button>
+        </div>
+        <div style={{ fontSize:11, color:'var(--muted)', marginTop:6 }}>{L2('The script runs as your Google account, so it can mark any sheet you can edit. It only writes 3 columns at the end: CRM Email · Emailed at · Emailed by. The script has its own password, so only this CRM can use the link.', '脚本以你的 Google 账号运行，所以你能编辑的表格都能标记。它只会在最后写 3 列：CRM Email · Emailed at · Emailed by。脚本有自己的密码，只有这个 CRM 能用这个链接。')}</div>
+        {msg && <div style={{ fontSize:12, marginTop:6 }}>{msg}</div>}
+      </div>}
+    </div>
+  )
 }
 
 // Guess which column holds what, from the header names
@@ -152,23 +214,32 @@ export default function EmailList() {
   const [filter, setFilter] = useState('all')
   const [emailOpen, setEmailOpen] = useState(false)
   const [view, setView] = useState('send')
+  const { profile } = useAuth()
+  const isAdmin = profile?.role === 'admin'
+  const [sheet, setSheet] = useState(null) // { id, gid } when loaded from a Google Sheet (for marking)
+  const [picked, setPicked] = useState(() => new Set()) // row lines ticked for sending
+  const [pickN, setPickN] = useState(100)
+  const [markMsg, setMarkMsg] = useState('')
+  const markQueue = useRef(Promise.resolve())
+  const markCount = useRef({ ok: 0, bad: 0 })
 
-  function applyTable(aoa, name) {
+  function applyTable(aoa, name, sh = null) {
     const all = (aoa || []).map(r => (r || []).map(v => (v == null ? '' : String(v).trim())))
     const headAt = all.findIndex(r => r.filter(Boolean).length >= 2)
     if (headAt < 0) { setErr(L2('The file looks empty.', '文件好像是空的。')); return }
     const head = all[headAt]
     const body = all.slice(headAt + 1).map((r, i) => ({ line: headAt + i + 2, cells: r })).filter(r => r.cells.some(Boolean))
-    setTable({ head, rows: body }); setCols(guessCols(head)); setRows([]); setSource(name); setFilter('all')
+    setTable({ head, rows: body, headRow: headAt + 1 }); setCols(guessCols(head)); setRows([]); setSource(name); setFilter('all')
+    setSheet(sh); setPicked(new Set()); setMarkMsg('')
   }
 
   async function loadSheet() {
     setErr('')
-    const urls = sheetCsvUrls(link)
-    if (!urls) { setErr(L2('That does not look like a Google Sheet link (it should contain /spreadsheets/d/…).', '这不像 Google Sheet 链接（应包含 /spreadsheets/d/…）。')); return }
+    const info = sheetCsvUrls(link)
+    if (!info) { setErr(L2('That does not look like a Google Sheet link (it should contain /spreadsheets/d/…).', '这不像 Google Sheet 链接（应包含 /spreadsheets/d/…）。')); return }
     setBusy(L2('Loading the sheet…', '正在读取表格…'))
     let text = ''
-    for (const u of urls) {
+    for (const u of info.urls) {
       try {
         const r = await fetch(u)
         const t = await r.text()
@@ -178,7 +249,7 @@ export default function EmailList() {
     setBusy('')
     if (!text) { setErr(L2('Could not read the sheet. In Google Sheets: Share → General access → "Anyone with the link" (Viewer), then try again. Or download it as CSV and upload the file.', '无法读取表格。请在 Google Sheets：共享 → 一般访问权限 → “知道链接的任何人”（查看者），然后再试。或下载为 CSV 再上传。')); return }
     const wb = XLSX.read(text, { type:'string', raw:true })
-    applyTable(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header:1, raw:true, defval:'' }), 'Google Sheet')
+    applyTable(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header:1, raw:true, defval:'', blankrows:true }), 'Google Sheet', { id: info.id, gid: info.gid })
   }
 
   async function loadFile(file) {
@@ -196,11 +267,14 @@ export default function EmailList() {
     if (cols.email < 0) { setErr(L2('Pick the Email column first.', '请先选择邮箱列。')); return }
     setErr(''); setBusy(L2('Checking the list against the CRM…', '正在和 CRM 核对名单…'))
     try {
+      // Columns the CRM wrote on an earlier send (CRM Email / Emailed at)
+      const hIdx = n => table.head.findIndex(h => String(h).trim().toLowerCase() === n)
+      const cMark = hIdx('crm email'), cAt = hIdx('emailed at')
       const base = table.rows.map(r => {
         const cell = i => (i >= 0 ? r.cells[i] || '' : '')
         const email = cell(cols.email).replace(/\s+/g, '')
         const users = [...new Set(cell(cols.username).split(/[\s/,;|]+/).map(s => s.trim()).filter(s => s.length >= 3 && !NOT_USER.has(s.toLowerCase())))]
-        return { line: r.line, name: cell(cols.name), email, emailKey: email.toLowerCase(), phone: cell(cols.phone), users }
+        return { line: r.line, name: cell(cols.name), email, emailKey: email.toLowerCase(), phone: cell(cols.phone), users, marked: /^sent/i.test(cell(cMark)) ? cell(cAt) || '✓' : '' }
       })
       // CRM players by username (exact, plus lowercase), then by email
       const allUsers = [...new Set(base.flatMap(r => r.users.flatMap(u => [u, u.toLowerCase()])))]
@@ -235,6 +309,7 @@ export default function EmailList() {
         const member = hits[0] || byEmail[r.emailKey] || null
         let status = 'ready', note = ''
         if (!EMAIL_RE.test(r.email)) status = 'bad'
+        else if (r.marked) { status = 'sent'; note = L2(`marked in the sheet · ${r.marked}`, `表格已标记 · ${r.marked}`) }
         else if (seen.has(r.emailKey)) status = 'dup'
         else if (unsub.has(r.emailKey)) status = 'unsub'
         else if (recent[r.emailKey]) { status = 'recent'; note = `${new Date(recent[r.emailKey].created_at).toLocaleDateString('en-GB', { day:'numeric', month:'short' })} · ${recent[r.emailKey].subject || ''}` }
@@ -242,8 +317,39 @@ export default function EmailList() {
         const multi = new Set(hits.map(h => h.username)).size > 1 ? L2(`${new Set(hits.map(h => h.username)).size} accounts, using ${member.username}`, `${new Set(hits.map(h => h.username)).size} 个账号，使用 ${member.username}`) : ''
         return { ...r, member, status, note, multi }
       }))
+      setPicked(new Set())
     } catch (e) { setErr(e.message) }
     setBusy('')
+  }
+
+  // ☑ tick the next N ready rows (top to bottom) that are not sent yet
+  function pickNext() {
+    const n = Math.max(1, Number(pickN) || 100)
+    setPicked(new Set(rows.filter(r => r.status === 'ready').slice(0, n).map(r => r.line)))
+    setFilter('ready')
+  }
+  const togglePick = line => setPicked(p => { const s = new Set(p); if (s.has(line)) s.delete(line); else s.add(line); return s })
+
+  // ✍ After each batch: write CRM Email / Emailed at / Emailed by on those rows of the Google Sheet (in order, in the background)
+  function markSheet(results) {
+    if (!sheet) return
+    const lineOf = {}
+    for (const r of rows) if (r.status === 'ready' && !lineOf[r.emailKey]) lineOf[r.emailKey] = r.line
+    const by = profile?.full_name || profile?.username || ''
+    const at = mytNow()
+    const marks = (results || []).filter(x => x.email && (x.status === 'sent' || x.status === 'failed') && lineOf[String(x.email).toLowerCase()])
+      .map(x => ({ row: lineOf[String(x.email).toLowerCase()], email: String(x.email).toLowerCase(), status: x.status === 'sent' ? 'Sent' : `Failed: ${x.reason || ''}`.slice(0, 120), at, by }))
+    if (!marks.length) return
+    markQueue.current = markQueue.current.then(async () => {
+      const { data, error } = await supabase.functions.invoke('sheet-mark', { body: { action: 'mark', sheetId: sheet.id, gid: sheet.gid, headRow: table?.headRow || 1, emailCol: cols.email + 1, marks } })
+      if (error || !data?.ok) {
+        markCount.current.bad += marks.length
+        setMarkMsg('⚠ ' + (data?.error === 'not_set_up' ? L2('Sheet marking is not set up yet (⚙ setup above), so the sheet was not marked. The emails were sent.', '表格标记还没设置（上方 ⚙ 设置），所以表格没有标记。邮件已发送。') : L2(`Could not mark the sheet: ${data?.error || error?.message}. The emails were sent.`, `无法标记表格：${data?.error || error?.message}。邮件已发送。`)))
+      } else {
+        markCount.current.ok += data.marked || 0
+        setMarkMsg(L2(`✍ ${markCount.current.ok} row(s) marked in the Google Sheet.`, `✍ Google Sheet 已标记 ${markCount.current.ok} 行。`))
+      }
+    })
   }
 
   const counts = useMemo(() => {
@@ -253,8 +359,11 @@ export default function EmailList() {
   }, [rows])
   const shown = rows.filter(r => filter === 'all' ? true : filter === 'crm' ? r.member : filter === 'new' ? !r.member : r.status === filter)
   const ready = rows.filter(r => r.status === 'ready')
+  const pickedReady = ready.filter(r => picked.has(r.line))
+  const toSend = pickedReady.length ? pickedReady : ready
 
   function onSent(results) {
+    setPicked(new Set())
     const byKey = {}
     for (const r of results || []) if (r.email) byKey[String(r.email).toLowerCase()] = r
     setRows(rs => rs.map(r => {
@@ -292,6 +401,7 @@ export default function EmailList() {
         ))}
       </div>
       {view === 'history' ? <SentHistory L2={L2} /> : <>
+      {isAdmin && <SheetSetup L2={L2} sheet={sheet} />}
 
       <div style={card}>
         <div style={{ fontWeight:700, marginBottom:8 }}>1. {L2('Load the list', '读取名单')}</div>
@@ -301,7 +411,7 @@ export default function EmailList() {
           <span style={{ fontSize:12, color:'var(--muted)' }}>{L2('or', '或')}</span>
           <label style={{ ...btn, display:'inline-block' }}>📁 {L2('Upload CSV / Excel', '上传 CSV / Excel')}<input type="file" accept=".csv,.xlsx,.xls" style={{ display:'none' }} onChange={e => { loadFile(e.target.files?.[0]); e.target.value = '' }} /></label>
         </div>
-        <div style={{ fontSize:11, color:'var(--muted)', marginTop:6 }}>{L2('The sheet must be shared as "Anyone with the link → Viewer". The CRM only reads it, it never changes the sheet.', '表格需要共享为“知道链接的任何人 → 查看者”。CRM 只读取，不会修改表格。')}</div>
+        <div style={{ fontSize:11, color:'var(--muted)', marginTop:6 }}>{L2('The sheet must be shared as "Anyone with the link" (Viewer is enough). After sending, the CRM marks each row in 3 columns at the end (CRM Email · Emailed at · Emailed by), when sheet marking is set up. Rows already marked "Sent" are skipped next time.', '表格需要共享为“知道链接的任何人”（查看者即可）。设置了表格标记后，发送后 CRM 会在最后 3 列标记每一行（CRM Email · Emailed at · Emailed by）。已标记“Sent”的行下次会自动跳过。')}</div>
         {table && <div style={{ fontSize:12, marginTop:8 }}>✅ {source}: <b>{table.rows.length}</b> {L2('rows', '行')}</div>}
       </div>
 
@@ -331,9 +441,18 @@ export default function EmailList() {
             <div style={{ fontWeight:700 }}>3. {L2('Send', '发送')}</div>
             <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
               <button style={btn} onClick={exportResults}>⬇ {L2('Download results (.xlsx)', '下载结果 (.xlsx)')}</button>
-              <button style={{ ...btn, background:'#2f81f7', color:'#fff', border:'none', opacity: ready.length ? 1 : .5 }} disabled={!ready.length} onClick={() => setEmailOpen(true)}>📧 {L2(`Email ${ready.length} ready`, `发送给 ${ready.length} 位`)}</button>
+              <button style={{ ...btn, background:'#2f81f7', color:'#fff', border:'none', opacity: toSend.length ? 1 : .5 }} disabled={!toSend.length} onClick={() => { markCount.current = { ok: 0, bad: 0 }; setMarkMsg(''); setEmailOpen(true) }}>📧 {pickedReady.length ? L2(`Email ${pickedReady.length} ticked`, `发送给已勾选的 ${pickedReady.length} 位`) : L2(`Email all ${ready.length} ready`, `发送给全部 ${ready.length} 位`)}</button>
             </div>
           </div>
+          <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center', marginBottom:10, fontSize:12 }}>
+            <button style={btn} disabled={!ready.length} onClick={pickNext}>☑ {L2('Tick the next', '勾选接下来')}</button>
+            <input type="number" min="1" style={{ ...input, width:80, padding:'6px 8px' }} value={pickN} onChange={e => setPickN(e.target.value)} />
+            <span style={{ color:'var(--muted)' }}>{L2('ready rows (top to bottom)', '行可发送的（从上到下）')}</span>
+            {picked.size > 0 && <button style={btn} onClick={() => setPicked(new Set())}>✖ {L2(`Clear ${picked.size} ticked`, `取消勾选 ${picked.size} 行`)}</button>}
+            <span style={{ color:'var(--muted)' }}>{L2('Or tick rows yourself. Nothing ticked = send to all ready.', '也可以自己勾选。没有勾选 = 发给全部可发送的。')}</span>
+          </div>
+          {markMsg && <div style={{ fontSize:12, marginBottom:8, color: markMsg.startsWith('⚠') ? '#d29922' : '#3fb950' }}>{markMsg}</div>}
+          {!sheet && <div style={{ fontSize:11, color:'var(--muted)', marginBottom:8 }}>{L2('Loaded from a file: the results are not written back anywhere. Use ⬇ Download results to keep them.', '从文件读取：结果不会写回文件。请用 ⬇ 下载结果保存。')}</div>}
           <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom:10 }}>
             {chip('all', L2('All', '全部'))}
             {chip('ready', L2('Ready', '可发送'))}
@@ -344,6 +463,7 @@ export default function EmailList() {
           <div style={{ overflowX:'auto' }}>
             <table style={{ width:'100%', borderCollapse:'collapse' }}>
               <thead><tr>
+                <th style={{ ...th, width:28 }}></th>
                 <th style={th}>{L2('Row', '行')}</th><th style={th}>{L2('Name', '名字')}</th><th style={th}>{L2('Email', '邮箱')}</th>
                 <th style={th}>{L2('Phone', '电话')}</th><th style={th}>{L2('CRM player', 'CRM 玩家')}</th><th style={th}>{L2('Status', '状态')}</th>
               </tr></thead>
@@ -352,7 +472,8 @@ export default function EmailList() {
                   const st = STATUS[r.status] || STATUS.ready
                   const wa = waDigits(r.phone)
                   return (
-                    <tr key={r.line}>
+                    <tr key={r.line} style={{ background: picked.has(r.line) ? 'rgba(47,129,247,0.08)' : undefined }}>
+                      <td style={td}>{r.status === 'ready' && <input type="checkbox" checked={picked.has(r.line)} onChange={() => togglePick(r.line)} style={{ cursor:'pointer' }} />}</td>
                       <td style={{ ...td, color:'var(--muted)' }}>{r.line}</td>
                       <td style={td}>{r.name || '—'}</td>
                       <td style={td}>{r.email || <span style={{ color:'var(--muted)' }}>—</span>}</td>
@@ -374,8 +495,9 @@ export default function EmailList() {
 
       {emailOpen && (
         <EmailModal
-          title={L2(`Email ${ready.length} people from ${source}`, `发送邮件给 ${source} 的 ${ready.length} 人`)}
-          players={ready.map(r => ({ lead: { email: r.email, name: r.name, username: r.member?.username || '' }, email: r.email, full_name: r.name, username: r.member?.username || '' }))}
+          title={L2(`Email ${toSend.length} people from ${source}`, `发送邮件给 ${source} 的 ${toSend.length} 人`)}
+          onBatch={markSheet}
+          players={toSend.map(r => ({ lead: { email: r.email, name: r.name, username: r.member?.username || '' }, email: r.email, full_name: r.name, username: r.member?.username || '' }))}
           onSent={onSent}
           onClose={() => setEmailOpen(false)}
         />

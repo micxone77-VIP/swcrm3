@@ -38,8 +38,9 @@ const fmtWa =v => {
 // preset    = { subject, body } to start with (e.g. the campaign message from the WhatsApp popup)
 // perPlayer = { username: { subject?, body } }: every player gets their own message (campaign bulk email);
 //             the template / message box is hidden then, only the subject can be changed
-// onSent(results) is called after a real send (not a test)
-export default function EmailModal({ players, onClose, onSent, preset, perPlayer, title }) {
+// onSent(results) is called after a real send (not a test); onBatch(results) after every batch of 5
+// 💾 Saved templates (email_templates table, 2026-11-16): everyone sees them, the writer or an admin can change / delete
+export default function EmailModal({ players, onClose, onSent, onBatch, preset, perPlayer, title }) {
   const { lang } = useLanguage()
   const L2 = (en, zh) => (lang === 'zh' ? zh : en)
   // players: CRM players { username, email, full_name } or list rows from the Email a List page
@@ -71,6 +72,32 @@ export default function EmailModal({ players, onClose, onSent, preset, perPlayer
       .then(({ data }) => { if (!off && data) setMyNums(data.filter(n => waDigits(n.number))) })
     return () => { off = true }
   }, [myName])
+  const [saved, setSaved] = useState([])
+  const loadSaved = () => supabase.from('email_templates').select('id,name,subject,body,created_by,created_by_name').order('name').then(({ data }) => setSaved(data || []))
+  useEffect(() => { if (!perPlayer) loadSaved() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  const cur = tpl.startsWith('saved:') ? saved.find(t => 'saved:' + t.id === tpl) : null
+  const canEdit = t => t && (t.created_by === profile?.id || profile?.role === 'admin')
+  async function saveTemplate() {
+    if (!subject.trim() || !body.trim()) { setErr(L2('Write the subject and message first.', '请先写主题和内容。')); return }
+    if (canEdit(cur) && window.confirm(L2(`Update the saved template "${cur.name}" with this subject and message?
+(Cancel = save as a new template)`, `用现在的主题和内容更新模板「${cur.name}」？
+（取消 = 另存为新模板）`))) {
+      const { error } = await supabase.from('email_templates').update({ subject, body, updated_at: new Date().toISOString() }).eq('id', cur.id)
+      if (error) { setErr(error.message); return }
+      setProgress(L2(`💾 Template "${cur.name}" updated.`, `💾 模板「${cur.name}」已更新。`)); loadSaved(); return
+    }
+    const name = (window.prompt(L2('Name for this template (e.g. Gold Bar invite EN):', '模板名称（例如：金条活动邀请 中文）：'), '') || '').trim()
+    if (!name) return
+    const { data, error } = await supabase.from('email_templates').insert({ name, subject, body, created_by: profile?.id, created_by_name: myName }).select('id').single()
+    if (error) { setErr(error.message); return }
+    setErr(''); setProgress(L2(`💾 Saved as template "${name}".`, `💾 已保存为模板「${name}」。`)); setTpl('saved:' + data.id); loadSaved()
+  }
+  async function deleteTemplate() {
+    if (!canEdit(cur) || !window.confirm(L2(`Delete the template "${cur.name}"? This cannot be undone.`, `删除模板「${cur.name}」？删除后无法恢复。`))) return
+    const { error } = await supabase.from('email_templates').delete().eq('id', cur.id)
+    if (error) { setErr(error.message); return }
+    setTpl('custom'); setProgress(L2('🗑 Template deleted.', '🗑 模板已删除。')); loadSaved()
+  }
   const waNumber = waSel === 'other' ? waDigits(waOther) : waDigits(waSel)
   const waOk = waNumber.length >= 8 && waNumber.length <= 15
 
@@ -125,6 +152,7 @@ export default function EmailModal({ players, onClose, onSent, preset, perPlayer
         setProgress(L2(`Sending ${Math.min(i + N, names.length)} / ${names.length}…`, `发送中 ${Math.min(i + N, names.length)} / ${names.length}…`))
         const d = await call(names.slice(i, i + N))
         all.push(...(d?.results || []))
+        onBatch?.(d?.results || [])
         if ((d?.room_left ?? 1) <= 0 && i + N < names.length) {
           names.slice(i + N).forEach(p => all.push({ username: keyOf(p), email: p.email, status: 'skipped', reason: L2(`hourly limit (${d.hourly_limit}) reached, try again in an hour`, `已达每小时上限（${d.hourly_limit}），一小时后再试`) }))
           break
@@ -172,6 +200,18 @@ export default function EmailModal({ players, onClose, onSent, preset, perPlayer
               {[['checkin', L2('👋 Check-in', '👋 问候')], ['offer', L2('🎁 Offer', '🎁 优惠')], ['blank', L2('✏️ Blank', '✏️ 空白')]].map(([k, t]) => ['en', 'zh'].map(l => (
                 <button key={k + l} type="button" onClick={() => pick(k, l)} style={{ ...btnSm, padding:'5px 10px', fontWeight:700, background:tpl === k && tl === l ? 'var(--accent)' : 'var(--surface2)', color:tpl === k && tl === l ? '#fff' : 'var(--text)' }}>{t} {l === 'en' ? 'EN' : '中文'}</button>
               )))}
+            </div>
+            <div style={{ ...lbl, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+              <span>💾 {L2('Saved templates', '已保存的模板')}</span>
+              <span style={{ display:'flex', gap:6 }}>
+                <button type="button" style={{ ...btnSm, padding:'3px 10px' }} onClick={saveTemplate}>💾 {L2('Save as template', '保存为模板')}</button>
+                {canEdit(cur) && <button type="button" style={{ ...btnSm, padding:'3px 10px', color:'#f85149' }} onClick={deleteTemplate}>🗑 {L2('Delete', '删除')}</button>}
+              </span>
+            </div>
+            <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+              {saved.length ? saved.map(t => (
+                <button key={t.id} type="button" title={t.created_by_name ? L2(`by ${t.created_by_name}`, `${t.created_by_name} 建立`) : ''} onClick={() => { setTpl('saved:' + t.id); setSubject(t.subject); setBody(t.body) }} style={{ ...btnSm, padding:'5px 10px', fontWeight:700, background:tpl === 'saved:' + t.id ? 'var(--accent)' : 'var(--surface2)', color:tpl === 'saved:' + t.id ? '#fff' : 'var(--text)' }}>{t.name}</button>
+              )) : <span style={{ fontSize:11, color:'var(--muted)' }}>{L2('None yet. Write the subject and message below, then press 💾 Save as template.', '还没有。在下面写好主题和内容，再按 💾 保存为模板。')}</span>}
             </div></>}
             <div style={lbl}>📱 {L2('WhatsApp number in this email (message end + signature)', '邮件里的 WhatsApp 号码（结尾 + 签名卡）')}</div>
             <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
