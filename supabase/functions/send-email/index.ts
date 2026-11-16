@@ -1,7 +1,7 @@
 // Supabase Edge Function: send-email (2026-11-10)
 // Sends CRM emails to players through the surewinworld.com mail server (SMTP, port 465 SSL).
 // Caller must be logged in as admin or host. Body:
-//   { recipients: ["username", ...] (max 25 per call), subject, body, test_to?: "address" }
+//   { recipients: ["username", ...], leads?: [{ email, name, username? }] (max 25 together per call), subject, body, test_to?: "address" }
 // Placeholders in subject/body: {name} {username} {agent}
 // Each player: skipped when no email / unsubscribed / hourly limit reached; every attempt goes to
 // email_logs, every sent email also to contact_logs (channel Email).
@@ -79,17 +79,21 @@ Deno.serve(async (req: Request) => {
   if (!smtp.host || !smtp.user || !smtp.pass) return json({ error: 'Email is not set up yet: the SMTP secrets are missing in Supabase.', not_configured: true }, 503)
 
   // messages (optional): own subject / body per player, e.g. each campaign player's own campaign message
-  let body: { recipients?: string[]; subject?: string; body?: string; test_to?: string; wa_number?: string; messages?: Record<string, { subject?: string; body?: string }> }
+  // leads (optional, 2026-11-16 "Email a List" page): rows from an uploaded list / Google Sheet,
+  // { email, name, username? }. Sent to the list's own email; username (when the row matched a CRM player)
+  // also puts the email in that player's Contact Log.
+  let body: { recipients?: string[]; leads?: { email?: string; name?: string; username?: string }[]; subject?: string; body?: string; test_to?: string; wa_number?: string; messages?: Record<string, { subject?: string; body?: string }> }
   try { body = await req.json() } catch { return json({ error: 'Invalid JSON' }, 400) }
   const own = (body.messages && typeof body.messages === 'object') ? body.messages : {}
   const subjectT = String(body.subject || '').trim()
   const bodyT = String(body.body || '').trim()
   if (!subjectT || (!bodyT && !Object.keys(own).length)) return json({ error: 'Subject and message are required' }, 400)
-  const names = [...new Set((body.recipients || []).map(u => String(u).trim()).filter(Boolean))]
+  const leads = (Array.isArray(body.leads) ? body.leads : []).map(l => ({ email: String(l?.email || '').trim(), name: String(l?.name || '').trim(), username: String(l?.username || '').trim() })).filter(l => l.email)
+  const names = [...new Set([...(body.recipients || []).map(u => String(u).trim()), ...leads.map(l => l.username)].filter(Boolean))]
   const testTo = body.test_to ? String(body.test_to).trim() : ''
   if (testTo && !EMAIL_RE.test(testTo)) return json({ error: 'Test address is not a valid email' }, 400)
-  if (!names.length) return json({ error: 'No players given' }, 400)
-  if (names.length > 25) return json({ error: 'Max 25 players per call' }, 400)
+  if (!names.length && !leads.length) return json({ error: 'No players given' }, 400)
+  if ((body.recipients || []).length + leads.length > 25) return json({ error: 'Max 25 players per call' }, 400)
   const wa = String(body.wa_number || '').replace(/\D/g, '') || MAIN_WA
   if (wa.length < 8 || wa.length > 15) return json({ error: 'WhatsApp number is not valid' }, 400)
 
@@ -102,19 +106,22 @@ Deno.serve(async (req: Request) => {
     .eq('status', 'sent').gte('created_at', new Date(Date.now() - 3600_000).toISOString())
   let room = Math.max(limit - (sentHour || 0), 0)
 
-  const { data: members, error: mErr } = await db.from('vip_members_all').select('id,username,full_name,email,tier').in('username', names)
+  const { data: members, error: mErr } = names.length ? await db.from('vip_members_all').select('id,username,full_name,email,tier').in('username', names) : { data: [], error: null }
   if (mErr) return json({ error: mErr.message }, 500)
   const byName = Object.fromEntries((members || []).map(m => [m.username, m]))
-  const emails = (members || []).map(m => String(m.email || '').trim().toLowerCase()).filter(Boolean)
+  const emails = [...(members || []).map(m => String(m.email || '')), ...leads.map(l => l.email)].map(e => e.trim().toLowerCase()).filter(Boolean)
   const { data: unsubs } = emails.length ? await db.from('email_unsubscribes').select('email').in('email', emails) : { data: [] }
   const unsubSet = new Set((unsubs || []).map(u => u.email))
 
-  const fill = (t: string, m: { username: string; full_name?: string | null }) =>
-    t.replaceAll('{name}', (m.full_name || m.username).split(/\s+/)[0]).replaceAll('{username}', m.username).replaceAll('{agent}', agent)
+  // {name}: CRM players = first word of the CRM name; list rows = the name as written in the list
+  // (ALL CAPS made readable: "CHAN CHEE FU" -> "Chan Chee Fu")
+  const niceName = (s: string) => s === s.toUpperCase() ? s.toLowerCase().replace(/(^|[\s'-])\p{L}/gu, c => c.toUpperCase()) : s
+  const fill = (t: string, m: { username: string; full_name?: string | null; listName?: string }) =>
+    t.replaceAll('{name}', m.listName ? niceName(m.listName) : (m.full_name || m.username).split(/\s+/)[0]).replaceAll('{username}', m.username).replaceAll('{agent}', agent)
 
   // One SMTP connection per email: reusing one connection for several emails crashed denomailer (2026-11-12)
   const newClient = () => new SMTPClient({ connection: { hostname: smtp.host!, port: smtp.port, tls: true, auth: { username: smtp.user!, password: smtp.pass! } } })
-  const results: { username: string; status: string; reason?: string }[] = []
+  const results: { username: string; email?: string; status: string; reason?: string }[] = []
   const logs: Record<string, unknown>[] = []
   const contacts: Record<string, unknown>[] = []
   const myt = new Date(Date.now() + 8 * 3600_000)
@@ -125,20 +132,29 @@ Deno.serve(async (req: Request) => {
     if (contacts.length) { const { error } = await db.from('contact_logs').insert(contacts.splice(0)); if (error) console.error('contact_logs', error) }
   }
 
+  // One job per email: CRM players by username (their CRM email), then list rows (the list's email)
+  const jobs = [
+    ...[...new Set((body.recipients || []).map(u => String(u).trim()).filter(Boolean))].map(u => ({ u, m: byName[u], email: String(byName[u]?.email || '').trim(), lead: null as null | { email: string; name: string; username: string } })),
+    ...leads.map(l => ({ u: l.username || l.email, m: l.username ? byName[l.username] : undefined, email: l.email, lead: l })),
+  ]
   {
-    for (const u of names) {
-      const m = byName[u]
-      const to = testTo || String(m?.email || '').trim()
-      const skip = (reason: string) => { results.push({ username: u, status: 'skipped', reason }); logs.push({ username: u, to_email: to || null, subject: subjectT, status: 'skipped', reason, sent_by: prof.id, sender_name: agent }) }
-      if (!m) { skip('player not found'); continue }
+    for (const job of jobs) {
+      const u = job.u
+      const m = job.m
+      // a list row with no CRM player: logged with no username, no Contact Log row
+      const who = m ? { username: m.username, full_name: m.full_name, listName: job.lead?.name || '' } : { username: job.lead?.username || '', full_name: null, listName: job.lead?.name || job.email.split('@')[0] }
+      const to = testTo || job.email
+      const logUser = m?.username || null
+      const skip = (reason: string) => { results.push({ username: u, email: job.email, status: 'skipped', reason }); logs.push({ username: logUser, to_email: to || null, subject: subjectT, status: 'skipped', reason, sent_by: prof.id, sender_name: agent }) }
+      if (!m && !job.lead) { skip('player not found'); continue }
       if (!EMAIL_RE.test(to)) { skip('no valid email'); continue }
       if (!testTo && unsubSet.has(to.toLowerCase())) { skip('unsubscribed'); continue }
       if (room <= 0) { skip(`hourly limit (${limit}) reached`); continue }
       const ownBody = String(own[u]?.body || '').trim()
       if (!ownBody && !bodyT) { skip('no message for this player'); continue }
 
-      const subject = fill(String(own[u]?.subject || '').trim() || subjectT, m)
-      const filled = fill(ownBody || bodyT, m)
+      const subject = fill(String(own[u]?.subject || '').trim() || subjectT, who)
+      const filled = fill(ownBody || bodyT, who)
       const text = filled.replaceAll('{whatsapp}', `WhatsApp ${fmtWa(wa)}: https://wa.me/${wa}`)
       const unsubUrl = `${url}/functions/v1/email-unsubscribe?e=${b64url(to.toLowerCase())}&t=${await unsubToken(to, serviceKey)}`
       const footerText = `\n\n--\n${agent} · sureWin VIP Team\nWhatsApp ${fmtWa(wa)} (https://wa.me/${wa}) · ${SIG_MAIL} · www.swvip01.com\nDon't want these emails? Unsubscribe: ${unsubUrl}`
@@ -150,11 +166,11 @@ Deno.serve(async (req: Request) => {
         await client.send({ from: smtp.from!, to, subject: testTo ? `[TEST] ${subject}` : subject, content: text + footerText, html,
           headers: { 'List-Unsubscribe': `<${unsubUrl}>`, 'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click' } })
         room--
-        results.push({ username: u, status: 'sent' })
-        logs.push({ username: u, to_email: to, subject, body: text, status: 'sent', reason: testTo ? 'test' : null, sent_by: prof.id, sender_name: agent })
-        if (!testTo) contacts.push({
+        results.push({ username: u, email: job.email, status: 'sent' })
+        logs.push({ username: logUser, to_email: to, subject, body: text, status: 'sent', reason: testTo ? 'test' : (job.lead ? 'list' : null), sent_by: prof.id, sender_name: agent })
+        if (!testTo && m) contacts.push({
           // vip_id links the player (Contact Log shows the affiliate from it); notes = the full email, shown in the Notes column
-          username: u, vip_id: m.id, tier: m.tier || null, channel: 'Email', notes: `📧 Email: ${subject}
+          username: m.username, vip_id: m.id, tier: m.tier || null, channel: 'Email', notes: `📧 Email: ${subject}
 
 ${text}`, outcome: 'Contacted', direction: 'outbound', topic: 'email',
           message_summary: `Email: ${subject}`.slice(0, 500), host_name: agent, host_id: prof.id, logged_at: new Date().toISOString(),
@@ -162,8 +178,8 @@ ${text}`, outcome: 'Contacted', direction: 'outbound', topic: 'email',
         })
       } catch (e) {
         const reason = String((e as Error)?.message || e).slice(0, 300)
-        results.push({ username: u, status: 'failed', reason })
-        logs.push({ username: u, to_email: to, subject, status: 'failed', reason, sent_by: prof.id, sender_name: agent })
+        results.push({ username: u, email: job.email, status: 'failed', reason })
+        logs.push({ username: logUser, to_email: to, subject, status: 'failed', reason, sent_by: prof.id, sender_name: agent })
       } finally {
         try { await client.close() } catch { /* already closed */ }
       }

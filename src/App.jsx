@@ -36,6 +36,7 @@ const BirthdayReminder = lazyPage(() => import('./pages/BirthdayReminder'))
 const CampaignsCountryTiered = lazyPage(() => import('./pages/CampaignsCountryTiered'))
 const Upgrades = lazyPage(() => import('./pages/Upgrades'))
 const TransferTracker = lazyPage(() => import('./pages/TransferTracker'))
+const EmailList = lazyPage(() => import('./pages/EmailList'))
 const BudgetStrategy = lazyPage(() => import('./pages/BudgetStrategy'))
 const Analytics = lazyPage(() => import('./pages/Analytics'))
 const KPIProgress = lazyPage(() => import('./pages/KPIProgress'))
@@ -88,6 +89,7 @@ export default function App() {
       <Route path="birthdays"     element={<RequireRole permKey="birthdays"><BirthdayReminder /></RequireRole>} />
       <Route path="upgrades"      element={<RequireRole permKey="upgrades"><Upgrades /></RequireRole>} />
       <Route path="transfer"      element={<RequireRole permKey="transfer"><TransferTracker /></RequireRole>} />
+      <Route path="email-list"    element={<RequireRole permKey="email-list"><EmailList /></RequireRole>} />
 
       {/* Retention */}
       <Route path="retention"           element={<RequireRole permKey="retention"><RetentionWorkspace /></RequireRole>} />

@@ -38,6 +38,7 @@ const NAV_GROUPS = [
   ] },
   { key: 'campaigns', label: 'Campaigns', zh: '活动', icon: '📢', items: [
     { to: '/campaigns',       label: 'Campaigns', zh: '活动',  icon: '📢', permKey: 'campaigns'  },
+    { to: '/email-list',      label: 'Email a List', zh: '名单群发邮件', icon: '📧', permKey: 'email-list' },
     { to: '/lucky-spin-admin',label: 'Lucky Spin', zh: '幸运转盘', icon: '🎰', permKey: 'lucky-spin' },
     { to: '/budget',          label: 'Budget', zh: '预算',     icon: '💰', permKey: 'budget'     },
   ] },

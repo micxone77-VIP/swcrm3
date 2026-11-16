@@ -42,7 +42,10 @@ const fmtWa =v => {
 export default function EmailModal({ players, onClose, onSent, preset, perPlayer, title }) {
   const { lang } = useLanguage()
   const L2 = (en, zh) => (lang === 'zh' ? zh : en)
-  const list = (players || []).filter(p => p?.username)
+  // players: CRM players { username, email, full_name } or list rows from the Email a List page
+  // { lead: { email, name, username? }, email, full_name } (sent to the list's email, username only when matched)
+  const list = (players || []).filter(p => p?.username || p?.lead?.email)
+  const keyOf = p => p.lead ? (p.lead.username || p.lead.email) : p.username
   const withEmail = list.filter(p => EMAIL_RE.test(String(p.email || '').trim()))
   const noEmail = list.filter(p => !EMAIL_RE.test(String(p.email || '').trim()))
   const [tpl, setTpl] = useState(preset || perPlayer ? 'custom' : 'checkin')
@@ -73,12 +76,16 @@ export default function EmailModal({ players, onClose, onSent, preset, perPlayer
 
   const pick =(k, l) => { setTpl(k); setTl(l); setSubject(TEMPLATES[k][l][0]); setBody(TEMPLATES[k][l][1]) }
   const first = withEmail[0] || list[0]
-  const preview = t => t.replaceAll('{name}', String(first?.full_name || first?.username || '').split(/\s+/)[0]).replaceAll('{username}', first?.username || '').replaceAll('{agent}', myName.split(/\s+/)[0] || L2('(your name)', '（你的名字）')).replaceAll('{whatsapp}', `[WhatsApp ${fmtWa(waNumber)}]`)
+  const niceName = s => s === s.toUpperCase() ? s.toLowerCase().replace(/(^|[\s'-])\p{L}/gu, c => c.toUpperCase()) : s
+  const firstName = first?.lead ? niceName(String(first.lead.name || first.lead.email.split('@')[0])) : String(first?.full_name || first?.username || '').split(/\s+/)[0]
+  const preview = t => t.replaceAll('{name}', firstName).replaceAll('{username}', first?.username || '').replaceAll('{agent}', myName.split(/\s+/)[0] || L2('(your name)', '（你的名字）')).replaceAll('{whatsapp}', `[WhatsApp ${fmtWa(waNumber)}]`)
 
-  async function call(recipients, test) {
+  async function call(batch, test) {
     if (!waOk) throw new Error(L2('Pick or type a valid WhatsApp number first.', '请先选择或输入正确的 WhatsApp 号码。'))
+    const recipients = batch.filter(p => !p.lead).map(p => p.username)
+    const leads = batch.filter(p => p.lead).map(p => p.lead)
     const messages = own ? Object.fromEntries(recipients.filter(u => own[u]).map(u => [u, own[u]])) : undefined
-    const { data, error } = await supabase.functions.invoke('send-email', { body: { recipients, subject, body: own ? '' : body, wa_number: waNumber, ...(messages ? { messages } : {}), ...(test ? { test_to: test } : {}) } })
+    const { data, error } = await supabase.functions.invoke('send-email', { body: { recipients, ...(leads.length ? { leads } : {}), subject, body: own ? '' : body, wa_number: waNumber, ...(messages ? { messages } : {}), ...(test ? { test_to: test } : {}) } })
     if (error) {
       let msg = error.message
       try { const j = await error.context?.json?.(); if (j?.error) msg = j.error } catch { /* keep message */ }
@@ -97,11 +104,11 @@ export default function EmailModal({ players, onClose, onSent, preset, perPlayer
     const ok = [], bad = []
     for (const a of addrs) {
       try {
-        const r = (await call([first.username], a))?.results?.[0]
+        const r = (await call([first], a))?.results?.[0]
         if (r?.status === 'sent') ok.push(a); else bad.push(`${a}: ${r?.reason || L2('unknown', '未知')}`)
       } catch (e) { bad.push(`${a}: ${e.message}`) }
     }
-    if (ok.length) setProgress(L2(`✅ Test sent to ${ok.join(', ')} (filled in with ${first.username}'s details). Check the inbox and the spam folder.`, `✅ 测试已发送到 ${ok.join('、')}（用 ${first.username} 的资料填写）。请查看收件箱和垃圾邮件。`))
+    if (ok.length) setProgress(L2(`✅ Test sent to ${ok.join(', ')} (filled in with ${keyOf(first)}'s details). Check the inbox and the spam folder.`, `✅ 测试已发送到 ${ok.join('、')}（用 ${keyOf(first)} 的资料填写）。请查看收件箱和垃圾邮件。`))
     if (bad.length) setErr(L2('Test not sent: ', '测试未发送：') + bad.join(' · '))
     setBusy(false)
   }
@@ -112,21 +119,21 @@ export default function EmailModal({ players, onClose, onSent, preset, perPlayer
     if (!window.confirm(L2(`Send this email to ${withEmail.length} player(s)? This cannot be undone.`, `确定发送给 ${withEmail.length} 位玩家？发送后无法撤回。`))) return
     setBusy(true); setErr(''); const all = []
     try {
-      const names = withEmail.map(p => p.username)
+      const names = withEmail
       const N = 5
       for (let i = 0; i < names.length; i += N) {
         setProgress(L2(`Sending ${Math.min(i + N, names.length)} / ${names.length}…`, `发送中 ${Math.min(i + N, names.length)} / ${names.length}…`))
         const d = await call(names.slice(i, i + N))
         all.push(...(d?.results || []))
         if ((d?.room_left ?? 1) <= 0 && i + N < names.length) {
-          names.slice(i + N).forEach(u => all.push({ username: u, status: 'skipped', reason: L2(`hourly limit (${d.hourly_limit}) reached, try again in an hour`, `已达每小时上限（${d.hourly_limit}），一小时后再试`) }))
+          names.slice(i + N).forEach(p => all.push({ username: keyOf(p), email: p.email, status: 'skipped', reason: L2(`hourly limit (${d.hourly_limit}) reached, try again in an hour`, `已达每小时上限（${d.hourly_limit}），一小时后再试`) }))
           break
         }
       }
     } catch (e) {
       setErr(e.message)
       const done = new Set(all.map(r => r.username))
-      withEmail.filter(p => !done.has(p.username)).forEach(p => all.push({ username: p.username, status: 'failed', reason: L2(`not sent (stopped: ${e.message}). Check the Contact Log before sending again.`, `未发送（中断：${e.message}）。再发之前请先查看联系记录。`) }))
+      withEmail.filter(p => !done.has(keyOf(p))).forEach(p => all.push({ username: keyOf(p), email: p.email, status: 'failed', reason: L2(`not sent (stopped: ${e.message}). Check the Contact Log before sending again.`, `未发送（中断：${e.message}）。再发之前请先查看联系记录。`) }))
     }
     setResults(all); setProgress(''); setBusy(false)
     if (all.some(r => r.status === 'sent')) onSent?.(all)
@@ -139,9 +146,9 @@ export default function EmailModal({ players, onClose, onSent, preset, perPlayer
       <div style={box} onClick={e => e.stopPropagation()}>
         <div style={{ fontSize:17, fontWeight:700, marginBottom:4 }}>📧 {title || L2('Send email', '发送邮件')}</div>
         <div style={{ fontSize:13, color:'var(--muted)', marginBottom:8 }}>
-          {list.length === 1 ? <><b style={{ color:'var(--text)' }}>{list[0].username}</b> · {list[0].email || L2('no email saved', '没有邮箱')}</> : L2(`${withEmail.length} of ${list.length} selected players have an email`, `已选 ${list.length} 位，其中 ${withEmail.length} 位有邮箱`)}
+          {list.length === 1 ? <><b style={{ color:'var(--text)' }}>{keyOf(list[0])}</b> · {list[0].email || L2('no email saved', '没有邮箱')}</> : L2(`${withEmail.length} of ${list.length} selected players have an email`, `已选 ${list.length} 位，其中 ${withEmail.length} 位有邮箱`)}
         </div>
-        {noEmail.length > 0 && list.length > 1 && <div style={{ fontSize:11, color:'#d29922', marginBottom:8 }}>{L2('No email (will be skipped): ', '没有邮箱（将跳过）：')}{noEmail.slice(0, 15).map(p => p.username).join(', ')}{noEmail.length > 15 ? ` +${noEmail.length - 15}` : ''}</div>}
+        {noEmail.length > 0 && list.length > 1 && <div style={{ fontSize:11, color:'#d29922', marginBottom:8 }}>{L2('No email (will be skipped): ', '没有邮箱（将跳过）：')}{noEmail.slice(0, 15).map(keyOf).join(', ')}{noEmail.length > 15 ? ` +${noEmail.length - 15}` : ''}</div>}
 
         {results ? (
           <div>
@@ -186,7 +193,7 @@ export default function EmailModal({ players, onClose, onSent, preset, perPlayer
             <div style={lbl}>{L2('Message', '内容')} <span style={{ fontSize:11 }}>{L2('· {name} = player first name, {agent} = your name, {username}, {whatsapp} = WhatsApp button', '· {name} = 玩家名字，{agent} = 你的名字，{username} = 用户名，{whatsapp} = WhatsApp 按钮')}</span></div>
             <textarea rows={9} style={{ ...input, resize:'vertical' }} value={body} onChange={e => setBody(e.target.value)} />
             </>}
-            {first && <details style={{ marginTop:8, fontSize:12 }}><summary style={{ cursor:'pointer', color:'var(--muted)' }}>{L2(`Preview for ${first.username}`, `预览（${first.username}）`)}</summary>
+            {first && <details style={{ marginTop:8, fontSize:12 }}><summary style={{ cursor:'pointer', color:'var(--muted)' }}>{L2(`Preview for ${keyOf(first)}`, `预览（${keyOf(first)}）`)}</summary>
               <div style={{ background:'var(--surface2)', borderRadius:8, padding:'10px 12px', marginTop:6, whiteSpace:'pre-wrap', lineHeight:1.5 }}><b>{preview(subject)}</b>{'\n\n'}{preview(own ? (own[first.username]?.body || L2('(no message for this player)', '（这位玩家没有讯息）')) : body)}{'\n\n'}<span style={{ color:'var(--muted)', fontSize:11 }}>{L2(`-- + sureWin signature card (your name, WhatsApp ${fmtWa(waNumber)}, email, Telegram) · Unsubscribe`, `-- + sureWin 签名卡（你的名字、WhatsApp ${fmtWa(waNumber)}、邮箱、Telegram）· 取消订阅`)}</span></div>
             </details>}
 

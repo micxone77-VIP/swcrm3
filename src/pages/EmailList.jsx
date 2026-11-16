@@ -1,0 +1,291 @@
+// 📧 Email a List (2026-11-16): load a Google Sheet (shared "Anyone with the link") or a CSV / Excel file,
+// check every row (bad / duplicate / unsubscribed / emailed recently, matched to a CRM player or new),
+// then send through the normal email box (send-email edge function, "leads").
+// Rows that match a CRM player also go into that player's Contact Log; new people only into email_logs.
+import { useMemo, useState } from 'react'
+import * as XLSX from 'xlsx'
+import { supabase } from '../lib/supabase'
+import { useLanguage } from '../contexts/LanguageContext'
+import CopyBtn from '../components/CopyBtn'
+import EmailModal from '../components/EmailModal'
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const CHUNK = 150
+const card = { background:'var(--surface)', border:'1px solid var(--border)', borderRadius:12, padding:'16px 18px', marginBottom:14 }
+const input = { background:'var(--surface2)', border:'1px solid var(--border)', color:'var(--text)', padding:'8px 10px', borderRadius:7, fontSize:13, outline:'none', boxSizing:'border-box', fontFamily:'inherit' }
+const btn = { background:'var(--surface2)', color:'var(--text)', border:'1px solid var(--border)', padding:'8px 14px', borderRadius:7, fontSize:12, fontWeight:700, cursor:'pointer' }
+const th = { textAlign:'left', padding:'8px 10px', fontSize:11, color:'var(--muted)', fontWeight:700, borderBottom:'1px solid var(--border)', whiteSpace:'nowrap' }
+const td = { padding:'7px 10px', fontSize:12, borderBottom:'1px solid var(--border)', verticalAlign:'top' }
+
+const STATUS = {
+  ready:  { en:'Ready', zh:'可发送', color:'#2f81f7' },
+  bad:    { en:'No / bad email', zh:'没有或错误邮箱', color:'#8b949e' },
+  dup:    { en:'Duplicate email', zh:'重复邮箱', color:'#8b949e' },
+  unsub:  { en:'Unsubscribed', zh:'已取消订阅', color:'#d29922' },
+  recent: { en:'Emailed recently', zh:'最近已发过', color:'#d29922' },
+  sent:   { en:'Sent ✅', zh:'已发送 ✅', color:'#3fb950' },
+  failed: { en:'Failed', zh:'失败', color:'#f85149' },
+  skipped:{ en:'Not sent', zh:'未发送', color:'#d29922' },
+}
+const NOT_USER = new Set(['not', 'registered', 'invalid', 'number', 'none', 'n/a', 'na', '-', 'yes', 'no'])
+
+const chunks = (a, n = CHUNK) => { const out = []; for (let i = 0; i < a.length; i += n) out.push(a.slice(i, i + n)); return out }
+const waDigits = v => { let d = String(v || '').replace(/\D/g, ''); if (d.startsWith('0')) d = '6' + d; return d.length >= 10 && d.length <= 15 ? d : '' }
+
+// Google Sheet link -> CSV download links (normal export first, the gviz one as a fallback)
+function sheetCsvUrls(link) {
+  const id = String(link).match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/)?.[1]
+  if (!id) return null
+  const gid = String(link).match(/[#&?]gid=(\d+)/)?.[1] || '0'
+  return [`https://docs.google.com/spreadsheets/d/${id}/export?format=csv&gid=${gid}`, `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv&gid=${gid}`]
+}
+
+// Guess which column holds what, from the header names
+function guessCols(head) {
+  const h = head.map(x => String(x || '').trim().toLowerCase())
+  const find = (...tests) => { for (const t of tests) { const i = h.findIndex(t); if (i >= 0) return i } return -1 }
+  return {
+    email: find(x => /^e-?mail( address)?$/.test(x), x => x.includes('mail') && !x.includes('check') && !x.includes('status')),
+    name: find(x => /^(full ?)?name$/.test(x), x => x.includes('name') && !x.includes('user')),
+    phone: find(x => /phone|mobile|whatsapp|contact no|tel/.test(x)),
+    username: find(x => /username|user name|login|member id|account id/.test(x)),
+  }
+}
+
+export default function EmailList() {
+  const { lang } = useLanguage()
+  const L2 = (en, zh) => (lang === 'zh' ? zh : en)
+  const [link, setLink] = useState('')
+  const [source, setSource] = useState('')
+  const [table, setTable] = useState(null) // { head: [], rows: [[...]] }
+  const [cols, setCols] = useState({ email:-1, name:-1, phone:-1, username:-1 })
+  const [recentDays, setRecentDays] = useState(7)
+  const [rows, setRows] = useState([]) // checked rows
+  const [busy, setBusy] = useState('')
+  const [err, setErr] = useState('')
+  const [filter, setFilter] = useState('all')
+  const [emailOpen, setEmailOpen] = useState(false)
+
+  function applyTable(aoa, name) {
+    const all = (aoa || []).map(r => (r || []).map(v => (v == null ? '' : String(v).trim())))
+    const headAt = all.findIndex(r => r.filter(Boolean).length >= 2)
+    if (headAt < 0) { setErr(L2('The file looks empty.', '文件好像是空的。')); return }
+    const head = all[headAt]
+    const body = all.slice(headAt + 1).map((r, i) => ({ line: headAt + i + 2, cells: r })).filter(r => r.cells.some(Boolean))
+    setTable({ head, rows: body }); setCols(guessCols(head)); setRows([]); setSource(name); setFilter('all')
+  }
+
+  async function loadSheet() {
+    setErr('')
+    const urls = sheetCsvUrls(link)
+    if (!urls) { setErr(L2('That does not look like a Google Sheet link (it should contain /spreadsheets/d/…).', '这不像 Google Sheet 链接（应包含 /spreadsheets/d/…）。')); return }
+    setBusy(L2('Loading the sheet…', '正在读取表格…'))
+    let text = ''
+    for (const u of urls) {
+      try {
+        const r = await fetch(u)
+        const t = await r.text()
+        if (r.ok && !/^\s*</.test(t)) { text = t; break }
+      } catch { /* try the next link */ }
+    }
+    setBusy('')
+    if (!text) { setErr(L2('Could not read the sheet. In Google Sheets: Share → General access → "Anyone with the link" (Viewer), then try again. Or download it as CSV and upload the file.', '无法读取表格。请在 Google Sheets：共享 → 一般访问权限 → “知道链接的任何人”（查看者），然后再试。或下载为 CSV 再上传。')); return }
+    const wb = XLSX.read(text, { type:'string', raw:true })
+    applyTable(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header:1, raw:true, defval:'' }), 'Google Sheet')
+  }
+
+  async function loadFile(file) {
+    if (!file) return
+    setErr('')
+    try {
+      const wb = XLSX.read(await file.arrayBuffer(), { type:'array', raw:true })
+      applyTable(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header:1, raw:true, defval:'' }), file.name)
+    } catch (e) { setErr(L2('Could not read the file: ', '无法读取文件：') + e.message) }
+  }
+
+  // Check every row against the CRM: player match (BO username, then email), unsubscribes, recent emails
+  async function checkRows() {
+    if (!table) return
+    if (cols.email < 0) { setErr(L2('Pick the Email column first.', '请先选择邮箱列。')); return }
+    setErr(''); setBusy(L2('Checking the list against the CRM…', '正在和 CRM 核对名单…'))
+    try {
+      const base = table.rows.map(r => {
+        const cell = i => (i >= 0 ? r.cells[i] || '' : '')
+        const email = cell(cols.email).replace(/\s+/g, '')
+        const users = [...new Set(cell(cols.username).split(/[\s/,;|]+/).map(s => s.trim()).filter(s => s.length >= 3 && !NOT_USER.has(s.toLowerCase())))]
+        return { line: r.line, name: cell(cols.name), email, emailKey: email.toLowerCase(), phone: cell(cols.phone), users }
+      })
+      // CRM players by username (exact, plus lowercase), then by email
+      const allUsers = [...new Set(base.flatMap(r => r.users.flatMap(u => [u, u.toLowerCase()])))]
+      const byUser = {}
+      for (const c of chunks(allUsers)) {
+        const { data, error } = await supabase.from('vip_members_all').select('id,username,full_name,email,tier,currency').in('username', c)
+        if (error) throw error
+        for (const m of data || []) { byUser[m.username] = m; byUser[m.username.toLowerCase()] = m }
+      }
+      const allEmails = [...new Set(base.filter(r => EMAIL_RE.test(r.email)).flatMap(r => [r.email, r.emailKey]))]
+      const byEmail = {}
+      for (const c of chunks(allEmails)) {
+        const { data, error } = await supabase.from('vip_members_all').select('id,username,full_name,email,tier,currency').in('email', c)
+        if (error) throw error
+        for (const m of data || []) if (m.email) byEmail[m.email.trim().toLowerCase()] ||= m
+      }
+      const keys = [...new Set(base.map(r => r.emailKey).filter(e => EMAIL_RE.test(e)))]
+      const unsub = new Set(), recent = {}
+      const since = new Date(Date.now() - Math.max(0, Number(recentDays) || 0) * 86400000).toISOString()
+      for (const c of chunks(keys)) {
+        const { data: u } = await supabase.from('email_unsubscribes').select('email').in('email', c)
+        for (const x of u || []) unsub.add(String(x.email).toLowerCase())
+        if (Number(recentDays) > 0) {
+          const { data: l, error } = await supabase.from('email_logs').select('to_email,subject,created_at,reason').eq('status', 'sent').gte('created_at', since).in('to_email', c)
+          if (error) throw error
+          for (const x of l || []) if (x.reason !== 'test') { const k = String(x.to_email).toLowerCase(); if (!recent[k] || recent[k].created_at < x.created_at) recent[k] = x }
+        }
+      }
+      const seen = new Set()
+      setRows(base.map(r => {
+        const hits = r.users.map(u => byUser[u] || byUser[u.toLowerCase()]).filter(Boolean)
+        const member = hits[0] || byEmail[r.emailKey] || null
+        let status = 'ready', note = ''
+        if (!EMAIL_RE.test(r.email)) status = 'bad'
+        else if (seen.has(r.emailKey)) status = 'dup'
+        else if (unsub.has(r.emailKey)) status = 'unsub'
+        else if (recent[r.emailKey]) { status = 'recent'; note = `${new Date(recent[r.emailKey].created_at).toLocaleDateString('en-GB', { day:'numeric', month:'short' })} · ${recent[r.emailKey].subject || ''}` }
+        if (EMAIL_RE.test(r.email)) seen.add(r.emailKey)
+        const multi = new Set(hits.map(h => h.username)).size > 1 ? L2(`${new Set(hits.map(h => h.username)).size} accounts, using ${member.username}`, `${new Set(hits.map(h => h.username)).size} 个账号，使用 ${member.username}`) : ''
+        return { ...r, member, status, note, multi }
+      }))
+    } catch (e) { setErr(e.message) }
+    setBusy('')
+  }
+
+  const counts = useMemo(() => {
+    const c = { all: rows.length, crm: rows.filter(r => r.member).length, new: rows.filter(r => !r.member).length }
+    for (const k of Object.keys(STATUS)) c[k] = rows.filter(r => r.status === k).length
+    return c
+  }, [rows])
+  const shown = rows.filter(r => filter === 'all' ? true : filter === 'crm' ? r.member : filter === 'new' ? !r.member : r.status === filter)
+  const ready = rows.filter(r => r.status === 'ready')
+
+  function onSent(results) {
+    const byKey = {}
+    for (const r of results || []) if (r.email) byKey[String(r.email).toLowerCase()] = r
+    setRows(rs => rs.map(r => {
+      const x = r.status === 'ready' ? byKey[r.emailKey] : null
+      return x ? { ...r, status: x.status === 'sent' ? 'sent' : x.status === 'failed' ? 'failed' : 'skipped', note: x.reason || '' } : r
+    }))
+  }
+
+  function exportResults() {
+    const data = rows.map(r => ({ Row: r.line, Name: r.name, Email: r.email, Phone: r.phone, 'CRM username': r.member?.username || '', Tier: r.member?.tier || '', Status: STATUS[r.status]?.en || r.status, Note: [r.multi, r.note].filter(Boolean).join(' · ') }))
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data), 'Email list')
+    XLSX.writeFile(wb, `email_list_results_${new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10)}.xlsx`)
+  }
+
+  const colPick = (key, label) => (
+    <label style={{ display:'flex', flexDirection:'column', gap:4, fontSize:11, color:'var(--muted)', fontWeight:700 }}>{label}
+      <select style={{ ...input, minWidth:170 }} value={cols[key]} onChange={e => setCols(c => ({ ...c, [key]: Number(e.target.value) }))}>
+        <option value={-1}>{L2('— none —', '— 无 —')}</option>
+        {table.head.map((h, i) => <option key={i} value={i}>{h || `${L2('Column', '列')} ${i + 1}`}</option>)}
+      </select>
+    </label>
+  )
+  const chip = (key, label) => (
+    <button key={key} type="button" onClick={() => setFilter(key)} style={{ ...btn, padding:'5px 11px', borderRadius:20, background: filter === key ? 'var(--accent)' : 'var(--surface2)', color: filter === key ? '#fff' : 'var(--text)' }}>{label} ({counts[key] || 0})</button>
+  )
+
+  return (
+    <div style={{ padding:'24px 28px', maxWidth:1400 }}>
+      <div style={{ fontSize:22, fontWeight:800, marginBottom:4 }}>📧 {L2('Email a List', '名单群发邮件')}</div>
+      <div style={{ fontSize:13, color:'var(--muted)', marginBottom:16 }}>{L2('Send an email to a list from a Google Sheet or a CSV / Excel file, also to people not in the CRM yet. Rows that match a CRM player also go into their Contact Log.', '从 Google Sheet 或 CSV / Excel 名单发送邮件，包括还不在 CRM 的人。对得上 CRM 玩家的，也会记录到该玩家的联系记录。')}</div>
+
+      <div style={card}>
+        <div style={{ fontWeight:700, marginBottom:8 }}>1. {L2('Load the list', '读取名单')}</div>
+        <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center' }}>
+          <input style={{ ...input, flex:'1 1 420px' }} placeholder={L2('Paste the Google Sheet link (open the right tab first, so the link has its gid)', '粘贴 Google Sheet 链接（先打开正确的分页，让链接带上 gid）')} value={link} onChange={e => setLink(e.target.value)} />
+          <button style={{ ...btn, background:'#2f81f7', color:'#fff', border:'none' }} disabled={!!busy || !link.trim()} onClick={loadSheet}>🔗 {L2('Load sheet', '读取表格')}</button>
+          <span style={{ fontSize:12, color:'var(--muted)' }}>{L2('or', '或')}</span>
+          <label style={{ ...btn, display:'inline-block' }}>📁 {L2('Upload CSV / Excel', '上传 CSV / Excel')}<input type="file" accept=".csv,.xlsx,.xls" style={{ display:'none' }} onChange={e => { loadFile(e.target.files?.[0]); e.target.value = '' }} /></label>
+        </div>
+        <div style={{ fontSize:11, color:'var(--muted)', marginTop:6 }}>{L2('The sheet must be shared as "Anyone with the link → Viewer". The CRM only reads it, it never changes the sheet.', '表格需要共享为“知道链接的任何人 → 查看者”。CRM 只读取，不会修改表格。')}</div>
+        {table && <div style={{ fontSize:12, marginTop:8 }}>✅ {source}: <b>{table.rows.length}</b> {L2('rows', '行')}</div>}
+      </div>
+
+      {table && (
+        <div style={card}>
+          <div style={{ fontWeight:700, marginBottom:8 }}>2. {L2('Check the columns, then check the list', '确认列，然后核对名单')}</div>
+          <div style={{ display:'flex', gap:12, flexWrap:'wrap', alignItems:'flex-end' }}>
+            {colPick('email', L2('Email *', '邮箱 *'))}
+            {colPick('name', L2('Name ({name} in the email)', '名字（邮件里的 {name}）'))}
+            {colPick('phone', L2('Phone', '电话'))}
+            {colPick('username', L2('BO username (to match CRM players)', 'BO 用户名（对应 CRM 玩家）'))}
+            <label style={{ display:'flex', flexDirection:'column', gap:4, fontSize:11, color:'var(--muted)', fontWeight:700 }}>{L2('Skip if emailed in the last … days', '最近 … 天发过的跳过')}
+              <input type="number" min="0" style={{ ...input, width:110 }} value={recentDays} onChange={e => setRecentDays(e.target.value)} />
+            </label>
+            <button style={{ ...btn, background:'#2f81f7', color:'#fff', border:'none' }} disabled={!!busy} onClick={checkRows}>🔍 {L2('Check list', '核对名单')}</button>
+          </div>
+          <div style={{ fontSize:11, color:'var(--muted)', marginTop:6 }}>{L2('"Skip if emailed" lets you send a big list over a few hours (max 100 emails per hour): press Check list again later and the ones already sent are skipped. 0 = do not skip.', '“最近发过的跳过”可以分几个小时发完大名单（每小时最多 100 封）：之后再按一次“核对名单”，已发过的会自动跳过。0 = 不跳过。')}</div>
+        </div>
+      )}
+
+      {busy && <div style={{ fontSize:13, color:'var(--muted)', marginBottom:10 }}>⏳ {busy}</div>}
+      {err && <div style={{ fontSize:13, color:'#f85149', marginBottom:10 }}>{err}</div>}
+
+      {rows.length > 0 && (
+        <div style={card}>
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:10, marginBottom:10 }}>
+            <div style={{ fontWeight:700 }}>3. {L2('Send', '发送')}</div>
+            <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+              <button style={btn} onClick={exportResults}>⬇ {L2('Download results (.xlsx)', '下载结果 (.xlsx)')}</button>
+              <button style={{ ...btn, background:'#2f81f7', color:'#fff', border:'none', opacity: ready.length ? 1 : .5 }} disabled={!ready.length} onClick={() => setEmailOpen(true)}>📧 {L2(`Email ${ready.length} ready`, `发送给 ${ready.length} 位`)}</button>
+            </div>
+          </div>
+          <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom:10 }}>
+            {chip('all', L2('All', '全部'))}
+            {chip('ready', L2('Ready', '可发送'))}
+            {chip('crm', L2('In CRM', '在 CRM'))}
+            {chip('new', L2('Not in CRM', '不在 CRM'))}
+            {['bad', 'dup', 'unsub', 'recent', 'sent', 'failed', 'skipped'].filter(k => counts[k]).map(k => chip(k, L2(STATUS[k].en, STATUS[k].zh)))}
+          </div>
+          <div style={{ overflowX:'auto' }}>
+            <table style={{ width:'100%', borderCollapse:'collapse' }}>
+              <thead><tr>
+                <th style={th}>{L2('Row', '行')}</th><th style={th}>{L2('Name', '名字')}</th><th style={th}>{L2('Email', '邮箱')}</th>
+                <th style={th}>{L2('Phone', '电话')}</th><th style={th}>{L2('CRM player', 'CRM 玩家')}</th><th style={th}>{L2('Status', '状态')}</th>
+              </tr></thead>
+              <tbody>
+                {shown.slice(0, 1000).map(r => {
+                  const st = STATUS[r.status] || STATUS.ready
+                  const wa = waDigits(r.phone)
+                  return (
+                    <tr key={r.line}>
+                      <td style={{ ...td, color:'var(--muted)' }}>{r.line}</td>
+                      <td style={td}>{r.name || '—'}</td>
+                      <td style={td}>{r.email || <span style={{ color:'var(--muted)' }}>—</span>}</td>
+                      <td style={{ ...td, whiteSpace:'nowrap' }}>{r.phone ? <>{r.phone}<CopyBtn text={r.phone} kind="phone" />{wa && <a href={`https://wa.me/${wa}`} target="_blank" rel="noreferrer" style={{ marginLeft:6, fontSize:11, color:'#3fb950', fontWeight:700, textDecoration:'none' }}>💬 WA</a>}</> : '—'}</td>
+                      <td style={td}>{r.member
+                        ? <><b>{r.member.username}</b><CopyBtn text={r.member.username} /> <span style={{ fontSize:10, color:'var(--muted)', fontWeight:700 }}>{r.member.tier}</span>{r.multi && <div style={{ fontSize:10, color:'#d29922' }}>{r.multi}</div>}</>
+                        : <span style={{ color:'var(--muted)' }}>🆕 {L2('Not in CRM', '不在 CRM')}</span>}</td>
+                      <td style={td}><span style={{ fontSize:11, fontWeight:700, color:st.color }}>{L2(st.en, st.zh)}</span>{r.note && <div style={{ fontSize:10, color:'var(--muted)', maxWidth:280 }}>{r.note}</div>}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+            {shown.length > 1000 && <div style={{ fontSize:11, color:'var(--muted)', marginTop:6 }}>{L2(`Showing the first 1,000 of ${shown.length}. Download the results to see all.`, `只显示前 1,000 行（共 ${shown.length}）。下载结果可看全部。`)}</div>}
+          </div>
+        </div>
+      )}
+
+      {emailOpen && (
+        <EmailModal
+          title={L2(`Email ${ready.length} people from ${source}`, `发送邮件给 ${source} 的 ${ready.length} 人`)}
+          players={ready.map(r => ({ lead: { email: r.email, name: r.name, username: r.member?.username || '' }, email: r.email, full_name: r.name, username: r.member?.username || '' }))}
+          onSent={onSent}
+          onClose={() => setEmailOpen(false)}
+        />
+      )}
+    </div>
+  )
+}
