@@ -248,6 +248,7 @@ export default function Campaigns() {
   // 📧 Campaign email: { players, preset?, perPlayer?, title, how } (one player from the message popup, or bulk from the Chase list)
   const [emailBox, setEmailBox] = useState(null)
   const [bulkStage, setBulkStage] = useState('intro')
+  const [deliveryBox, setDeliveryBox] = useState(null) // { p, gift, form } gift delivery details popup
   // All daily entries for streak/inactive tabs — loaded on demand
   const [allDailyEntries, setAllDailyEntries] = useState([])  // full flat list for campaign
   const [allDailyEntriesLoading, setAllDailyEntriesLoading] = useState(false)
@@ -381,12 +382,12 @@ export default function Campaigns() {
 
     // Enrich each player with host_assigned from vip_members (best-effort; never blocks load)
     const usernames = [...new Set(campaignPlayers.map(p => p.username).filter(Boolean))]
-    let hostMap = {}, nameMap = {}, lastBetMap = {}, emailMap = {}
+    let hostMap = {}, nameMap = {}, lastBetMap = {}, emailMap = {}, addrMap = {}, phoneMap = {}
     if (usernames.length > 0) {
-      const hostRows = await fetchMembersFor(usernames, 'username,host_assigned,full_name,last_bet_date,email').catch(() => [])
-      ;(hostRows || []).forEach(r => { if (r.host_assigned) hostMap[r.username] = r.host_assigned; if (r.full_name) nameMap[r.username] = r.full_name; if (r.last_bet_date) lastBetMap[r.username] = r.last_bet_date; if (r.email) emailMap[r.username] = r.email })
+      const hostRows = await fetchMembersFor(usernames, 'username,host_assigned,full_name,last_bet_date,email,address,phone,whatsapp').catch(() => [])
+      ;(hostRows || []).forEach(r => { if (r.host_assigned) hostMap[r.username] = r.host_assigned; if (r.full_name) nameMap[r.username] = r.full_name; if (r.last_bet_date) lastBetMap[r.username] = r.last_bet_date; if (r.email) emailMap[r.username] = r.email; if (r.address) addrMap[r.username] = r.address; if (r.whatsapp || r.phone) phoneMap[r.username] = r.whatsapp || r.phone })
     }
-    const enriched = campaignPlayers.map(p => ({ ...p, host_assigned: hostMap[p.username] || null, full_name: p.full_name || nameMap[p.username] || null, last_bet_date: lastBetMap[p.username] || null, email: emailMap[p.username] || p.email || null }))
+    const enriched = campaignPlayers.map(p => ({ ...p, host_assigned: hostMap[p.username] || null, full_name: p.full_name || nameMap[p.username] || null, last_bet_date: lastBetMap[p.username] || null, email: emailMap[p.username] || p.email || null, member_address: addrMap[p.username] || null, member_phone: phoneMap[p.username] || null }))
 
     setPlayers(enriched)
     if (enriched.length === 0) {
@@ -1566,6 +1567,76 @@ export default function Campaigns() {
     await loadContacts(selected.id)
     setMsgPopup(x => (x && sent.includes(x.p.username) ? { ...x, logged: true } : x))
   }
+  // ── Gift delivery (gold bar etc.): a won level with a gift is an item to send, tracked per player ──
+  const DELIVERY_STATUS = {
+    waiting:  { icon:'📍', en:'Waiting for address', zh:'等待地址', color:'#d29922' },
+    ready:    { icon:'📦', en:'Ready to send',       zh:'待寄出',   color:'#58a6ff' },
+    sent:     { icon:'🚚', en:'Sent',                zh:'已寄出',   color:'#a78bfa' },
+    received: { icon:'✅', en:'Received',            zh:'已收到',   color:'#3fb950' },
+  }
+  const DELIVERY_METHOD = { courier: ['📦', 'Courier', '快递'], hand: ['🤝', 'Hand over by host', '专员亲手交'], collect: ['🏢', 'Self-collect', '自取'] }
+  const giftOf = p => {
+    if (campType !== 'dual_tier' || isDailyMode) return null
+    const r = calcDualTierReward(playerDeposit(p), p.valid_bet, rewardTiers)
+    const g = r.tierIndex >= 0 ? rewardTiers[r.tierIndex]?.gift : null
+    return g ? { gift: g, cost: r.creditAmount } : null
+  }
+  const deliveryStatusOf = p => p.delivery_status || (p.address_confirmed || p.delivery_method === 'hand' || p.delivery_method === 'collect' ? 'ready' : 'waiting')
+  function openDelivery(p) {
+    setDeliveryBox({ p, gift: giftOf(p), form: {
+      delivery_status: deliveryStatusOf(p), delivery_method: p.delivery_method || 'courier',
+      delivery_name: p.delivery_name || p.full_name || '', delivery_phone: p.delivery_phone || p.member_phone || p.whatsapp || '',
+      delivery_address: p.delivery_address || p.member_address || '', address_confirmed: !!p.address_confirmed,
+      courier: p.courier || '', tracking_no: p.tracking_no || '', sent_at: p.sent_at || '', delivery_note: p.delivery_note || '',
+    } })
+  }
+  async function saveDelivery() {
+    const { p, gift, form } = deliveryBox
+    const up = { ...form, sent_at: form.sent_at || null }
+    // Sent → sent date filled in; Received → the reward counts as paid (its cost goes into the campaign P&L)
+    if (up.delivery_status === 'sent' && !up.sent_at) up.sent_at = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10)
+    if (up.delivery_status === 'received') {
+      up.received_at = p.received_at || new Date().toISOString()
+      if (p.payout_status !== 'paid') Object.assign(up, { payout_status: 'paid', payout_date: new Date().toISOString(), reward_amount: gift?.cost || 0 })
+    } else up.received_at = null
+    await updatePlayer(p.id, up)
+    setDeliveryBox(null)
+  }
+  // WhatsApp asking the winner for (or to confirm) the delivery address, in the campaign's WhatsApp language
+  function askAddress(p) {
+    const g = giftOf(p)
+    const l = waLang === 'cn' ? 'zh' : waLang === 'my' ? 'my' : 'en'
+    const item = g ? giftText(g.gift, l) : ''
+    const camp = selected?.campaign_name || 'the campaign'
+    const have = p.delivery_address || p.member_address
+    const txt = {
+      en: `Yo ${p.username}! I'm ${myName} from sureWin VIP department 🎉\n\nCongrats bro, you won ${item} in ${camp}! To send it to you, can you reply with:\n• Full name\n• Phone number\n• Full delivery address (with postcode)${have ? `\n\nThe address we have now:\n${have}\nStill correct?` : ''}\n\nIf you prefer to meet up / collect, just tell me 👍`,
+      my: `Hai ${p.username}! Saya ${myName} dari jabatan VIP sureWin 🎉\n\nTahniah bro, bro menang ${item} dalam ${camp}! Untuk hantar kepada bro, boleh balas dengan:\n• Nama penuh\n• Nombor telefon\n• Alamat penuh (dengan poskod)${have ? `\n\nAlamat yang kami ada sekarang:\n${have}\nMasih betul?` : ''}\n\nKalau bro nak jumpa / ambil sendiri, bagitahu saya 👍`,
+      zh: `哈咯 ${p.username}，我是sureWin VIP部门的 ${myName} 🎉\n\n恭喜你在 ${camp} 赢得 ${item}！为了寄给你，麻烦回复：\n• 全名\n• 电话号码\n• 完整地址（含邮编）${have ? `\n\n我们目前的地址：\n${have}\n还对吗？` : ''}\n\n如果你想见面领取 / 自取，跟我说一声就好 👍`,
+    }[l]
+    const href = waHref(p.whatsapp || p.member_phone, encodeURIComponent(txt))
+    if (href) window.open(href, '_blank')
+    else navigator.clipboard.writeText(txt).then(() => alert(L2('No WhatsApp number: message copied.', '没有 WhatsApp 号码：讯息已复制。'))).catch(() => {})
+  }
+  // 📦 Delivery list (.xlsx): gift winners only, for whoever buys and sends the items (admin only)
+  function exportDelivery(list) {
+    const rows = list.map(p => ({ p, g: giftOf(p) })).filter(x => x.g)
+    if (!rows.length) { alert(L2('No gift winners yet.', '暂无礼品得主。')); return }
+    const order = { waiting: 0, ready: 1, sent: 2, received: 3 }
+    rows.sort((a, b) => order[deliveryStatusOf(a.p)] - order[deliveryStatusOf(b.p)] || a.p.username.localeCompare(b.p.username))
+    const data = rows.map(({ p, g }) => ({
+      Username: p.username, Name: p.delivery_name || p.full_name || '', Phone: String(p.delivery_phone || p.member_phone || p.whatsapp || ''),
+      Address: p.delivery_address || p.member_address || '', 'Address confirmed': p.address_confirmed ? 'Yes' : 'NO - confirm first',
+      Item: giftText(g.gift, 'en').replace('🥇 ', ''), Cost: g.cost, Currency: campCurrency,
+      Method: (DELIVERY_METHOD[p.delivery_method || 'courier'] || [])[1] || '', Status: DELIVERY_STATUS[deliveryStatusOf(p)].en,
+      Courier: p.courier || '', 'Tracking no': p.tracking_no || '', 'Sent date': p.sent_at || '', Turnover: Math.round(Number(p.valid_bet) || 0), Note: p.delivery_note || '',
+    }))
+    const ws = XLSX.utils.json_to_sheet(data)
+    ws['!cols'] = [14, 22, 16, 50, 18, 16, 10, 8, 18, 18, 14, 20, 12, 14, 30].map(w => ({ wch: w }))
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Delivery')
+    XLSX.writeFile(wb, `delivery_${(selected?.campaign_name || 'campaign').replace(/[^\w]+/g, '_')}_${new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10)}.xlsx`)
+  }
+
   function CampaignWaButton({ p, extra }) {
     const result = buildCampaignWaMessage(p, extra)
     if (!result) return <span style={{ color:'var(--muted)' }}>—</span>
@@ -3089,6 +3160,12 @@ export default function Campaigns() {
                         {lbl}
                       </button>
                     ))}
+                    {profile?.role === 'admin' && (isDailyMode ? dailyAchieved : achieved).some(p => giftOf(p)) && (
+                      <button onClick={() => exportDelivery(isDailyMode ? dailyAchieved : achieved)} title={L2('Gift winners with name, phone, address, item, courier and status', '礼品得主：姓名、电话、地址、奖品、快递和状态')}
+                        style={{ background:'rgba(255,215,0,.12)', border:'1px solid rgba(255,215,0,.35)', color:'#ffd700', padding:'4px 12px', borderRadius:6, fontSize:11, fontWeight:700, cursor:'pointer', whiteSpace:'nowrap' }}>
+                        📦 {L2('Delivery list (.xlsx)', '寄送名单 (.xlsx)')}
+                      </button>
+                    )}
                     <span style={{ marginLeft:'auto', fontSize:11, color:'var(--muted)' }}>{L2(`${filteredPayoutList.length} of ${(isDailyMode?dailyAchieved:achieved).length} players`, `${filteredPayoutList.length} / ${(isDailyMode?dailyAchieved:achieved).length} 位玩家`)}</span>
                     <button onClick={() => {
                       try {
@@ -3126,7 +3203,8 @@ export default function Campaigns() {
                             rewardAmt = [cr>0&&`RM ${cr.toLocaleString('en-MY')} Credit`, wr>0&&`RM ${wr.toLocaleString('en-MY')} WCash`].filter(Boolean).join(' + ')
                           } else if (campType === 'dual_tier') {
                             const r = calcDualTierReward(dep, p.valid_bet, safeTiers)
-                            rewardAmt = [r.creditAmount>0&&`RM ${r.creditAmount.toLocaleString('en-MY')} Credit`, r.wcashAmount>0&&`RM ${r.wcashAmount.toLocaleString('en-MY')} WCash`].filter(Boolean).join(' + ')
+                            const gift = r.tierIndex >= 0 ? safeTiers[r.tierIndex]?.gift : null
+                            rewardAmt = gift ? giftText(gift, 'en').replace('🥇 ', '') : [r.creditAmount>0&&`RM ${r.creditAmount.toLocaleString('en-MY')} Credit`, r.wcashAmount>0&&`RM ${r.wcashAmount.toLocaleString('en-MY')} WCash`].filter(Boolean).join(' + ')
                           } else {
                             const r = calcReward(campType, dep, rewardPct, rewardFixed, goldVal, rewardCap, safeTiers, safeLevels, selected?.is_multi_level)
                             rewardAmt = rewardFmt(r, campCurrency)
@@ -3165,12 +3243,13 @@ export default function Campaigns() {
                       <th style={s.th}>{isDailyMode&&campType==='dual_tier'&&!selected?.is_multi_level?L2('Deposit / Turnover (this date)','存款 / 流水（当日）'):isDailyMode?L2('Deposit (this date)','存款（当日）'):L2('Deposit','存款')}</th>
                       <th style={s.th}>{L2('Reward','奖励')}</th>
                       <th style={s.th}>{L2('Payout Status','派彩状态')}</th>
+                      {filteredPayoutList.some(p => giftOf(p)) && <th style={s.th}>📦 {L2('Delivery','寄送')}</th>}
                       <th style={s.th}>{L2('Last Contact','最后联系')}</th>
                       <th style={s.th}>{L2('Host','负责人')}</th>
                       <th style={s.th}>{L2('Phone / WA','电话 / WA')}</th>
                       <th style={s.th}>{L2('Notes','备注')}</th>
                     </tr></thead>
-                    <tbody>{filteredPayoutList.map((p,i)=>{
+                    <tbody>{(() => { const hasGiftRows = filteredPayoutList.some(x => giftOf(x)); return filteredPayoutList.map((p,i)=>{
                       const isDailyMulti = isDailyMode && selected?.is_multi_level
                       const entry = dailyEntries[p.id]
                       const dualReward = !isDailyMulti && campType==='dual_tier'
@@ -3180,6 +3259,8 @@ export default function Campaigns() {
                         ? (entry?.credit_reward || 0)
                         : campType==='dual_tier' ? dualReward.creditAmount : calcReward(campType, playerDeposit(p), rewardPct, rewardFixed, goldVal, rewardCap, rewardTiers, campaignLevels, selected?.is_multi_level)
                       const wcashReward = isDailyMulti ? 0 : campType==='dual_tier' ? dualReward.wcashAmount : 0
+                      // Gift level (e.g. gold bar): an item to hand over, the RM figure is only our cost
+                      const gift = dualReward && dualReward.tierIndex >= 0 ? rewardTiers[dualReward.tierIndex]?.gift : null
                       const lvlAchieved = isDailyMulti ? entry?.tier_achieved : null
                       const lvlObj = lvlAchieved != null ? campaignLevels.find(l=>l.level_order===lvlAchieved) : null
                       const lvlName = lvlObj ? (lvlObj.level_name || `Level ${lvlObj.level_order}`) : lvlAchieved != null ? `Level ${lvlAchieved}` : '—'
@@ -3206,10 +3287,14 @@ export default function Campaigns() {
                           ? (campType==='dual_tier'&&!isDailyMulti
                             ? <span>{rmFmt(entry?.deposit_amount||0,campCurrency)}<br/><span style={{fontSize:10,color:'var(--muted)'}}>{rmFmt(entry?.turnover_amount||0,campCurrency)} {L2('TO','流水')}</span></span>
                             : rmFmt(entry?.deposit_amount||0,campCurrency))
-                          : rmFmt(playerDeposit(p),campCurrency)
+                          : campType==='dual_tier'
+                            ? <span>{rmFmt(playerDeposit(p),campCurrency)}<br/><span style={{fontSize:10,color:'var(--muted)'}}>{rmFmt(p.valid_bet||0,campCurrency)} {L2('TO','流水')}</span></span>
+                            : rmFmt(playerDeposit(p),campCurrency)
                         }</td>
                         <td style={{...s.td,color:typeInfo.color,fontWeight:700}}>{isDailyMulti
                           ? <span>{rmFmt(creditReward,campCurrency)} Credit</span>
+                          : gift
+                            ? <span>{giftText(gift, lang === 'zh' ? 'zh' : 'en')}<br/><span style={{fontSize:10,color:'var(--muted)',fontWeight:400}}>{L2('cost','成本')} {rmFmt(dualReward.creditAmount,campCurrency)}</span></span>
                           : campType==='dual_tier'
                             ? <span>{rmFmt(dualReward.creditAmount,campCurrency)} Credit<br/><span style={{fontSize:10,color:'var(--muted)'}}>+ {rmFmt(dualReward.wcashAmount,campCurrency)} WCash</span></span>
                             : rmFmt(creditReward,campCurrency)
@@ -3220,6 +3305,19 @@ export default function Campaigns() {
                             <div style={{ marginTop:3, fontSize:10, color:'#f59e0b', fontWeight:700, whiteSpace:'nowrap' }}>🔥 +{rmFmt(pendingStreakBonus, campCurrency)} {L2('streak','连续奖励')}</div>
                           )}
                         </td>
+                        {hasGiftRows && <td style={{ ...s.td, minWidth:150 }}>{gift ? (() => {
+                          const st = DELIVERY_STATUS[deliveryStatusOf(p)]
+                          const m = DELIVERY_METHOD[p.delivery_method || 'courier']
+                          return <div>
+                            <button onClick={() => openDelivery(p)} title={L2('Delivery details', '寄送资料')} style={{ ...s.tag(st.color, st.color + '22'), cursor:'pointer', border:`1px solid ${st.color}55` }}>{st.icon} {L2(st.en, st.zh)}</button>
+                            <div style={{ fontSize:10, color:'var(--muted)', marginTop:3 }}>{m[0]} {L2(m[1], m[2])}{p.tracking_no ? ` · ${p.courier || ''} ${p.tracking_no}` : ''}</div>
+                            {!p.address_confirmed && p.delivery_method !== 'hand' && p.delivery_method !== 'collect' && (
+                              <button onClick={() => askAddress(p)} style={{ marginTop:4, background:'rgba(37,211,102,.12)', color:'#25d366', border:'1px solid rgba(37,211,102,.3)', borderRadius:5, padding:'2px 7px', fontSize:10, fontWeight:700, cursor:'pointer' }}>
+                                📍 {(p.delivery_address || p.member_address) ? L2('Confirm address', '确认地址') : L2('Ask address', '询问地址')}
+                              </button>
+                            )}
+                          </div>
+                        })() : <span style={{ color:'var(--muted)' }}>—</span>}</td>}
                         <td style={{ ...s.td, minWidth:110 }} onClick={e=>e.stopPropagation()}>
                           {(() => {
                             const playerContacts = contacts[p.id] || []
@@ -3293,7 +3391,7 @@ export default function Campaigns() {
                         </td>
                         <td style={s.td}><input defaultValue={p.notes||''} onBlur={e=>{if(e.target.value!==(p.notes||''))updatePlayer(p.id,{notes:e.target.value})}} style={{...s.editInput,width:140}} placeholder={L2('Add note...','添加备注...')}/></td>
                       </tr>
-                    })}
+                    }) })()}
                     {(() => {
                       const sumDep = filteredPayoutList.reduce((s,p) => s + (isDailyMode ? (parseFloat(dailyEntries[p.id]?.deposit_amount)||0) : playerDeposit(p)), 0)
                       const sumReward = filteredPayoutList.reduce((s,p) => {
@@ -4188,6 +4286,41 @@ export default function Campaigns() {
           </div>
         </div>
       )}
+      {deliveryBox && (() => {
+        const f = deliveryBox.form, set = (k, v) => setDeliveryBox(b => ({ ...b, form: { ...b.form, [k]: v } }))
+        const inp = { ...s.finput, width:'100%' }
+        return (
+          <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.6)', zIndex:1100, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }} onClick={() => setDeliveryBox(null)}>
+            <div style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:12, padding:20, width:'100%', maxWidth:520, maxHeight:'90vh', overflowY:'auto' }} onClick={e => e.stopPropagation()}>
+              <div style={{ fontSize:16, fontWeight:800, marginBottom:2 }}>📦 {L2('Delivery', '寄送')} · {deliveryBox.p.username}</div>
+              <div style={{ fontSize:12, color:'#ffd700', marginBottom:14 }}>{deliveryBox.gift ? `${giftText(deliveryBox.gift.gift, lang === 'zh' ? 'zh' : 'en')} · ${L2('cost', '成本')} ${rmFmt(deliveryBox.gift.cost, campCurrency)}` : ''}</div>
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+                <div><div style={s.flbl}>{L2('Status', '状态')}</div><select style={s.fsel} value={f.delivery_status} onChange={e => set('delivery_status', e.target.value)}>{Object.entries(DELIVERY_STATUS).map(([k, v]) => <option key={k} value={k}>{v.icon} {L2(v.en, v.zh)}</option>)}</select></div>
+                <div><div style={s.flbl}>{L2('How', '方式')}</div><select style={s.fsel} value={f.delivery_method} onChange={e => set('delivery_method', e.target.value)}>{Object.entries(DELIVERY_METHOD).map(([k, v]) => <option key={k} value={k}>{v[0]} {L2(v[1], v[2])}</option>)}</select></div>
+                <div><div style={s.flbl}>{L2('Name', '姓名')}</div><input style={inp} value={f.delivery_name} onChange={e => set('delivery_name', e.target.value)} /></div>
+                <div><div style={s.flbl}>{L2('Phone', '电话')}</div><input style={inp} value={f.delivery_phone} onChange={e => set('delivery_phone', e.target.value)} /></div>
+              </div>
+              <div style={{ marginTop:10 }}><div style={s.flbl}>{L2('Delivery address', '寄送地址')}</div>
+                <textarea rows={3} style={{ ...inp, resize:'vertical', fontFamily:'inherit' }} value={f.delivery_address} onChange={e => set('delivery_address', e.target.value)} placeholder={L2('Full address with postcode', '完整地址（含邮编）')} /></div>
+              <label style={{ display:'flex', alignItems:'center', gap:8, fontSize:12, marginTop:8, cursor:'pointer' }}>
+                <input type="checkbox" checked={f.address_confirmed} onChange={e => { const v = e.target.checked; setDeliveryBox(b => ({ ...b, form: { ...b.form, address_confirmed: v, delivery_status: v && b.form.delivery_status === 'waiting' ? 'ready' : b.form.delivery_status } })) }} />
+                ✅ {L2('Player confirmed this address on WhatsApp', '玩家已在 WhatsApp 确认此地址')}
+              </label>
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:10, marginTop:10 }}>
+                <div><div style={s.flbl}>{L2('Courier', '快递公司')}</div><input style={inp} value={f.courier} onChange={e => set('courier', e.target.value)} placeholder="e.g. J&T" /></div>
+                <div><div style={s.flbl}>{L2('Tracking no', '单号')}</div><input style={inp} value={f.tracking_no} onChange={e => set('tracking_no', e.target.value)} /></div>
+                <div><div style={s.flbl}>{L2('Sent date', '寄出日期')}</div><input type="date" style={inp} value={f.sent_at || ''} onChange={e => set('sent_at', e.target.value)} /></div>
+              </div>
+              <div style={{ marginTop:10 }}><div style={s.flbl}>{L2('Note', '备注')}</div><input style={inp} value={f.delivery_note} onChange={e => set('delivery_note', e.target.value)} placeholder={L2('e.g. insured, signature on receipt', '例如：已保价、签收')} /></div>
+              <div style={{ fontSize:11, color:'var(--muted)', marginTop:10 }}>{L2('Setting "Received" also marks the reward as Paid.', '设为「已收到」会同时标记奖励为已派。')}</div>
+              <div style={{ display:'flex', gap:8, justifyContent:'flex-end', marginTop:14 }}>
+                <button onClick={() => setDeliveryBox(null)} style={{ background:'var(--surface2)', border:'1px solid var(--border)', color:'var(--text)', padding:'7px 14px', borderRadius:7, cursor:'pointer' }}>{L2('Cancel', '取消')}</button>
+                <button onClick={saveDelivery} style={{ background:'var(--accent)', border:'none', color:'#fff', padding:'7px 16px', borderRadius:7, fontWeight:700, cursor:'pointer' }}>💾 {L2('Save', '保存')}</button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
       {emailBox && (
         <EmailModal players={emailBox.players} preset={emailBox.preset} perPlayer={emailBox.perPlayer} title={emailBox.title}
           onClose={() => setEmailBox(null)} onSent={results => logCampaignEmails(results, emailBox.how)} />
