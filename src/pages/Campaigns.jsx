@@ -2677,6 +2677,27 @@ export default function Campaigns() {
                         🗑 {L2('Remove Selected','移除所选')} ({selectedForRemoval.size})
                       </button>
                     )}
+                    {/* ⬇ Export the chase list as shown (host + filters): Host, Username, Name, Phone, Tier. All hosts = one sheet per host */}
+                    <button
+                      disabled={!filteredChaseList.length}
+                      onClick={() => {
+                        const rowOf = p => ({ Host: p.host_assigned || '', Username: p.username || '', Name: p.full_name || '', Phone: String(p.whatsapp || p.member_phone || ''), Tier: p.tier || '' })
+                        const list = [...filteredChaseList].sort((a, b) => (a.host_assigned || '~').localeCompare(b.host_assigned || '~'))
+                        const wb = XLSX.utils.book_new()
+                        const add = (rows, name) => { const ws = XLSX.utils.json_to_sheet(rows.map(rowOf)); ws['!cols'] = [{ wch:12 }, { wch:18 }, { wch:24 }, { wch:16 }, { wch:11 }]; XLSX.utils.book_append_sheet(wb, ws, name.replace(/[\\/?*[\]:]/g, '').slice(0, 31) || 'Sheet') }
+                        add(list, hostFilter === 'all' ? 'All' : hostFilter)
+                        if (hostFilter === 'all') {
+                          const hosts = [...new Set(list.map(p => p.host_assigned || L2('No host', '无负责人')))]
+                          if (hosts.length > 1) hosts.forEach(h => add(list.filter(p => (p.host_assigned || L2('No host', '无负责人')) === h), h))
+                        }
+                        const day = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10)
+                        XLSX.writeFile(wb, `chase_${(selected?.campaign_name || 'campaign').replace(/[^\w]+/g, '_')}_${hostFilter === 'all' ? 'all_hosts' : hostFilter.replace(/[^\w]+/g, '_')}_${day}.xlsx`)
+                      }}
+                      title={L2('Download the players shown (host filter + search) with host, username, name, phone and tier. All hosts = one sheet per host.', '下载目前显示的玩家（负责人筛选 + 搜索）：负责人、用户名、名字、电话、等级。全部负责人 = 每位负责人一个分页。')}
+                      style={{ background:'rgba(63,185,80,.12)', border:'1px solid rgba(63,185,80,.35)', color:'#3fb950', padding:'5px 12px', borderRadius:6, fontSize:11, fontWeight:700, cursor:'pointer', whiteSpace:'nowrap', opacity: filteredChaseList.length ? 1 : 0.5 }}
+                    >
+                      📥 {hostFilter === 'all' ? L2(`Export ${filteredChaseList.length} (by host)`, `导出 ${filteredChaseList.length} 位（按负责人）`) : L2(`Export ${hostFilter}'s ${filteredChaseList.length}`, `导出 ${hostFilter} 的 ${filteredChaseList.length} 位`)}
+                    </button>
                     {campType !== 'leaderboard' && (
                       <button
                         onClick={importFromVipData}
