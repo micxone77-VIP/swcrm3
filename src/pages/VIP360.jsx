@@ -192,7 +192,7 @@ supabase.from('tier_change_logs')
 supabase.from('profiles').select('full_name').in('role',['admin','host']).order('full_name'),
 ])
 setVip(vipRes.data)
-setEditForm({ full_name: vipRes.data.full_name||'', birthday: vipRes.data.birthday||'', host_assigned: vipRes.data.host_assigned||'', tier: vipRes.data.tier||'', activity_status: vipRes.data.activity_status||'', phone: vipRes.data.phone||'', whatsapp: vipRes.data.whatsapp||'', email: vipRes.data.email||'', telegram: vipRes.data.telegram||'', churn_risk: vipRes.data.churn_risk||'', address: vipRes.data.address||'', special_requests: vipRes.data.special_requests||'', tng_verified_name: vipRes.data.tng_verified_name||'', tng_verify_status: vipRes.data.tng_verify_status||'', tng_verified_at: vipRes.data.tng_verified_at||'' })
+setEditForm({ full_name: vipRes.data.full_name||'', birthday: vipRes.data.birthday||'', host_assigned: vipRes.data.host_assigned||'', tier: vipRes.data.tier||'', activity_status: vipRes.data.activity_status||'', phone: vipRes.data.phone||'', whatsapp: vipRes.data.whatsapp||'', email: vipRes.data.email||'', email_2: vipRes.data.email_2||'', telegram: vipRes.data.telegram||'', churn_risk: vipRes.data.churn_risk||'', address: vipRes.data.address||'', special_requests: vipRes.data.special_requests||'', tng_verified_name: vipRes.data.tng_verified_name||'', tng_verify_status: vipRes.data.tng_verify_status||'', tng_verified_at: vipRes.data.tng_verified_at||'' })
 setMonthly(montRes.data || [])
 setDaily(dailyRes.data || [])
 setContacts(contRes.data || [])
@@ -387,7 +387,7 @@ load()
 async function saveEdit() {
 setEditSaving(true)
 // Only include columns that exist in vip_members (notes is not a column)
-const ALLOWED = ['full_name','birthday','host_assigned','tier','activity_status','phone','whatsapp','email','telegram','churn_risk','address','special_requests','tng_verified_name','tng_verify_status','tng_verified_at']
+const ALLOWED = ['full_name','birthday','host_assigned','tier','activity_status','phone','whatsapp','email','email_2','telegram','churn_risk','address','special_requests','tng_verified_name','tng_verify_status','tng_verified_at']
 const clean = Object.fromEntries(
   ALLOWED.map(k => [k, editForm[k] === '' ? null : (editForm[k] ?? null)])
 )
@@ -486,7 +486,7 @@ const statusCfg = STATUS_CONFIG[vip.activity_status] || { color:'var(--muted)', 
 return (
 <div style={{ padding: '24px 28px' }}>
 <ToastContainer />
-{emailOpen && <EmailModal players={[vip]} onClose={() => setEmailOpen(false)} />}
+{emailOpen && <EmailModal players={[emailOpen === '2' ? { ...vip, email: vip.email_2 } : vip]} onClose={() => setEmailOpen(false)} />}
 
 {/* ── Back ── */}
 <button onClick={() => navigate(-1)} style={{
@@ -622,6 +622,7 @@ color: m.isWL ? (m.wl <= 0 ? 'var(--success)' : 'var(--danger)') : 'var(--text)'
 <Field label={L2('Phone', '电话')}>{vip.phone}<CopyBtn text={vip.phone} kind="phone" /></Field>
 <Field label={L2('WhatsApp', 'WhatsApp')}>{vip.whatsapp}<CopyBtn text={vip.whatsapp} kind="phone" /></Field>
 <Field label={L2('Email', '电邮')}>{vip.email}{vip.email && profile?.role !== 'readonly' && <button onClick={() => setEmailOpen(true)} style={{ marginLeft:8, background:'rgba(47,129,247,.15)', color:'#58a6ff', border:'1px solid rgba(47,129,247,.35)', borderRadius:6, padding:'2px 8px', fontSize:11, fontWeight:700, cursor:'pointer' }}>📧 {L2('Email', '发邮件')}</button>}</Field>
+{vip.email_2 && <Field label={L2('Email 2', '电邮 2')}>{vip.email_2}{profile?.role !== 'readonly' && <button onClick={() => setEmailOpen('2')} style={{ marginLeft:8, background:'rgba(47,129,247,.15)', color:'#58a6ff', border:'1px solid rgba(47,129,247,.35)', borderRadius:6, padding:'2px 8px', fontSize:11, fontWeight:700, cursor:'pointer' }}>📧 {L2('Email', '发邮件')}</button>}</Field>}
 <Field label={L2('Telegram', 'Telegram')}>{vip.telegram ? `@${vip.telegram}` : '—'}</Field>
 <Field label={L2('Address', '地址')}>{vip.address}</Field>
 <Field label={L2('Remark', '备注')}>{vip.special_requests}</Field>
@@ -937,6 +938,7 @@ color: cp.campaigns?.status==='Active' ? 'var(--success)' : 'var(--muted)',
 <Field label={L2('Phone', '电话')}>{vip.phone || '—'}<CopyBtn text={vip.phone} kind="phone" /></Field>
 <Field label={L2('WhatsApp', 'WhatsApp')}>{vip.whatsapp || '—'}<CopyBtn text={vip.whatsapp} kind="phone" /></Field>
 <Field label={L2('Email', '电邮')}>{vip.email || '—'}</Field>
+<Field label={L2('Email 2', '电邮 2')}>{vip.email_2 || '—'}</Field>
 <Field label={L2('Telegram', 'Telegram')}>{vip.telegram ? `@${vip.telegram}` : '—'}</Field>
 <Field label={L2('Address', '地址')}>{vip.address || '—'}</Field>
 <Field label={L2('Remark', '备注')}>{vip.special_requests || '—'}</Field>
@@ -1692,6 +1694,10 @@ return (
 <div>
 <label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>{L2('Email', '电邮')}</label>
 <Input value={editForm.email||''} onChange={e => setEditForm(f=>({...f,email:e.target.value}))} />
+</div>
+<div>
+<label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>{L2('Email 2 (second email)', '电邮 2（第二个邮箱）')}</label>
+<Input value={editForm.email_2||''} onChange={e => setEditForm(f=>({...f,email_2:e.target.value}))} />
 </div>
 <div>
 <label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:4 }}>{L2('Telegram', 'Telegram')}</label>
