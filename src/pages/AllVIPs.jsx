@@ -14,6 +14,7 @@ import { PotentialSearch } from '../components/vip/PotentialProfile'
 import { formatMoney } from '../lib/format'
 import { enumLabel } from '../lib/enums'
 import CopyBtn from '../components/CopyBtn'
+import EmailModal from '../components/EmailModal'
 
 const PAGE_SIZE = 50
 const TIERS    = ['ALL','BLACK','DIAMOND-P','DIAMOND','PLATINUM','GOLD','SILVER','BRONZE']
@@ -124,6 +125,10 @@ export default function AllVIPs() {
   const [contactMap, setContactMap] = useState({})
   const [chaseFilter, setChaseFilter] = useState(searchParams.get('chase') || 'ALL') // ALL | needs_chase | dep_no_contact | contact_no_dep
   const [chaseDays, setChaseDays] = useState('7')
+  // 📧 Bulk email (2026-11-19): tick VIPs (or use all shown after filters) -> the normal email box
+  const [ticked, setTicked] = useState(() => new Set())
+  const [emailFor, setEmailFor] = useState(null)
+  const canEmail = ['admin', 'host'].includes(profile?.role)
 
   const TIER_ORDER = { BLACK:0, 'DIAMOND-P':0.5, DIAMOND:1, PLATINUM:2, GOLD:3, SILVER:4, BRONZE:5 }
 
@@ -131,7 +136,7 @@ export default function AllVIPs() {
   const load = useCallback(async () => {
     setLoading(true); setError(null)
     try {
-      const SEL = 'id,username,full_name,tier,region,currency,days_inactive,churn_risk,host_assigned,last_deposit_date,last_bet_date,total_deposit,win_loss,activity_status,last_contacted,last_contact_date,vip_score,is_excluded,birthday,phone,whatsapp,tng_verify_status,tng_verified_name,affiliate_login,affiliate_updated_at'
+      const SEL = 'id,username,full_name,tier,region,currency,days_inactive,churn_risk,host_assigned,last_deposit_date,last_bet_date,total_deposit,win_loss,activity_status,last_contacted,last_contact_date,vip_score,is_excluded,birthday,phone,whatsapp,tng_verify_status,tng_verified_name,affiliate_login,affiliate_updated_at,email'
       const [vipRes, hostRes] = await Promise.all([
         // Silver / Bronze are not in the VIP list view — read them from vip_members_all when that tier is picked
         potTier
@@ -430,6 +435,27 @@ export default function AllVIPs() {
         )}
       </div>
 
+      {/* 📧 Bulk email: ticked VIPs, or every VIP the filters show */}
+      {canEmail && !loading && !error && (() => {
+        const tickedList = sorted.filter(v => ticked.has(v.username))
+        const withMail = list => list.filter(v => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v.email || '').trim())).length
+        const btnS = { background:'#2f81f7', color:'#fff', border:'none', padding:'7px 14px', borderRadius:7, fontSize:12, fontWeight:700, cursor:'pointer' }
+        return (
+          <div style={{ display:'flex', gap:10, flexWrap:'wrap', alignItems:'center', marginBottom:14, fontSize:12 }}>
+            <span style={{ color:'var(--muted)', fontWeight:700 }}>📧 {L2('Email:', '邮件：')}</span>
+            {ticked.size > 0 && <>
+              <button style={btnS} onClick={() => setEmailFor(tickedList)}>{L2(`Email ${tickedList.length} ticked (${withMail(tickedList)} have email)`, `发送给已勾选 ${tickedList.length} 位（${withMail(tickedList)} 位有邮箱）`)}</button>
+              <button style={{ ...btnS, background:'var(--surface2)', color:'var(--text)', border:'1px solid var(--border)' }} onClick={() => setTicked(new Set())}>✖ {L2('Clear ticks', '取消勾选')}</button>
+            </>}
+            <button style={{ ...btnS, background: ticked.size ? 'var(--surface2)' : '#2f81f7', color: ticked.size ? 'var(--text)' : '#fff', border: ticked.size ? '1px solid var(--border)' : 'none', opacity: sorted.length ? 1 : .5 }} disabled={!sorted.length}
+              onClick={() => { if (sorted.length <= 100 || window.confirm(L2(`Email all ${sorted.length} VIPs shown? Max 100 emails per hour: the rest are skipped and you can send them an hour later (they show as emailed recently in Email a List).`, `发送给目前显示的全部 ${sorted.length} 位 VIP？每小时最多 100 封：其余会跳过，一小时后再发。`))) setEmailFor(sorted) }}>
+              {L2(`Email all ${sorted.length} shown (${withMail(sorted)} have email)`, `发送给目前显示的 ${sorted.length} 位（${withMail(sorted)} 位有邮箱）`)}
+            </button>
+            <span style={{ color:'var(--muted)' }}>{L2('Use the filters above (tier, host, status…) or tick VIPs in the list. Saved in each VIP\'s Contact Log.', '用上面的筛选（等级、负责人、状态…）或在列表里勾选。会记录到每位 VIP 的联系记录。')}</span>
+          </div>
+        )
+      })()}
+
       {/* Silver / Bronze players matching the search (not in VIP list) */}
       {search.trim().length >= 3 && <PotentialSearch query={search} />}
 
@@ -441,6 +467,10 @@ export default function AllVIPs() {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
                 <tr>
+                  {canEmail && <th style={{ padding:'9px 6px 9px 12px', background:'var(--surface)', borderBottom:'1px solid var(--border)', width:24 }}>
+                    <input type="checkbox" title={L2('Tick / untick this page', '勾选 / 取消本页')} checked={paged.length > 0 && paged.every(v => ticked.has(v.username))}
+                      onChange={e => { const on = e.target.checked; setTicked(tk => { const n = new Set(tk); paged.forEach(v => on ? n.add(v.username) : n.delete(v.username)); return n }) }} style={{ cursor:'pointer' }} />
+                  </th>}
                   {[
                     { key:'rownum', label:'#', sortable:false },
                     { key:'name', label:t('allVips.colVip'), sortable:true },
@@ -475,7 +505,7 @@ export default function AllVIPs() {
               </thead>
               <tbody>
                 {paged.length === 0 ? (
-                  <tr><td colSpan={14} style={{ textAlign:'center', padding:'32px', color:'var(--muted)' }}>
+                  <tr><td colSpan={canEmail ? 15 : 14} style={{ textAlign:'center', padding:'32px', color:'var(--muted)' }}>
                     {L2('No VIPs match the current filters.', '没有符合当前筛选条件的VIP。')}
                   </td></tr>
                 ) : paged.map((v, rowIdx) => {
@@ -491,6 +521,9 @@ export default function AllVIPs() {
                       title={ci.needsChase ? L2('Needs chase: no deposit for 3–30 days and not contacted since the last deposit', '需跟进：3–30天未存款，且最后存款后未联系') : undefined}
                       style={{ cursor:'pointer', transition:'background .1s', background: rowBg, boxShadow: ci.needsChase ? 'inset 3px 0 0 #f85149' : 'none' }}
                     >
+                      {canEmail && <td style={{ padding:'9px 6px 9px 12px', borderBottom:'1px solid var(--border)', width:24 }} onClick={e => e.stopPropagation()}>
+                        <input type="checkbox" checked={ticked.has(v.username)} onChange={() => setTicked(tk => { const n = new Set(tk); if (n.has(v.username)) n.delete(v.username); else n.add(v.username); return n })} style={{ cursor:'pointer' }} />
+                      </td>}
                       <td style={{ padding:'9px 8px 9px 12px', borderBottom:'1px solid var(--border)', color:'var(--muted)', fontSize:12, width:36 }}>{(page-1)*PAGE_SIZE + rowIdx + 1}</td>
                       <td style={{ padding:'9px 12px', borderBottom:'1px solid var(--border)' }}>
                         <div style={{ fontWeight:600, color:'var(--text)' }}>{v.username}<CopyBtn text={v.username} /></div>
@@ -616,6 +649,14 @@ export default function AllVIPs() {
           </div>
           <Pagination page={page} total={total} pageSize={PAGE_SIZE} onChange={setPage} />
         </Card>
+      )}
+      {emailFor && (
+        <EmailModal
+          players={emailFor}
+          title={L2(`Email ${emailFor.length} VIP(s)`, `发送邮件给 ${emailFor.length} 位 VIP`)}
+          onSent={() => setTicked(new Set())}
+          onClose={() => setEmailFor(null)}
+        />
       )}
     </div>
   )
