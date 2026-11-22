@@ -30,6 +30,7 @@ const STATUS = {
   sent:   { en:'Sent ✅', zh:'已发送 ✅', color:'#3fb950' },
   failed: { en:'Failed', zh:'失败', color:'#f85149' },
   skipped:{ en:'Not sent', zh:'未发送', color:'#d29922' },
+  queued: { en:'⏰ In auto-send', zh:'⏰ 自动发送中', color:'#8957e5' },
 }
 const NOT_USER = new Set(['not', 'registered', 'invalid', 'number', 'none', 'n/a', 'na', '-', 'yes', 'no'])
 
@@ -116,6 +117,88 @@ function guessCols(head) {
 
 // 📜 Sent history: every email the CRM sent (email_logs), newest first. Tests are left out.
 // Admin / read-only see all; a host sees their own (RLS on email_logs).
+// ⏰ Auto-send jobs (2026-11-22): the server (email-auto, every 10 min) sends each job's next rows, up to its per-hour number.
+// Pause / resume / stop here; "Send next batch now" runs it right away instead of waiting for the next 10 minutes.
+const JOB_ST = {
+  active: { en:'Sending', zh:'发送中', color:'#3fb950' },
+  paused: { en:'Paused', zh:'已暂停', color:'#d29922' },
+  stopped:{ en:'Stopped', zh:'已停止', color:'#8b949e' },
+  done:   { en:'Done', zh:'已完成', color:'#2f81f7' },
+}
+function AutoSendPanel({ L2, reload, profile }) {
+  const [jobs, setJobs] = useState(null)
+  const [stats, setStats] = useState({})
+  const [msg, setMsg] = useState('')
+  const [busy, setBusy] = useState(false)
+  async function load() {
+    const { data } = await supabase.from('email_auto_jobs').select('id,title,subject,per_hour,status,created_by,created_by_name,created_at,last_run_at,last_msg').order('created_at', { ascending: false }).limit(8)
+    setJobs(data || [])
+    const ids = (data || []).map(j => j.id)
+    if (ids.length) {
+      const { data: st } = await supabase.from('email_auto_job_stats').select('*').in('job_id', ids)
+      setStats(Object.fromEntries((st || []).map(x => [x.job_id, x])))
+    }
+  }
+  useEffect(() => { load(); const t = setInterval(load, 60000); return () => clearInterval(t) }, [reload]) // eslint-disable-line react-hooks/exhaustive-deps
+  async function setStatus(j, status) {
+    if (status === 'stopped' && !window.confirm(L2('Stop this auto-send? The rows not sent yet will not be sent (you can start a new one later).', '停止这个自动发送？还没发的不会再发（之后可以重新开始）。'))) return
+    const { error } = await supabase.from('email_auto_jobs').update({ status, updated_at: new Date().toISOString(), ...(status === 'active' ? { last_msg: 'Resumed' } : {}) }).eq('id', j.id)
+    if (error) setMsg('⚠ ' + error.message); else load()
+  }
+  async function runNow() {
+    setBusy(true); setMsg(L2('Sending the next batch… (up to a minute)', '正在发送下一批…（最多一分钟）'))
+    const { data, error } = await supabase.functions.invoke('email-auto', { body: {} })
+    setBusy(false)
+    if (error || !data?.ok) setMsg('⚠ ' + (data?.error || error?.message))
+    else { const n = (data.jobs || []).reduce((a, j) => a + (j.sent || 0), 0); setMsg(L2(`✅ ${n} sent in this batch.`, `✅ 这一批发送了 ${n} 封。`)) }
+    load()
+  }
+  if (!jobs?.length) return null
+  const canEdit = j => profile?.role === 'admin' || j.created_by === profile?.id
+  const fmt = d => d ? new Date(d).toLocaleString('en-GB', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit', timeZone:'Asia/Kuala_Lumpur' }) : '—'
+  return (
+    <div style={card}>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:8, marginBottom:8 }}>
+        <div style={{ fontWeight:700 }}>⏰ {L2('Auto-send', '自动发送')}</div>
+        <div style={{ display:'flex', gap:8 }}>
+          {jobs.some(j => j.status === 'active') && <button style={btn} disabled={busy} onClick={runNow}>▶ {L2('Send next batch now', '立即发送下一批')}</button>}
+          <button style={btn} onClick={load}>↻ {L2('Refresh', '刷新')}</button>
+        </div>
+      </div>
+      <div style={{ fontSize:11, color:'var(--muted)', marginBottom:8 }}>{L2('The server checks every 10 minutes and sends up to 25 at a time, until each job reaches its number per hour (CRM max 100 per hour for all emails together). You can close the page.', '服务器每 10 分钟检查一次，每次最多发 25 封，直到达到每小时的数量（CRM 所有邮件合计每小时最多 100 封）。可以关闭页面。')}</div>
+      {msg && <div style={{ fontSize:12, marginBottom:8, color: msg.startsWith('⚠') ? '#f85149' : '#3fb950' }}>{msg}</div>}
+      {jobs.map(j => {
+        const st = stats[j.id] || {}
+        const total = Number(st.total || 0), sent = Number(st.sent || 0), left = Number(st.pending || 0)
+        const pct = total ? Math.round(100 * (total - left) / total) : 0
+        const js = JOB_ST[j.status] || JOB_ST.stopped
+        return (
+          <div key={j.id} style={{ border:'1px solid var(--border)', borderRadius:8, padding:'10px 12px', marginBottom:8 }}>
+            <div style={{ display:'flex', justifyContent:'space-between', gap:10, flexWrap:'wrap', alignItems:'center' }}>
+              <div style={{ fontSize:13 }}><span style={{ fontWeight:700, color:js.color }}>● {L2(js.en, js.zh)}</span> · <b>{j.subject}</b> <span style={{ color:'var(--muted)', fontSize:11 }}>· {j.title} · {L2('by', '由')} {j.created_by_name || '—'} · {fmt(j.created_at)} · {j.per_hour}/{L2('hour', '小时')}</span></div>
+              {canEdit(j) && <div style={{ display:'flex', gap:6 }}>
+                {j.status === 'active' && <button style={{ ...btn, padding:'4px 10px' }} onClick={() => setStatus(j, 'paused')}>⏸ {L2('Pause', '暂停')}</button>}
+                {j.status === 'paused' && <button style={{ ...btn, padding:'4px 10px' }} onClick={() => setStatus(j, 'active')}>▶ {L2('Resume', '继续')}</button>}
+                {(j.status === 'active' || j.status === 'paused') && <button style={{ ...btn, padding:'4px 10px', color:'#f85149' }} onClick={() => setStatus(j, 'stopped')}>⏹ {L2('Stop', '停止')}</button>}
+              </div>}
+            </div>
+            <div style={{ height:6, background:'var(--surface2)', borderRadius:4, margin:'8px 0 6px', overflow:'hidden' }}><div style={{ width:`${pct}%`, height:'100%', background:js.color }} /></div>
+            <div style={{ fontSize:12, display:'flex', gap:14, flexWrap:'wrap' }}>
+              <span style={{ color:'#3fb950', fontWeight:700 }}>✅ {sent} / {total} {L2('sent', '已发送')}</span>
+              <span>⏳ {left} {L2('left', '剩余')}</span>
+              {Number(st.skipped) > 0 && <span style={{ color:'#d29922' }}>⏭ {st.skipped} {L2('skipped', '跳过')}</span>}
+              {Number(st.failed) > 0 && <span style={{ color:'#f85149' }}>❌ {st.failed} {L2('failed', '失败')}</span>}
+              <span style={{ color:'var(--muted)' }}>{L2('last hour', '最近一小时')}: {st.sent_last_hour || 0}</span>
+              {left > 0 && j.status === 'active' && <span style={{ color:'var(--muted)' }}>{L2(`about ${Math.ceil(left / j.per_hour)} hour(s) to go`, `大约还要 ${Math.ceil(left / j.per_hour)} 小时`)}</span>}
+            </div>
+            {j.last_msg && <div style={{ fontSize:11, color:'var(--muted)', marginTop:4 }}>{L2('Last run', '上次运行')} {fmt(j.last_run_at)}: {j.last_msg}</div>}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 function SentHistory({ L2 }) {
   const [days, setDays] = useState(30)
   const [listOnly, setListOnly] = useState(false)
@@ -222,6 +305,27 @@ export default function EmailList() {
   const [markMsg, setMarkMsg] = useState('')
   const markQueue = useRef(Promise.resolve())
   const markCount = useRef({ ok: 0, bad: 0 })
+  const [autoReload, setAutoReload] = useState(0)
+  const canSend = ['admin', 'host'].includes(profile?.role)
+
+  // ⏰ Start an auto-send: save the job + its rows (the ready / ticked rows right now), then send the first batch
+  async function startAuto({ subject, body, wa_number, per_hour }) {
+    const list = toSend.filter(r => EMAIL_RE.test(r.email))
+    if (!list.length) throw new Error(L2('No rows with an email to send.', '没有可发送的邮箱。'))
+    const { data: job, error } = await supabase.from('email_auto_jobs').insert({
+      title: `${source} · ${list.length} ${L2('people', '人')}`, source, sheet_id: sheet?.id || null, gid: sheet?.gid ?? null, head_row: table?.headRow || 1, email_col: cols.email + 1,
+      subject, body, wa_number, per_hour, created_by: profile?.id, created_by_name: profile?.full_name || profile?.username || '',
+    }).select('id').single()
+    if (error) throw error
+    for (const c of chunks(list, 500)) {
+      const { error: e2 } = await supabase.from('email_auto_rows').insert(c.map(r => ({ job_id: job.id, line: r.line, email: r.email, name: r.name || null, username: r.member?.username || null })))
+      if (e2) { await supabase.from('email_auto_jobs').update({ status: 'stopped', last_msg: 'Could not save the rows: ' + e2.message }).eq('id', job.id); throw e2 }
+    }
+    const lines = new Set(list.map(r => r.line))
+    setRows(rs => rs.map(r => lines.has(r.line) ? { ...r, status: 'queued', note: L2(`auto-send, ${per_hour} per hour`, `自动发送，每小时 ${per_hour} 封`) } : r))
+    setPicked(new Set()); setAutoReload(x => x + 1)
+    supabase.functions.invoke('email-auto', { body: {} }).then(() => setAutoReload(x => x + 1))
+  }
 
   function applyTable(aoa, name, sh = null) {
     const all = (aoa || []).map(r => (r || []).map(v => (v == null ? '' : String(v).trim())))
@@ -402,6 +506,7 @@ export default function EmailList() {
       </div>
       {view === 'history' ? <SentHistory L2={L2} /> : <>
       {isAdmin && <SheetSetup L2={L2} sheet={sheet} />}
+      {canSend && <AutoSendPanel L2={L2} reload={autoReload} profile={profile} />}
 
       <div style={card}>
         <div style={{ fontWeight:700, marginBottom:8 }}>1. {L2('Load the list', '读取名单')}</div>
@@ -458,7 +563,7 @@ export default function EmailList() {
             {chip('ready', L2('Ready', '可发送'))}
             {chip('crm', L2('In CRM', '在 CRM'))}
             {chip('new', L2('Not in CRM', '不在 CRM'))}
-            {['bad', 'dup', 'unsub', 'recent', 'sent', 'failed', 'skipped'].filter(k => counts[k]).map(k => chip(k, L2(STATUS[k].en, STATUS[k].zh)))}
+            {['bad', 'dup', 'unsub', 'recent', 'sent', 'failed', 'skipped', 'queued'].filter(k => counts[k]).map(k => chip(k, L2(STATUS[k].en, STATUS[k].zh)))}
           </div>
           <div style={{ overflowX:'auto' }}>
             <table style={{ width:'100%', borderCollapse:'collapse' }}>
@@ -499,6 +604,7 @@ export default function EmailList() {
           onBatch={markSheet}
           players={toSend.map(r => ({ lead: { email: r.email, name: r.name, username: r.member?.username || '' }, email: r.email, full_name: r.name, username: r.member?.username || '' }))}
           onSent={onSent}
+          onSchedule={canSend ? startAuto : undefined}
           onClose={() => setEmailOpen(false)}
         />
       )}

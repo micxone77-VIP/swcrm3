@@ -40,7 +40,8 @@ const fmtWa =v => {
 //             the template / message box is hidden then, only the subject can be changed
 // onSent(results) is called after a real send (not a test); onBatch(results) after every batch of 5
 // 💾 Saved templates (email_templates table, 2026-11-16): everyone sees them, the writer or an admin can change / delete
-export default function EmailModal({ players, onClose, onSent, onBatch, preset, perPlayer, title }) {
+// onSchedule({ subject, body, wa_number, per_hour }) (Email a List, 2026-11-22): shows ⏰ Auto-send, the server then sends every hour
+export default function EmailModal({ players, onClose, onSent, onBatch, preset, perPlayer, title, onSchedule }) {
   const { lang } = useLanguage()
   const L2 = (en, zh) => (lang === 'zh' ? zh : en)
   // players: CRM players { username, email, full_name } or list rows from the Email a List page
@@ -59,6 +60,7 @@ export default function EmailModal({ players, onClose, onSent, onBatch, preset, 
   const [progress, setProgress] = useState('')
   const [results, setResults] = useState(null)
   const [err, setErr] = useState('')
+  const [perHour, setPerHour] = useState(100)
   // 📱 WhatsApp number shown in this email (message end + signature card): my active numbers, the VIP main line, or typed in
   const { profile } = useAuth()
   const myName = profile?.full_name || profile?.username || ''
@@ -167,6 +169,16 @@ export default function EmailModal({ players, onClose, onSent, onBatch, preset, 
     if (all.some(r => r.status === 'sent')) onSent?.(all)
   }
 
+  async function schedule() {
+    if (!subject.trim() || !body.trim()) { setErr(L2('Subject and message are required.', '主题和内容不能为空。')); return }
+    if (!waOk) { setErr(L2('Pick or type a valid WhatsApp number first.', '请先选择或输入正确的 WhatsApp 号码。')); return }
+    const n = Math.min(100, Math.max(1, Math.round(Number(perHour) || 100)))
+    if (!window.confirm(L2(`Start auto-send to ${withEmail.length} people, ${n} per hour (about ${Math.ceil(withEmail.length / n)} hour(s))? The server sends by itself, you can close this page. You can pause or stop it any time.`, `开始自动发送给 ${withEmail.length} 人，每小时 ${n} 封（约 ${Math.ceil(withEmail.length / n)} 小时）？服务器会自己发送，可以关闭这个页面。随时可以暂停或停止。`))) return
+    setBusy(true); setErr('')
+    try { await onSchedule({ subject, body, wa_number: waNumber, per_hour: n }); onClose() }
+    catch (e) { setErr(e.message); setBusy(false) }
+  }
+
   const count = s => (results || []).filter(r => r.status === s).length
 
   return (
@@ -245,6 +257,14 @@ export default function EmailModal({ players, onClose, onSent, onBatch, preset, 
 
             {err && <div style={{ color:'#f85149', fontSize:12, marginTop:10 }}>{err}</div>}
             {progress && <div style={{ color:'var(--muted)', fontSize:12, marginTop:10 }}>{progress}</div>}
+            {onSchedule && !own && (
+              <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap', marginTop:14, padding:'10px 12px', border:'1px dashed var(--border)', borderRadius:8, fontSize:12 }}>
+                <span style={{ fontWeight:700 }}>⏰ {L2('Auto-send', '自动发送')}</span>
+                <input type="number" min="1" max="100" style={{ ...input, width:70, padding:'5px 8px' }} value={perHour} onChange={e => setPerHour(e.target.value)} />
+                <span style={{ color:'var(--muted)' }}>{L2('per hour (max 100), the server keeps going until the list is done', '封 / 小时（最多 100），服务器会一直发到名单完成')}</span>
+                <button style={{ ...btnSm, marginLeft:'auto', background:'#8957e5', color:'#fff', border:'none', fontWeight:700 }} disabled={busy || !withEmail.length} onClick={schedule}>⏰ {L2(`Auto-send to ${withEmail.length}`, `自动发送给 ${withEmail.length} 人`)}</button>
+              </div>
+            )}
             <div style={{ display:'flex', gap:10, justifyContent:'flex-end', marginTop:14 }}>
               <button style={btnSm} disabled={busy} onClick={onClose}>{L2('Cancel', '取消')}</button>
               <button style={{ background:'#2f81f7', color:'#fff', border:'none', padding:'8px 18px', borderRadius:8, fontWeight:700, fontSize:13, cursor:busy || !withEmail.length ? 'default' : 'pointer', opacity:busy || !withEmail.length ? .5 : 1 }} disabled={busy || !withEmail.length} onClick={sendAll}>

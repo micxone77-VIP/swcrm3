@@ -45,7 +45,7 @@ const signatureHtml = (name: string, wa: string) => `<table role="presentation" 
       <div style="margin:0;padding:10px 0 0 0;border-top:1px solid #33456b;font-size:13px;line-height:22px;color:#ffffff;white-space:nowrap;"><a href="https://wa.me/${wa}" style="display:inline-block;padding:0 10px;background-color:#25D366;border-radius:11px;color:#ffffff;font-weight:bold;text-decoration:none;">&#128172; WhatsApp&nbsp; ${fmtWa(wa)}</a></div>
       <div style="margin:0;font-size:13px;line-height:22px;color:#ffffff;white-space:nowrap;">&#9993;&#65039;&nbsp; <a href="mailto:${SIG_MAIL}" style="color:#ffffff;text-decoration:none;">${SIG_MAIL}</a></div>
       <div style="margin:0 0 12px 0;font-size:13px;line-height:22px;color:#ffffff;white-space:nowrap;">&#127760;&nbsp; <a href="${SIG_WEB}" style="color:#ffffff;text-decoration:none;">www.swvip01.com</a></div>
-      <div style="margin:0;font-size:12px;line-height:30px;"><a href="https://t.me/+UjqC9MIlNEM5NTk1" style="display:inline-block;padding:0 13px;margin:0 6px 6px 0;background-color:#229ED9;border-radius:15px;color:#ffffff;font-weight:bold;text-decoration:none;white-space:nowrap;">&#10148; Sports VIP Telegram</a><a href="https://t.me/surewinmy" style="display:inline-block;padding:0 13px;margin:0 0 6px 0;background-color:#229ED9;border-radius:15px;color:#ffffff;font-weight:bold;text-decoration:none;white-space:nowrap;">&#10148; sureWin Telegram</a></div>
+      <div style="margin:0;font-size:12px;line-height:30px;"><a href="https://t.me/+UjqC9MIlNEM5NTk1" style="display:inline-block;padding:0 13px;margin:0 6px 6px 0;background-color:#229ED9;border-radius:15px;color:#ffffff;font-weight:bold;text-decoration:none;white-space:nowrap;">&#10148; Sports VIP Telegram</a><a href="https://t.me/+jgbgVK7h07YxZmRl" style="display:inline-block;padding:0 13px;margin:0 0 6px 0;background-color:#229ED9;border-radius:15px;color:#ffffff;font-weight:bold;text-decoration:none;white-space:nowrap;">&#10148; sureWin Telegram</a></div>
     </td>
   </tr>
   <tr><td colspan="2" align="center" bgcolor="#0a1226" style="padding:8px 12px;background-color:#0a1226;border-radius:0 0 12px 12px;font-family:Georgia,'Times New Roman',serif;font-size:12px;line-height:18px;font-style:italic;color:#ffb217;">Where Winners Live Like Stars &nbsp;&#10022;&nbsp; &#36194;&#23478;&#30340;&#23562;&#36149;&#20043;&#36873;</td></tr>
@@ -66,10 +66,20 @@ Deno.serve(async (req: Request) => {
 
   const auth = req.headers.get('Authorization')
   if (!auth) return json({ error: 'Unauthorized' }, 401)
-  const caller = createClient(url, anonKey, { global: { headers: { Authorization: auth } } })
-  const { data: { user } } = await caller.auth.getUser()
-  if (!user) return json({ error: 'Unauthorized' }, 401)
-  const { data: prof } = await caller.from('profiles').select('id,role,full_name,username').eq('id', user.id).single()
+  // ⏰ Auto-send (2026-11-22): the email-auto function calls with the service key and as_profile
+  // (the person who started the auto-send), so the email goes out under their name
+  const asProfile = auth === `Bearer ${serviceKey}` ? String(req.headers.get('x-as-profile') || '') : ''
+  let prof: { id: string; role: string; full_name: string | null; username: string | null } | null = null
+  if (asProfile) {
+    const { data } = await createClient(url, serviceKey).from('profiles').select('id,role,full_name,username').eq('id', asProfile).maybeSingle()
+    prof = data
+  } else {
+    const caller = createClient(url, anonKey, { global: { headers: { Authorization: auth } } })
+    const { data: { user } } = await caller.auth.getUser()
+    if (!user) return json({ error: 'Unauthorized' }, 401)
+    const { data } = await caller.from('profiles').select('id,role,full_name,username').eq('id', user.id).single()
+    prof = data
+  }
   if (!prof || !['admin', 'host'].includes(prof.role)) return json({ error: 'Only admin or host accounts can send email' }, 403)
 
   const smtp = {
