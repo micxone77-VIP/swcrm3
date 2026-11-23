@@ -72,6 +72,14 @@ const L2 = (en, zh) => (lang === 'zh' ? zh : en)
 const ago = d => timeAgo(d, lang)
 
 const [vip, setVip] = useState(null)
+// 💰 BO wallet balance file (Money Left page upload): latest balance + last login
+const [wallet, setWallet] = useState(null)
+useEffect(() => {
+  if (!vip?.username) { setWallet(null); return }
+  supabase.from('player_wallet').select('balance,provider_wallet,last_login_at,snapshot_date,total_deposit,total_withdrawal')
+    .eq('username', vip.username).eq('currency', vip.currency || 'MYR').maybeSingle()
+    .then(({ data }) => setWallet(data || null))
+}, [vip?.username, vip?.currency])
 const [emailOpen, setEmailOpen] = useState(false)
 const [potential, setPotential] = useState(null)   // Silver / Bronze player (potential_players) when not in the VIP list
 const [monthly, setMonthly] = useState([])
@@ -624,6 +632,13 @@ color: m.isWL ? (m.wl <= 0 ? 'var(--success)' : 'var(--danger)') : 'var(--text)'
 <Field label={L2('Email', '电邮')}>{vip.email}{vip.email && profile?.role !== 'readonly' && <button onClick={() => setEmailOpen(true)} style={{ marginLeft:8, background:'rgba(47,129,247,.15)', color:'#58a6ff', border:'1px solid rgba(47,129,247,.35)', borderRadius:6, padding:'2px 8px', fontSize:11, fontWeight:700, cursor:'pointer' }}>📧 {L2('Email', '发邮件')}</button>}</Field>
 {vip.email_2 && <Field label={L2('Email 2', '电邮 2')}>{vip.email_2}{profile?.role !== 'readonly' && <button onClick={() => setEmailOpen('2')} style={{ marginLeft:8, background:'rgba(47,129,247,.15)', color:'#58a6ff', border:'1px solid rgba(47,129,247,.35)', borderRadius:6, padding:'2px 8px', fontSize:11, fontWeight:700, cursor:'pointer' }}>📧 {L2('Email', '发邮件')}</button>}</Field>}
 <Field label={L2('Telegram', 'Telegram')}>{vip.telegram ? `@${vip.telegram}` : '—'}</Field>
+{wallet && <Field label={L2('💰 Wallet', '💰 钱包余额')}>
+  <b>{formatMoney(wallet.balance, vip.currency)}</b>
+  {Number(wallet.provider_wallet) > 0 && <span style={{ color:'var(--muted)', fontSize:12 }}> ({L2('in game', '游戏内')} {formatMoney(wallet.provider_wallet, vip.currency)})</span>}
+  <div style={{ fontSize:11, color:'var(--muted)' }}>
+    {L2('Last login', '最后登录')}: {wallet.last_login_at ? String(wallet.last_login_at).slice(0, 10) : '—'} · {L2('Lifetime net loss', '累计净输')}: {formatMoney(Number(wallet.total_deposit) - Number(wallet.total_withdrawal), vip.currency)} · {L2(`BO file ${wallet.snapshot_date}`, `后台文件 ${wallet.snapshot_date}`)}
+  </div>
+</Field>}
 <Field label={L2('Address', '地址')}>{vip.address}</Field>
 <Field label={L2('Remark', '备注')}>{vip.special_requests}</Field>
 <Field label={L2('Birthday', '生日')}>{vip.birthday ? fmtDate(vip.birthday, lang) : '—'}</Field>
