@@ -80,10 +80,28 @@ useEffect(() => {
     .eq('username', vip.username).eq('currency', vip.currency || 'MYR').maybeSingle()
     .then(({ data }) => setWallet(data || null))
 }, [vip?.username, vip?.currency])
+// 🆕 sureWin 2.0 account (sureWin 2.0 page upload, MY only): matched to this 1.0 player
+const [sw2, setSw2] = useState(undefined)
+const [sw2Daily, setSw2Daily] = useState([])     // 2.0 daily figures (sw2_daily, one row per day)
+const [platform, setPlatform] = useState(null)   // '1' | '2' | 'both' (null = both when the player has 2.0)
+useEffect(() => {
+  setSw2Daily([]); setPlatform(null)
+  if (!vip?.username || (vip.currency || 'MYR') !== 'MYR') return
+  supabase.from('sw2_daily')
+    .select('snapshot_date,total_deposit,total_withdrawal,valid_bet,player_win_loss,bet_count,rebate,total_bonus,total_promo')
+    .eq('v1_username', vip.username).order('snapshot_date', { ascending: false }).limit(400)
+    .then(({ data }) => setSw2Daily(data || []))
+}, [vip?.username, vip?.currency])
+useEffect(() => {
+  if (!vip?.username || (vip.currency || 'MYR') !== 'MYR') { setSw2(undefined); return }
+  supabase.from('sw2_members').select('login,member_group,match_type,deposit_count,total_deposit,last_deposit_at,last_active_at,total_bonus,total_promo,snapshot_at')
+    .eq('v1_username', vip.username).limit(1)
+    .then(({ data, error }) => setSw2(error ? undefined : (data?.[0] || null)))
+}, [vip?.username, vip?.currency])
 const [emailOpen, setEmailOpen] = useState(false)
 const [potential, setPotential] = useState(null)   // Silver / Bronze player (potential_players) when not in the VIP list
-const [monthly, setMonthly] = useState([])
-const [daily, setDaily] = useState([])
+const [monthly1, setMonthly1] = useState([])   // 1.0 (vip_monthly_totals)
+const [daily1, setDaily1] = useState([])       // 1.0 (vip_daily_snapshots_all)
 const [contacts, setContacts] = useState([])
 const [campaigns, setCampaigns] = useState([])
 const [tierLogs, setTierLogs] = useState([])
@@ -111,7 +129,7 @@ const [editSaving, setEditSaving] = useState(false)
 const [calMonth, setCalMonth] = useState(() => {
 const n = new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}`
 })
-const [calData, setCalData] = useState([])
+const [calData1, setCalData] = useState([])
 const [calLoading, setCalLoading] = useState(false)
 
 // Gaming tab state
@@ -201,8 +219,8 @@ supabase.from('profiles').select('full_name').in('role',['admin','host']).order(
 ])
 setVip(vipRes.data)
 setEditForm({ full_name: vipRes.data.full_name||'', birthday: vipRes.data.birthday||'', host_assigned: vipRes.data.host_assigned||'', tier: vipRes.data.tier||'', activity_status: vipRes.data.activity_status||'', phone: vipRes.data.phone||'', whatsapp: vipRes.data.whatsapp||'', email: vipRes.data.email||'', email_2: vipRes.data.email_2||'', telegram: vipRes.data.telegram||'', churn_risk: vipRes.data.churn_risk||'', address: vipRes.data.address||'', special_requests: vipRes.data.special_requests||'', tng_verified_name: vipRes.data.tng_verified_name||'', tng_verify_status: vipRes.data.tng_verify_status||'', tng_verified_at: vipRes.data.tng_verified_at||'' })
-setMonthly(montRes.data || [])
-setDaily(dailyRes.data || [])
+setMonthly1(montRes.data || [])
+setDaily1(dailyRes.data || [])
 setContacts(contRes.data || [])
 setCampaigns(campRes.data || [])
 setTierLogs(tierRes.data || [])
@@ -330,6 +348,32 @@ fetchPaidCampaignRewards(uname)
   .catch(err => { console.error('campaign rewards load error', err); setCampRewards([]) })
 }, [tab, vip?.username, campRewardsFor])
 
+// 🆕 sureWin 2.0: the money boxes, Financial months and Deposit Calendar follow the 1.0 / 2.0 / Both switch.
+// Both = same day added together (both MYR). 1.0 days without valid bet count no money (same rule as before).
+const has2 = (vip?.currency || 'MYR') === 'MYR' && (sw2Daily.length > 0 || !!sw2)
+const plat = has2 ? (platform || 'both') : '1'
+const f2 = v => parseFloat(v) || 0
+const v2Days = sw2Daily.map(d => ({ snapshot_date: d.snapshot_date, total_deposit: f2(d.total_deposit), total_withdrawal: f2(d.total_withdrawal),
+  monthly_valid_bet: f2(d.valid_bet), win_loss: f2(d.player_win_loss), bet_count: f2(d.bet_count), total_rebate: f2(d.rebate),
+  bonus_amount: f2(d.total_bonus) + f2(d.total_promo), _ok: true }))
+const clean1 = d => (f2(d.monthly_valid_bet) > 0 ? d : { ...d, total_deposit: 0, total_withdrawal: 0, win_loss: 0 })
+const SUM_KEYS = ['total_deposit', 'total_withdrawal', 'monthly_valid_bet', 'win_loss', 'bet_count', 'total_rebate', 'bonus_amount']
+const mergeBy = (key, lists) => {
+  const m = new Map()
+  for (const list of lists) for (const r of list) {
+    const o = m.get(r[key]) || { [key]: r[key], _ok: true }
+    for (const k of SUM_KEYS) o[k] = f2(o[k]) + f2(r[k])
+    m.set(r[key], o)
+  }
+  return [...m.values()]
+}
+const desc = k => (a, b) => String(b[k]).localeCompare(String(a[k]))
+const v2Months = mergeBy('snapshot_month', [v2Days.map(d => ({ ...d, snapshot_month: d.snapshot_date.slice(0, 7) }))])
+const daily = plat === '1' ? daily1 : plat === '2' ? v2Days : mergeBy('snapshot_date', [daily1.map(clean1), v2Days]).sort(desc('snapshot_date'))
+const monthly = plat === '1' ? monthly1 : (plat === '2' ? v2Months : mergeBy('snapshot_month', [monthly1, v2Months])).sort(desc('snapshot_month'))
+const v2Cal = v2Days.filter(d => d.snapshot_date.slice(0, 7) === calMonth)
+const calData = plat === '1' ? calData1 : (plat === '2' ? v2Cal : mergeBy('snapshot_date', [calData1.map(clean1), v2Cal])).sort((a, b) => a.snapshot_date.localeCompare(b.snapshot_date))
+
 // Period-filtered monthly data
 const now = new Date()
 const cutoff = new Date()
@@ -362,7 +406,7 @@ return `${dayLabel(from.toISOString().slice(0, 10))} – ${dayLabel(dataDate, tr
 const months = periodMonthly.map(m => m.snapshot_month).sort()
 return months.length ? (months.length === 1 ? months[0] : `${months[0]} – ${months[months.length - 1]}`) : null
 })()
-const trusted = d => (parseFloat(d.monthly_valid_bet) || 0) > 0
+const trusted = d => d._ok || (parseFloat(d.monthly_valid_bet) || 0) > 0
 const sumDeposit = dailyWindow ? dailyWindow.reduce((s,d) => s + (trusted(d) ? parseFloat(d.total_deposit)||0 : 0), 0) : periodMonthly.reduce((s,m) => s + (parseFloat(m.total_deposit)||0), 0)
 const sumWithdrawal = dailyWindow ? dailyWindow.reduce((s,d) => s + (trusted(d) ? parseFloat(d.total_withdrawal)||0 : 0), 0) : periodMonthly.reduce((s,m) => s + (parseFloat(m.total_withdrawal)||0), 0)
 const sumTurnover = dailyWindow ? dailyWindow.reduce((s,d) => s + (parseFloat(d.monthly_valid_bet)||0), 0) : periodMonthly.reduce((s,m) => s + (parseFloat(m.monthly_valid_bet)||0), 0)
@@ -567,6 +611,21 @@ onMouseLeave={e => e.currentTarget.style.opacity=.6}
 <SurveyCard username={vip.username} />
 
 {/* ── Financial Summary ── */}
+{has2 && (
+<div style={{ display:'flex', alignItems:'center', gap:8, marginTop:18, flexWrap:'wrap' }}>
+<span style={{ fontSize:12, color:'var(--muted)', fontWeight:600 }}>{L2('Platform', '平台')}:</span>
+{[['1', 'sureWin 1.0', 'sureWin 1.0'], ['2', '🆕 sureWin 2.0', '🆕 sureWin 2.0'], ['both', '1.0 + 2.0', '1.0 + 2.0']].map(([k, en, zh]) => (
+<button key={k} onClick={() => setPlatform(k)} style={{
+fontSize:12, fontWeight:700, padding:'4px 12px', borderRadius:6, border:'none', cursor:'pointer',
+background: plat===k ? 'var(--brand)' : 'var(--surface2)', color: plat===k ? '#fff' : 'var(--muted)',
+}}>{L2(en, zh)}</button>
+))}
+<span style={{ fontSize:11, color:'var(--muted)' }}>
+{sw2Daily.length ? L2(`2.0 daily data: ${sw2Daily[sw2Daily.length - 1].snapshot_date} to ${sw2Daily[0].snapshot_date}`, `2.0 每日数据：${sw2Daily[sw2Daily.length - 1].snapshot_date} 至 ${sw2Daily[0].snapshot_date}`) : L2('No 2.0 daily file for this player yet', '此玩家还没有 2.0 每日数据')}
+{' · '}{L2('Money boxes, Financial and Deposit Calendar follow this switch', '金额卡、财务和存款日历跟随此开关')}
+</span>
+</div>
+)}
 <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:14, marginTop:20 }}>
 {[
 { label:L2('Deposit', '存款'), value:formatMoney(sumDeposit, vip.currency), trend:null, sub:periodRange },
@@ -638,6 +697,14 @@ color: m.isWL ? (m.wl <= 0 ? 'var(--success)' : 'var(--danger)') : 'var(--text)'
   <div style={{ fontSize:11, color:'var(--muted)' }}>
     {L2('Last login', '最后登录')}: {wallet.last_login_at ? String(wallet.last_login_at).slice(0, 10) : '—'} · {L2('Lifetime net loss', '累计净输')}: {formatMoney(Number(wallet.total_deposit) - Number(wallet.total_withdrawal), vip.currency)} · {L2(`BO file ${wallet.snapshot_date}`, `后台文件 ${wallet.snapshot_date}`)}
   </div>
+</Field>}
+{sw2 !== undefined && <Field label={L2('🆕 sureWin 2.0', '🆕 sureWin 2.0')}>
+  {sw2 ? <>
+    <b>{L2('Joined', '已加入')}</b> · {sw2.login}<CopyBtn text={sw2.login} />{sw2.match_type === 'phone' && <span style={{ color:'var(--warning)', fontSize:11 }}> {L2('(matched by phone)', '（电话配对）')}</span>}
+    <div style={{ fontSize:11, color:'var(--muted)' }}>
+      {L2('Deposit', '存款')}: {formatMoney(sw2.total_deposit, 'MYR')} ({sw2.deposit_count}){sw2.last_deposit_at ? ` · ${L2('last', '最后')} ${String(sw2.last_deposit_at).slice(0, 10)}` : ''} · {L2('Bonus / promo', '奖金 / 优惠')}: {formatMoney(Number(sw2.total_bonus) + Number(sw2.total_promo), 'MYR')} · {L2('Last active', '最后活跃')}: {String(sw2.last_active_at || '—').slice(0, 10)} · {L2(`2.0 file ${String(sw2.snapshot_at).slice(0, 10)}`, `2.0 文件 ${String(sw2.snapshot_at).slice(0, 10)}`)}
+    </div>
+  </> : <span style={{ color:'var(--warning)' }}>{L2('Not joined yet', '还没加入')}</span>}
 </Field>}
 <Field label={L2('Address', '地址')}>{vip.address}</Field>
 <Field label={L2('Remark', '备注')}>{vip.special_requests}</Field>
@@ -1006,7 +1073,7 @@ calData.forEach(r => { byDay[r.snapshot_date] = r })
 // (inactive days can carry stale non-zero values from the platform export).
 const dailyDeposit = {}, dailyWd = {}
 calData.forEach(row => {
-  const active = Number(row.monthly_valid_bet || 0) > 0
+  const active = row._ok || Number(row.monthly_valid_bet || 0) > 0
   dailyDeposit[row.snapshot_date] = active ? Number(row.total_deposit || 0) : 0
   dailyWd[row.snapshot_date] = active ? Number(row.total_withdrawal || 0) : 0
 })

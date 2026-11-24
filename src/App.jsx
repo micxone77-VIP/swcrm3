@@ -32,6 +32,7 @@ const ExecOverview = lazyPage(() => import('./pages/ExecOverview'))
 const VIP360 = lazyPage(() => import('./pages/VIP360'))
 const AtRisk = lazyPage(() => import('./pages/AtRisk'))
 const MoneyLeft = lazyPage(() => import('./pages/MoneyLeft'))
+const Surewin2 = lazyPage(() => import('./pages/Surewin2'))
 const FollowUp = lazyPage(() => import('./pages/FollowUp'))
 const BirthdayReminder = lazyPage(() => import('./pages/BirthdayReminder'))
 const CampaignsCountryTiered = lazyPage(() => import('./pages/CampaignsCountryTiered'))
@@ -86,6 +87,7 @@ export default function App() {
       <Route path="vip360"        element={<RequireRole permKey="vips"><VIP360 /></RequireRole>} />{/* /vip360?player=<username>&tab=<tab> */}
       <Route path="at-risk"       element={<RequireRole permKey="at-risk"><AtRisk /></RequireRole>} />
       <Route path="money-left"    element={<RequireRole permKey="money-left"><MoneyLeft /></RequireRole>} />
+      <Route path="surewin-2"     element={<RequireRole permKey="surewin-2"><Surewin2 /></RequireRole>} />
       <Route path="active-tracker" element={<RequireRole permKey="active-tracker"><ActiveTracker /></RequireRole>} />
       <Route path="follow-up"     element={<RequireRole permKey="follow-up"><FollowUp /></RequireRole>} />
       <Route path="birthdays"     element={<RequireRole permKey="birthdays"><BirthdayReminder /></RequireRole>} />

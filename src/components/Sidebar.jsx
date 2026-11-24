@@ -23,6 +23,7 @@ const NAV_GROUPS = [
     { to: '/survey',         label: 'VIP Survey',      zh: 'VIP 问卷', icon: '🗣', permKey: 'segments'     },
     { to: '/at-risk',        label: 'Active Risk', zh: '活跃风险',    icon: '⚠️', permKey: 'at-risk'        },
     { to: '/money-left',     label: 'Money Left', zh: '余额未用',     icon: '💰', permKey: 'money-left'     },
+    { to: '/surewin-2',      label: 'sureWin 2.0', zh: 'sureWin 2.0', icon: '🆕', permKey: 'surewin-2'      },
     { to: '/active-tracker', label: 'Active Tracker', zh: '活跃追踪', icon: '📡', permKey: 'active-tracker' },
     { to: '/follow-up',      label: 'Follow Up', zh: '跟进',      icon: '📞', permKey: 'follow-up'      },
     { to: '/birthdays',      label: 'Birthdays', zh: '生日',      icon: '🎂', permKey: 'birthdays'      },
