@@ -420,6 +420,19 @@ const trusted = d => d._ok || (parseFloat(d.monthly_valid_bet) || 0) > 0
 const sumDeposit = dailyWindow ? dailyWindow.reduce((s,d) => s + (trusted(d) ? parseFloat(d.total_deposit)||0 : 0), 0) : periodMonthly.reduce((s,m) => s + (parseFloat(m.total_deposit)||0), 0)
 const sumWithdrawal = dailyWindow ? dailyWindow.reduce((s,d) => s + (trusted(d) ? parseFloat(d.total_withdrawal)||0 : 0), 0) : periodMonthly.reduce((s,m) => s + (parseFloat(m.total_withdrawal)||0), 0)
 const sumTurnover = dailyWindow ? dailyWindow.reduce((s,d) => s + (parseFloat(d.monthly_valid_bet)||0), 0) : periodMonthly.reduce((s,m) => s + (parseFloat(m.monthly_valid_bet)||0), 0)
+// 1.0 / 2.0 split shown under the money boxes in the "1.0 + 2.0" view
+const splitSums = (() => {
+if (plat !== 'both' || !has2) return null
+const tot = rows => rows.reduce((o, d) => { const ok = d._ok || f2(d.monthly_valid_bet) > 0
+  o.dep += ok ? f2(d.total_deposit) : 0; o.tov += f2(d.monthly_valid_bet); o.wl += ok ? f2(d.win_loss) : 0; return o }, { dep: 0, tov: 0, wl: 0 })
+if (dailyWindow) {
+  const dates = new Set(dailyWindow.map(d => d.snapshot_date))
+  return [tot(daily1.filter(d => dates.has(d.snapshot_date))), tot(v2Days.filter(d => dates.has(d.snapshot_date)))]
+}
+const months = new Set(periodMonthly.map(m => m.snapshot_month))
+const mon = rows => rows.filter(m => months.has(m.snapshot_month)).map(m => ({ ...m, _ok: true }))
+return [tot(mon(monthly1)), tot(mon(v2Months))]
+})()
 const sumWL = dailyWindow ? dailyWindow.reduce((s,d) => s + (trusted(d) ? parseFloat(d.win_loss)||0 : 0), 0) : periodMonthly.reduce((s,m) => s + (parseFloat(m.win_loss)||0), 0)
 
 // Days since the last real deposit, counted to the latest data date — the same number as every other page
@@ -638,9 +651,9 @@ background: plat===k ? 'var(--brand)' : 'var(--surface2)', color: plat===k ? '#f
 )}
 <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:14, marginTop:20 }}>
 {[
-{ label:L2('Deposit', '存款'), value:formatMoney(sumDeposit, vip.currency), trend:null, sub:periodRange },
-{ label:L2('Turnover', '流水'), value:formatMoney(sumTurnover, vip.currency), trend:null, sub:periodRange },
-{ label:L2('Player Win/Loss', '玩家输赢'), value:formatMoney(Math.abs(sumWL), vip.currency), isWL:true, wl:sumWL, sub:periodRange },
+{ label:L2('Deposit', '存款'), value:formatMoney(sumDeposit, vip.currency), trend:null, sub:periodRange, split:'dep' },
+{ label:L2('Turnover', '流水'), value:formatMoney(sumTurnover, vip.currency), trend:null, sub:periodRange, split:'tov' },
+{ label:L2('Player Win/Loss', '玩家输赢'), value:formatMoney(Math.abs(sumWL), vip.currency), isWL:true, wl:sumWL, sub:periodRange, split:'wl' },
 { label:L2('Last Deposit', '最后存款'), value:daysInactive != null ? L2(`${daysInactive}d ago`, `${daysInactive}天前`) : '—', sub:vip.last_deposit_date ? fmtDate(vip.last_deposit_date, lang) : null },
 ].map((m,i) => (
 <div key={i} style={{ background:'var(--surface2)', borderRadius:8, padding:'12px 14px' }}>
@@ -667,6 +680,9 @@ color: m.isWL ? (m.wl <= 0 ? 'var(--success)' : 'var(--danger)') : 'var(--text)'
 {m.isWL ? (m.wl < 0 ? L2('Player lost ', '玩家输 ') : m.wl > 0 ? L2('Player won ', '玩家赢 ') : '') : ''}{m.value}
 </div>
 {m.sub && <div style={{ fontSize:11, color:'var(--muted)', marginTop:2 }}>{m.sub}</div>}
+{m.split && splitSums && <div style={{ fontSize:11, marginTop:3, color:'var(--muted)' }}>
+1.0 <b style={{ color:'var(--text)' }}>{formatMoney(splitSums[0][m.split], vip.currency)}</b> · <span style={{ color:'#a78bfa' }}>2.0</span> <b style={{ color:'var(--text)' }}>{formatMoney(splitSums[1][m.split], vip.currency)}</b>
+</div>}
 </div>
 ))}
 </div>
@@ -1088,6 +1104,20 @@ calData.forEach(row => {
   dailyWd[row.snapshot_date] = active ? Number(row.total_withdrawal || 0) : 0
 })
 
+// 🆕 sureWin 1.0 maintenance (no 1.0 data from 20 Nov 2026) and sureWin 2.0 opening (21 Nov 2026).
+// When 1.0 is back, set SW1_DOWN_TO to its last down day.
+const SW1_DOWN_FROM = '2026-11-20', SW1_DOWN_TO = null, SW2_OPEN = '2026-11-21'
+const activeDay = r => r && (Number(r.monthly_valid_bet || 0) > 0 || (r._ok && Number(r.total_deposit || 0) > 0))
+const on1 = new Set(calData1.filter(activeDay).map(r => r.snapshot_date))
+const on2 = new Set(v2Cal.filter(activeDay).map(r => r.snapshot_date))
+const isDown = key => has2 && plat !== '2' && key >= SW1_DOWN_FROM && (!SW1_DOWN_TO || key <= SW1_DOWN_TO)
+  && (plat === '1' || key <= SW2_OPEN) && !on1.has(key) && !on2.has(key)
+// rates count only days that already have data (not the rest of the month) and skip 1.0 down days
+const lastData = dataDate && dataDate.slice(0, 7) === calMonth ? Number(dataDate.slice(8, 10)) : (dataDate && dataDate.slice(0, 7) < calMonth ? 0 : daysInMonth)
+let downDays = 0
+for (let d = 1; d <= lastData; d++) if (isDown(`${calMonth}-${String(d).padStart(2,'0')}`)) downDays++
+const countDays = Math.max(1, lastData - downDays)
+
 let depositDays = 0, turnoverOnlyDays = 0, absentDays = 0
 let totalDeposit = 0, totalBet = 0, totalWithdrawal = 0, withdrawalDays = 0
 for (let d = 1; d <= daysInMonth; d++) {
@@ -1124,7 +1154,7 @@ return (
 {/* Stats */}
 <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:10, marginBottom:12 }}>
 {[
-{ label: L2(`${calMonth} Deposit Days`, `${calMonth} 存款天数`), value: L2(`${depositDays}/${daysInMonth} days`, `${depositDays}/${daysInMonth} 天`), color:'var(--success)' },
+{ label: L2(`${calMonth} Deposit Days`, `${calMonth} 存款天数`), value: L2(`${depositDays}/${countDays} days`, `${depositDays}/${countDays} 天`), color:'var(--success)' },
 { label: L2('Turnover Only, No Deposit', '仅流水，无存款'), value: turnoverOnlyDays, color:'#c9a961' },
 { label: L2(`${calMonth} Deposit`, `${calMonth} 存款`), value: 'RM '+fmtK(totalDeposit), color:'var(--text)' },
 { label: L2(`${calMonth} Valid Bet`, `${calMonth} 有效投注`), value: 'RM '+fmtK(totalBet), color:'var(--muted)' },
@@ -1137,9 +1167,9 @@ return (
 </div>
 <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:10, marginBottom:18 }}>
 {[
-{ label: L2(`${calMonth} Active Rate`, `${calMonth} 活跃率`), value: Math.round(activeDays/daysInMonth*100)+'%', color: activeDays/daysInMonth >= 0.5 ? 'var(--success)' : 'var(--warning)' },
-{ label: L2(`${calMonth} Deposit Rate`, `${calMonth} 存款率`), value: Math.round(depositDays/daysInMonth*100)+'%', color:'var(--success)' },
-{ label: L2(`${calMonth} Withdrawal Rate`, `${calMonth} 提款率`), value: Math.round(withdrawalDays/daysInMonth*100)+'%', color:'var(--danger)' },
+{ label: L2(`${calMonth} Active Rate`, `${calMonth} 活跃率`), value: Math.round(activeDays/countDays*100)+'%', color: activeDays/countDays >= 0.5 ? 'var(--success)' : 'var(--warning)' },
+{ label: L2(`${calMonth} Deposit Rate`, `${calMonth} 存款率`), value: Math.round(depositDays/countDays*100)+'%', color:'var(--success)' },
+{ label: L2(`${calMonth} Withdrawal Rate`, `${calMonth} 提款率`), value: Math.round(withdrawalDays/countDays*100)+'%', color:'var(--danger)' },
 ].map(s => (
 <div key={s.label} style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:9, padding:'10px 14px' }}>
 <div style={{ fontSize:17, fontWeight:800, color:s.color }}>{s.value}</div>
@@ -1152,6 +1182,9 @@ return (
 <span style={{ display:'flex', alignItems:'center', gap:5 }}><span style={{ width:12, height:12, borderRadius:3, background:'rgba(34,197,94,.85)', display:'inline-block' }}></span>{L2('Deposited', '已存款')}</span>
 <span style={{ display:'flex', alignItems:'center', gap:5 }}><span style={{ width:12, height:12, borderRadius:3, background:'rgba(201,169,97,.85)', display:'inline-block' }}></span>{L2('Turnover only', '仅流水')}</span>
 <span style={{ display:'flex', alignItems:'center', gap:5 }}><span style={{ width:12, height:12, borderRadius:3, background:'var(--surface2)', border:'1px solid var(--border)', display:'inline-block' }}></span>{L2('Absent', '无活动')}</span>
+{has2 && plat !== '2' && <span style={{ display:'flex', alignItems:'center', gap:5 }}><span style={{ width:12, height:12, borderRadius:3, background:'repeating-linear-gradient(45deg, var(--border), var(--border) 2px, transparent 2px, transparent 5px)', display:'inline-block' }}></span>{L2('1.0 down (maintenance)', '1.0 维护中')}</span>}
+{has2 && plat === 'both' && <span style={{ display:'flex', alignItems:'center', gap:5 }}><span style={{ fontSize:9, fontWeight:800, padding:'0 4px', borderRadius:3, background:'#7c3aed', color:'#fff' }}>2.0</span>{L2('played on sureWin 2.0', '在 sureWin 2.0 玩')}</span>}
+{has2 && <span>{L2(`Rates count days with data (to ${dataDate || '—'}), not 1.0 down days`, `比率只算有数据的天数（到 ${dataDate || '—'}），不算 1.0 维护天`)}</span>}
 </div>
 {/* Calendar grid */}
 {calLoading ? <LoadingState /> : (
@@ -1174,7 +1207,9 @@ const mvb = row ? Number(row.monthly_valid_bet || 0) : 0
 const bet = mvb
 const isDeposit = dep > 0
 const isTurnover = !isDeposit && mvb > 0
-const bg = isDeposit ? 'rgba(34,197,94,.82)' : isTurnover ? 'rgba(201,169,97,.82)' : 'transparent'
+const down = !isDeposit && !isTurnover && isDown(key)
+const tag2 = plat === 'both' && on2.has(key) ? (on1.has(key) ? '1.0+2.0' : '2.0') : null
+const bg = isDeposit ? 'rgba(34,197,94,.82)' : isTurnover ? 'rgba(201,169,97,.82)' : down ? 'repeating-linear-gradient(45deg, var(--border), var(--border) 2px, transparent 2px, transparent 7px)' : 'transparent'
 const textColor = (isDeposit || isTurnover) ? '#fff' : 'var(--muted)'
 const today = new Date()
 const isToday = today.getFullYear()===y && today.getMonth()+1===m && today.getDate()===d
@@ -1185,6 +1220,8 @@ outline: isToday ? '2px solid var(--accent)' : 'none', outlineOffset:'-2px' }}>
 <div style={{ fontSize:12, fontWeight:700, color: isToday && !row ? 'var(--accent)' : textColor }}>{d}</div>
 {isDeposit && <div style={{ fontSize:9, fontWeight:600, color:'rgba(255,255,255,.9)' }}>+{fmtK(dep)}</div>}
 {isTurnover && <div style={{ fontSize:9, fontWeight:600, color:'rgba(255,255,255,.9)' }}>{L2('bet', '投注')}</div>}
+{down && <div style={{ fontSize:9, fontWeight:600, color:'var(--muted)' }}>{L2('1.0 down', '1.0 维护')}</div>}
+{tag2 && <div style={{ fontSize:8, fontWeight:800, padding:'0 4px', borderRadius:3, background:'#7c3aed', color:'#fff' }}>{tag2}</div>}
 </div>
 )
 })}

@@ -161,6 +161,16 @@ function UploadBox({ L2, onDone }) {
           for (const k of DAILY_COLS) o[k] = r[k]
           return o
         })
+        // the date already has a file: show old vs new numbers and ask before replacing (wrong date picked by mistake?)
+        const { data: had } = await supabase.from('sw2_daily').select('total_deposit').eq('snapshot_date', date).limit(5000)
+        if (had?.length) {
+          const oldDep = formatMoney(had.reduce((x, r) => x + n(r.total_deposit), 0), CUR)
+          const newDep = formatMoney(payload.reduce((x, r) => x + n(r.total_deposit), 0), CUR)
+          const ok = window.confirm(L2(
+            `${date} already has a file: ${had.length} players, deposits ${oldDep}.\nThis file: ${payload.length} players, deposits ${newDep}.\n\nReplace ${date} with this file? (Cancel if you picked the wrong date.)`,
+            `${date} 已有文件：${had.length} 位玩家，存款 ${oldDep}。\n这个文件：${payload.length} 位玩家，存款 ${newDep}。\n\n要用这个文件覆盖 ${date} 吗？（日期选错请按取消。）`))
+          if (!ok) { setMsg(L2('Cancelled. Nothing was changed.', '已取消，没有任何改动。')); setBusy(false); return }
+        }
         const { error: de } = await supabase.from('sw2_daily').delete().eq('snapshot_date', date)
         if (de) throw de
         await saveChunks('sw2_daily', payload, 'username,snapshot_date')
