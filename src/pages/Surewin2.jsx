@@ -118,6 +118,16 @@ async function matchToCrm(rows) {
 }
 const DAILY_COLS = ['deposit_count', 'total_deposit', 'withdrawal_count', 'total_withdrawal', 'bet_count', 'bet_amount', 'valid_bet', 'player_win_loss',
   'promo_count', 'total_promo', 'bonus_count', 'total_bonus', 'rebate', 'total_win_loss']
+// Totals per 2.0 player: the all-time file, or the sum of the daily files when that has more activity (newer days uploaded)
+function withDailyTotals(m, t) {
+  if (!t) return m
+  const act = x => n(x.deposit_count) + n(x.bet_count)
+  if (act(t) <= act(m)) return m
+  const o = { ...m }
+  for (const k of DAILY_COLS) o[k] = n(t[k])
+  if (!o.last_deposit_at && t.last_deposit_day) o.last_deposit_at = t.last_deposit_day
+  return o
+}
 
 function UploadBox({ L2, onDone }) {
   const [kind, setKind] = useState('daily')
@@ -154,6 +164,11 @@ function UploadBox({ L2, onDone }) {
         const { error: de } = await supabase.from('sw2_daily').delete().eq('snapshot_date', date)
         if (de) throw de
         await saveChunks('sw2_daily', payload, 'username,snapshot_date')
+        // the file also carries each player's current 2.0 details (phone, group, last active): keep the player list up to date
+        const snapshot_at = exportTime(file.name, rows)
+        await saveChunks('sw2_members', rows.map(r => ({ username: r.username, login: r.login, v1_username: r.v1_username, match_type: r.match_type,
+          member_group: r.member_group, account_status: r.account_status, phone: r.phone, affiliate: r.affiliate, full_name: r.full_name,
+          last_active_at: r.last_active_at, last_deposit_at: r.last_deposit_at, is_test: r.is_test, snapshot_at, updated_at: now })), 'username')
         const dep = payload.filter(r => r.total_deposit > 0)
         const depSum = formatMoney(dep.reduce((s, r) => s + r.total_deposit, 0), CUR)
         done = L2(`✅ Done: ${date} saved, ${payload.length} players (${dep.length} deposited, ${depSum}).`,
@@ -165,9 +180,8 @@ function UploadBox({ L2, onDone }) {
         done = L2(`✅ Done: ${rows.length} players saved (file time ${snapshot_at}). ${byU} matched by username, ${byP} by phone, ${rows.length - byU - byP} new on 2.0.`,
           `✅ 完成：已保存 ${rows.length} 位玩家（文件时间 ${snapshot_at}）。用户名配对 ${byU}，电话配对 ${byP}，2.0 新玩家 ${rows.length - byU - byP}。`)
       }
-      setMsg(L2('Updating player status (1.0 + 2.0 deposits)…', '正在更新玩家状态（1.0 + 2.0 存款）…'))
-      await supabase.rpc('refresh_days_inactive')
-      setMsg(done)
+      // player status (1.0 + 2.0 deposits) is recalculated by the database job refresh_if_new_data() within 10 minutes
+      setMsg(done + ' ' + L2('Player status updates within 10 minutes.', '玩家状态会在10分钟内更新。'))
       setFiles([])
       onDone && onDone()
     } catch (e) {
@@ -222,7 +236,10 @@ export default function Surewin2() {
   const load = useCallback(async () => {
     setLoading(true); setError(null)
     try {
-      const s2 = await fetchAll(() => supabase.from('sw2_members').select('*').order('username'))
+      const s2raw = await fetchAll(() => supabase.from('sw2_members').select('*').order('username'))
+      const tot = await fetchAll(() => supabase.from('sw2_daily_totals').select('*').order('username'))
+      const byU = new Map(tot.map(t => [t.username, t]))
+      const s2 = s2raw.map(m => withDailyTotals(m, byU.get(m.username)))
       const tiers = SCOPES[scope]
       const mem = await fetchAll(() => {
         let q = supabase.from('vip_members_all')

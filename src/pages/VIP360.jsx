@@ -94,9 +94,19 @@ useEffect(() => {
 }, [vip?.username, vip?.currency])
 useEffect(() => {
   if (!vip?.username || (vip.currency || 'MYR') !== 'MYR') { setSw2(undefined); return }
-  supabase.from('sw2_members').select('login,member_group,match_type,deposit_count,total_deposit,last_deposit_at,last_active_at,total_bonus,total_promo,snapshot_at')
-    .eq('v1_username', vip.username).limit(1)
-    .then(({ data, error }) => setSw2(error ? undefined : (data?.[0] || null)))
+  Promise.all([
+    supabase.from('sw2_members').select('username,login,member_group,match_type,deposit_count,bet_count,total_deposit,last_deposit_at,last_active_at,total_bonus,total_promo,snapshot_at')
+      .eq('v1_username', vip.username).limit(1),
+    supabase.from('sw2_daily_totals').select('username,deposit_count,bet_count,total_deposit,total_bonus,total_promo,last_deposit_day')
+      .eq('v1_username', vip.username).limit(1),
+  ]).then(([a, b]) => {
+    if (a.error) { setSw2(undefined); return }
+    const m = a.data?.[0] || null, t = b.data?.[0] || null
+    // the all-time file, or the sum of the daily files when that has more activity
+    const act = x => (Number(x?.deposit_count) || 0) + (Number(x?.bet_count) || 0)
+    setSw2(m && t && act(t) > act(m) ? { ...m, deposit_count: t.deposit_count, total_deposit: t.total_deposit, total_bonus: t.total_bonus,
+      total_promo: t.total_promo, last_deposit_at: m.last_deposit_at || t.last_deposit_day } : m)
+  })
 }, [vip?.username, vip?.currency])
 const [emailOpen, setEmailOpen] = useState(false)
 const [potential, setPotential] = useState(null)   // Silver / Bronze player (potential_players) when not in the VIP list
