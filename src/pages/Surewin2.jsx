@@ -3,6 +3,7 @@
 // Data = 2.0 BO "Realtime All Member Detail" export, uploaded on this page into public.sw2_members (latest upload wins).
 // Each 2.0 account is matched to the 1.0 CRM player by username (lower case), or by phone when the username is new.
 // Groups: not joined yet / joined, no deposit / deposited / got a 2.0 bonus / new on 2.0 (not a 1.0 CRM player).
+// 2026-11-27 "Where are they playing?": 1.0 only / 2.0 only / both / 🚨 stopped on both (deposit in the last 7 days per platform).
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import * as XLSX from 'xlsx'
@@ -26,6 +27,8 @@ const SCOPES = {
 const myToday = () => new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10)
 const daysAgo = (d, base) => (d ? Math.floor((new Date(base + 'T00:00:00Z') - new Date(String(d).slice(0, 10) + 'T00:00:00Z')) / DAY) : null)
 const n = v => Number(v || 0)
+const PLAY_DAYS = 7   // "playing" = a real deposit in the last 7 days
+const LOST_DAYS = 60  // "stopped on both" = last deposit (1.0 or 2.0) 7–59 days ago
 const cost = r => n(r.total_bonus) + n(r.total_promo)
 
 // ── Upload: parse the 2.0 BO export ─────────────────────────────────────────────────────────────
@@ -129,9 +132,61 @@ function withDailyTotals(m, t) {
   return o
 }
 
-function UploadBox({ L2, onDone }) {
+// 📅 Daily file check (2026-11-27): one box per day since 2.0 opened. Green = uploaded (players, deposits, when, by whom),
+// orange = uploaded while that day was not over yet (partial, upload again), red = not uploaded. Click a box to upload that day.
+const SW2_OPEN = '2026-11-21'
+function DailyFiles({ L2, days, canUpload, onPick }) {
+  const byDate = new Map(days.map(d => [d.snapshot_date, d]))
+  const today = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10)
+  const list = []
+  for (let t = new Date(SW2_OPEN + 'T00:00:00Z'); t.toISOString().slice(0, 10) <= today; t = new Date(t.getTime() + DAY)) list.push(t.toISOString().slice(0, 10))
+  const myt = iso => new Date(new Date(iso).getTime() + 8 * 3600000).toISOString().slice(0, 16).replace('T', ' ')
+  const missing = list.filter(d => d < today && !byDate.has(d))
+  const partial = list.filter(d => d < today && byDate.has(d) && myt(byDate.get(d).uploaded_at).slice(0, 10) <= d)
+  return (
+    <Card style={{ marginBottom: 14, padding: 14 }}>
+      <div style={{ display: 'flex', gap: 10, alignItems: 'baseline', flexWrap: 'wrap', marginBottom: 10 }}>
+        <span style={{ fontWeight: 700, fontSize: 13 }}>📅 {L2('Daily 2.0 files', '每日 2.0 文件')}</span>
+        {missing.length || partial.length
+          ? <span style={{ fontSize: 12, color: '#f85149', fontWeight: 700 }}>
+              {missing.length > 0 && L2(`❌ Not uploaded: ${missing.map(d => d.slice(5)).join(', ')}`, `❌ 未上传：${missing.map(d => d.slice(5)).join('、')}`)}
+              {missing.length > 0 && partial.length > 0 && ' · '}
+              {partial.length > 0 && <span style={{ color: '#d29922' }}>{L2(`⚠ Partial (upload again): ${partial.map(d => d.slice(5)).join(', ')}`, `⚠ 不完整（请重新上传）：${partial.map(d => d.slice(5)).join('、')}`)}</span>}
+            </span>
+          : <span style={{ fontSize: 12, color: '#3fb950', fontWeight: 700 }}>{L2('✅ All days up to yesterday are uploaded', '✅ 到昨天为止每天都已上传')}</span>}
+        {canUpload && <span style={{ fontSize: 11, color: 'var(--muted)' }}>{L2('Click a day to upload its file.', '点一天就可以上传那天的文件。')}</span>}
+      </div>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        {list.map(d => {
+          const r = byDate.get(d), isToday = d === today
+          const isPartial = r && !isToday && myt(r.uploaded_at).slice(0, 10) <= d
+          const color = isToday ? 'var(--muted)' : !r ? '#f85149' : isPartial ? '#d29922' : '#3fb950'
+          const tip = r ? L2(`Uploaded ${myt(r.uploaded_at)} (MY time) by ${r.uploaded_by || '—'}`, `上传于 ${myt(r.uploaded_at)}（马来西亚时间），上传人 ${r.uploaded_by || '—'}`) : ''
+          return (
+            <div key={d} title={tip} onClick={canUpload ? () => onPick(d) : undefined}
+              style={{ minWidth: 118, padding: '8px 10px', borderRadius: 8, border: `1px solid ${color}`, background: 'var(--surface2)', cursor: canUpload ? 'pointer' : 'default', fontSize: 11 }}>
+              <div style={{ fontWeight: 800, fontSize: 13, color }}>
+                {!r ? (isToday ? '⏳' : '❌') : isPartial ? '⚠' : '✅'} {d.slice(8)} {new Date(d + 'T00:00:00Z').toLocaleDateString(L2('en-GB', 'zh-CN'), { month: 'short', timeZone: 'UTC' })}
+              </div>
+              {r ? <>
+                <div>{L2(`${r.players} players · ${r.depositors} deposited`, `${r.players} 位玩家 · ${r.depositors} 位存款`)}</div>
+                <div>{L2('Dep', '存款')} <b>{formatMoney(n(r.total_deposit), CUR)}</b></div>
+                <div style={{ color: 'var(--muted)' }}>{L2('Bonus', '奖金')} {formatMoney(n(r.total_bonus), CUR)}</div>
+                <div style={{ color: isPartial ? '#d29922' : 'var(--muted)', marginTop: 2 }}>
+                  {isPartial ? L2('⚠ uploaded before day end', '⚠ 当天还没结束就上传') : L2(`up ${myt(r.uploaded_at).slice(5)}`, `上传 ${myt(r.uploaded_at).slice(5)}`)}
+                </div>
+              </> : <div style={{ color }}>{isToday ? L2('today, upload tomorrow', '今天，明天再上传') : L2('not uploaded', '未上传')}</div>}
+            </div>
+          )
+        })}
+      </div>
+    </Card>
+  )
+}
+
+function UploadBox({ L2, onDone, initialDate }) {
   const [kind, setKind] = useState('daily')
-  const [date, setDate] = useState(() => new Date(Date.now() + 8 * 3600000 - DAY).toISOString().slice(0, 10))
+  const [date, setDate] = useState(() => initialDate || new Date(Date.now() + 8 * 3600000 - DAY).toISOString().slice(0, 10))
   const [files, setFiles] = useState([])
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState('')
@@ -242,6 +297,8 @@ export default function Surewin2() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [reloadKey, setReloadKey] = useState(0)
+  const [days, setDays] = useState([])
+  const [pickDate, setPickDate] = useState(null)
 
   const load = useCallback(async () => {
     setLoading(true); setError(null)
@@ -253,12 +310,13 @@ export default function Surewin2() {
       const tiers = SCOPES[scope]
       const mem = await fetchAll(() => {
         let q = supabase.from('vip_members_all')
-          .select('id,username,full_name,tier,phone,whatsapp,host_assigned,last_contacted,activity_status,days_inactive,last_deposit_date,currency')
+          .select('id,username,full_name,tier,phone,whatsapp,host_assigned,last_contacted,activity_status,days_inactive,last_deposit_date,currency,v1_last_deposit_date,v2_last_deposit_date,v2_joined')
           .eq('currency', CUR).eq('is_excluded', false)
         if (tiers) q = q.in('tier', tiers)
         return q.order('username')
       })
-      setSw2(s2); setCrm(mem)
+      const { data: dd } = await supabase.from('sw2_daily_days').select('*').order('snapshot_date')
+      setSw2(s2); setCrm(mem); setDays(dd || [])
     } catch (e) { setError(e?.message || String(e)) }
     setLoading(false)
   }, [scope])
@@ -287,10 +345,25 @@ export default function Surewin2() {
     bonus: [...base1.filter(r => r.s2 && cost(r.s2) > 0), ...(scope === 'ALL' && host === 'All' ? all.extra.filter(r => cost(r.s2) > 0) : [])],
     new: host === 'All' || host === '—' ? all.extra : [],
   }
+  // Where are they playing? (2026-11-27) A real deposit in the last PLAY_DAYS days, per platform
+  // (dates from vip_members_all.v1_ / v2_last_deposit_date, kept by refresh_days_inactive).
+  // "Stopped on both" = no deposit on 1.0 or 2.0 for PLAY_DAYS+ days but one in the last LOST_DAYS days: still worth a call.
+  const on = d => { const x = daysAgo(d, base); return x != null && x < PLAY_DAYS }
+  const on1 = r => on(r.crm.v1_last_deposit_date)
+  const on2 = r => on(r.crm.v2_last_deposit_date || (r.s2 && n(r.s2.total_deposit) > 0 ? r.s2.last_deposit_at : null))
+  const lastDep = r => [r.crm.v1_last_deposit_date, r.crm.v2_last_deposit_date, r.crm.last_deposit_date].filter(Boolean).map(d => String(d).slice(0, 10)).sort().pop() || null
+  Object.assign(groups, {
+    p1: base1.filter(r => on1(r) && !on2(r)),
+    p2: base1.filter(r => !on1(r) && on2(r)),
+    pboth: base1.filter(r => on1(r) && on2(r)),
+    lost: base1.filter(r => { if (on1(r) || on2(r)) return false; const x = daysAgo(lastDep(r), base); return x != null && x < LOST_DAYS }),
+  })
+  const lostNotJoined = groups.lost.filter(r => !r.s2).length
   const joined = base1.filter(r => r.s2)
   const sum = (arr, f) => arr.reduce((s, r) => s + f(r), 0)
   const list = (groups[group] || []).filter(inSearch).sort((a, b) => {
     if (group === 'not') return String(b.crm?.last_deposit_date || '').localeCompare(String(a.crm?.last_deposit_date || '')) || (TIER_ORDER[a.tier] ?? 9) - (TIER_ORDER[b.tier] ?? 9)
+    if (group === 'lost') return String(lastDep(b) || '').localeCompare(String(lastDep(a) || '')) || (TIER_ORDER[a.tier] ?? 9) - (TIER_ORDER[b.tier] ?? 9)
     if (group === 'bonus') return cost(b.s2) - cost(a.s2)
     return (TIER_ORDER[a.tier] ?? 9) - (TIER_ORDER[b.tier] ?? 9) || n(b.s2?.total_deposit) - n(a.s2?.total_deposit)
   })
@@ -303,6 +376,14 @@ export default function Surewin2() {
     { k: 'bonus', icon: '🎁', en: 'Got 2.0 bonus', zh: '已领 2.0 奖金', n: groups.bonus.length, sub: formatMoney(sum(groups.bonus, r => cost(r.s2)), CUR) },
     { k: 'new', icon: '🆕', en: 'New on 2.0 only', zh: '2.0 新玩家', n: groups.new.length, sub: L2('not a 1.0 CRM player', '非 1.0 CRM 玩家') },
   ]
+  const PLAY = [
+    { k: 'p1', icon: '🔵', en: 'Playing on 1.0 only', zh: '只在 1.0 玩', n: groups.p1.length, sub: L2('invite to 2.0', '邀请去 2.0') },
+    { k: 'p2', icon: '🟢', en: 'Playing on 2.0 only', zh: '只在 2.0 玩', n: groups.p2.length, sub: L2('moved, not lost', '已转去，没流失') },
+    { k: 'pboth', icon: '🟣', en: 'Playing on both', zh: '两边都玩', n: groups.pboth.length, sub: L2('1.0 + 2.0', '1.0 + 2.0') },
+    { k: 'lost', icon: '🚨', en: 'Stopped on both', zh: '两边都停了', n: groups.lost.length,
+      sub: L2(`${lostNotJoined} never joined 2.0 · call them`, `${lostNotJoined} 位没加入 2.0 · 需联系`) },
+  ]
+  const ALL_GROUPS = [...GROUPS, ...PLAY]
 
   const me = profile?.full_name || 'Agent'
   const waText = r => {
@@ -310,6 +391,10 @@ export default function Surewin2() {
     if (!r.s2) return {
       en: `Hi bro *${u}*! 👋 I'm ${me} from sureWin VIP department.\n\nsureWin 1.0 is under maintenance now, so we opened *sureWin 2.0* for you guys to keep playing 😄 Just register there with the *same username* (${u}) and you're good to go.\n\nWhatsApp me if you need the link or any help ya, I settle for you 💎`,
       cn: `嗨 *${u}*！👋 我是sureWin VIP部门的${me}。\n\nsureWin 1.0 现在在维护，所以我们开了 *sureWin 2.0* 给大家继续玩 😄 你只要用 *同一个用户名*（${u}）注册就可以了。\n\n需要链接或任何帮忙，直接WhatsApp我哦，我帮你搞定 💎`,
+    }
+    if (group === 'lost') return {
+      en: `Hi bro *${u}*! 👋 I'm ${me} from sureWin VIP department.\n\nLong time no see you around bro 😄 Just checking in, everything ok? If anything on sureWin 2.0 is giving you trouble, or you want me to check what promo you can take now, WhatsApp me ya, I settle for you 💎`,
+      cn: `嗨 *${u}*！👋 我是sureWin VIP部门的${me}。\n\n好久没看到你了 😄 来问候一下，一切都好吗？如果 sureWin 2.0 有什么问题，或想我帮你看看现在有什么优惠，直接WhatsApp我哦，我帮你搞定 💎`,
     }
     if (n(r.s2.total_deposit) <= 0) return {
       en: `Hi bro *${u}*! 👋 I'm ${me} from sureWin VIP department.\n\nSaw you already registered on sureWin 2.0, thanks bro 🙏 Everything ok there? If you need help with your first deposit or want me to check what promo you can take, just WhatsApp me ya 💎`,
@@ -323,11 +408,11 @@ export default function Surewin2() {
 
   const exportXlsx = () => {
     const data = list.map(r => ({
-      Group: L2(GROUPS.find(g => g.k === group).en, GROUPS.find(g => g.k === group).zh),
+      Group: L2(ALL_GROUPS.find(g => g.k === group).en, ALL_GROUPS.find(g => g.k === group).zh),
       'Tier (1.0)': r.crm?.tier || '', '1.0 username': r.crm?.username || '', '2.0 username': r.s2?.login || '',
       'Matched by': r.s2?.match_type || '', Name: r.crm?.full_name || r.s2?.full_name || '',
       'Phone (CRM)': r.crm?.whatsapp || r.crm?.phone || '', 'Phone (2.0)': r.s2?.phone || '',
-      Host: r.crm?.host_assigned || '', '1.0 last deposit': r.crm?.last_deposit_date || '', '1.0 status': r.crm?.activity_status || '',
+      Host: r.crm?.host_assigned || '', '1.0 last deposit': r.crm?.v1_last_deposit_date || '', '2.0 last deposit day': r.crm?.v2_last_deposit_date || '', 'Status (1.0 + 2.0)': r.crm?.activity_status || '',
       '2.0 group': r.s2?.member_group || '', '2.0 last active': String(r.s2?.last_active_at || '').slice(0, 16),
       '2.0 deposits': n(r.s2?.deposit_count), '2.0 total deposit (RM)': n(r.s2?.total_deposit), '2.0 withdrawal (RM)': n(r.s2?.total_withdrawal),
       '2.0 last deposit': String(r.s2?.last_deposit_at || '').slice(0, 16), '2.0 valid bet (RM)': n(r.s2?.valid_bet),
@@ -336,7 +421,7 @@ export default function Surewin2() {
     }))
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data), 'sureWin 2.0')
-    XLSX.writeFile(wb, `sureWin 2.0 ${GROUPS.find(g => g.k === group).en} ${base}.xlsx`)
+    XLSX.writeFile(wb, `sureWin 2.0 ${ALL_GROUPS.find(g => g.k === group).en} ${base}.xlsx`)
   }
 
   const sel = { background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)', padding: '7px 10px', borderRadius: 7, fontSize: 13 }
@@ -352,7 +437,7 @@ export default function Surewin2() {
 
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 14 }}>
         <span style={{ fontSize: 12, color: 'var(--muted)' }}>
-          {snapAt ? L2(`📅 2.0 file: ${String(snapAt).slice(0, 16)} (MY time)`, `📅 2.0 文件：${String(snapAt).slice(0, 16)}（马来西亚时间）`) : L2('No 2.0 file uploaded yet.', '还没有上传 2.0 文件。')}
+          {snapAt ? L2(`📅 Latest 2.0 file: ${String(snapAt).slice(0, 16).replace('T', ' ')} (MY time)`, `📅 最新 2.0 文件：${String(snapAt).slice(0, 16).replace('T', ' ')}（马来西亚时间）`) : L2('No 2.0 file uploaded yet.', '还没有上传 2.0 文件。')}
         </span>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
           {canUpload && <Btn onClick={() => setShowUpload(s => !s)}>📥 {L2('Upload 2.0 file', '上传 2.0 文件')}</Btn>}
@@ -360,7 +445,9 @@ export default function Surewin2() {
         </div>
       </div>
 
-      {canUpload && (showUpload || (!loading && !snapAt)) && <UploadBox L2={L2} onDone={() => { setShowUpload(false); setReloadKey(k => k + 1) }} />}
+      {canUpload && (showUpload || (!loading && !snapAt)) && <UploadBox key={pickDate || 'x'} L2={L2} initialDate={pickDate} onDone={() => { setShowUpload(false); setPickDate(null); setReloadKey(k => k + 1) }} />}
+
+      {!loading && <DailyFiles L2={L2} days={days} canUpload={canUpload} onPick={d => { setPickDate(d); setShowUpload(true); window.scrollTo({ top: 0, behavior: 'smooth' }) }} />}
 
       <Card style={{ marginBottom: 14, padding: 14 }}>
         <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'flex-end' }}>
@@ -392,6 +479,26 @@ export default function Surewin2() {
 
       {loading ? <LoadingState /> : error ? <ErrorState message={error} /> : (
         <>
+          {groups.lost.length > 0 && group !== 'lost' && (
+            <div onClick={() => setGroup('lost')} style={{ cursor: 'pointer', marginBottom: 12, padding: '10px 14px', borderRadius: 10, border: '1px solid #f85149', background: 'rgba(248,81,73,0.08)', fontSize: 13 }}>
+              🚨 <b>{L2(`${groups.lost.length} players stopped depositing on both 1.0 and 2.0`, `${groups.lost.length} 位玩家在 1.0 和 2.0 都停止存款了`)}</b>
+              {' '}{L2(`(${lostNotJoined} never joined 2.0). Click to see them.`, `（其中 ${lostNotJoined} 位没加入 2.0）。点这里查看。`)}
+            </div>
+          )}
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', margin: '0 0 6px' }}>
+            {L2(`Where are they playing? (real deposit in the last ${PLAY_DAYS} days)`, `他们在哪里玩？（最近 ${PLAY_DAYS} 天有真实存款）`)}
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10, marginBottom: 14 }}>
+            {PLAY.map(g => (
+              <div key={g.k} style={{ outline: group === g.k ? '2px solid var(--accent)' : 'none', borderRadius: 12 }}>
+                <KpiCard icon={g.icon} label={L2(g.en, g.zh)} value={g.n.toLocaleString()} sub={g.sub} onClick={() => setGroup(g.k)}
+                  color={group === g.k ? 'var(--accent)' : g.k === 'lost' && g.n ? '#f85149' : undefined} />
+              </div>
+            ))}
+          </div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', margin: '0 0 6px' }}>
+            {L2('Moving to 2.0', '转去 2.0')}
+          </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10, marginBottom: 14 }}>
             {GROUPS.map(g => (
               <div key={g.k} style={{ outline: group === g.k ? '2px solid var(--accent)' : 'none', borderRadius: 12 }}>
@@ -418,7 +525,8 @@ export default function Surewin2() {
                       const crmPhone = r.crm?.whatsapp || r.crm?.phone || ''
                       const phone = s2?.phone || crmPhone
                       const phoneChanged = s2?.phone && crmPhone && phoneKey(s2.phone) !== phoneKey(crmPhone)
-                      const dd = daysAgo(r.crm?.last_deposit_date, base)
+                      const dep1 = r.crm ? (r.crm.v1_last_deposit_date || null) : null
+                      const dd = daysAgo(dep1, base)
                       const da = daysAgo(s2?.last_active_at, base)
                       const vip = { id: r.crm?.id || null, username: r.crm?.username || s2?.login, tier: r.tier, phone, whatsapp: phone,
                         activity_status: r.crm?.activity_status, days_inactive: r.crm?.days_inactive }
@@ -441,10 +549,11 @@ export default function Surewin2() {
                             {s2?.member_group && r.crm && String(s2.member_group).toUpperCase() !== r.tier && <div style={sub}>2.0: {s2.member_group}</div>}
                           </td>
                           <td style={{ ...td, whiteSpace: 'nowrap' }}>
-                            {r.crm ? <>{r.crm.last_deposit_date || '—'}<div style={sub}>{dd != null ? L2(`${dd}d ago`, `${dd}天前`) : ''}</div>
+                            {r.crm ? <>{dep1 || '—'}<div style={sub}>{dd != null ? L2(`${dd}d ago`, `${dd}天前`) : ''}</div>
                               {r.crm.activity_status && <StatusBadge status={r.crm.activity_status} />}</> : <span style={sub}>{L2('not a 1.0 CRM player', '非 1.0 CRM 玩家')}</span>}
                           </td>
-                          {group !== 'not' && <>
+                          {group !== 'not' && !s2 && <td colSpan={3} style={{ ...td, color: 'var(--warning)' }}>{L2('⏳ Not joined 2.0 yet', '⏳ 还没加入 2.0')}</td>}
+                          {group !== 'not' && s2 && <>
                             <td style={{ ...td, whiteSpace: 'nowrap' }}>
                               <b>{formatMoney(s2.total_deposit, CUR)}</b>
                               <div style={sub}>{L2(`${s2.deposit_count} deposits`, `共 ${s2.deposit_count} 次`)}{s2.last_deposit_at ? ` · ${String(s2.last_deposit_at).slice(0, 10)}` : ''}</div>
@@ -460,7 +569,7 @@ export default function Surewin2() {
                           <td style={{ ...td, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{r.crm?.last_contacted ? String(r.crm.last_contacted).slice(0, 10) : L2('Never', '从未')}</td>
                           <td style={td} onClick={e => e.stopPropagation()}>
                             {phone && (
-                              <WaButton vip={vip} templates={waText(r)} topic="sw2" logLabel={`sureWin 2.0: ${GROUPS.find(g => g.k === group).en}`} onLogged={() => setReloadKey(k => k + 1)}
+                              <WaButton vip={vip} templates={waText(r)} topic="sw2" logLabel={`sureWin 2.0: ${ALL_GROUPS.find(g => g.k === group).en}`} onLogged={() => setReloadKey(k => k + 1)}
                                 title={L2('Send WhatsApp', '发送WhatsApp')}
                                 style={{ width: 28, height: 28, borderRadius: 14, background: '#25D366', color: '#fff', fontSize: 13, fontWeight: 700 }}>W</WaButton>
                             )}
