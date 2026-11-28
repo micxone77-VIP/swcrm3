@@ -1714,13 +1714,30 @@ export default function Campaigns() {
   const chaseHosts = ['all', ...Array.from(new Set(chaseList.map(p => p.host_assigned).filter(Boolean))).sort()]
   // Activity group during the campaign (daily import, campaign dates): hit target > deposited > played (valid bet, no deposit) > not active
   const hitIds = new Set(achieved.map(p => p.id))
-  const actOf = p => {
+  const ACT_RANK = { inactive: 0, playing: 1, deposited: 2, hit: 3 }
+  const act1Of = p => {
     if (!realFinancials) return null
     if (hitIds.has(p.id)) return 'hit'
     const r = realFinancials.byPlayer?.[p.username]
     if (r?.deposit > 0) return 'deposited'
     if (r?.validBet > 0) return 'playing'
     return 'inactive'
+  }
+  // 🆕 same group on sureWin 2.0 (2.0 deposits / bets in the campaign dates, 2.0 reward = hit)
+  const act2Of = p => {
+    if (!sw2On || sw2.loading) return null
+    const r = sw2.byUser[p.username]
+    if (!r || !r.login) return null
+    if (r.reward > 0) return 'hit'
+    if (r.dep > 0) return 'deposited'
+    if (r.vb > 0) return 'playing'
+    return 'inactive'
+  }
+  // the group used for the filters = the best of 1.0 and 2.0 (Not active = not active on both)
+  const actOf = p => {
+    const a = act1Of(p), b = act2Of(p)
+    if (!a) return null
+    return b && ACT_RANK[b] > ACT_RANK[a] ? b : a
   }
   const lastBetOf = p => realFinancials?.byPlayer?.[p.username]?.lastBet || p.last_bet_date || null
   const daysSince = d => {
@@ -1733,10 +1750,13 @@ export default function Campaigns() {
   const inactiveList = hostChaseList.filter(p => actOf(p) === 'inactive')
     .sort((a, b) => (daysSince(lastBetOf(b)) ?? 9999) - (daysSince(lastBetOf(a)) ?? 9999))
   const actTag = p => {
-    const g = actOf(p); if (!g) return null
+    const g = act1Of(p); if (!g) return null
     const a = CAMP_ACT[g], lb = lastBetOf(p), ds = daysSince(lb)
+    const g2 = act2Of(p), a2 = g2 ? CAMP_ACT[g2] : null
+    const pill = { fontSize:10, fontWeight:700, padding:'1px 7px', borderRadius:10, whiteSpace:'nowrap' }
     return <div style={{ marginTop:3, display:'flex', alignItems:'center', gap:6, flexWrap:'wrap' }}>
-      <span style={{ fontSize:10, fontWeight:700, padding:'1px 7px', borderRadius:10, background:a.bg, color:a.color, whiteSpace:'nowrap' }}>{a.icon} {L2(a.en, a.zh)}</span>
+      <span style={{ ...pill, background:a.bg, color:a.color }}>{sw2On ? '1.0 ' : ''}{a.icon} {L2(a.en, a.zh)}</span>
+      {sw2On && a2 && <span style={{ ...pill, background:a2.bg, color:a2.color, border:'1px solid #7c3aed' }}>2.0 {a2.icon} {L2(a2.en, a2.zh)}</span>}
       {g === 'inactive' && <span style={{ fontSize:10, color:'var(--muted)', whiteSpace:'nowrap' }}>{lb ? L2(`last bet ${fmtDate(lb)}${ds != null ? ` · ${ds}d ago` : ''}`, `最后投注 ${fmtDate(lb)}${ds != null ? ` · ${ds}天前` : ''}`) : L2('no bets on record', '没有投注记录')}</span>}
     </div>
   }
@@ -2595,8 +2615,8 @@ export default function Campaigns() {
                         📋 {L2(`Not-active list (${inactiveList.length})`, `未活跃名单（${inactiveList.length}）`)} {showInactiveList ? '▲' : '▼'}
                       </button>
                       <span style={{ fontSize:10, color:'var(--muted)', width:'100%' }}>
-                        {L2(`From the daily import, ${fmtDate(selected?.start_date)} to ${realFinancials.dataThrough ? fmtDate(realFinancials.dataThrough) : '—'} (today shows after tomorrow's import). Not active = no bets at all in the campaign dates.`,
-                            `来自每日导入，${fmtDate(selected?.start_date)} 至 ${realFinancials.dataThrough ? fmtDate(realFinancials.dataThrough) : '—'}（今天的数据明天导入后显示）。未活跃 = 活动期间完全没有投注。`)}
+                        {L2(`From the daily import, ${fmtDate(selected?.start_date)} to ${realFinancials.dataThrough ? fmtDate(realFinancials.dataThrough) : '—'} (today shows after tomorrow's import). Not active = no bets at all in the campaign dates.${sw2On ? ' The groups count 1.0 or 2.0: a player active on 2.0 is not in Not active (each row shows its 1.0 and 2.0 tag).' : ''}`,
+                            `来自每日导入，${fmtDate(selected?.start_date)} 至 ${realFinancials.dataThrough ? fmtDate(realFinancials.dataThrough) : '—'}（今天的数据明天导入后显示）。未活跃 = 活动期间完全没有投注。${sw2On ? '分组同时看 1.0 和 2.0：在 2.0 有活跃的玩家不算未活跃（每行显示 1.0 和 2.0 标签）。' : ''}`)}
                       </span>
                     </>}
                 </div>
@@ -2807,7 +2827,7 @@ export default function Campaigns() {
                                   {p._inTop ? rewardFmt(p._reward, campCurrency) : '—'}
                                 </td>
                                 <td style={s.td}><CampaignWaButton p={p} extra={{ vb: p._vb, inTop: p._inTop, reward: p._reward, gap }} /></td>
-                                <td style={s.td}><span style={{ ...s.tag(pr.color, pr.bg), fontSize:10 }}>{prLabel(pr.label)}</span></td>
+                                <td style={s.td}><span style={{ ...s.tag(pr.color, pr.bg), fontSize:10 }}>{sw2On ? '1.0 ' : ''}{prLabel(pr.label)}</span><Sw2Mini sw2={sw2} username={p.username} kind="prio" /></td>
                                 <td style={s.td} onClick={e=>e.stopPropagation()}>
                                   <button onClick={()=>removePlayer(p.id)} style={{ background:'none', border:'1px solid rgba(248,81,73,.3)', color:'#f85149', padding:'2px 8px', borderRadius:5, fontSize:11, cursor:'pointer' }}>✕</button>
                                 </td>
@@ -3078,7 +3098,7 @@ export default function Campaigns() {
                                     </>
                                   })()}
                                 </td>
-                                <td style={s.td}><span style={{ ...s.tag(pr.color, pr.bg), fontSize:10 }}>{prLabel(pr.label)}</span></td>
+                                <td style={s.td}><span style={{ ...s.tag(pr.color, pr.bg), fontSize:10 }}>{sw2On ? '1.0 ' : ''}{prLabel(pr.label)}</span><Sw2Mini sw2={sw2} username={p.username} kind="prio" /></td>
                                 <td style={s.td} onClick={e=>e.stopPropagation()}>
                                   <button onClick={()=>removePlayer(p.id)} style={{ background:'none', border:'1px solid rgba(248,81,73,.3)', color:'#f85149', padding:'2px 8px', borderRadius:5, fontSize:11, cursor:'pointer' }}>✕</button>
                                 </td>

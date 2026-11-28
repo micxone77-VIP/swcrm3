@@ -143,6 +143,17 @@ export function Sw2Mini({ sw2, username, kind = 'dep' }) {
   if (kind === 'reward') return <div style={st}><Tag2 />{r.reward > 0
     ? <span style={{ color: '#a78bfa', fontWeight: 800 }}>{formatMoney(r.reward, CUR)}{r.paid ? L2(' ✅ paid', ' ✅ 已派') : L2(' pending', ' 待派')}</span>
     : '—'}</div>
+  if (kind === 'prio') {
+    // 2.0 progress, same idea as the 1.0 badge: achieved / close (70%+) / behind, toward the first level not reached yet
+    const tiers = sw2.tiers || []
+    const next = tiers.find(x => r.dep < n(x.depositThreshold))
+    const first = n(tiers[0]?.depositThreshold)
+    const pct = r.reward > 0 ? 100 : first ? Math.round(Math.min(1, r.dep / first) * 100) : 0
+    const col = r.reward > 0 ? '#3fb950' : pct >= 70 ? '#d29922' : '#f85149'
+    return <div style={{ ...st, color: col, fontWeight: 800 }}><Tag2 />{r.reward > 0
+      ? (next ? L2(`✅ achieved · ${formatMoney(n(next.depositThreshold) - r.dep, CUR)} to next`, `✅ 已达标 · 差 ${formatMoney(n(next.depositThreshold) - r.dep, CUR)} 到下一级`) : L2('✅ achieved (top)', '✅ 已达标（最高）'))
+      : !first ? "—" : `${pct >= 70 ? L2('⚡ close', '⚡ 接近') : L2('🔴 behind', '🔴 落后')} ${pct}%`}</div>
+  }
   if (kind === 'to') return <div style={st}><Tag2 /><span style={{ color: 'var(--text)' }}>{formatMoney(r.vb, CUR)}</span></div>
   return <div style={st}><Tag2 /><span style={{ color: 'var(--text)' }}>{formatMoney(r.dep, CUR)}</span>{kind === 'depto' && <> · {formatMoney(r.vb, CUR)} {L2('TO', '流水')}</>}</div>
 }
