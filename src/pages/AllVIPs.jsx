@@ -125,6 +125,8 @@ export default function AllVIPs() {
   const [contactMap, setContactMap] = useState({})
   const [chaseFilter, setChaseFilter] = useState(searchParams.get('chase') || 'ALL') // ALL | needs_chase | dep_no_contact | contact_no_dep
   const [chaseDays, setChaseDays] = useState('7')
+  // 📧 Email filter (2026-11-25): has email / no email (no email -> contact by WhatsApp)
+  const [mailFilter, setMailFilter] = useState(searchParams.get('email') || 'ALL') // ALL | has | none | none_wa | none_nowa
   // 📧 Bulk email (2026-11-19): tick VIPs (or use all shown after filters) -> the normal email box
   const [ticked, setTicked] = useState(() => new Set())
   const [emailFor, setEmailFor] = useState(null)
@@ -277,6 +279,13 @@ export default function AllVIPs() {
       // contacted within N days, but no deposit since that contact
       if (chaseFilter === 'contact_no_dep' && !(ci.dc !== null && ci.dc <= n && (ci.lastDeposit === null || String(ci.lastDeposit).slice(0, 10) < String(ci.lastContact).slice(0, 10)))) return false
     }
+    if (mailFilter !== 'ALL') {
+      const hasMail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v.email || '').trim())
+      const hasWa = !!String(v.whatsapp || v.phone || '').replace(/\D/g, '')
+      if (mailFilter === 'has' ? !hasMail : hasMail) return false
+      if (mailFilter === 'none_wa' && !hasWa) return false
+      if (mailFilter === 'none_nowa' && hasWa) return false
+    }
     if (playerTypeFilter !== 'ALL') {
       const gl = gamingLabels[v.username]
       if (!gl || gl.player_type !== playerTypeFilter) return false
@@ -423,13 +432,20 @@ export default function AllVIPs() {
           <option value="dep_no_contact">{L2('Deposited, not contacted', '有存款但未联系')}</option>
           <option value="contact_no_dep">{L2('Contacted, no deposit yet', '已联系但未存款')}</option>
         </Select>
+        <Select value={mailFilter} onChange={e => { setMailFilter(e.target.value); setPage(1) }} style={{ minWidth: 170 }}>
+          <option value="ALL">{L2('📧 All (email filter)', '📧 全部（邮箱筛选）')}</option>
+          <option value="has">{L2('✉️ Has email', '✉️ 有邮箱')}</option>
+          <option value="none">{L2('🚫 No email', '🚫 没有邮箱')}</option>
+          <option value="none_wa">{L2('💬 No email, has WhatsApp', '💬 没有邮箱，有 WhatsApp')}</option>
+          <option value="none_nowa">{L2('⚠️ No email, no WhatsApp', '⚠️ 没有邮箱也没有 WhatsApp')}</option>
+        </Select>
         {(chaseFilter === 'dep_no_contact' || chaseFilter === 'contact_no_dep') && (
           <Select value={chaseDays} onChange={e => { setChaseDays(e.target.value); setPage(1) }} style={{ minWidth: 110 }}>
             {['3', '7', '14', '30'].map(d => <option key={d} value={d}>{L2(`Within ${d} days`, `${d}天内`)}</option>)}
           </Select>
         )}
-        {(search || tier !== 'ALL' || status !== 'ALL' || region !== 'ALL' || host !== 'ALL' || playerTypeFilter !== 'ALL' || affiliate !== 'ALL' || segFilter !== 'ALL' || chaseFilter !== 'ALL') && (
-          <Btn size="sm" variant="ghost" onClick={() => { setSearch(''); setTier('ALL'); setStatus('ALL'); setRegion('ALL'); setHost('ALL'); setPlayerTypeFilter('ALL'); setAffiliate('ALL'); setSegFilter('ALL'); setChaseFilter('ALL'); setPage(1) }}>
+        {(search || tier !== 'ALL' || status !== 'ALL' || region !== 'ALL' || host !== 'ALL' || playerTypeFilter !== 'ALL' || affiliate !== 'ALL' || segFilter !== 'ALL' || chaseFilter !== 'ALL' || mailFilter !== 'ALL') && (
+          <Btn size="sm" variant="ghost" onClick={() => { setSearch(''); setTier('ALL'); setStatus('ALL'); setRegion('ALL'); setHost('ALL'); setPlayerTypeFilter('ALL'); setAffiliate('ALL'); setSegFilter('ALL'); setChaseFilter('ALL'); setMailFilter('ALL'); setPage(1) }}>
             {t('allVips.clearFilters')}
           </Btn>
         )}

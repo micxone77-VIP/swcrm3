@@ -1105,8 +1105,8 @@ calData.forEach(row => {
 })
 
 // 🆕 sureWin 1.0 maintenance (no 1.0 data from 20 Nov 2026) and sureWin 2.0 opening (21 Nov 2026).
-// When 1.0 is back, set SW1_DOWN_TO to its last down day.
-const SW1_DOWN_FROM = '2026-11-20', SW1_DOWN_TO = null, SW2_OPEN = '2026-11-21'
+// 1.0 came back on 25 Nov 2026 (data again from that day), so the down days are 20–24 Nov.
+const SW1_DOWN_FROM = '2026-11-20', SW1_DOWN_TO = '2026-11-24', SW2_OPEN = '2026-11-21'
 const activeDay = r => r && (Number(r.monthly_valid_bet || 0) > 0 || (r._ok && Number(r.total_deposit || 0) > 0))
 const on1 = new Set(calData1.filter(activeDay).map(r => r.snapshot_date))
 const on2 = new Set(v2Cal.filter(activeDay).map(r => r.snapshot_date))

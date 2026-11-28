@@ -14,6 +14,7 @@ import CampaignImpact from '../components/campaign/CampaignImpact'
 import { fetchDailyFor, fetchMembersFor, MEMBERS_ALL } from '../lib/allPlayers'
 import CampaignMedia from '../components/campaign/CampaignMedia'
 import CampaignScorecard from '../components/campaign/CampaignScorecard'
+import CampaignSw2 from '../components/campaign/CampaignSw2'
 import { CampaignInfoButton } from '../components/campaign/CampaignGuide'
 import { ListCount } from '../components/ui'
 import { waMessage, tierList, STAGE_INFO, WA_STAGES, giftText } from '../lib/campaignWaTemplates'
@@ -2541,6 +2542,7 @@ export default function Campaigns() {
                 ['register', L2('📋 All Players','📋 所有玩家')],
                 ...(campType==='leaderboard' ? [['leaderboard',L2('[TOP] Leaderboard','[TOP] 排行榜')]] : []),
                 ['summary', L2('📊 Summary','📊 汇总')],
+                ...(campCurrency==='MYR' && campType!=='leaderboard' && campType!=='challenge' ? [['sw2', L2('🆕 sureWin 2.0 rewards','🆕 sureWin 2.0 奖励')]] : []),
                 ['impact', L2('📈 Impact (before / after)','📈 成效（活动前 / 后）')],
                 ['media', L2('🖼️ Flyers','🖼️ 海报')],
               ].map(([id,label])=>(
@@ -2548,6 +2550,7 @@ export default function Campaigns() {
               ))}
             </div>
 
+            {activeTab === 'sw2' && selected && <CampaignSw2 campaign={selected} />}
             {activeTab === 'media' && selected && <div style={{ padding:24 }}><CampaignMedia campaign={selected} /></div>}
             {activeTab === 'chase' && selected && <div style={{ padding:'0 24px' }}><CampaignMedia campaign={selected} compact /></div>}
 
