@@ -14,7 +14,7 @@ import CampaignImpact from '../components/campaign/CampaignImpact'
 import { fetchDailyFor, fetchMembersFor, MEMBERS_ALL } from '../lib/allPlayers'
 import CampaignMedia from '../components/campaign/CampaignMedia'
 import CampaignScorecard from '../components/campaign/CampaignScorecard'
-import CampaignSw2 from '../components/campaign/CampaignSw2'
+import CampaignSw2, { useSw2Campaign, Sw2Mini, Sw2Stats } from '../components/campaign/CampaignSw2'
 import { CampaignInfoButton } from '../components/campaign/CampaignGuide'
 import { ListCount } from '../components/ui'
 import { waMessage, tierList, STAGE_INFO, WA_STAGES, giftText } from '../lib/campaignWaTemplates'
@@ -1264,6 +1264,9 @@ export default function Campaigns() {
   // ── Derived stats for detail modal ─────────────────────────────────────────
   const campType    = selected?.campaign_type || 'gold_bar'
   const campCurrency = campaignCurrency(selected?.platform)
+  // 🆕 sureWin 2.0 (MY only): 2.0 deposits counted separately, shown next to the 1.0 numbers everywhere in the popup
+  const sw2On = modal === 'detail' && !!selected && campCurrency === 'MYR' && !['leaderboard', 'challenge'].includes(selected?.campaign_type || '')
+  const sw2 = useSw2Campaign(sw2On ? selected : null)
   const depTarget   = selected?.deposit_target || 50000
   const rewardPct      = selected?.reward_pct || 6
   const rewardFixed    = selected?.reward_fixed || 3000
@@ -2432,7 +2435,9 @@ export default function Campaigns() {
                 [t('campaigns.pendingPay'), rewardFmt(pendingPay, campCurrency), '#f85149'],
                 [t('campaigns.successRate'),players.length?(isDailyMode||!selected?.is_multi_level?Math.round(achieved.length/players.length*100):multiSummary.successRate)+'%':'0%', '#3fb950'],
               ].map(([l,v,c])=>( <div key={l}><div style={{ fontSize:16, fontWeight:800, color:c }}>{v}</div><div style={{ fontSize:10, color:'var(--muted)' }}>{l}</div></div> ))}
+              {sw2On && <span style={{ alignSelf:'center', fontSize:11, fontWeight:800, padding:'2px 8px', borderRadius:5, background:'var(--surface)', border:'1px solid var(--border)' }}>sureWin 1.0</span>}
             </div>
+            {sw2On && <div style={{ padding:'10px 24px', borderBottom:'1px solid var(--border)', background:'rgba(124,58,237,.06)' }}><Sw2Stats sw2={sw2} /></div>}
 
             {/* Add VIP */}
             <div style={{ padding:'10px 24px', borderBottom:'1px solid var(--border)' }}>
@@ -2542,7 +2547,7 @@ export default function Campaigns() {
                 ['register', L2('📋 All Players','📋 所有玩家')],
                 ...(campType==='leaderboard' ? [['leaderboard',L2('[TOP] Leaderboard','[TOP] 排行榜')]] : []),
                 ['summary', L2('📊 Summary','📊 汇总')],
-                ...(campCurrency==='MYR' && campType!=='leaderboard' && campType!=='challenge' ? [['sw2', L2('🆕 sureWin 2.0 rewards','🆕 sureWin 2.0 奖励')]] : []),
+                ...(sw2On ? [['sw2', L2(`🆕 sureWin 2.0 rewards (${sw2.reached.length})`,`🆕 sureWin 2.0 奖励（${sw2.reached.length}）`)]] : []),
                 ['impact', L2('📈 Impact (before / after)','📈 成效（活动前 / 后）')],
                 ['media', L2('🖼️ Flyers','🖼️ 海报')],
               ].map(([id,label])=>(
@@ -2550,7 +2555,7 @@ export default function Campaigns() {
               ))}
             </div>
 
-            {activeTab === 'sw2' && selected && <CampaignSw2 campaign={selected} />}
+            {activeTab === 'sw2' && selected && <CampaignSw2 campaign={selected} sw2={sw2} />}
             {activeTab === 'media' && selected && <div style={{ padding:24 }}><CampaignMedia campaign={selected} /></div>}
             {activeTab === 'chase' && selected && <div style={{ padding:'0 24px' }}><CampaignMedia campaign={selected} compact /></div>}
 
@@ -2958,6 +2963,7 @@ export default function Campaigns() {
                                         style={{ ...s.smInput, width:110, marginTop:4 }} placeholder={L2('Turnover','流水')} />
                                     )}
                                   </>}
+                                  <Sw2Mini sw2={sw2} username={p.username} kind={campType==='dual_tier' ? 'depto' : 'dep'} />
                                 </td>
                                 <td style={{ ...s.td, minWidth:140 }}>
                                   <div style={{ display:'flex', alignItems:'center', gap:6 }}>
@@ -2998,6 +3004,7 @@ export default function Campaigns() {
                                   ) : !qualified ? '—' : campType==='dual_tier'
                                       ? <span>{rmFmt(dualReward.creditAmount, campCurrency)} Credit<br/><span style={{fontSize:10,color:'var(--muted)'}}>+ {rmFmt(dualReward.wcashAmount, campCurrency)} WCash</span></span>
                                       : rmFmt(reward, campCurrency)}
+                                  <Sw2Mini sw2={sw2} username={p.username} kind="reward" />
                                 </td>
                                 <td style={{ ...s.td, minWidth:110 }} onClick={e=>e.stopPropagation()}>
                                   {(() => {
@@ -3315,7 +3322,7 @@ export default function Campaigns() {
                           : campType==='dual_tier'
                             ? <span>{rmFmt(playerDeposit(p),campCurrency)}<br/><span style={{fontSize:10,color:'var(--muted)'}}>{rmFmt(p.valid_bet||0,campCurrency)} {L2('TO','流水')}</span></span>
                             : rmFmt(playerDeposit(p),campCurrency)
-                        }</td>
+                        }<Sw2Mini sw2={sw2} username={p.username} kind={campType==='dual_tier' ? 'depto' : 'dep'} /></td>
                         <td style={{...s.td,color:typeInfo.color,fontWeight:700}}>{isDailyMulti
                           ? <span>{rmFmt(creditReward,campCurrency)} Credit</span>
                           : gift
@@ -3323,7 +3330,7 @@ export default function Campaigns() {
                           : campType==='dual_tier'
                             ? <span>{rmFmt(dualReward.creditAmount,campCurrency)} Credit<br/><span style={{fontSize:10,color:'var(--muted)'}}>+ {rmFmt(dualReward.wcashAmount,campCurrency)} WCash</span></span>
                             : rmFmt(creditReward,campCurrency)
-                        }{dayStreak > 0 && <><br/><span style={{fontSize:10,color:'#f97316',fontWeight:700}}>🔥 + {rmFmt(dayStreak,campCurrency)} {L2('streak bonus','连续奖励')}</span></>}</td>
+                        }{dayStreak > 0 && <><br/><span style={{fontSize:10,color:'#f97316',fontWeight:700}}>🔥 + {rmFmt(dayStreak,campCurrency)} {L2('streak bonus','连续奖励')}</span></>}<Sw2Mini sw2={sw2} username={p.username} kind="reward" /></td>
                         <td style={s.td}>
                           <button onClick={()=> isDailyMode ? updateDailyPayout(p.id, paid?'pending':'paid') : updatePlayer(p.id,{payout_status:paid?'pending':'paid',payout_date:paid?null:new Date().toISOString(),reward_amount:paid?0:creditReward+wcashReward})} style={{...s.tag(paid?'#3fb950':'#f59e0b',paid?'rgba(63,185,80,.15)':'rgba(245,158,11,.15)'),cursor:'pointer'}}>{paid?L2('✅ Paid','✅ 已派'):L2('⏳ Pending','⏳ 待处理')}</button>
                           {selected?.streak_enabled && pendingStreakBonus > 0 && (
@@ -3442,6 +3449,8 @@ export default function Campaigns() {
                   </table>
                   </>
                 )}
+
+                {sw2On && <CampaignSw2 campaign={selected} sw2={sw2} compact />}
 
                 {/* ── STREAK BONUSES PAYOUT SECTION ── */}
                 {selected?.streak_enabled && (() => {
@@ -4066,8 +4075,9 @@ export default function Campaigns() {
                                 {isDailyMode
                                   ? rmFmt(summaryData?.depositByPlayer?.[p.id] ?? null, campCurrency)
                                   : rmFmt(playerDeposit(p), campCurrency)}
+                                <Sw2Mini sw2={sw2} username={p.username} />
                               </td>
-                              <td style={{ ...s.td, color:'var(--accent)' }}>{real ? rmFmt(real.validBet, campCurrency) : <span style={{ color:'var(--muted)' }}>—</span>}</td>
+                              <td style={{ ...s.td, color:'var(--accent)' }}>{real ? rmFmt(real.validBet, campCurrency) : <span style={{ color:'var(--muted)' }}>—</span>}<Sw2Mini sw2={sw2} username={p.username} kind="to" /></td>
                               <td style={{ ...s.td, color:'#f85149' }}>{real ? rmFmt(real.withdrawal, campCurrency) : <span style={{ color:'var(--muted)' }}>—</span>}</td>
                               <td style={{ ...s.td, color:typeInfo.color, fontWeight:qualified?700:400 }}>
                                 {qualified ? (multi ? (<span>{rmFmt(reward,campCurrency)} {L2('total','合计')}<br /><span style={{ fontSize:10, color:'var(--muted)' }}>{multiMetric?.completedCount||0}/{campaignLevels.length} {L2('levels','级')}</span></span>) : rmFmt(reward,campCurrency)) : '—'}
@@ -4130,6 +4140,10 @@ export default function Campaigns() {
 
             {activeTab === 'summary' && (
               <div style={{ padding:24 }}>
+                {sw2On && <div style={{ background:'rgba(124,58,237,.06)', border:'1px solid var(--border)', borderRadius:10, padding:'12px 16px', marginBottom:16 }}>
+                  <div style={{ fontSize:12, color:'var(--muted)', marginBottom:8 }}>{L2('sureWin 2.0 is counted separately: the numbers below this box are sureWin 1.0 only.','sureWin 2.0 分开计算：这个框下面的数字只是 sureWin 1.0。')}</div>
+                  <Sw2Stats sw2={sw2} big />
+                </div>}
                 <div style={{ fontSize:13, fontWeight:700, marginBottom:8 }}>💰 {L2('Campaign Summary','活动汇总')} — {fmtDate(selected.start_date)} → {fmtDate(selected.end_date)}</div>
                 <div style={{ display:'grid', gridTemplateColumns:'repeat(6,1fr)', gap:12, marginBottom:18 }}>
                   {[
